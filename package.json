@@ -1,0 +1,24 @@
+{
+  "name": "veladesk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A self-hosted, highly customizable browser start page and web desktop with free-form drag & drop, themes, animated wallpapers, widgets, plugins, and silky-smooth interactions.",
+  "keywords": [
+    "startpage",
+    "homepage",
+    "dashboard",
+    "web-desktop",
+    "self-hosted",
+    "browser-startpage",
+    "new-tab",
+    "launcher"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ichichuang/veladesk.git"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
