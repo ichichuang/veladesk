@@ -34,6 +34,32 @@ Planned internal packages:
 | `@veladesk/plugin-sdk` | Plugin and widget development kit |
 | `@veladesk/database` | Storage and persistence |
 
+## Development
+
+VelaDesk is developed as a pnpm workspace monorepo.
+
+**Requirements**
+
+- Node.js >= 20.9
+- pnpm
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Other scripts: `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test:run`, `pnpm clean`.
+
+**Workspace overview**
+
+| Path | Description |
+| --- | --- |
+| `apps/web` | Next.js (App Router) web application |
+| `packages/desktop-engine` | Desktop grid, layout, collision and selection logic |
+| `packages/ui` | VelaDesk UI adapter layer |
+| `packages/shared` | Shared types and pure utilities |
+| `docs/architecture` | Engineering and architecture notes |
+
 ## 🤝 Contributing
 
 Contributions are welcome once the codebase lands. In the meantime, feel free to open issues for ideas and feedback.

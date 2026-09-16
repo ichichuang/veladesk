@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+/* Foundation engineering check only — the real desktop shell is a later task. */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
