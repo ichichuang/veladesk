@@ -48,3 +48,19 @@ export interface PageLayout {
   readonly grid: GridDefinition;
   readonly items: readonly LayoutItem[];
 }
+
+/** String key identifying a single grid cell, formatted "column:row". */
+export type CellKey = `${number}:${number}`;
+
+/** Options shared by occupancy and collision helpers. */
+export interface IgnoreItemsOptions {
+  readonly ignoreItemIds?: ReadonlySet<LayoutItemId>;
+}
+
+/** Arguments of {@link findNearestFreePosition}. */
+export interface FindNearestFreePositionArgs extends IgnoreItemsOptions {
+  readonly grid: GridDefinition;
+  readonly items: readonly LayoutItem[];
+  readonly desired: GridPosition;
+  readonly span: GridSpan;
+}

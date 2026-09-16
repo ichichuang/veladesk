@@ -7,11 +7,18 @@ export { createGridDefinition, isValidGridPosition, isValidGridSpan } from "./gr
 
 export { enumerateCells, isRectWithinGrid, rectsOverlap, toGridRect } from "./geometry";
 
+export { buildOccupancyMap, canPlaceRect, cellKey, getCollidingItemIds } from "./occupancy";
+
+export { clampPositionToGrid, findNearestFreePosition } from "./placement";
+
 export type {
+  CellKey,
+  FindNearestFreePositionArgs,
   GridDefinition,
   GridPosition,
   GridRect,
   GridSpan,
+  IgnoreItemsOptions,
   LayoutItem,
   LayoutItemId,
   PageLayout,
