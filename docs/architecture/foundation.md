@@ -32,7 +32,7 @@ veladesk/
 | Tailwind CSS | 4.3.3 | Via `@tailwindcss/postcss` |
 | Turborepo | 2.10.13 | Task orchestration only (`build`, `typecheck`, `dev`) |
 | Vitest | 5.0.1 | Requires Node >= 22.12 for the dev toolchain |
-| ESLint | 10.10.0 | Flat config at repository root, `eslint-config-next` 16.3.5 |
+| ESLint | 9.39.5 | Flat config at repository root, `eslint-config-next` 16.3.5 |
 
 Runtime baseline: Node.js 24 LTS. Development, CI, and production should use the same Node major whenever practical.
 
