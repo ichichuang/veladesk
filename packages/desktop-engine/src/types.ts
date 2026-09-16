@@ -64,3 +64,29 @@ export interface FindNearestFreePositionArgs extends IgnoreItemsOptions {
   readonly desired: GridPosition;
   readonly span: GridSpan;
 }
+
+/** Why an immutable layout operation refused to produce a new layout. */
+export type LayoutOperationFailureReason =
+  | "item-not-found"
+  | "invalid-layout"
+  | "out-of-bounds"
+  | "collision"
+  | "no-space";
+
+/** Result of an immutable layout operation. Failures keep the input layout. */
+export type LayoutOperationResult =
+  | {
+      readonly ok: true;
+      readonly layout: PageLayout;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: LayoutOperationFailureReason;
+      readonly layout: PageLayout;
+      readonly collidingItemIds?: readonly LayoutItemId[];
+    };
+
+/** Placement strategy for moveItem. */
+export interface MoveItemOptions {
+  readonly placement?: "exact" | "nearest-free";
+}

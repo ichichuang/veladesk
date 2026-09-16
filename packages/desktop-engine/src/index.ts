@@ -11,6 +11,8 @@ export { buildOccupancyMap, canPlaceRect, cellKey, getCollidingItemIds } from ".
 
 export { clampPositionToGrid, findNearestFreePosition } from "./placement";
 
+export { moveItem, swapItems } from "./operations";
+
 export type {
   CellKey,
   FindNearestFreePositionArgs,
@@ -21,5 +23,8 @@ export type {
   IgnoreItemsOptions,
   LayoutItem,
   LayoutItemId,
+  LayoutOperationFailureReason,
+  LayoutOperationResult,
+  MoveItemOptions,
   PageLayout,
 } from "./types";
