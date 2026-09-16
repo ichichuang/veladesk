@@ -18,7 +18,17 @@
     "type": "git",
     "url": "git+https://github.com/ichichuang/veladesk.git"
   },
+  "packageManager": "pnpm@11.17.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "clean": "rm -rf .turbo node_modules coverage apps/*/.next apps/*/.turbo apps/*/node_modules packages/*/.turbo packages/*/node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.13"
   }
 }
