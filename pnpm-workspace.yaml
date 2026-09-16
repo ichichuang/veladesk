@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  # unrs-resolver ships prebuilt platform binaries via optionalDependencies;
+  # its postinstall script is not needed.
+  unrs-resolver: false
+minimumReleaseAgeExclude:
+  - '@types/node@24.13.5'
