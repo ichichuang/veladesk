@@ -90,3 +90,34 @@ export type LayoutOperationResult =
 export interface MoveItemOptions {
   readonly placement?: "exact" | "nearest-free";
 }
+
+/** One discoverable defect of a page layout. */
+export type LayoutValidationIssue =
+  | {
+      readonly type: "duplicate-id";
+      readonly itemId: string;
+    }
+  | {
+      readonly type: "invalid-position";
+      readonly itemId: string;
+    }
+  | {
+      readonly type: "invalid-span";
+      readonly itemId: string;
+    }
+  | {
+      readonly type: "out-of-bounds";
+      readonly itemId: string;
+    }
+  | {
+      readonly type: "overlap";
+      readonly itemIds: readonly [string, string];
+    };
+
+/** Snapshot-based undo/redo history of one page layout. */
+export interface LayoutHistory {
+  readonly past: readonly PageLayout[];
+  readonly present: PageLayout;
+  readonly future: readonly PageLayout[];
+  readonly limit: number;
+}

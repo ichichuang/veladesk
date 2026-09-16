@@ -13,6 +13,17 @@ export { clampPositionToGrid, findNearestFreePosition } from "./placement";
 
 export { moveItem, swapItems } from "./operations";
 
+export {
+  DEFAULT_HISTORY_LIMIT,
+  arePageLayoutsEqual,
+  commitLayout,
+  createLayoutHistory,
+  redoLayout,
+  undoLayout,
+} from "./history";
+
+export { validatePageLayout } from "./validation";
+
 export type {
   CellKey,
   FindNearestFreePositionArgs,
@@ -21,10 +32,12 @@ export type {
   GridRect,
   GridSpan,
   IgnoreItemsOptions,
+  LayoutHistory,
   LayoutItem,
   LayoutItemId,
   LayoutOperationFailureReason,
   LayoutOperationResult,
+  LayoutValidationIssue,
   MoveItemOptions,
   PageLayout,
 } from "./types";
