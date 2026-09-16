@@ -24,7 +24,7 @@ veladesk/
 
 | Tool | Version (pinned via lockfile) | Notes |
 | --- | --- | --- |
-| Node.js | >= 20.9.0 (`engines`), dev baseline pinned via `.nvmrc` | Runtime baseline per project requirements |
+| Node.js | 24.21.0 (`.nvmrc`), `>= 24.0.0` (`engines`), `@types/node` 24.x | Runtime baseline: Node.js 24 LTS |
 | pnpm | 11.17.0 (`packageManager`) | Workspace manager |
 | Next.js | 16.3.5 | App Router, Turbopack default, `output: "standalone"` |
 | React / react-dom | 19.3.0 | |
@@ -33,6 +33,8 @@ veladesk/
 | Turborepo | 2.10.13 | Task orchestration only (`build`, `typecheck`, `dev`) |
 | Vitest | 5.0.1 | Requires Node >= 22.12 for the dev toolchain |
 | ESLint | 10.10.0 | Flat config at repository root, `eslint-config-next` 16.3.5 |
+
+Runtime baseline: Node.js 24 LTS. Development, CI, and production should use the same Node major whenever practical.
 
 ## Key decisions
 

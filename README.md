@@ -40,7 +40,8 @@ VelaDesk is developed as a pnpm workspace monorepo.
 
 **Requirements**
 
-- Node.js >= 20.9
+- Node.js 24 LTS or newer
+- Recommended: Node.js 24 LTS
 - pnpm
 
 ```bash
