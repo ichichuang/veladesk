@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { createGridDefinition, isValidGridPosition, isValidGridSpan } from "./grid";
+import {
+  createGridDefinition,
+  isValidGridDefinition,
+  isValidGridPosition,
+  isValidGridSpan,
+} from "./grid";
 
 describe("createGridDefinition", () => {
   it("creates a 6 x 4 grid", () => {
@@ -29,6 +34,38 @@ describe("createGridDefinition", () => {
 
   it("throws RangeError for NaN rows", () => {
     expect(() => createGridDefinition(6, Number.NaN)).toThrow(RangeError);
+  });
+});
+
+describe("isValidGridDefinition", () => {
+  it("accepts positive integer grids", () => {
+    expect(isValidGridDefinition({ columns: 6, rows: 4 })).toBe(true);
+    expect(isValidGridDefinition({ columns: 1, rows: 1 })).toBe(true);
+  });
+
+  it("rejects non-positive columns", () => {
+    expect(isValidGridDefinition({ columns: 0, rows: 4 })).toBe(false);
+    expect(isValidGridDefinition({ columns: -1, rows: 4 })).toBe(false);
+  });
+
+  it("rejects non-positive rows", () => {
+    expect(isValidGridDefinition({ columns: 6, rows: 0 })).toBe(false);
+    expect(isValidGridDefinition({ columns: 6, rows: -1 })).toBe(false);
+  });
+
+  it("rejects fractional dimensions", () => {
+    expect(isValidGridDefinition({ columns: 1.5, rows: 4 })).toBe(false);
+    expect(isValidGridDefinition({ columns: 6, rows: 1.5 })).toBe(false);
+  });
+
+  it("rejects NaN dimensions", () => {
+    expect(isValidGridDefinition({ columns: Number.NaN, rows: 4 })).toBe(false);
+    expect(isValidGridDefinition({ columns: 6, rows: Number.NaN })).toBe(false);
+  });
+
+  it("rejects infinite dimensions", () => {
+    expect(isValidGridDefinition({ columns: Number.POSITIVE_INFINITY, rows: 4 })).toBe(false);
+    expect(isValidGridDefinition({ columns: 6, rows: Number.POSITIVE_INFINITY })).toBe(false);
   });
 });
 

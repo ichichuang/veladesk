@@ -92,3 +92,43 @@ describe("validatePageLayout", () => {
     ]);
   });
 });
+
+describe("validatePageLayout: grid definition", () => {
+  const invalidGrid: GridDefinition = { columns: 0, rows: 4 };
+
+  function layoutOn(grid: GridDefinition, items: readonly LayoutItem[]): PageLayout {
+    return { id: "page-1", grid, items };
+  }
+
+  it("reports invalid-grid for a raw layout with a zero-column grid and no items", () => {
+    expect(validatePageLayout(layoutOn(invalidGrid, []))).toEqual([{ type: "invalid-grid" }]);
+  });
+
+  it("reports invalid-grid at most once, before per-item issues", () => {
+    const issues = validatePageLayout(
+      layoutOn(invalidGrid, [item("bad-pos", -1, 0), item("bad-span", 0, 0, 0, 1)]),
+    );
+    expect(issues).toEqual([
+      { type: "invalid-grid" },
+      { type: "invalid-position", itemId: "bad-pos" },
+      { type: "invalid-span", itemId: "bad-span" },
+    ]);
+  });
+
+  it("still reports overlaps among valid geometry under an invalid grid", () => {
+    const issues = validatePageLayout(
+      layoutOn(invalidGrid, [item("a", 0, 0), item("b", 0, 0)]),
+    );
+    expect(issues).toEqual([
+      { type: "invalid-grid" },
+      { type: "overlap", itemIds: ["a", "b"] },
+    ]);
+  });
+
+  it("never derives out-of-bounds from an invalid grid", () => {
+    const issues = validatePageLayout(
+      layoutOn({ columns: 0, rows: 4 }, [item("a", 3, 0, 2, 1)]),
+    );
+    expect(issues).toEqual([{ type: "invalid-grid" }]);
+  });
+});

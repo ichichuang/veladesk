@@ -94,6 +94,9 @@ export interface MoveItemOptions {
 /** One discoverable defect of a page layout. */
 export type LayoutValidationIssue =
   | {
+      readonly type: "invalid-grid";
+    }
+  | {
       readonly type: "duplicate-id";
       readonly itemId: string;
     }

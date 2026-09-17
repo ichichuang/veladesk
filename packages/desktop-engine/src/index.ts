@@ -3,7 +3,12 @@
  */
 export const DESKTOP_ENGINE_VERSION = "0.1.0";
 
-export { createGridDefinition, isValidGridPosition, isValidGridSpan } from "./grid";
+export {
+  createGridDefinition,
+  isValidGridDefinition,
+  isValidGridPosition,
+  isValidGridSpan,
+} from "./grid";
 
 export { enumerateCells, isRectWithinGrid, rectsOverlap, toGridRect } from "./geometry";
 

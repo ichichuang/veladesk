@@ -14,6 +14,22 @@ export function createGridDefinition(columns: number, rows: number): GridDefinit
   return { columns, rows };
 }
 
+/**
+ * Whether a raw grid definition satisfies the grid invariant:
+ * columns and rows are positive finite integers.
+ *
+ * `Number.isInteger` already rejects NaN, ±Infinity and fractions, so this
+ * single check enforces finite + integer + > 0. A predicate, never throws.
+ */
+export function isValidGridDefinition(grid: GridDefinition): boolean {
+  return (
+    Number.isInteger(grid.columns) &&
+    grid.columns > 0 &&
+    Number.isInteger(grid.rows) &&
+    grid.rows > 0
+  );
+}
+
 export function isValidGridPosition(position: GridPosition): boolean {
   return (
     Number.isInteger(position.column) &&
