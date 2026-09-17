@@ -2,6 +2,12 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  # better-sqlite3 is a native dependency: allow its install script to run
+  # (uses a prebuilt binary when available, node-gyp otherwise).
+  better-sqlite3: true
+  # esbuild (drizzle-kit transitive dep) ships prebuilt platform binaries via
+  # optionalDependencies; its postinstall script is not needed.
+  esbuild: false
   # unrs-resolver ships prebuilt platform binaries via optionalDependencies;
   # its postinstall script is not needed.
   unrs-resolver: false

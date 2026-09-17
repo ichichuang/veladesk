@@ -1,0 +1,25 @@
+{
+  "name": "@veladesk/database",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SQLite persistence core for VelaDesk: connection, Drizzle schema, migrations and the workspace snapshot repository.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts"
+  },
+  "dependencies": {
+    "@veladesk/domain": "workspace:*",
+    "better-sqlite3": "13.0.3",
+    "drizzle-orm": "0.45.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
+    "drizzle-kit": "0.31.10",
+    "typescript": "^5.9.3"
+  }
+}
