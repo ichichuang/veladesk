@@ -112,3 +112,9 @@ mutations and `initialize()` throw
 tests inject `indexedDB`/`IDBKeyRange`/`fetch`. React code in apps/web
 creates the singleton lazily inside a client effect, so server-side
 rendering never touches IndexedDB or fetch.
+
+## Production surface
+
+The production homepage consumes this runtime through the generic
+`WorkspaceRuntimeProvider`; its runtime states and surfaces are described
+in [production-desktop-shell.md](./production-desktop-shell.md).

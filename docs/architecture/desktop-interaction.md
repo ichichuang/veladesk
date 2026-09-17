@@ -110,3 +110,11 @@ actually changed.
 The logical layout is rendered with CSS Grid (`grid-column: column + 1 /
 span n`), so CSS owns presentation and the engine owns coordinates. No
 absolute pixel positions are persisted anywhere.
+
+## Shared UI adapters
+
+The React measurement adapter (`useGridMetrics`) and the atomic drag
+session that consumes these conversions live in
+`apps/web/features/desktop-grid/` and are shared by the production desktop
+shell and the desktop lab
+(see [production-desktop-shell.md](./production-desktop-shell.md)).
