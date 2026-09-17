@@ -14,6 +14,7 @@ import type { WorkspaceSnapshot } from "@veladesk/domain";
 import { VelaDeskLocalDatabase } from "./database";
 import {
   assertServerRevision,
+  nextLocalGeneration,
   readClock,
   validateLocalSnapshot,
 } from "./validation";
@@ -132,12 +133,92 @@ class LocalWorkspaceStoreImpl implements LocalWorkspaceStore {
     );
   }
 
-  stageWorkspaceCreate(_snapshot: never): Promise<StageWorkspaceCreateResult> {
-    return notImplemented("stageWorkspaceCreate");
+  stageWorkspaceCreate(snapshot: WorkspaceSnapshot): Promise<StageWorkspaceCreateResult> {
+    const issues = validateLocalSnapshot(snapshot);
+    if (issues.length > 0) {
+      return Promise.resolve({ ok: false, reason: "invalid-workspace", issues });
+    }
+
+    return this.db.transaction(
+      "rw",
+      this.db.workspaceCopies,
+      this.db.workspaceOutbox,
+      async (): Promise<StageWorkspaceCreateResult> => {
+        const existing = await this.db.workspaceCopies.get(snapshot.id);
+        if (existing !== undefined) {
+          return { ok: false, reason: "already-exists" };
+        }
+
+        const now = readClock(this.now);
+        const workspace: LocalWorkspaceRecord = {
+          id: snapshot.id,
+          snapshot,
+          serverRevision: null,
+          localGeneration: 1,
+          syncState: "dirty",
+          updatedAt: now,
+          lastSyncedAt: null,
+        };
+        const outbox: WorkspaceOutboxEntry = {
+          workspaceId: snapshot.id,
+          operation: "create",
+          baseRevision: null,
+          snapshot,
+          localGeneration: 1,
+          queuedAt: now,
+        };
+        await this.db.workspaceCopies.put(workspace);
+        await this.db.workspaceOutbox.put(outbox);
+        return { ok: true, workspace, outbox };
+      }
+    );
   }
 
-  stageWorkspaceUpdate(_snapshot: never): Promise<StageWorkspaceUpdateResult> {
-    return notImplemented("stageWorkspaceUpdate");
+  stageWorkspaceUpdate(snapshot: WorkspaceSnapshot): Promise<StageWorkspaceUpdateResult> {
+    const issues = validateLocalSnapshot(snapshot);
+    if (issues.length > 0) {
+      return Promise.resolve({ ok: false, reason: "invalid-workspace", issues });
+    }
+
+    return this.db.transaction(
+      "rw",
+      this.db.workspaceCopies,
+      this.db.workspaceOutbox,
+      async (): Promise<StageWorkspaceUpdateResult> => {
+        const current = await this.db.workspaceCopies.get(snapshot.id);
+        if (current === undefined) {
+          return { ok: false, reason: "not-found" };
+        }
+
+        const newGeneration = nextLocalGeneration(current.localGeneration);
+        const now = readClock(this.now);
+        const keepConflict = current.syncState === "conflict";
+        const workspace: LocalWorkspaceRecord = {
+          id: current.id,
+          snapshot,
+          serverRevision: current.serverRevision,
+          localGeneration: newGeneration,
+          syncState: keepConflict ? "conflict" : "dirty",
+          ...(keepConflict && current.conflictRevision !== undefined
+            ? { conflictRevision: current.conflictRevision }
+            : {}),
+          updatedAt: now,
+          lastSyncedAt: current.lastSyncedAt,
+        };
+        const existingOutbox = await this.db.workspaceOutbox.get(snapshot.id);
+        const outbox: WorkspaceOutboxEntry = {
+          workspaceId: current.id,
+          operation: current.serverRevision === null ? "create" : "save",
+          baseRevision: current.serverRevision,
+          snapshot,
+          localGeneration: newGeneration,
+          queuedAt: existingOutbox !== undefined ? existingOutbox.queuedAt : now,
+        };
+        await this.db.workspaceCopies.put(workspace);
+        await this.db.workspaceOutbox.put(outbox);
+        return { ok: true, workspace, outbox };
+      }
+    );
   }
 
   acknowledgeWorkspaceSync(
