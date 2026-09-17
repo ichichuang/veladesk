@@ -1,0 +1,61 @@
+import { createGridDefinition } from "@veladesk/desktop-engine";
+import type { GridDefinition } from "@veladesk/desktop-engine";
+
+import type { DesktopPageId, WorkspaceId, WorkspaceSnapshot } from "./types";
+
+/** Arguments of {@link createEmptyWorkspace}. Callers provide all ids. */
+export interface CreateEmptyWorkspaceArgs {
+  readonly workspaceId: WorkspaceId;
+  readonly workspaceName: string;
+
+  readonly pageId: DesktopPageId;
+  readonly pageName: string;
+
+  readonly grid: GridDefinition;
+}
+
+function assertNonEmptyTrimmed(value: string, name: string): void {
+  if (value.trim().length === 0) {
+    throw new RangeError(`${name} must be a non-empty string after trimming, received: "${value}"`);
+  }
+}
+
+/**
+ * Deterministic factory for an empty workspace: one page, empty layout,
+ * empty entities/categories/dock, locked layout, no generated ids.
+ *
+ * Names are validated (non-empty after trimming) but stored verbatim.
+ * The grid is validated with the same semantics as the engine's
+ * `createGridDefinition`.
+ */
+export function createEmptyWorkspace(args: CreateEmptyWorkspaceArgs): WorkspaceSnapshot {
+  assertNonEmptyTrimmed(args.workspaceId, "workspaceId");
+  assertNonEmptyTrimmed(args.workspaceName, "workspaceName");
+  assertNonEmptyTrimmed(args.pageId, "pageId");
+  assertNonEmptyTrimmed(args.pageName, "pageName");
+
+  const grid = createGridDefinition(args.grid.columns, args.grid.rows);
+
+  return {
+    id: args.workspaceId,
+    name: args.workspaceName,
+    pages: [
+      {
+        id: args.pageId,
+        name: args.pageName,
+        layout: {
+          id: args.pageId,
+          grid,
+          items: [],
+        },
+      },
+    ],
+    entities: [],
+    categories: [],
+    dock: { items: [] },
+    preferences: {
+      defaultPageId: args.pageId,
+      layoutLocked: true,
+    },
+  };
+}
