@@ -27,6 +27,13 @@ import type {
  * an immutable revision row in the same transaction. Revisions are never
  * compared or deduplicated by content: a save is a persistence commit
  * boundary, so identical snapshots still produce revision + 1.
+ *
+ * Concurrency is resolved by the database, not by JavaScript pre-reads:
+ * creation races are settled by `ON CONFLICT DO NOTHING` on the primary
+ * key (surfaced as `already-exists`), and saves are a compare-and-swap —
+ * a conditional UPDATE whose WHERE clause carries both the workspace id
+ * and the expected revision (misses surface as `revision-conflict` or
+ * `not-found`). Business races never escape as SQLite exceptions.
  */
 export interface WorkspaceRepository {
   createWorkspace(snapshot: WorkspaceSnapshot): CreateWorkspaceResult;
@@ -93,36 +100,47 @@ export function createWorkspaceRepository(
         return { ok: false, reason: "invalid-workspace", issues };
       }
 
-      const existing = orm.select().from(workspaces).where(eq(workspaces.id, snapshot.id)).get();
-      if (existing !== undefined) {
-        return { ok: false, reason: "already-exists" };
-      }
-
       const timestamp = nextTimestamp(clock);
       const snapshotJson = serializeWorkspaceSnapshot(snapshot);
 
-      orm.transaction((tx) => {
-        tx.insert(workspaces)
-          .values({
-            id: snapshot.id,
-            name: snapshot.name,
-            revision: 1,
-            snapshotVersion: WORKSPACE_SNAPSHOT_VERSION,
-            snapshotJson,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          })
-          .run();
-        tx.insert(workspaceRevisions)
-          .values({
-            workspaceId: snapshot.id,
-            revision: 1,
-            snapshotVersion: WORKSPACE_SNAPSHOT_VERSION,
-            snapshotJson,
-            createdAt: timestamp,
-          })
-          .run();
-      });
+      // Atomic create: the database, not a prior SELECT, decides whether
+      // the id is free. ON CONFLICT DO NOTHING keeps the insert race-free;
+      // changes === 0 means another writer committed this id first.
+      const inserted = orm
+        .transaction((tx): boolean => {
+          const result = tx
+            .insert(workspaces)
+            .values({
+              id: snapshot.id,
+              name: snapshot.name,
+              revision: 1,
+              snapshotVersion: WORKSPACE_SNAPSHOT_VERSION,
+              snapshotJson,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            })
+            .onConflictDoNothing({ target: workspaces.id })
+            .run();
+
+          if (result.changes === 0) {
+            return false;
+          }
+
+          tx.insert(workspaceRevisions)
+            .values({
+              workspaceId: snapshot.id,
+              revision: 1,
+              snapshotVersion: WORKSPACE_SNAPSHOT_VERSION,
+              snapshotJson,
+              createdAt: timestamp,
+            })
+            .run();
+          return true;
+        });
+
+      if (!inserted) {
+        return { ok: false, reason: "already-exists" };
+      }
 
       return {
         ok: true,
@@ -148,20 +166,16 @@ export function createWorkspaceRepository(
         return { ok: false, reason: "invalid-workspace", issues };
       }
 
-      const current = orm.select().from(workspaces).where(eq(workspaces.id, snapshot.id)).get();
-      if (current === undefined) {
-        return { ok: false, reason: "not-found" };
-      }
-      if (current.revision !== expectedRevision) {
-        return { ok: false, reason: "revision-conflict", actualRevision: current.revision };
-      }
-
       const timestamp = nextTimestamp(clock);
       const snapshotJson = serializeWorkspaceSnapshot(snapshot);
-      const newRevision = current.revision + 1;
+      const newRevision = expectedRevision + 1;
 
-      orm.transaction((tx) => {
-        tx.update(workspaces)
+      // Database-level compare-and-swap: the UPDATE only lands when the row
+      // still carries expectedRevision. A JavaScript pre-read is never the
+      // concurrency boundary; changes === 0 means not-found or a lost race.
+      const cas = orm.transaction((tx): { updated: true; createdAt: number } | { updated: false } => {
+        const result = tx
+          .update(workspaces)
           .set({
             name: snapshot.name,
             revision: newRevision,
@@ -169,8 +183,19 @@ export function createWorkspaceRepository(
             snapshotJson,
             updatedAt: timestamp,
           })
-          .where(eq(workspaces.id, snapshot.id))
+          .where(and(eq(workspaces.id, snapshot.id), eq(workspaces.revision, expectedRevision)))
           .run();
+
+        if (result.changes === 0) {
+          return { updated: false };
+        }
+
+        const row = tx
+          .select({ createdAt: workspaces.createdAt })
+          .from(workspaces)
+          .where(eq(workspaces.id, snapshot.id))
+          .get();
+
         tx.insert(workspaceRevisions)
           .values({
             workspaceId: snapshot.id,
@@ -180,14 +205,24 @@ export function createWorkspaceRepository(
             createdAt: timestamp,
           })
           .run();
+
+        return { updated: true, createdAt: row?.createdAt ?? timestamp };
       });
+
+      if (!cas.updated) {
+        const current = orm.select().from(workspaces).where(eq(workspaces.id, snapshot.id)).get();
+        if (current === undefined) {
+          return { ok: false, reason: "not-found" };
+        }
+        return { ok: false, reason: "revision-conflict", actualRevision: current.revision };
+      }
 
       return {
         ok: true,
         workspace: {
           snapshot,
           revision: newRevision,
-          createdAt: current.createdAt,
+          createdAt: cas.createdAt,
           updatedAt: timestamp,
         },
       };

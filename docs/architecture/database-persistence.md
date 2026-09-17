@@ -33,10 +33,18 @@ database's final form.
 - Every successful `saveWorkspace` writes `actualRevision + 1`, even if the
   snapshot content is identical — a save is a persistence commit boundary;
   callers avoid redundant saves.
-- Callers pass `expectedRevision`; when it differs from the stored revision
-  the save returns `revision-conflict` with `actualRevision` instead of
-  throwing. This is the server-side base for future multi-tab, offline sync
+- Callers pass `expectedRevision`; `saveWorkspace` uses an atomic
+  conditional UPDATE whose WHERE clause contains both the workspace id and
+  the expected revision — a database-level compare-and-swap. A missed
+  UPDATE (0 affected rows) is classified against the stored row and
+  returned as `revision-conflict` with `actualRevision` (or `not-found`);
+  it is never an exception. The JavaScript pre-read is not the concurrency
+  boundary. This is the server-side base for future multi-tab, offline sync
   and optimistic API updates.
+- Workspace creation resolves id races through SQLite conflict handling
+  (`ON CONFLICT DO NOTHING` on the primary key, decided inside the insert
+  transaction), returning `already-exists` instead of surfacing a
+  primary-key exception.
 - Revisions are per-workspace and strictly monotonic (1, 2, 3, …); there is
   no global auto-increment revision.
 - Old revisions are immutable: later saves never change existing revision
