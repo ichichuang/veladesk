@@ -10,8 +10,10 @@
   },
   "dependencies": {
     "@dnd-kit/react": "0.5.0",
+    "@veladesk/database": "workspace:*",
     "@veladesk/desktop-engine": "workspace:*",
     "@veladesk/desktop-interaction": "workspace:*",
+    "@veladesk/domain": "workspace:*",
     "next": "^16.3.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
