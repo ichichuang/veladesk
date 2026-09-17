@@ -12,6 +12,12 @@ import type { WorkspaceId, WorkspaceSnapshot } from "@veladesk/domain";
 import { openLocalWorkspaceStore } from "@veladesk/local-store";
 import type { LocalWorkspaceStore } from "@veladesk/local-store";
 import { indexedDB as fakeIndexedDB, IDBKeyRange } from "fake-indexeddb";
+import type {
+  CreateRemoteWorkspaceResult,
+  GetRemoteWorkspaceResult,
+  SaveRemoteWorkspaceResult,
+  WorkspaceSyncTransport,
+} from "./types";
 
 export { fakeIndexedDB, IDBKeyRange };
 
@@ -108,6 +114,53 @@ export function buildTestSnapshot(id: WorkspaceId, name = "Test Desk"): Workspac
 /** Same snapshot with a different workspace name (a local edit). */
 export function renamedSnapshot(snapshot: WorkspaceSnapshot, name: string): WorkspaceSnapshot {
   return { ...snapshot, name };
+}
+
+/**
+ * Test transport recording every call. Handlers must be installed per
+ * test; an uninstalled call is a test bug and fails loudly.
+ */
+export class FakeWorkspaceSyncTransport implements WorkspaceSyncTransport {
+  readonly getCalls: WorkspaceId[] = [];
+  readonly createCalls: { readonly snapshot: WorkspaceSnapshot }[] = [];
+  readonly saveCalls: {
+    readonly snapshot: WorkspaceSnapshot;
+    readonly expectedRevision: number;
+  }[] = [];
+
+  getWorkspaceHandler: (
+    workspaceId: WorkspaceId
+  ) => GetRemoteWorkspaceResult | Promise<GetRemoteWorkspaceResult> = () =>
+    Promise.reject(new Error("unexpected getWorkspace call"));
+
+  createWorkspaceHandler: (
+    snapshot: WorkspaceSnapshot
+  ) => CreateRemoteWorkspaceResult | Promise<CreateRemoteWorkspaceResult> = () =>
+    Promise.reject(new Error("unexpected createWorkspace call"));
+
+  saveWorkspaceHandler: (
+    snapshot: WorkspaceSnapshot,
+    expectedRevision: number
+  ) => SaveRemoteWorkspaceResult | Promise<SaveRemoteWorkspaceResult> = () =>
+    Promise.reject(new Error("unexpected saveWorkspace call"));
+
+  async getWorkspace(workspaceId: WorkspaceId): Promise<GetRemoteWorkspaceResult> {
+    this.getCalls.push(workspaceId);
+    return this.getWorkspaceHandler(workspaceId);
+  }
+
+  async createWorkspace(snapshot: WorkspaceSnapshot): Promise<CreateRemoteWorkspaceResult> {
+    this.createCalls.push({ snapshot });
+    return this.createWorkspaceHandler(snapshot);
+  }
+
+  async saveWorkspace(
+    snapshot: WorkspaceSnapshot,
+    expectedRevision: number
+  ): Promise<SaveRemoteWorkspaceResult> {
+    this.saveCalls.push({ snapshot, expectedRevision });
+    return this.saveWorkspaceHandler(snapshot, expectedRevision);
+  }
 }
 
 /**

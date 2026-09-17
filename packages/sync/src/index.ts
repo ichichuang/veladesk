@@ -6,6 +6,7 @@
  */
 
 export { createHttpWorkspaceSyncTransport } from "./http-transport";
+export { createWorkspaceSyncCoordinator } from "./coordinator";
 
 export type {
   CreateRemoteWorkspaceResult,
@@ -14,5 +15,8 @@ export type {
   RemoteTransportFailure,
   RemoteWorkspace,
   SaveRemoteWorkspaceResult,
+  SyncWorkspaceResult,
+  WorkspaceSyncCoordinator,
+  WorkspaceSyncCoordinatorOptions,
   WorkspaceSyncTransport,
 } from "./types";

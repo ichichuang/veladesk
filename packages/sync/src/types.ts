@@ -8,6 +8,7 @@
  */
 
 import type { WorkspaceId, WorkspaceSnapshot } from "@veladesk/domain";
+import type { LocalWorkspaceStore } from "@veladesk/local-store";
 
 /** The canonical server view of one workspace, as far as sync cares. */
 export interface RemoteWorkspace {
@@ -134,4 +135,75 @@ export interface HttpWorkspaceSyncTransportOptions {
 
   /** Fetch implementation. Defaults to `globalThis.fetch`. */
   readonly fetch?: typeof globalThis.fetch;
+}
+
+/**
+ * Outcome of one explicit `syncWorkspace` attempt.
+ *
+ * `pending` means the request itself succeeded but newer local edits
+ * accumulated while it was in flight — the outbox still holds work for the
+ * next explicit sync. `superseded` means the local state moved on (another
+ * tab / context) so the acknowledgement or conflict marking was a no-op.
+ */
+export type SyncWorkspaceResult =
+  | {
+      readonly status: "idle";
+      readonly workspaceId: WorkspaceId;
+    }
+  | {
+      readonly status: "synced";
+      readonly workspaceId: WorkspaceId;
+      readonly serverRevision: number;
+    }
+  | {
+      readonly status: "pending";
+      readonly workspaceId: WorkspaceId;
+      readonly serverRevision: number;
+    }
+  | {
+      readonly status: "conflict";
+      readonly workspaceId: WorkspaceId;
+      readonly actualRevision: number;
+    }
+  | {
+      readonly status: "server-missing";
+      readonly workspaceId: WorkspaceId;
+    }
+  | {
+      readonly status: "server-rejected";
+      readonly workspaceId: WorkspaceId;
+    }
+  | {
+      readonly status: "network-error";
+      readonly workspaceId: WorkspaceId;
+    }
+  | {
+      readonly status: "server-error";
+      readonly workspaceId: WorkspaceId;
+      readonly httpStatus: number;
+    }
+  | {
+      readonly status: "protocol-error";
+      readonly workspaceId: WorkspaceId;
+      readonly httpStatus?: number;
+    }
+  | {
+      readonly status: "superseded";
+      readonly workspaceId: WorkspaceId;
+    };
+
+/** Explicit, scheduler-free orchestration over the local outbox. */
+export interface WorkspaceSyncCoordinator {
+  /**
+   * Sends the current pending mutation of one workspace. Same-process
+   * single-flight: concurrent calls for the same workspace share one
+   * in-flight request.
+   */
+  syncWorkspace(workspaceId: WorkspaceId): Promise<SyncWorkspaceResult>;
+}
+
+/** Options of {@link createWorkspaceSyncCoordinator}. */
+export interface WorkspaceSyncCoordinatorOptions {
+  readonly store: LocalWorkspaceStore;
+  readonly transport: WorkspaceSyncTransport;
 }
