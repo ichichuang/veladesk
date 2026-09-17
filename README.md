@@ -35,6 +35,7 @@ Planned internal packages:
 | `@veladesk/plugin-sdk` | Plugin and widget development kit |
 | `@veladesk/database` | Storage and persistence |
 | `@veladesk/local-store` | IndexedDB working copy, outbox and local-first sync state |
+| `@veladesk/sync` | HTTP workspace synchronization and outbox coordination |
 
 ## Development
 
