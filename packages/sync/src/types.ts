@@ -200,6 +200,20 @@ export interface WorkspaceSyncCoordinator {
    * in-flight request.
    */
   syncWorkspace(workspaceId: WorkspaceId): Promise<SyncWorkspaceResult>;
+
+  /**
+   * Sends the pending mutation of every workspace listed in the outbox at
+   * flush start, in deterministic outbox order, at most once each. Work
+   * re-queued by in-flight edits during the flush waits for the next one.
+   * One workspace's failure never stops the others.
+   */
+  flushOutbox(): Promise<readonly SyncWorkspaceResult[]>;
+
+  /**
+   * Explicitly refreshes one workspace from the remote. Local copies with
+   * unsynchronized changes (dirty or conflict) are never overwritten.
+   */
+  pullWorkspace(workspaceId: WorkspaceId): Promise<PullWorkspaceResult>;
 }
 
 /** Options of {@link createWorkspaceSyncCoordinator}. */
@@ -207,3 +221,38 @@ export interface WorkspaceSyncCoordinatorOptions {
   readonly store: LocalWorkspaceStore;
   readonly transport: WorkspaceSyncTransport;
 }
+
+/** Outcome of one explicit `pullWorkspace` attempt. */
+export type PullWorkspaceResult =
+  | {
+      readonly status: "hydrated";
+      readonly workspaceId: WorkspaceId;
+      readonly serverRevision: number;
+    }
+  | {
+      readonly status: "local-changes-present";
+      readonly workspaceId: WorkspaceId;
+    }
+  | {
+      readonly status: "stale-server-revision";
+      readonly workspaceId: WorkspaceId;
+      readonly currentRevision: number;
+    }
+  | {
+      readonly status: "not-found";
+      readonly workspaceId: WorkspaceId;
+    }
+  | {
+      readonly status: "network-error";
+      readonly workspaceId: WorkspaceId;
+    }
+  | {
+      readonly status: "server-error";
+      readonly workspaceId: WorkspaceId;
+      readonly httpStatus: number;
+    }
+  | {
+      readonly status: "protocol-error";
+      readonly workspaceId: WorkspaceId;
+      readonly httpStatus?: number;
+    };

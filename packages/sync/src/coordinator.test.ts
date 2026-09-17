@@ -298,3 +298,91 @@ describe("syncWorkspace — superseded acknowledgements", () => {
     expect((await store.getWorkspace("ws-super"))?.snapshot.name).toBe("Edited");
   });
 });
+
+describe("flushOutbox", () => {
+  it("processes the outbox in deterministic queuedAt order and returns every result", async () => {
+    const clock = manualClock(50_000);
+    const store = await openTestStore({ now: clock.now });
+    const first = buildTestSnapshot("ws-f1");
+    const second = buildTestSnapshot("ws-f2");
+    await store.stageWorkspaceCreate(first); // queuedAt 50_000
+    clock.advance(10);
+    await store.stageWorkspaceCreate(second); // queuedAt 50_010
+    const fake = new FakeWorkspaceSyncTransport();
+    fake.createWorkspaceHandler = (snapshot) => createOk(snapshot, 1);
+    const coordinator = createWorkspaceSyncCoordinator({ store, transport: fake });
+
+    const results = await coordinator.flushOutbox();
+
+    expect(results).toEqual([
+      { status: "synced", workspaceId: "ws-f1", serverRevision: 1 },
+      { status: "synced", workspaceId: "ws-f2", serverRevision: 1 },
+    ]);
+    expect(fake.createCalls.map((call) => call.snapshot.id)).toEqual(["ws-f1", "ws-f2"]);
+  });
+
+  it("continues after a failing workspace instead of fail-fast", async () => {
+    const store = await openTestStore();
+    const a = buildTestSnapshot("ws-fa");
+    const b = buildTestSnapshot("ws-fb");
+    await store.stageWorkspaceCreate(a);
+    await store.stageWorkspaceCreate(b);
+    const fake = new FakeWorkspaceSyncTransport();
+    fake.createWorkspaceHandler = (snapshot) =>
+      snapshot.id === "ws-fa"
+        ? Promise.resolve({ ok: false, reason: "network-error" as const })
+        : Promise.resolve(createOk(snapshot, 1));
+    const coordinator = createWorkspaceSyncCoordinator({ store, transport: fake });
+
+    const results = await coordinator.flushOutbox();
+
+    expect(results).toEqual([
+      { status: "network-error", workspaceId: "ws-fa" },
+      { status: "synced", workspaceId: "ws-fb", serverRevision: 1 },
+    ]);
+    expect(fake.createCalls).toHaveLength(2);
+    expect(await store.getOutboxEntry("ws-fa")).toBeDefined();
+    expect(await store.getOutboxEntry("ws-fb")).toBeUndefined();
+  });
+
+  it("performs exactly one pass: work re-queued by in-flight edits waits for the next flush", async () => {
+    const store = await openTestStore();
+    const v1 = buildTestSnapshot("ws-fp", "v1");
+    await store.stageWorkspaceCreate(v1);
+    const gate = deferred<CreateRemoteWorkspaceResult>();
+    const fake = new FakeWorkspaceSyncTransport();
+    fake.createWorkspaceHandler = () => gate.promise;
+    const coordinator = createWorkspaceSyncCoordinator({ store, transport: fake });
+
+    const flushPromise = coordinator.flushOutbox();
+    await vi.waitFor(() => expect(fake.createCalls).toHaveLength(1));
+
+    // The user edits while the flush's request is in flight: the ack will
+    // re-queue a save, but this flush must not loop around and send it.
+    const v2 = renamedSnapshot(v1, "v2");
+    await store.stageWorkspaceUpdate(v2);
+
+    gate.resolve(createOk(v1, 1));
+    const results = await flushPromise;
+
+    expect(results).toEqual([{ status: "pending", workspaceId: "ws-fp", serverRevision: 1 }]);
+    expect(fake.createCalls).toHaveLength(1);
+    expect(fake.saveCalls).toHaveLength(0);
+    expect(await store.getOutboxEntry("ws-fp")).toBeDefined();
+
+    fake.saveWorkspaceHandler = (snapshot) => saveOk(snapshot, 2);
+    const secondPass = await coordinator.flushOutbox();
+    expect(secondPass).toEqual([{ status: "synced", workspaceId: "ws-fp", serverRevision: 2 }]);
+    expect(fake.saveCalls).toHaveLength(1);
+    expect(await store.getOutboxEntry("ws-fp")).toBeUndefined();
+  });
+
+  it("returns an empty result array for an empty outbox", async () => {
+    const store = await openTestStore();
+    const fake = new FakeWorkspaceSyncTransport();
+    const coordinator = createWorkspaceSyncCoordinator({ store, transport: fake });
+
+    expect(await coordinator.flushOutbox()).toEqual([]);
+    expect(fake.createCalls).toHaveLength(0);
+  });
+});

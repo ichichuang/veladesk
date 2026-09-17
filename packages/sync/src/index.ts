@@ -12,6 +12,7 @@ export type {
   CreateRemoteWorkspaceResult,
   GetRemoteWorkspaceResult,
   HttpWorkspaceSyncTransportOptions,
+  PullWorkspaceResult,
   RemoteTransportFailure,
   RemoteWorkspace,
   SaveRemoteWorkspaceResult,
