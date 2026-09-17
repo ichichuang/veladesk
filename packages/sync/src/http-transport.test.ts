@@ -285,6 +285,170 @@ describe("POST /api/v1/workspaces", () => {
   });
 });
 
+describe("GET /api/v1/workspaces (catalog list)", () => {
+  function listSummary(
+    id: unknown,
+    name: unknown,
+    revision: unknown,
+    createdAt: unknown = 1_000,
+    updatedAt: unknown = 2_000
+  ): unknown {
+    return { id, name, revision, createdAt, updatedAt };
+  }
+
+  it("requests the collection path with Accept and cache no-store", async () => {
+    const { transport, stub } = transportWith(fetchJson(200, { workspaces: [] }));
+
+    await transport.listWorkspaces();
+
+    expect(stub.calls[0]?.url).toBe("/api/v1/workspaces");
+    expect(stub.calls[0]?.init.method).toBe("GET");
+    expect(stub.calls[0]?.init.headers).toMatchObject({ Accept: "application/json" });
+    expect(stub.calls[0]?.init.cache).toBe("no-store");
+  });
+
+  it("returns an empty catalog on a 200 empty list", async () => {
+    const { transport } = transportWith(fetchJson(200, { workspaces: [] }));
+
+    const result = await transport.listWorkspaces();
+
+    expect(result).toEqual({ ok: true, workspaces: [] });
+  });
+
+  it("returns summaries preserving server order and dropping server-only fields", async () => {
+    const { transport } = transportWith(
+      fetchJson(200, {
+        workspaces: [
+          listSummary("ws-b", "Beta", 7, 3_000, 4_000),
+          listSummary("ws-a", "Alpha", 3),
+        ],
+      }),
+    );
+
+    const result = await transport.listWorkspaces();
+
+    expect(result).toEqual({
+      ok: true,
+      workspaces: [
+        { id: "ws-b", name: "Beta", revision: 7 },
+        { id: "ws-a", name: "Alpha", revision: 3 },
+      ],
+    });
+  });
+
+  it("maps malformed JSON to protocol-error", async () => {
+    const { transport } = transportWith(fetchRaw(200, "{oops"));
+
+    const result = await transport.listWorkspaces();
+
+    expect(result).toEqual({ ok: false, reason: "protocol-error", status: 200 });
+  });
+
+  it("maps a non-array workspaces field to protocol-error", async () => {
+    const { transport } = transportWith(fetchJson(200, { workspaces: "all" }));
+
+    const result = await transport.listWorkspaces();
+
+    expect(result).toEqual({ ok: false, reason: "protocol-error", status: 200 });
+  });
+
+  it("rejects a summary with a non-string id", async () => {
+    const { transport } = transportWith(
+      fetchJson(200, { workspaces: [listSummary(9, "Alpha", 1)] }),
+    );
+
+    const result = await transport.listWorkspaces();
+
+    expect(result).toEqual({ ok: false, reason: "protocol-error", status: 200 });
+  });
+
+  it("rejects a blank id", async () => {
+    for (const blankId of ["", "   "]) {
+      const { transport } = transportWith(
+        fetchJson(200, { workspaces: [listSummary(blankId, "Alpha", 1)] }),
+      );
+
+      const result = await transport.listWorkspaces();
+
+      expect(result).toEqual({ ok: false, reason: "protocol-error", status: 200 });
+    }
+  });
+
+  it("rejects a non-string or blank name", async () => {
+    for (const badName of [42, "   ", ""]) {
+      const { transport } = transportWith(
+        fetchJson(200, { workspaces: [listSummary("ws-1", badName, 1)] }),
+      );
+
+      const result = await transport.listWorkspaces();
+
+      expect(result).toEqual({ ok: false, reason: "protocol-error", status: 200 });
+    }
+  });
+
+  it("rejects a bad revision", async () => {
+    for (const badRevision of [0, -1, 1.5, "3", null]) {
+      const { transport } = transportWith(
+        fetchJson(200, { workspaces: [listSummary("ws-1", "Alpha", badRevision)] }),
+      );
+
+      const result = await transport.listWorkspaces();
+
+      expect(result).toEqual({ ok: false, reason: "protocol-error", status: 200 });
+    }
+  });
+
+  it("rejects a bad createdAt", async () => {
+    const { transport } = transportWith(
+      fetchJson(200, {
+        workspaces: [listSummary("ws-1", "Alpha", 1, -5, 2_000)],
+      }),
+    );
+
+    const result = await transport.listWorkspaces();
+
+    expect(result).toEqual({ ok: false, reason: "protocol-error", status: 200 });
+  });
+
+  it("rejects a bad updatedAt", async () => {
+    const { transport } = transportWith(
+      fetchJson(200, {
+        workspaces: [listSummary("ws-1", "Alpha", 1, 1_000, "soon")],
+      }),
+    );
+
+    const result = await transport.listWorkspaces();
+
+    expect(result).toEqual({ ok: false, reason: "protocol-error", status: 200 });
+  });
+
+  it("maps 5xx to server-error with the status", async () => {
+    const { transport } = transportWith(fetchJson(500, { error: { code: "boom" } }));
+
+    const result = await transport.listWorkspaces();
+
+    expect(result).toEqual({ ok: false, reason: "server-error", status: 500 });
+  });
+
+  it("maps an unexpected 404 to protocol-error", async () => {
+    const { transport } = transportWith(
+      fetchJson(404, { error: { code: "workspace-not-found" } }),
+    );
+
+    const result = await transport.listWorkspaces();
+
+    expect(result).toEqual({ ok: false, reason: "protocol-error", status: 404 });
+  });
+
+  it("maps a fetch rejection to network-error", async () => {
+    const { transport } = transportWith(fetchRejecting());
+
+    const result = await transport.listWorkspaces();
+
+    expect(result).toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
 describe("PUT /api/v1/workspaces/:id", () => {
   it("rejects a non-positive-safe-integer expectedRevision with RangeError before any request", async () => {
     const { transport, stub } = transportWith(fetchJson(200, successEnvelope(SNAPSHOT)));

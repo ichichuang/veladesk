@@ -17,6 +17,37 @@ export interface RemoteWorkspace {
 }
 
 /**
+ * Server listing projection of one remote workspace (no snapshot payload —
+ * use `getWorkspace` for the full canonical state).
+ */
+export interface RemoteWorkspaceSummary {
+  readonly id: WorkspaceId;
+  readonly name: string;
+  readonly revision: number;
+}
+
+/** Result of {@link WorkspaceSyncTransport.listWorkspaces}. */
+export type ListRemoteWorkspacesResult =
+  | {
+      readonly ok: true;
+      readonly workspaces: readonly RemoteWorkspaceSummary[];
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "network-error";
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "server-error";
+      readonly status: number;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "protocol-error";
+      readonly status?: number;
+    };
+
+/**
  * Shared transport failure contract.
  *
  * - network-error: the fetch itself rejected (offline, DNS, aborted…).
@@ -114,6 +145,9 @@ export type SaveRemoteWorkspaceResult =
 
 /** Browser-safe HTTP boundary towards the workspace API. */
 export interface WorkspaceSyncTransport {
+  /** Lists the remote workspace catalog in server order. */
+  listWorkspaces(): Promise<ListRemoteWorkspacesResult>;
+
   getWorkspace(workspaceId: WorkspaceId): Promise<GetRemoteWorkspaceResult>;
 
   createWorkspace(snapshot: WorkspaceSnapshot): Promise<CreateRemoteWorkspaceResult>;

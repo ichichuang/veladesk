@@ -6,7 +6,9 @@ import type {
   CreateRemoteWorkspaceResult,
   GetRemoteWorkspaceResult,
   HttpWorkspaceSyncTransportOptions,
+  ListRemoteWorkspacesResult,
   RemoteWorkspace,
+  RemoteWorkspaceSummary,
   SaveRemoteWorkspaceResult,
   WorkspaceSyncTransport,
 } from "./types";
@@ -104,6 +106,41 @@ export function createHttpWorkspaceSyncTransport(
   }
 
   const transport: WorkspaceSyncTransport = {
+    async listWorkspaces(): Promise<ListRemoteWorkspacesResult> {
+      const fetched = await fetchJson(`${baseUrl}${WORKSPACES_COLLECTION_PATH}`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      });
+      if (!fetched.ok) {
+        return { ok: false, reason: "network-error" };
+      }
+      const { response } = fetched;
+      if (response.status !== 200) {
+        if (response.status >= 500) {
+          return serverError(response);
+        }
+        return { ok: false, reason: "protocol-error", status: response.status };
+      }
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        return { ok: false, reason: "protocol-error", status: response.status };
+      }
+      if (!isRecord(body) || !Array.isArray(body.workspaces)) {
+        return { ok: false, reason: "protocol-error", status: response.status };
+      }
+      const workspaces: RemoteWorkspaceSummary[] = [];
+      for (const item of body.workspaces) {
+        const summary = decodeWorkspaceSummary(item);
+        if (summary === undefined) {
+          return { ok: false, reason: "protocol-error", status: response.status };
+        }
+        workspaces.push(summary);
+      }
+      return { ok: true, workspaces };
+    },
+
     async getWorkspace(workspaceId: WorkspaceId): Promise<GetRemoteWorkspaceResult> {
       const fetched = await fetchJson(workspaceUrl(workspaceId), {
         method: "GET",
@@ -222,6 +259,31 @@ type ServerFailure = {
   readonly reason: "server-error";
   readonly status: number;
 };
+
+/**
+ * Server canonical summary invariants: strings present and non-blank after
+ * trimming (stored verbatim), revision/timestamps sane. Returns only the
+ * public projection — createdAt/updatedAt stay protocol-internal.
+ */
+function decodeWorkspaceSummary(value: unknown): RemoteWorkspaceSummary | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const { id, name, revision, createdAt, updatedAt } = value;
+  if (typeof id !== "string" || id.trim().length === 0) {
+    return undefined;
+  }
+  if (typeof name !== "string" || name.trim().length === 0) {
+    return undefined;
+  }
+  if (!isPositiveSafeInteger(revision)) {
+    return undefined;
+  }
+  if (!isNonNegativeSafeInteger(createdAt) || !isNonNegativeSafeInteger(updatedAt)) {
+    return undefined;
+  }
+  return { id, name, revision };
+}
 
 type ProtocolFailure = {
   readonly ok: false;

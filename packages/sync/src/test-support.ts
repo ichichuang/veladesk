@@ -15,6 +15,7 @@ import { indexedDB as fakeIndexedDB, IDBKeyRange } from "fake-indexeddb";
 import type {
   CreateRemoteWorkspaceResult,
   GetRemoteWorkspaceResult,
+  ListRemoteWorkspacesResult,
   SaveRemoteWorkspaceResult,
   WorkspaceSyncTransport,
 } from "./types";
@@ -121,12 +122,16 @@ export function renamedSnapshot(snapshot: WorkspaceSnapshot, name: string): Work
  * test; an uninstalled call is a test bug and fails loudly.
  */
 export class FakeWorkspaceSyncTransport implements WorkspaceSyncTransport {
+  readonly listCalls: number[] = [];
   readonly getCalls: WorkspaceId[] = [];
   readonly createCalls: { readonly snapshot: WorkspaceSnapshot }[] = [];
   readonly saveCalls: {
     readonly snapshot: WorkspaceSnapshot;
     readonly expectedRevision: number;
   }[] = [];
+
+  listWorkspacesHandler: () => ListRemoteWorkspacesResult | Promise<ListRemoteWorkspacesResult> =
+    () => Promise.reject(new Error("unexpected listWorkspaces call"));
 
   getWorkspaceHandler: (
     workspaceId: WorkspaceId
@@ -143,6 +148,11 @@ export class FakeWorkspaceSyncTransport implements WorkspaceSyncTransport {
     expectedRevision: number
   ) => SaveRemoteWorkspaceResult | Promise<SaveRemoteWorkspaceResult> = () =>
     Promise.reject(new Error("unexpected saveWorkspace call"));
+
+  async listWorkspaces(): Promise<ListRemoteWorkspacesResult> {
+    this.listCalls.push(this.listCalls.length + 1);
+    return this.listWorkspacesHandler();
+  }
 
   async getWorkspace(workspaceId: WorkspaceId): Promise<GetRemoteWorkspaceResult> {
     this.getCalls.push(workspaceId);
