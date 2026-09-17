@@ -44,6 +44,13 @@ dock pins, folder children), and small early-stage workspaces.
 an app `"foo"` and a folder `"foo"` still collide. There is no per-kind
 namespace.
 
+**Identifier invariant:** all identifier strings — workspace id, page id,
+entity id, category id — must be non-blank (`id.trim().length > 0`).
+`validateWorkspace` reports blank ids as `invalid-workspace-id`,
+`invalid-page-id`, `invalid-entity-id` or `invalid-category-id` and keeps
+discovering independent issues. Ids are never trimmed: values with
+surrounding whitespace (e.g. `" workspace "`) are valid and stored verbatim.
+
 Reason: desktop-engine `LayoutItem.id` references domain entities directly,
 so a page layout never needs a second mapping table between layout items and
 business entities. One id, one meaning, everywhere. (Identity aliases are

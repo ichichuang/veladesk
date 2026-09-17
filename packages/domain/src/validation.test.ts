@@ -270,6 +270,147 @@ describe("validateWorkspace: names and entity scalars", () => {
   });
 });
 
+describe("validateWorkspace: identifier invariants", () => {
+  function emptyWorkspace(id: string): WorkspaceSnapshot {
+    return createEmptyWorkspace({
+      workspaceId: id,
+      workspaceName: "My Desk",
+      pageId: "page-1",
+      pageName: "Home",
+      grid: { columns: 12, rows: 8 },
+    });
+  }
+
+  it("reports a blank workspace id", () => {
+    const workspace = { ...emptyWorkspace("workspace-1"), id: "" };
+
+    expect(validateWorkspace(workspace)).toEqual([{ type: "invalid-workspace-id" }]);
+  });
+
+  it("reports a whitespace-only workspace id", () => {
+    const workspace = { ...emptyWorkspace("workspace-1"), id: "   " };
+
+    expect(validateWorkspace(workspace)).toEqual([{ type: "invalid-workspace-id" }]);
+  });
+
+  it("accepts a workspace id with surrounding whitespace (stored verbatim)", () => {
+    const workspace = emptyWorkspace(" workspace ");
+
+    expect(validateWorkspace(workspace)).toEqual([]);
+  });
+
+  it("reports a blank page id and keeps looking for independent issues", () => {
+    const base = emptyWorkspace("workspace-1");
+    const blankPage = {
+      id: "",
+      name: "  ",
+      layout: { id: "", grid: { columns: 12, rows: 8 }, items: [] },
+    };
+    const workspace = {
+      ...base,
+      pages: [blankPage],
+      preferences: { ...base.preferences, defaultPageId: "" },
+    };
+
+    expect(validateWorkspace(workspace)).toEqual([
+      { type: "invalid-page-id", pageId: "" },
+      { type: "invalid-page-name", pageId: "" },
+    ]);
+  });
+
+  it("reports blank app, folder and widget ids", () => {
+    const base = emptyWorkspace("workspace-1");
+    const blankApp: AppShortcut = {
+      kind: "app",
+      id: "",
+      name: "Wiki",
+      url: "https://wiki.example.com",
+      icon: { kind: "favicon" },
+      openMode: "new-tab",
+      tags: [],
+    };
+    const blankFolder: Folder = { kind: "folder", id: " ", name: "Games", children: [] };
+    const blankWidget: WidgetInstance = {
+      kind: "widget",
+      id: "  ",
+      widgetType: "builtin.clock",
+      config: {},
+    };
+    const workspace = { ...base, entities: [blankApp, blankFolder, blankWidget] };
+
+    expect(validateWorkspace(workspace)).toEqual([
+      { type: "invalid-entity-id", entityId: "" },
+      { type: "invalid-entity-id", entityId: " " },
+      { type: "invalid-entity-id", entityId: "  " },
+    ]);
+  });
+
+  it("reports a blank category id", () => {
+    const base = emptyWorkspace("workspace-1");
+    const workspace = { ...base, categories: [{ id: "", name: "Reading" }] };
+
+    expect(validateWorkspace(workspace)).toEqual([{ type: "invalid-category-id", categoryId: "" }]);
+  });
+
+  it("orders invalid-workspace-id before invalid-workspace-name", () => {
+    const workspace = { ...emptyWorkspace("workspace-1"), id: "  ", name: " " };
+
+    expect(validateWorkspace(workspace)).toEqual([
+      { type: "invalid-workspace-id" },
+      { type: "invalid-workspace-name" },
+    ]);
+  });
+
+  it("orders invalid-page-id before duplicate-page-id within the page group", () => {
+    const base = emptyWorkspace("workspace-1");
+    const blankPage = {
+      id: "",
+      name: "Home",
+      layout: { id: "", grid: { columns: 12, rows: 8 }, items: [] },
+    };
+    const workspace = {
+      ...base,
+      pages: [blankPage, { ...blankPage, name: "Copy" }],
+      preferences: { ...base.preferences, defaultPageId: "" },
+    };
+
+    expect(validateWorkspace(workspace)).toEqual([
+      { type: "invalid-page-id", pageId: "" },
+      { type: "invalid-page-id", pageId: "" },
+      { type: "duplicate-page-id", pageId: "" },
+    ]);
+  });
+
+  it("orders invalid-entity-id before duplicate-entity-id within the entity group", () => {
+    const base = emptyWorkspace("workspace-1");
+    const blankFolder: Folder = { kind: "folder", id: "  ", name: "Games", children: [] };
+    const workspace = { ...base, entities: [blankFolder, { ...blankFolder, name: "Again" }] };
+
+    expect(validateWorkspace(workspace)).toEqual([
+      { type: "invalid-entity-id", entityId: "  " },
+      { type: "invalid-entity-id", entityId: "  " },
+      { type: "duplicate-entity-id", entityId: "  " },
+    ]);
+  });
+
+  it("orders invalid-category-id before duplicate-category-id within the category group", () => {
+    const base = emptyWorkspace("workspace-1");
+    const workspace = {
+      ...base,
+      categories: [
+        { id: "  ", name: "Reading" },
+        { id: "  ", name: "Again" },
+      ],
+    };
+
+    expect(validateWorkspace(workspace)).toEqual([
+      { type: "invalid-category-id", categoryId: "  " },
+      { type: "invalid-category-id", categoryId: "  " },
+      { type: "duplicate-category-id", categoryId: "  " },
+    ]);
+  });
+});
+
 describe("validateWorkspace: purity", () => {
   it("does not mutate the workspace while reporting issues", () => {
     const base = buildValidWorkspace();

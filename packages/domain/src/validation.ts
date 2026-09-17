@@ -19,7 +19,14 @@ import type {
  */
 export type WorkspaceValidationIssue =
   | {
+      readonly type: "invalid-workspace-id";
+    }
+  | {
       readonly type: "duplicate-page-id";
+      readonly pageId: DesktopPageId;
+    }
+  | {
+      readonly type: "invalid-page-id";
       readonly pageId: DesktopPageId;
     }
   | {
@@ -27,7 +34,15 @@ export type WorkspaceValidationIssue =
       readonly entityId: EntityId;
     }
   | {
+      readonly type: "invalid-entity-id";
+      readonly entityId: EntityId;
+    }
+  | {
       readonly type: "duplicate-category-id";
+      readonly categoryId: CategoryId;
+    }
+  | {
+      readonly type: "invalid-category-id";
       readonly categoryId: CategoryId;
     }
   | {
@@ -117,7 +132,7 @@ function isBlank(value: string): boolean {
  * Validate a whole workspace snapshot.
  *
  * Deterministic issue order:
- * 1. workspace-level scalars
+ * 1. workspace-level identity/scalars
  * 2. page identity/name/layout
  * 3. entity identity/name/basic scalars
  * 4. category identity/name
@@ -128,8 +143,11 @@ function isBlank(value: string): boolean {
  * 9. preferences/default page
  * 10. app category references
  *
- * Within a group, issues follow the source array order. Identity lookups
- * resolve to the first occurrence of an id; later duplicates only produce
+ * Within a group, issues follow the source array order. Identifier strings
+ * must be non-blank (`id.trim().length > 0`); blank ids are reported as
+ * `invalid-*-id` without trimming — values with surrounding whitespace stay
+ * valid and are stored verbatim. Identity lookups resolve to the first
+ * occurrence of an id; later duplicates only produce
  * `duplicate-*-id` issues. Container uniqueness counts distinct containers
  * (an id listed twice inside one folder is a `folder-child-duplicate`, not
  * a container violation) and only for entities that actually resolve.
@@ -142,7 +160,10 @@ function isBlank(value: string): boolean {
 export function validateWorkspace(workspace: WorkspaceSnapshot): readonly WorkspaceValidationIssue[] {
   const issues: WorkspaceValidationIssue[] = [];
 
-  // 1. Workspace-level scalars.
+  // 1. Workspace-level identity and scalars.
+  if (isBlank(workspace.id)) {
+    issues.push({ type: "invalid-workspace-id" });
+  }
   if (isBlank(workspace.name)) {
     issues.push({ type: "invalid-workspace-name" });
   }
@@ -150,6 +171,10 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
   // 2. Page identity, names and layout (first occurrence wins below).
   const pageIds = new Set<string>();
   for (const page of workspace.pages) {
+    if (isBlank(page.id)) {
+      issues.push({ type: "invalid-page-id", pageId: page.id });
+    }
+
     if (pageIds.has(page.id)) {
       issues.push({ type: "duplicate-page-id", pageId: page.id });
     } else {
@@ -172,6 +197,10 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
   // 3. Entity identity, names and basic scalars (first occurrence wins).
   const entityById = new Map<string, WorkspaceEntity>();
   for (const entity of workspace.entities) {
+    if (isBlank(entity.id)) {
+      issues.push({ type: "invalid-entity-id", entityId: entity.id });
+    }
+
     if (entityById.has(entity.id)) {
       issues.push({ type: "duplicate-entity-id", entityId: entity.id });
     } else {
@@ -199,6 +228,10 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
   // 4. Category identity and names (first occurrence wins).
   const categoryIds = new Set<string>();
   for (const category of workspace.categories) {
+    if (isBlank(category.id)) {
+      issues.push({ type: "invalid-category-id", categoryId: category.id });
+    }
+
     if (categoryIds.has(category.id)) {
       issues.push({ type: "duplicate-category-id", categoryId: category.id });
     } else {
