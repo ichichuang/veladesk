@@ -43,3 +43,6 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Standalone API smoke
+        run: pnpm --filter @veladesk/web smoke:standalone
