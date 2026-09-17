@@ -74,14 +74,20 @@ View/Arrange), the page grid, optional page dots, floating bottom dock.
 `DesktopGridView` renders `PageLayout` as a CSS grid (`grid-column` /
 `grid-row` with spans); each `LayoutItem.id` resolves to its entity:
 apps render as OS-like icon + label buttons (generated icon text only in
-this stage — no favicon/iconify/asset fetching), folders render focus-only,
-widgets are the only glass-surface entities, and a layout item whose entity
-is missing renders a restrained "Missing item" placeholder. The dock
-renders `workspace.dock.items` in stored order (apps launch, folders
-focus-only) plus Add and mode utilities; pinning/reordering is out of
-scope. Page dots and ArrowLeft/ArrowRight switching (ignored while a drag
-is live or focus is in a form field) appear only when a workspace has more
-than one page.
+this stage — no favicon/iconify/asset fetching), folders open their
+overlay on a view-mode click, widgets are the only glass-surface
+entities, and a layout item whose entity is missing renders a restrained
+"Missing item" placeholder. The dock renders `workspace.dock.items` in
+stored order — apps launch, folders open the overlay — next to a Create
+menu and a mode utility. Page dots and ArrowLeft/ArrowRight switching
+(ignored while a drag is live or focus is in a form field) appear only
+when a workspace has more than one page.
+
+Since the workspace editing task, entity interaction is rounded out by
+context menus (right-click or Shift+F10 on desktop/dock/overlay items,
+plus the empty-desktop menu), the folder overlay with Add App into the
+folder, dock pin/unpin via the entity menu, and app edit/delete dialogs —
+see [workspace-editing.md](./workspace-editing.md).
 
 ## Arrange mode
 
