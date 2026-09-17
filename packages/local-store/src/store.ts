@@ -13,6 +13,8 @@ import type { WorkspaceSnapshot } from "@veladesk/domain";
 
 import { VelaDeskLocalDatabase } from "./database";
 import {
+  assertLocalGeneration,
+  assertNonBlankWorkspaceId,
   assertServerRevision,
   nextLocalGeneration,
   readClock,
@@ -36,10 +38,6 @@ const DEFAULT_DATABASE_NAME = "veladesk-local";
 
 function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
-}
-
-function notImplemented(operation: string): never {
-  throw new Error(`not implemented: ${operation}`);
 }
 
 class LocalWorkspaceStoreImpl implements LocalWorkspaceStore {
@@ -221,16 +219,161 @@ class LocalWorkspaceStoreImpl implements LocalWorkspaceStore {
     );
   }
 
-  acknowledgeWorkspaceSync(
-    _input: AcknowledgeWorkspaceSyncInput
+  async acknowledgeWorkspaceSync(
+    input: AcknowledgeWorkspaceSyncInput
   ): Promise<AcknowledgeWorkspaceSyncResult> {
-    return notImplemented("acknowledgeWorkspaceSync");
+    assertNonBlankWorkspaceId(input.workspaceId);
+    assertLocalGeneration(input.localGeneration);
+    assertServerRevision(input.serverRevision);
+    const issues = validateLocalSnapshot(input.serverSnapshot);
+    if (issues.length > 0) {
+      return { ok: false, reason: "invalid-workspace", issues };
+    }
+    if (input.serverSnapshot.id !== input.workspaceId) {
+      return { ok: false, reason: "workspace-id-mismatch" };
+    }
+
+    return this.db.transaction(
+      "rw",
+      this.db.workspaceCopies,
+      this.db.workspaceOutbox,
+      async (): Promise<AcknowledgeWorkspaceSyncResult> => {
+        const current = await this.db.workspaceCopies.get(input.workspaceId);
+        if (current === undefined) {
+          return { ok: false, reason: "not-found" };
+        }
+        const pending = await this.db.workspaceOutbox.get(input.workspaceId);
+        if (pending === undefined) {
+          return { ok: false, reason: "no-pending-change" };
+        }
+        if (input.localGeneration > current.localGeneration) {
+          return { ok: false, reason: "stale-generation" };
+        }
+        if (
+          current.serverRevision !== null &&
+          input.serverRevision <= current.serverRevision
+        ) {
+          return {
+            ok: false,
+            reason: "stale-server-revision",
+            currentRevision: current.serverRevision,
+          };
+        }
+        if (
+          current.syncState === "conflict" &&
+          current.conflictRevision !== undefined &&
+          input.serverRevision <= current.conflictRevision
+        ) {
+          return {
+            ok: false,
+            reason: "stale-server-revision",
+            currentRevision: current.conflictRevision,
+          };
+        }
+
+        const now = readClock(this.now);
+
+        // No newer local edit: the server snapshot is the accepted truth.
+        if (current.localGeneration === input.localGeneration) {
+          const workspace: LocalWorkspaceRecord = {
+            id: current.id,
+            snapshot: input.serverSnapshot,
+            serverRevision: input.serverRevision,
+            localGeneration: current.localGeneration,
+            syncState: "clean",
+            updatedAt: current.updatedAt,
+            lastSyncedAt: now,
+          };
+          await this.db.workspaceCopies.put(workspace);
+          await this.db.workspaceOutbox.delete(input.workspaceId);
+          return { ok: true, workspace };
+        }
+
+        // Local was edited while the request was in flight: never overwrite
+        // the newer local snapshot; rebase the outbox onto the new revision.
+        const keepConflict = current.syncState === "conflict";
+        const workspace: LocalWorkspaceRecord = {
+          id: current.id,
+          snapshot: current.snapshot,
+          serverRevision: input.serverRevision,
+          localGeneration: current.localGeneration,
+          syncState: keepConflict ? "conflict" : "dirty",
+          ...(keepConflict && current.conflictRevision !== undefined
+            ? { conflictRevision: current.conflictRevision }
+            : {}),
+          updatedAt: current.updatedAt,
+          lastSyncedAt: now,
+        };
+        const outbox: WorkspaceOutboxEntry = {
+          workspaceId: current.id,
+          operation: "save",
+          baseRevision: input.serverRevision,
+          snapshot: current.snapshot,
+          localGeneration: current.localGeneration,
+          queuedAt: pending.queuedAt,
+        };
+        await this.db.workspaceCopies.put(workspace);
+        await this.db.workspaceOutbox.put(outbox);
+        return { ok: true, workspace, outbox };
+      }
+    );
   }
 
-  markWorkspaceConflict(
-    _input: MarkWorkspaceConflictInput
+  async markWorkspaceConflict(
+    input: MarkWorkspaceConflictInput
   ): Promise<MarkWorkspaceConflictResult> {
-    return notImplemented("markWorkspaceConflict");
+    assertNonBlankWorkspaceId(input.workspaceId);
+    assertLocalGeneration(input.localGeneration);
+    assertServerRevision(input.actualRevision, "actualRevision");
+
+    return this.db.transaction(
+      "rw",
+      this.db.workspaceCopies,
+      this.db.workspaceOutbox,
+      async (): Promise<MarkWorkspaceConflictResult> => {
+        const current = await this.db.workspaceCopies.get(input.workspaceId);
+        if (current === undefined) {
+          return { ok: false, reason: "not-found" };
+        }
+        if ((await this.db.workspaceOutbox.get(input.workspaceId)) === undefined) {
+          return { ok: false, reason: "no-pending-change" };
+        }
+        if (input.localGeneration > current.localGeneration) {
+          return { ok: false, reason: "stale-generation" };
+        }
+
+        const staleBound =
+          current.serverRevision !== null && input.actualRevision <= current.serverRevision
+            ? current.serverRevision
+            : current.conflictRevision !== undefined &&
+                input.actualRevision <= current.conflictRevision
+              ? current.conflictRevision
+              : null;
+        if (staleBound !== null) {
+          return {
+            ok: false,
+            reason: "stale-server-revision",
+            currentRevision: staleBound,
+          };
+        }
+
+        // The server moved ahead; record the conflicting revision but keep
+        // serverRevision/snapshot/outbox untouched until the conflict is
+        // resolved by a later sync coordinator.
+        const workspace: LocalWorkspaceRecord = {
+          id: current.id,
+          snapshot: current.snapshot,
+          serverRevision: current.serverRevision,
+          localGeneration: current.localGeneration,
+          syncState: "conflict",
+          conflictRevision: input.actualRevision,
+          updatedAt: current.updatedAt,
+          lastSyncedAt: current.lastSyncedAt,
+        };
+        await this.db.workspaceCopies.put(workspace);
+        return { ok: true, workspace };
+      }
+    );
   }
 
   close(): void {
