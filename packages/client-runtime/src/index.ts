@@ -6,8 +6,14 @@
  */
 
 export { createWorkspaceClientRuntime } from "./runtime";
+export { openWorkspaceClientRuntime } from "./open";
+export type { OpenWorkspaceClientRuntimeOptions } from "./open";
 
 export type {
+  RuntimePullCurrentResult,
+  RuntimeStageWorkspaceUpdateResult,
+  RuntimeSyncCurrentResult,
+  SelectWorkspaceResult,
   WorkspaceCandidate,
   WorkspaceClientRuntime,
   WorkspaceClientRuntimeOptions,

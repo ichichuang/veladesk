@@ -10,10 +10,15 @@
  * local store it is given.
  */
 
-import type { WorkspaceId } from "@veladesk/domain";
+import type {
+  WorkspaceId,
+  WorkspaceSnapshot,
+} from "@veladesk/domain";
 import type {
   LocalWorkspaceRecord,
   LocalWorkspaceSyncState,
+  StageWorkspaceCreateResult,
+  StageWorkspaceUpdateResult,
 } from "@veladesk/local-store";
 import type {
   PullWorkspaceResult,
@@ -97,6 +102,34 @@ export interface WorkspaceClientRuntime {
    * remote-unavailable.
    */
   initialize(): Promise<WorkspaceClientRuntimeState>;
+
+  /**
+   * Opens one workspace as the active session. Existing local copies are
+   * opened and reconciled; missing ones are pulled from the remote.
+   */
+  selectWorkspace(workspaceId: WorkspaceId): Promise<SelectWorkspaceResult>;
+
+  /**
+   * Stages a brand-new local workspace and makes it the active session.
+   * Never sends network traffic — creation is instantly usable offline.
+   */
+  stageWorkspaceCreate(snapshot: WorkspaceSnapshot): Promise<StageWorkspaceCreateResult>;
+
+  /**
+   * Stages an edit of the CURRENT workspace. Refuses when no workspace is
+   * active or the snapshot belongs to a different workspace. Never sends
+   * network traffic — sending is an explicit sync decision.
+   */
+  stageWorkspaceUpdate(snapshot: WorkspaceSnapshot): Promise<RuntimeStageWorkspaceUpdateResult>;
+
+  /** Syncs the current workspace explicitly. */
+  syncCurrent(): Promise<RuntimeSyncCurrentResult>;
+
+  /** Pulls the current workspace explicitly from the remote. */
+  pullCurrent(): Promise<RuntimePullCurrentResult>;
+
+  /** Closes the underlying store and detaches all listeners. Irreversible. */
+  close(): void;
 }
 
 /** Options of {@link createWorkspaceClientRuntime}. */
@@ -104,3 +137,41 @@ export interface WorkspaceClientRuntimeOptions {
   readonly store: LocalWorkspaceStore;
   readonly transport: WorkspaceSyncTransport;
 }
+
+/** Result of {@link WorkspaceClientRuntime.selectWorkspace}. */
+export type SelectWorkspaceResult =
+  | {
+      readonly ok: true;
+      readonly workspace: LocalWorkspaceRecord;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "not-found";
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "network-error" | "server-error" | "protocol-error";
+      readonly httpStatus?: number;
+    };
+
+/** Result of {@link WorkspaceClientRuntime.stageWorkspaceUpdate}. */
+export type RuntimeStageWorkspaceUpdateResult =
+  | StageWorkspaceUpdateResult
+  | {
+      readonly ok: false;
+      readonly reason: "no-active-workspace";
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "workspace-id-mismatch";
+    };
+
+/** Result of {@link WorkspaceClientRuntime.syncCurrent}. */
+export type RuntimeSyncCurrentResult =
+  | WorkspaceRuntimeRemoteResult
+  | {
+      readonly status: "no-active-workspace";
+    };
+
+/** Result of {@link WorkspaceClientRuntime.pullCurrent}. */
+export type RuntimePullCurrentResult = RuntimeSyncCurrentResult;

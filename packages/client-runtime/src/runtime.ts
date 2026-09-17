@@ -2,10 +2,18 @@ import { createWorkspaceSyncCoordinator } from "@veladesk/sync";
 import type {
   ListRemoteWorkspacesResult,
   PullWorkspaceResult,
+  SyncWorkspaceResult,
 } from "@veladesk/sync";
-import type { LocalWorkspaceRecord } from "@veladesk/local-store";
+import type {
+  LocalWorkspaceRecord,
+  StageWorkspaceCreateResult,
+} from "@veladesk/local-store";
+import type { WorkspaceId, WorkspaceSnapshot } from "@veladesk/domain";
 
 import type {
+  RuntimeStageWorkspaceUpdateResult,
+  RuntimeSyncCurrentResult,
+  SelectWorkspaceResult,
   WorkspaceClientRuntime,
   WorkspaceClientRuntimeOptions,
   WorkspaceClientRuntimeState,
@@ -21,6 +29,10 @@ import type {
  * empty local store consults the remote catalog. Once a local workspace is
  * open, network failures degrade to `lastRemoteResult` — the desktop stays
  * usable offline and never masquerades as `remote-unavailable`.
+ *
+ * Editing never sends network traffic by itself: staging only touches the
+ * local working copy, and `syncCurrent`/`pullCurrent` are the explicit
+ * remote actions. Unresolved conflicts are never re-sent automatically.
  */
 export function createWorkspaceClientRuntime(
   options: WorkspaceClientRuntimeOptions
@@ -128,26 +140,154 @@ export function createWorkspaceClientRuntime(
     });
   }
 
+  async function selectWorkspace(workspaceId: WorkspaceId): Promise<SelectWorkspaceResult> {
+    assertOpen();
+    const local = await store.getWorkspace(workspaceId);
+    if (local !== undefined) {
+      setState({ status: "ready", workspace: local });
+      const remoteResult = await reconcileOnce(workspaceId);
+      const record = await refreshReadyState(workspaceId, remoteResult);
+      return { ok: true, workspace: record };
+    }
+    const pulled = await coordinator.pullWorkspace(workspaceId);
+    if (
+      pulled.status === "hydrated" ||
+      pulled.status === "local-changes-present" ||
+      pulled.status === "stale-server-revision"
+    ) {
+      // All three outcomes imply (or just created) a local record.
+      const record = await store.getWorkspace(workspaceId);
+      if (record === undefined) {
+        throw new Error(
+          `internal invariant violated: pull reported ${pulled.status} with no local record for ${workspaceId}`
+        );
+      }
+      setState({ status: "ready", workspace: record });
+      const opened = await refreshReadyState(workspaceId, pulled);
+      return { ok: true, workspace: opened };
+    }
+    switch (pulled.status) {
+      case "not-found":
+        return { ok: false, reason: "not-found" };
+      case "network-error":
+        return { ok: false, reason: "network-error" };
+      case "server-error":
+        return { ok: false, reason: "server-error", httpStatus: pulled.httpStatus };
+      case "protocol-error":
+        return pulled.httpStatus === undefined
+          ? { ok: false, reason: "protocol-error" }
+          : { ok: false, reason: "protocol-error", httpStatus: pulled.httpStatus };
+    }
+  }
+
+  async function stageWorkspaceCreate(
+    snapshot: WorkspaceSnapshot
+  ): Promise<StageWorkspaceCreateResult> {
+    assertOpen();
+    const result = await store.stageWorkspaceCreate(snapshot);
+    if (result.ok) {
+      // Local-first creation: instantly usable, no network, and no
+      // inherited remote result from a previously selected workspace.
+      setState({ status: "ready", workspace: result.workspace });
+    }
+    return result;
+  }
+
+  async function stageWorkspaceUpdate(
+    snapshot: WorkspaceSnapshot
+  ): Promise<RuntimeStageWorkspaceUpdateResult> {
+    assertOpen();
+    const current = state;
+    if (current.status !== "ready") {
+      return { ok: false, reason: "no-active-workspace" };
+    }
+    if (snapshot.id !== current.workspace.id) {
+      return { ok: false, reason: "workspace-id-mismatch" };
+    }
+    const result = await store.stageWorkspaceUpdate(snapshot);
+    if (result.ok) {
+      setState({
+        status: "ready",
+        workspace: result.workspace,
+        ...(current.lastRemoteResult !== undefined
+          ? { lastRemoteResult: current.lastRemoteResult }
+          : {}),
+      });
+    }
+    return result;
+  }
+
+  async function syncCurrent(): Promise<RuntimeSyncCurrentResult> {
+    assertOpen();
+    const current = state;
+    if (current.status !== "ready") {
+      return { status: "no-active-workspace" };
+    }
+    const workspaceId = current.workspace.id;
+    if (current.workspace.syncState === "conflict") {
+      // An unresolved conflict is never silently re-sent.
+      return { status: "conflict-present", workspaceId };
+    }
+    const remoteResult: SyncWorkspaceResult = await coordinator.syncWorkspace(workspaceId);
+    await refreshReadyState(workspaceId, remoteResult);
+    return remoteResult;
+  }
+
+  async function pullCurrent(): Promise<RuntimeSyncCurrentResult> {
+    assertOpen();
+    const current = state;
+    if (current.status !== "ready") {
+      return { status: "no-active-workspace" };
+    }
+    const workspaceId = current.workspace.id;
+    const remoteResult: PullWorkspaceResult = await coordinator.pullWorkspace(workspaceId);
+    await refreshReadyState(workspaceId, remoteResult);
+    return remoteResult;
+  }
+
+  function close(): void {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    listeners.clear();
+    store.close();
+  }
+
   /**
    * Opens one local workspace immediately, then reconciles it once:
-   * clean → pull, dirty → sync, conflict → no network at all (an
-   * unresolved conflict must never be re-sent automatically). Whatever the
+   * clean → pull, dirty → sync, conflict → no network at all. Whatever the
    * reconcile outcome, the latest IndexedDB record wins in state — the
    * bootstrap-time object is stale the moment anything changed.
    */
   async function openAndReconcile(record: LocalWorkspaceRecord): Promise<void> {
     setState({ status: "ready", workspace: record });
+    const remoteResult = await reconcileOnce(record.id);
+    await refreshReadyState(record.id, remoteResult);
+  }
 
-    const workspaceId = record.id;
-    let remoteResult: WorkspaceRuntimeRemoteResult;
-    if (record.syncState === "conflict") {
-      remoteResult = { status: "conflict-present", workspaceId };
-    } else if (record.syncState === "dirty") {
-      remoteResult = await coordinator.syncWorkspace(workspaceId);
-    } else {
-      remoteResult = await coordinator.pullWorkspace(workspaceId);
+  /** clean → pull, dirty → sync, conflict → no network. */
+  async function reconcileOnce(workspaceId: WorkspaceId): Promise<WorkspaceRuntimeRemoteResult> {
+    const current = await store.getWorkspace(workspaceId);
+    if (current === undefined) {
+      throw new Error(
+        `internal invariant violated: open workspace ${workspaceId} disappeared from the local store`
+      );
     }
+    if (current.syncState === "conflict") {
+      return { status: "conflict-present", workspaceId };
+    }
+    if (current.syncState === "dirty") {
+      return coordinator.syncWorkspace(workspaceId);
+    }
+    return coordinator.pullWorkspace(workspaceId);
+  }
 
+  /** Re-reads the record and updates ready state; returns the fresh record. */
+  async function refreshReadyState(
+    workspaceId: WorkspaceId,
+    remoteResult: WorkspaceRuntimeRemoteResult
+  ): Promise<LocalWorkspaceRecord> {
     const latest = await store.getWorkspace(workspaceId);
     if (latest === undefined) {
       throw new Error(
@@ -155,6 +295,7 @@ export function createWorkspaceClientRuntime(
       );
     }
     setState({ status: "ready", workspace: latest, lastRemoteResult: remoteResult });
+    return latest;
   }
 
   function localCandidate(record: LocalWorkspaceRecord) {
@@ -216,5 +357,15 @@ export function createWorkspaceClientRuntime(
       : { status: "remote-unavailable", reason: "protocol-error", httpStatus };
   }
 
-  return { getSnapshot, subscribe, initialize };
+  return {
+    getSnapshot,
+    subscribe,
+    initialize,
+    selectWorkspace,
+    stageWorkspaceCreate,
+    stageWorkspaceUpdate,
+    syncCurrent,
+    pullCurrent,
+    close,
+  };
 }
