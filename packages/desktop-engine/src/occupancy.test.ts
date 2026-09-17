@@ -49,6 +49,12 @@ describe("buildOccupancyMap", () => {
     );
   });
 
+  it("throws when two layout entries with the same id overlap on a cell", () => {
+    expect(() => buildOccupancyMap([item("dup", 0, 0), item("dup", 0, 0)])).toThrowError(
+      /"dup" and "dup"/,
+    );
+  });
+
   it("does not throw for items that only touch edges", () => {
     expect(() => buildOccupancyMap([item("a", 0, 0), item("b", 1, 0)])).not.toThrow();
   });

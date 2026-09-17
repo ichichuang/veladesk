@@ -50,6 +50,24 @@ function withItemPosition(
 }
 
 /**
+ * Whether any item id appears more than once. Identity-based operations
+ * have no deterministic semantics for duplicated ids, so callers get
+ * "invalid-layout" instead of a guess. This deliberately does not use
+ * validatePageLayout: the repair scenarios (operated item temporarily
+ * out of bounds or overlapping) must keep working.
+ */
+function hasDuplicateItemIds(items: readonly LayoutItem[]): boolean {
+  const seen = new Set<LayoutItemId>();
+  for (const item of items) {
+    if (seen.has(item.id)) {
+      return true;
+    }
+    seen.add(item.id);
+  }
+  return false;
+}
+
+/**
  * Moves one item to a desired anchor, immutably.
  *
  * `placement: "exact"` (default) requires the desired anchor to be legal as
@@ -65,6 +83,9 @@ export function moveItem(
   desired: GridPosition,
   options?: MoveItemOptions,
 ): LayoutOperationResult {
+  if (hasDuplicateItemIds(layout.items)) {
+    return { ok: false, reason: "invalid-layout", layout };
+  }
   const item = layout.items.find((entry) => entry.id === itemId);
   if (item === undefined) {
     return { ok: false, reason: "item-not-found", layout };
@@ -117,6 +138,9 @@ export function swapItems(
   firstId: LayoutItemId,
   secondId: LayoutItemId,
 ): LayoutOperationResult {
+  if (hasDuplicateItemIds(layout.items)) {
+    return { ok: false, reason: "invalid-layout", layout };
+  }
   const first = layout.items.find((entry) => entry.id === firstId);
   const second = layout.items.find((entry) => entry.id === secondId);
   if (first === undefined || second === undefined) {

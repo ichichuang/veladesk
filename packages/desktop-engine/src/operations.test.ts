@@ -74,6 +74,18 @@ describe("moveItem", () => {
     expect(result).toEqual({ ok: false, reason: "invalid-layout", layout: source });
   });
 
+  it("fails with invalid-layout when any other entry duplicates an id, even a unique target", () => {
+    const source = layout([item("a", 0, 0), item("dup", 1, 0), item("dup", 2, 0)]);
+    const result = moveItem(source, "a", { column: 0, row: 1 });
+    expect(result).toEqual({ ok: false, reason: "invalid-layout", layout: source });
+  });
+
+  it("fails with invalid-layout when moving an id that appears more than once", () => {
+    const source = layout([item("a", 0, 0), item("dup", 1, 0), item("dup", 2, 0)]);
+    const result = moveItem(source, "dup", { column: 2, row: 0 });
+    expect(result).toEqual({ ok: false, reason: "invalid-layout", layout: source });
+  });
+
   it("fails with invalid-layout when another item is out of bounds", () => {
     const source = layout([item("a", 0, 0), item("b", 3, 3, 2, 2)]);
     const result = moveItem(source, "a", { column: 1, row: 1 });
@@ -238,6 +250,12 @@ describe("swapItems", () => {
   it("fails with invalid-layout when other items overlap each other", () => {
     const source = layout([item("a", 0, 0), item("b", 1, 0), item("x", 2, 2), item("y", 2, 2)]);
     const result = swapItems(source, "a", "b");
+    expect(result).toEqual({ ok: false, reason: "invalid-layout", layout: source });
+  });
+
+  it("fails with invalid-layout when any entry duplicates an id", () => {
+    const source = layout([item("dup", 0, 0), item("dup", 1, 0), item("b", 2, 0)]);
+    const result = swapItems(source, "dup", "b");
     expect(result).toEqual({ ok: false, reason: "invalid-layout", layout: source });
   });
 

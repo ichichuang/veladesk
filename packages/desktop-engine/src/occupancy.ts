@@ -9,9 +9,10 @@ export function cellKey(position: GridPosition): CellKey {
 /**
  * Cell -> item id map covering every cell occupied by every item.
  *
- * Multi-cell spans register one entry per covered cell. If two different
- * items already overlap in the input, this throws instead of silently
- * overwriting, naming both conflicting item ids.
+ * Multi-cell spans register one entry per covered cell. If any two layout
+ * entries already overlap in the input — including entries that share an
+ * id — this throws instead of silently overwriting, naming both conflicting
+ * item ids.
  */
 export function buildOccupancyMap(
   items: readonly LayoutItem[],
@@ -24,8 +25,8 @@ export function buildOccupancyMap(
     }
     for (const cell of enumerateCells(toGridRect(item))) {
       const key = cellKey(cell);
-      const existing = map.get(key);
-      if (existing !== undefined && existing !== item.id) {
+      if (map.has(key)) {
+        const existing = map.get(key)!;
         throw new Error(`Layout items "${existing}" and "${item.id}" overlap at cell ${key}.`);
       }
       map.set(key, item.id);
