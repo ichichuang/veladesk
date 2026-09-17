@@ -29,7 +29,17 @@ function buildLabWorkspace() {
 
 export function WorkspaceRuntimeLab() {
   return (
-    <WorkspaceRuntimeProvider databaseName={LAB_DATABASE_NAME}>
+    <WorkspaceRuntimeProvider
+      databaseName={LAB_DATABASE_NAME}
+      loadingFallback={
+        <div className="workspace-runtime-lab__loading">Starting workspace runtime…</div>
+      }
+      errorFallback={(error) => (
+        <div className="workspace-runtime-lab__loading">
+          Workspace runtime failed to start: {error.message}
+        </div>
+      )}
+    >
       <LabBody />
     </WorkspaceRuntimeProvider>
   );
