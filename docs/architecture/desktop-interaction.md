@@ -59,8 +59,33 @@ Reasons for this design:
   `commitLayout`.
 - The logical layout only ever changes at drop time, so history snapshots
   (undo/redo) stay meaningful: one drag equals at most one history entry.
-- A canceled drag (`event.operation.canceled`, e.g. Escape) skips the commit
+- A canceled drag (`DragEndEvent.canceled`, e.g. Escape) skips the commit
   entirely, so the item returns to where the drag started.
+
+## Drag session atomicity
+
+A drag is one atomic interaction session:
+
+- The logical layout and the pixel metrics are captured as snapshots (plain
+  references — both are immutable by contract) at drag start, and the drop is
+  computed exclusively from those snapshots, never from a later render.
+- Drags cannot start before the grid has been measured (draggables stay
+  disabled until pixel metrics exist).
+- Toolbar and history controls (View/Arrange, Undo, Redo) are locked while a
+  drag is in progress, so an undo can never interleave between drag start and
+  drop.
+- Stale layout snapshots are never committed: the drop is discarded unless the
+  history's present layout is still the exact snapshot the drag started from
+  (reference identity acts as the session-generation guard).
+- A grid resize during the drag invalidates the commit — current metrics are
+  compared field-by-field against the start snapshot, and any difference means
+  the logical position stays where it was and the user simply drags again.
+  Resized drop targets are never guessed.
+- Drag end or cancel always clears the active session state, on every exit
+  path (normal drop, cancel, resize invalidation, stale layout, engine
+  refusal).
+
+This is an interaction-session guard, not a persistence revision protocol.
 
 ## View mode / Arrange mode (layout lock basis)
 
