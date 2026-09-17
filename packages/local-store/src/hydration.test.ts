@@ -146,6 +146,39 @@ describe("hydrateWorkspaceFromServer", () => {
     expect(await store.getWorkspace("   ")).toBeUndefined();
   });
 
+  it("rejects an invalid page grid through domain validation without any IndexedDB write", async () => {
+    const store = await openTestStore();
+    const base = buildSnapshot("ws-hyd-grid");
+    const page = base.pages[0]!;
+    const invalid: WorkspaceSnapshot = {
+      ...base,
+      pages: [
+        {
+          ...page,
+          layout: { ...page.layout, grid: { columns: 0, rows: 4 } },
+        },
+      ],
+    };
+
+    const result = await store.hydrateWorkspaceFromServer(invalid, 1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.reason === "invalid-workspace") {
+      expect(result.issues).toEqual([
+        {
+          type: "page-layout-invalid",
+          pageId: "ws-hyd-grid-page",
+          issue: { type: "invalid-grid" },
+        },
+      ]);
+    } else {
+      expect.unreachable("expected invalid-workspace result");
+    }
+    expect(await store.getWorkspace("ws-hyd-grid")).toBeUndefined();
+    expect(await store.listWorkspaces()).toEqual([]);
+    expect(await store.getOutboxEntry("ws-hyd-grid")).toBeUndefined();
+  });
+
   it("throws RangeError for a non-positive server revision and writes nothing", async () => {
     const store = await openTestStore();
 

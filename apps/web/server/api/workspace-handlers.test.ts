@@ -360,6 +360,48 @@ describe("handleSaveWorkspace", () => {
 });
 
 describe("handlers over the real SQLite repository", () => {
+  it("rejects a structurally-valid snapshot with an invalid page grid as 422 and stores nothing", async () => {
+    const database = openDatabase({ filename: ":memory:" });
+    try {
+      applyMigrations(database, realMigrationsDir);
+      const repository = createWorkspaceRepository(database);
+      const base = snapshotJson();
+      const page = base.pages[0]!;
+      const snapshot: WorkspaceSnapshot = {
+        ...base,
+        pages: [
+          {
+            ...page,
+            layout: { ...page.layout, grid: { columns: 0, rows: 4 }, items: [] },
+          },
+        ],
+      };
+
+      const response = await handleCreateWorkspace(
+        repository,
+        post(JSON.stringify({ snapshot })),
+      );
+
+      expect(response.status).toBe(422);
+      expect(await errorBody(response)).toEqual({
+        error: {
+          code: "invalid-workspace",
+          issues: [
+            {
+              type: "page-layout-invalid",
+              pageId: "page-1",
+              issue: { type: "invalid-grid" },
+            },
+          ],
+        },
+      });
+      expect(repository.listWorkspaces()).toEqual([]);
+      expect(handleGetWorkspace(repository, "workspace-1").status).toBe(404);
+    } finally {
+      database.close();
+    }
+  });
+
   it("round-trips create, get and save through SQLite with a custom protocol app", async () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), "veladesk-handlers-"));
     const database = openDatabase({ filename: ":memory:" });

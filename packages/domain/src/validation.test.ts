@@ -496,6 +496,28 @@ describe("validateWorkspace: page layout delegation", () => {
     });
   });
 
+  it("wraps engine invalid-grid issues as page-layout-invalid", () => {
+    const base = buildValidWorkspace();
+    const page = base.pages[0]!;
+    const workspace = {
+      ...base,
+      pages: [
+        {
+          ...page,
+          layout: { ...page.layout, grid: { columns: 0, rows: 4 } },
+        },
+      ],
+    };
+
+    expect(validateWorkspace(workspace)).toEqual([
+      {
+        type: "page-layout-invalid",
+        pageId: "page-1",
+        issue: { type: "invalid-grid" },
+      },
+    ]);
+  });
+
   it("reports layout items referencing unknown entities", () => {
     const base = buildValidWorkspace();
     const page = base.pages[0]!;

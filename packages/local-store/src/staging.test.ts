@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import type { WorkspaceSnapshot } from "@veladesk/domain";
 
 import {
   buildSnapshot,
@@ -74,6 +75,37 @@ describe("stageWorkspaceCreate", () => {
     }
     expect(await store.getWorkspace("ws-bad")).toBeUndefined();
     expect(await store.listOutboxEntries()).toEqual([]);
+  });
+
+  it("rejects a snapshot with an invalid page grid and writes no record or outbox entry", async () => {
+    const store = await openTestStore();
+    const base = buildSnapshot("ws-grid");
+    const page = base.pages[0]!;
+    const invalid: WorkspaceSnapshot = {
+      ...base,
+      pages: [
+        {
+          ...page,
+          layout: { ...page.layout, grid: { columns: 0, rows: 4 }, items: [] },
+        },
+      ],
+    };
+
+    const result = await store.stageWorkspaceCreate(invalid);
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "invalid-workspace",
+      issues: [
+        {
+          type: "page-layout-invalid",
+          pageId: "ws-grid-page",
+          issue: { type: "invalid-grid" },
+        },
+      ],
+    });
+    expect(await store.getWorkspace("ws-grid")).toBeUndefined();
+    expect(await store.getOutboxEntry("ws-grid")).toBeUndefined();
   });
 
   it("does not mutate the input snapshot", async () => {
