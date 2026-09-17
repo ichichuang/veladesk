@@ -10,6 +10,9 @@ export type { CreateEmptyWorkspaceArgs } from "./workspace";
 
 export { findCategory, findDesktopPage, findWorkspaceEntity } from "./lookup";
 
+export { validateWorkspace } from "./validation";
+export type { WorkspaceValidationIssue } from "./validation";
+
 export type {
   AppIcon,
   AppOpenMode,
