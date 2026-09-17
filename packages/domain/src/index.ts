@@ -15,6 +15,21 @@ export { decodeWorkspaceSnapshot } from "./decoding";
 export { validateWorkspace } from "./validation";
 export type { WorkspaceValidationIssue } from "./validation";
 
+export {
+  addAppToPage,
+  addAppToFolder,
+  addFolderToPage,
+  deleteApp,
+  dissolveFolderToPage,
+  moveAppToFolder,
+  moveAppToPage,
+  pinEntityToDock,
+  renameFolder,
+  replaceApp,
+  unpinEntityFromDock,
+} from "./editing";
+export type { WorkspaceEditFailureReason, WorkspaceEditResult } from "./editing";
+
 export type {
   AppIcon,
   AppOpenMode,
