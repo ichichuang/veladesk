@@ -7,16 +7,7 @@ import {
   type GridPixelMetrics,
 } from "@veladesk/desktop-interaction";
 
-function areSameMetrics(a: GridPixelMetrics, b: GridPixelMetrics): boolean {
-  return (
-    a.width === b.width &&
-    a.height === b.height &&
-    a.columnGap === b.columnGap &&
-    a.rowGap === b.rowGap &&
-    a.cellWidth === b.cellWidth &&
-    a.cellHeight === b.cellHeight
-  );
-}
+import { areGridPixelMetricsEqual } from "./grid-metrics";
 
 /**
  * Measures the rendered grid container and derives grid pixel metrics.
@@ -52,11 +43,11 @@ export function useGridMetrics(grid: GridDefinition): {
           grid,
         });
         setMetrics((previous) =>
-          previous !== null && areSameMetrics(previous, next) ? previous : next,
+          previous !== null && areGridPixelMetricsEqual(previous, next) ? previous : next,
         );
       } catch {
         // Container not laid out (or too small) yet: no metrics rather than
-        // wrong ones. Drops are skipped while metrics are unavailable.
+        // wrong ones. Drags are disabled while metrics are unavailable.
         setMetrics((previous) => (previous === null ? previous : null));
       }
     };
