@@ -29,6 +29,7 @@ Planned internal packages:
 | --- | --- |
 | `@veladesk/ui` | Shared UI components |
 | `@veladesk/desktop-engine` | Desktop canvas, layout, and drag-and-drop core |
+| `@veladesk/domain` | Workspace, entity, page, dock and folder domain contracts |
 | `@veladesk/animation-engine` | Motion and interaction effects |
 | `@veladesk/wallpaper-engine` | Static and animated wallpapers |
 | `@veladesk/plugin-sdk` | Plugin and widget development kit |
