@@ -18,6 +18,8 @@ import { areGridPixelMetricsEqual } from "./grid-metrics";
  * actually changed, so resize observation cannot cause render loops.
  *
  * Logical layout is never touched here — resizing only affects pixel metrics.
+ *
+ * Shared by the production desktop shell and the desktop interaction lab.
  */
 export function useGridMetrics(grid: GridDefinition): {
   gridRef: (node: HTMLDivElement | null) => void;
