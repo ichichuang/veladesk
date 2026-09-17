@@ -38,3 +38,6 @@ Thumbs.db
 # Misc
 .cache/
 tmp/
+
+# Local server data (SQLite/WAL)
+.veladesk-data/
