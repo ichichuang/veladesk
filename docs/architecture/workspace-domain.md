@@ -86,7 +86,9 @@ Spatial legality is entirely the desktop engine's job. The domain does not
 reimplement overlap, out-of-bounds, span or duplicate-layout-id checks; it
 calls `validatePageLayout` from `@veladesk/desktop-engine` and wraps each
 engine issue as `page-layout-invalid { pageId, issue }`. When engine rules
-upgrade, the domain validator automatically reuses them.
+upgrade, the domain validator automatically reuses them. DesktopPage layout
+grid validity is delegated to `@veladesk/desktop-engine` together with the
+rest of spatial validation.
 
 The domain additionally enforces the join between the two packages:
 `page.layout.id === page.id`, and every `page.layout.items[].id` must resolve

@@ -27,6 +27,10 @@ placement and layout invariants.
   `column: 0, row: 0`.
 - Positions are top-left anchors (`GridPosition`); sizes are cell spans
   (`GridSpan`).
+- `GridDefinition` columns and rows are positive finite integers.
+  `createGridDefinition` enforces this at construction, and
+  `validatePageLayout` reports `invalid-grid` for malformed raw layouts
+  that bypass the factory; bounds are never judged against an invalid grid.
 - `GridPosition` coordinates are integers. `clampPositionToGrid` accepts
   out-of-range integer coordinates and clamps them into the valid anchor
   range, but rejects fractional and non-finite coordinates.
