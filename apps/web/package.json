@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@dnd-kit/react": "0.5.0",
+    "@veladesk/client-runtime": "workspace:*",
     "@veladesk/database": "workspace:*",
     "@veladesk/desktop-engine": "workspace:*",
     "@veladesk/desktop-interaction": "workspace:*",

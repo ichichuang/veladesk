@@ -1,0 +1,83 @@
+/*
+ * Development-only workspace runtime lab styling.
+ * Engineering verification only — deliberately NOT product visual design.
+ */
+
+.workspace-runtime-lab {
+  box-sizing: border-box;
+  height: 100dvh;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #0f172a;
+}
+
+.workspace-runtime-lab__loading {
+  padding: 16px;
+  font: 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #475569;
+}
+
+.workspace-runtime-lab__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.workspace-runtime-lab__db {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.workspace-runtime-lab__panel {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.workspace-runtime-lab__panel h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.workspace-runtime-lab__state {
+  margin: 0;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.workspace-runtime-lab__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workspace-runtime-lab__button {
+  padding: 6px 14px;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.workspace-runtime-lab__button:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.workspace-runtime-lab__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

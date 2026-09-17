@@ -18,10 +18,13 @@ const nextConfig: NextConfig = {
     "/api/v1/**": ["../../packages/database/drizzle/**/*"],
   },
   transpilePackages: [
+    "@veladesk/client-runtime",
+    "@veladesk/database",
     "@veladesk/desktop-engine",
     "@veladesk/desktop-interaction",
     "@veladesk/domain",
-    "@veladesk/database",
+    "@veladesk/local-store",
+    "@veladesk/sync",
   ],
 };
 
