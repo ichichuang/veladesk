@@ -1,0 +1,137 @@
+/*
+ * Development-only desktop interaction lab styling.
+ * Engineering verification only — deliberately NOT product visual design.
+ */
+
+.desktop-lab {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  height: 100dvh;
+  padding: 16px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.desktop-lab__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.desktop-lab__modes,
+.desktop-lab__history {
+  display: flex;
+  gap: 8px;
+}
+
+.desktop-lab__button {
+  padding: 6px 14px;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.desktop-lab__button:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.desktop-lab__button:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+
+.desktop-lab__button[aria-pressed="true"] {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #ffffff;
+}
+
+.desktop-lab__button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.desktop-lab__status {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+/* Arrange mode must be obvious at a glance. */
+.desktop-lab__status[data-mode="arrange"] {
+  color: #b45309;
+  font-weight: 700;
+}
+
+.desktop-lab__hint {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.desktop-lab__grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(var(--lab-grid-columns), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--lab-grid-rows), minmax(0, 1fr));
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background-color: #f1f5f9;
+  /* Cell guides, sized from the measured pixel pitch. */
+  background-image:
+    linear-gradient(to right, rgba(15, 23, 42, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.08) 1px, transparent 1px);
+  background-size: var(--lab-pitch-x) var(--lab-pitch-y);
+}
+
+.desktop-lab__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 2px solid #6366f1;
+  border-radius: 10px;
+  background-color: #eef2ff;
+  color: #3730a3;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  touch-action: none;
+  user-select: none;
+}
+
+/* The multi-cell widget must stand out from 1x1 apps. */
+.desktop-lab__item[data-widget="true"] {
+  border-color: #0d9488;
+  background-color: #ccfbf1;
+  color: #115e59;
+}
+
+.desktop-lab[data-arrange="true"] .desktop-lab__item {
+  cursor: grab;
+}
+
+.desktop-lab[data-arrange="true"] .desktop-lab__item:hover {
+  border-color: #4338ca;
+}
+
+.desktop-lab__item[data-dragging="true"] {
+  cursor: grabbing;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.2);
+  z-index: 5;
+}
+
+.desktop-lab__item:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+}
