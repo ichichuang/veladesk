@@ -634,6 +634,24 @@
   transition: transform 160ms ease, border-color 140ms ease;
 }
 
+/* Utilities are actions, not apps: flat surface, "+"-sized glyph. */
+.vela-dock__utility {
+  background: oklch(0.3 0.02 264 / 0.7);
+  color: var(--vd-text);
+  font-size: 20px;
+  font-weight: 500;
+}
+
+/* Text-bearing utility (mode toggle) sizes to its label instead of the
+   44px icon box. */
+.vela-dock__utility--text {
+  width: auto;
+  min-width: 44px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .vela-dock__item--folder {
   background: oklch(0.32 0.03 264 / 0.85);
   color: oklch(0.85 0.09 85);
@@ -641,13 +659,6 @@
 
 .vela-dock__item:hover:not(:disabled) {
   transform: translateY(-3px);
-}
-
-.vela-dock__utility {
-  background: oklch(0.3 0.02 264 / 0.7);
-  color: var(--vd-text);
-  font-size: 20px;
-  font-weight: 500;
 }
 
 .vela-dock__utility[aria-pressed="true"] {

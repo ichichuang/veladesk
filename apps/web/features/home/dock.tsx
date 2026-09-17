@@ -69,7 +69,7 @@ export function Dock({ workspace, arrange, dragging, onToggleMode, onAddApp }: D
       </button>
       <button
         type="button"
-        className="vela-dock__utility"
+        className="vela-dock__utility vela-dock__utility--text"
         title={arrange ? "Switch to view mode" : "Switch to arrange mode"}
         aria-pressed={arrange}
         disabled={dragging}
