@@ -72,11 +72,28 @@ export function ContextMenu({ state, onClose }: ContextMenuProps) {
         menuHeight: rect.height,
       })
     );
-    const firstEnabled = menu.querySelector<HTMLButtonElement>(
-      '[role="menuitem"]:not(:disabled)'
-    );
-    firstEnabled?.focus();
   }, [state]);
+
+  // Focus can only land once the menu is visible (post-measurement).
+  useEffect(() => {
+    if (position === null) {
+      return;
+    }
+    menuRef.current
+      ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+      ?.focus();
+  }, [position]);
+
+  // Escape always closes, even when no menu item holds focus.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
 
   useEffect(() => {
     function handleMouseDown(event: MouseEvent) {
