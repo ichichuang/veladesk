@@ -70,6 +70,25 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/client-runtime:
+    dependencies:
+      '@veladesk/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@veladesk/local-store':
+        specifier: workspace:*
+        version: link:../local-store
+      '@veladesk/sync':
+        specifier: workspace:*
+        version: link:../sync
+    devDependencies:
+      fake-indexeddb:
+        specifier: 6.2.5
+        version: 6.2.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/database:
     dependencies:
       '@veladesk/domain':

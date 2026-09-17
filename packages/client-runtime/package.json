@@ -1,0 +1,23 @@
+{
+  "name": "@veladesk/client-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser workspace session/bootstrap runtime: local-first startup, remote discovery, in-memory selection and explicit sync orchestration for VelaDesk.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@veladesk/domain": "workspace:*",
+    "@veladesk/local-store": "workspace:*",
+    "@veladesk/sync": "workspace:*"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "6.2.5",
+    "typescript": "^5.9.3"
+  }
+}
