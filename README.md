@@ -34,6 +34,7 @@ Planned internal packages:
 | `@veladesk/wallpaper-engine` | Static and animated wallpapers |
 | `@veladesk/plugin-sdk` | Plugin and widget development kit |
 | `@veladesk/database` | Storage and persistence |
+| `@veladesk/local-store` | IndexedDB working copy, outbox and local-first sync state |
 
 ## Development
 
