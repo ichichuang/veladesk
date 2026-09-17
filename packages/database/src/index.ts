@@ -9,3 +9,18 @@ export { openDatabase } from "./connection";
 export type { OpenDatabaseOptions, VelaDeskDatabase } from "./connection";
 
 export { applyMigrations } from "./migrations";
+
+export { WORKSPACE_SNAPSHOT_VERSION } from "./serialization";
+
+export { createWorkspaceRepository } from "./repository";
+export type { WorkspaceRepository } from "./repository";
+
+export type {
+  CreateWorkspaceResult,
+  SaveWorkspaceResult,
+  StoredWorkspace,
+  WorkspaceRepositoryOptions,
+  WorkspaceRevision,
+  WorkspaceRevisionSummary,
+  WorkspaceSummary,
+} from "./types";
