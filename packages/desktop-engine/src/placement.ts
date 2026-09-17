@@ -4,9 +4,24 @@ import { rectAt } from "./geometry";
 import { canPlaceRect, getCollidingItemIds } from "./occupancy";
 
 /**
+ * Position coordinates are logical integer cells. Out-of-range integers are
+ * clamp's normal input; anything non-integral (fraction, NaN, Infinity) has
+ * no cell meaning and is rejected.
+ */
+function assertIntegerCoordinate(value: number, name: string): void {
+  if (!Number.isInteger(value)) {
+    throw new RangeError(
+      `${name} must be a finite integer, received ${value}`,
+    );
+  }
+}
+
+/**
  * Clamps a position so that a rect with the given span anchored there stays
  * inside the grid. Negative coordinates clamp to 0; coordinates beyond the
- * grid clamp to the bottom-right-most legal anchor.
+ * grid clamp to the bottom-right-most legal anchor. Both coordinates must be
+ * integers — out-of-range integers are clamped, fractional and non-finite
+ * coordinates throw RangeError.
  *
  * A span that is invalid or larger than the whole grid throws RangeError —
  * the span is never silently shrunk.
@@ -16,6 +31,8 @@ export function clampPositionToGrid(
   position: GridPosition,
   span: GridSpan,
 ): GridPosition {
+  assertIntegerCoordinate(position.column, "position.column");
+  assertIntegerCoordinate(position.row, "position.row");
   if (!isValidGridSpan(span)) {
     throw new RangeError(
       `span must be positive finite integers, received columns: ${span.columns}, rows: ${span.rows}`,

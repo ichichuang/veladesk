@@ -45,6 +45,36 @@ describe("clampPositionToGrid", () => {
       clampPositionToGrid(grid, { column: 0, row: 0 }, { columns: 0, rows: 1 }),
     ).toThrow(RangeError);
   });
+
+  it("throws RangeError for a fractional column", () => {
+    expect(() =>
+      clampPositionToGrid(grid, { column: 1.5, row: 0 }, { columns: 1, rows: 1 }),
+    ).toThrow(RangeError);
+  });
+
+  it("throws RangeError for a fractional row", () => {
+    expect(() =>
+      clampPositionToGrid(grid, { column: 0, row: 0.5 }, { columns: 1, rows: 1 }),
+    ).toThrow(RangeError);
+  });
+
+  it("throws RangeError for a NaN column", () => {
+    expect(() =>
+      clampPositionToGrid(grid, { column: Number.NaN, row: 0 }, { columns: 1, rows: 1 }),
+    ).toThrow(RangeError);
+  });
+
+  it("throws RangeError for an Infinite row", () => {
+    expect(() =>
+      clampPositionToGrid(grid, { column: 0, row: Number.POSITIVE_INFINITY }, { columns: 1, rows: 1 }),
+    ).toThrow(RangeError);
+  });
+
+  it("throws RangeError for a negative-Infinite column", () => {
+    expect(() =>
+      clampPositionToGrid(grid, { column: Number.NEGATIVE_INFINITY, row: 0 }, { columns: 1, rows: 1 }),
+    ).toThrow(RangeError);
+  });
 });
 
 describe("findNearestFreePosition", () => {
@@ -126,6 +156,12 @@ describe("findNearestFreePosition", () => {
   it("throws RangeError when the span cannot fit the grid at all", () => {
     expect(() =>
       findNearestFreePosition({ grid, items: [], desired: { column: 0, row: 0 }, span: { columns: 5, rows: 1 } }),
+    ).toThrow(RangeError);
+  });
+
+  it("propagates the RangeError for a NaN desired coordinate", () => {
+    expect(() =>
+      findNearestFreePosition({ grid, items: [], desired: { column: Number.NaN, row: 0 }, span: { columns: 1, rows: 1 } }),
     ).toThrow(RangeError);
   });
 });

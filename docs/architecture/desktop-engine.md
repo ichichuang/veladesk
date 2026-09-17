@@ -27,6 +27,9 @@ placement and layout invariants.
   `column: 0, row: 0`.
 - Positions are top-left anchors (`GridPosition`); sizes are cell spans
   (`GridSpan`).
+- `GridPosition` coordinates are integers. `clampPositionToGrid` accepts
+  out-of-range integer coordinates and clamps them into the valid anchor
+  range, but rejects fractional and non-finite coordinates.
 - There are **no pixels, no x/y fields, and no CSS** in the engine. Mapping
   logical cells to pixels is exclusively the UI layer's job.
 
@@ -39,6 +42,10 @@ widget configuration, page or database id mappings — never enters the engine.
 A `PageLayout` is a page id, a `GridDefinition` (columns × rows), and an
 ordered list of layout items. This keeps snapshots small, comparable, and
 portable across persistence formats.
+
+`LayoutItemId` must be unique within one `PageLayout`. Identity-based
+operations such as `moveItem` and `swapItems` reject layouts containing
+duplicate item ids with `invalid-layout`.
 
 ## Placement rules
 
