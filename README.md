@@ -36,6 +36,7 @@ Planned internal packages:
 | `@veladesk/database` | Storage and persistence |
 | `@veladesk/local-store` | IndexedDB working copy, outbox and local-first sync state |
 | `@veladesk/sync` | HTTP workspace synchronization and outbox coordination |
+| `@veladesk/client-runtime` | Browser workspace bootstrap and local-first session runtime |
 
 ## Development
 
