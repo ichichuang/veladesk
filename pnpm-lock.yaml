@@ -140,6 +140,22 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/sync:
+    dependencies:
+      '@veladesk/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@veladesk/local-store':
+        specifier: workspace:*
+        version: link:../local-store
+    devDependencies:
+      fake-indexeddb:
+        specifier: 6.2.5
+        version: 6.2.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/ui:
     devDependencies:
       typescript:
