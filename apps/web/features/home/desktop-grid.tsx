@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import type { GridPixelMetrics } from "@veladesk/desktop-interaction";
 import type { PageLayout } from "@veladesk/desktop-engine";
-import type { WorkspaceSnapshot } from "@veladesk/domain";
+import type { EntityId, WorkspaceSnapshot } from "@veladesk/domain";
 
 import { DesktopItem } from "./desktop-item";
 import "./home-shell.css";
@@ -14,6 +14,8 @@ interface DesktopGridViewProps {
   readonly arrange: boolean;
   readonly metrics: GridPixelMetrics | null;
   readonly gridRef: (node: HTMLDivElement | null) => void;
+  readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
+  readonly onOpenFolder: (folderId: EntityId) => void;
 }
 
 /**
@@ -21,7 +23,8 @@ interface DesktopGridViewProps {
  *
  * Occupies the space between top bar and dock so the body never scrolls.
  * In arrange mode, faint cell guides appear (pixel pitch from the measured
- * metrics). Pure rendering — drag sessions live in the shell.
+ * metrics). Pure rendering — drag sessions and context-menu state live in
+ * the shell.
  */
 export function DesktopGridView({
   layout,
@@ -29,6 +32,8 @@ export function DesktopGridView({
   arrange,
   metrics,
   gridRef,
+  onEntityContextMenu,
+  onOpenFolder,
 }: DesktopGridViewProps) {
   const gridStyle = {
     "--vd-grid-columns": layout.grid.columns,
@@ -55,6 +60,8 @@ export function DesktopGridView({
           workspace={workspace}
           arrange={arrange}
           metricsAvailable={metrics !== null}
+          onEntityContextMenu={onEntityContextMenu}
+          onOpenFolder={onOpenFolder}
         />
       ))}
     </div>

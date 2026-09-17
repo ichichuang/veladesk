@@ -1,17 +1,25 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import type { AppShortcut, DesktopPageId, WorkspaceSnapshot } from "@veladesk/domain";
+import type { AppShortcut, DesktopPageId, EntityId, WorkspaceSnapshot } from "@veladesk/domain";
+
+import { addAppToFolder, addAppToPage } from "@veladesk/domain";
+import type { WorkspaceEditFailureReason } from "@veladesk/domain";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
-import { addAppToPage } from "./workspace-layout";
 import { createBrowserId } from "./browser-id";
 import { generatedIconText } from "./generated-icon";
+import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import "./home-shell.css";
+
+/** Where a newly created app lands: a page layout or directly in a folder. */
+export type AddAppDestination =
+  | { readonly kind: "page"; readonly pageId: DesktopPageId }
+  | { readonly kind: "folder"; readonly folderId: EntityId };
 
 interface AddAppDialogProps {
   readonly workspace: WorkspaceSnapshot;
-  readonly pageId: DesktopPageId;
+  readonly destination: AddAppDestination;
   readonly onClose: () => void;
 }
 
@@ -19,11 +27,13 @@ interface AddAppDialogProps {
  * Minimal Add App flow: name + URL, nothing else.
  *
  * Values are stored verbatim — no protocol rewriting, no URL() parsing, so
- * https://, obsidian://, steam:// and friends are all valid. The app is
- * placed on the active page with nearest-free 1x1 placement, staged
- * locally-first, and the follow-up sync is fired without blocking.
+ * https://, obsidian://, steam:// and friends are all valid. With a page
+ * destination the app is placed nearest-free 1x1 on that page; with a
+ * folder destination it is created directly inside the folder (no desktop
+ * layout item, no automatic dock pin). The app is staged locally-first and
+ * the follow-up sync is fired without blocking.
  */
-export function AddAppDialog({ workspace, pageId, onClose }: AddAppDialogProps) {
+export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
@@ -66,20 +76,22 @@ export function AddAppDialog({ workspace, pageId, onClose }: AddAppDialogProps) 
         openMode: "new-tab",
         tags: [],
       };
-      const added = addAppToPage(workspace, pageId, app);
+      const added =
+        destination.kind === "page"
+          ? addAppToPage(workspace, destination.pageId, app)
+          : addAppToFolder(workspace, destination.folderId, app);
       if (!added.ok) {
         setError(describeAddFailure(added.reason));
         setBusy(false);
         return;
       }
-      const staged = await runtime.stageWorkspaceUpdate(added.workspace);
+      const staged = await stageWorkspaceAndTrySync(runtime, added.workspace);
       if (!staged.ok) {
         setError("The app could not be added to this workspace.");
         setBusy(false);
         return;
       }
       // Icon is visible immediately (local stage); sync is follow-up.
-      void runtime.syncCurrent().catch(() => {});
       onClose();
     } catch (dialogError: unknown) {
       setError(
@@ -162,13 +174,21 @@ export function AddAppDialog({ workspace, pageId, onClose }: AddAppDialogProps) 
   );
 }
 
-function describeAddFailure(reason: "page-not-found" | "duplicate-entity-id" | "no-space"): string {
+function describeAddFailure(reason: WorkspaceEditFailureReason): string {
   switch (reason) {
     case "page-not-found":
-      return "The active page no longer exists.";
+      return "The target page no longer exists.";
+    case "folder-not-found":
+      return "This folder no longer exists.";
     case "duplicate-entity-id":
       return "This app already exists in the workspace.";
     case "no-space":
       return "This page is full — remove something or switch pages first.";
+    case "invalid-name":
+      return "Enter a name.";
+    case "invalid-url":
+      return "Enter a URL.";
+    default:
+      return "The app could not be added.";
   }
 }

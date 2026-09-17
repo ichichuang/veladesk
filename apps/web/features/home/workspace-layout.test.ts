@@ -75,6 +75,22 @@ describe("replacePageLayout", () => {
     // Whole input untouched.
     expect(workspace.pages).toHaveLength(1);
   });
+
+  it("rejects a layout whose id does not match the target page (regression)", () => {
+    const workspace = baseWorkspace();
+    const mismatched: PageLayout = {
+      id: "some-other-page",
+      grid: { columns: 4, rows: 3 },
+      items: [
+        { id: "app-a", position: { column: 0, row: 0 }, span: { columns: 1, rows: 1 } },
+      ],
+    };
+
+    const result = replacePageLayout(workspace, "page-1", mismatched);
+
+    expect(result).toEqual({ ok: false, reason: "layout-id-mismatch" });
+    expect(layoutOf(workspace, "page-1").items).toEqual([]);
+  });
 });
 
 describe("addAppToPage", () => {

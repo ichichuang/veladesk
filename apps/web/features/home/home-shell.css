@@ -740,6 +740,146 @@ button.vela-sync:disabled {
 }
 
 /* ---------------------------------------------------------------------------
+ * Context menus
+ * ------------------------------------------------------------------------- */
+
+/* Display-contents wrapper: hosts the desktop context-menu handler without
+   affecting the viewport layout. */
+.vela-desktop__menu-area {
+  display: contents;
+}
+
+.vela-context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 176px;
+  max-width: 260px;
+  padding: 6px;
+  border: 1px solid var(--vd-border);
+  border-radius: 12px;
+  background: var(--vd-surface-strong);
+  backdrop-filter: blur(var(--vd-blur));
+  -webkit-backdrop-filter: blur(var(--vd-blur));
+  box-shadow: 0 16px 40px oklch(0 0 0 / 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: vela-menu-in 120ms ease;
+}
+
+@keyframes vela-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.vela-context-menu__item {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--vd-text);
+  font-family: var(--vd-font);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 100ms ease;
+}
+
+.vela-context-menu__item:hover:not(:disabled) {
+  background: oklch(0.85 0.02 264 / 0.12);
+}
+
+.vela-context-menu__item:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: -1px;
+}
+
+.vela-context-menu__item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------------
+ * Folder overlay
+ * ------------------------------------------------------------------------- */
+
+.vela-folder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: oklch(0 0 0 / 0.45);
+  animation: vela-fade 200ms ease;
+}
+
+.vela-folder-overlay__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(600px, calc(100vw - 64px));
+  max-height: min(70vh, 640px);
+  padding: 20px 22px;
+  border: 1px solid var(--vd-border);
+  border-radius: calc(var(--vd-radius) + 6px);
+  background: var(--vd-surface-strong);
+  backdrop-filter: blur(var(--vd-blur));
+  -webkit-backdrop-filter: blur(var(--vd-blur));
+  box-shadow: 0 24px 70px oklch(0 0 0 / 0.45);
+  animation: vela-rise 220ms ease;
+}
+
+.vela-folder-overlay__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vela-folder-overlay__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vela-folder-overlay__spacer {
+  flex: 1;
+}
+
+.vela-folder-overlay__close {
+  padding: 5px 10px;
+}
+
+.vela-folder-overlay__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 96px;
+  padding: 4px;
+}
+
+.vela-folder-overlay__grid .vela-item {
+  padding: 12px 4px;
+}
+
+.vela-folder-overlay__empty {
+  grid-column: 1 / -1;
+  margin: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--vd-text-muted);
+}
+
+/* ---------------------------------------------------------------------------
  * Dialogs
  * ------------------------------------------------------------------------- */
 
@@ -769,6 +909,23 @@ button.vela-sync:disabled {
   margin: 0 0 14px;
   font-size: 16px;
   font-weight: 650;
+}
+
+.vela-dialog__message {
+  margin: -4px 0 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vd-text-muted);
+}
+
+.vela-button--danger {
+  background: oklch(0.5 0.15 25 / 0.85);
+  border-color: transparent;
+  color: oklch(0.98 0.01 30);
+}
+
+.vela-button--danger:hover:not(:disabled) {
+  background: oklch(0.56 0.16 25 / 0.9);
 }
 
 .vela-dialog__actions {
@@ -820,7 +977,11 @@ button.vela-sync:disabled {
   .vela-picker__item,
   .vela-segment__button,
   .vela-dialog,
-  .vela-dialog-backdrop {
+  .vela-dialog-backdrop,
+  .vela-context-menu,
+  .vela-context-menu__item,
+  .vela-folder-overlay,
+  .vela-folder-overlay__panel {
     transition: none;
     animation: none;
   }
