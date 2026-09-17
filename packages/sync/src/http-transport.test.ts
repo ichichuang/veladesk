@@ -39,7 +39,7 @@ function fetchRaw(status: number, body: string): FetchStub {
 
 function fetchRejecting(): FetchStub {
   const calls: RecordedCall[] = [];
-  const fetch = async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  const fetch = async (): Promise<Response> => {
     throw new TypeError("fetch failed");
   };
   return { fetch, calls };
