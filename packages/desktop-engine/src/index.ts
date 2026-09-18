@@ -16,7 +16,7 @@ export { buildOccupancyMap, canPlaceRect, cellKey, getCollidingItemIds } from ".
 
 export { clampPositionToGrid, findNearestFreePosition } from "./placement";
 
-export { moveItem, swapItems } from "./operations";
+export { moveItem, moveItems, swapItems } from "./operations";
 
 export {
   DEFAULT_HISTORY_LIMIT,
@@ -36,6 +36,7 @@ export type {
   GridPosition,
   GridRect,
   GridSpan,
+  GridTranslation,
   IgnoreItemsOptions,
   LayoutHistory,
   LayoutItem,
@@ -44,5 +45,6 @@ export type {
   LayoutOperationResult,
   LayoutValidationIssue,
   MoveItemOptions,
+  MoveItemsOptions,
   PageLayout,
 } from "./types";

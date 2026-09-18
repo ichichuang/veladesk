@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { moveItem, swapItems } from "./operations";
+import { moveItem, moveItems, swapItems } from "./operations";
 import type { LayoutItem, PageLayout } from "./types";
 
 const grid = { columns: 4, rows: 4 };
@@ -274,6 +274,231 @@ describe("swapItems", () => {
     if (result.ok) {
       expect(result.layout.items[0]).toEqual(item("a", 1, 1, 2, 2));
       expect(result.layout.items[1]).toEqual(item("b", 0, 0));
+    }
+  });
+});
+
+describe("moveItems", () => {
+  const translation = { columnDelta: 1, rowDelta: 0 };
+
+  it("fails with invalid-selection for an empty selection", () => {
+    const source = layout([item("a", 0, 0)]);
+    const result = moveItems(source, [], translation);
+    expect(result).toEqual({ ok: false, reason: "invalid-selection", layout: source });
+  });
+
+  it("fails with invalid-selection for duplicate requested ids", () => {
+    const source = layout([item("a", 0, 0), item("b", 2, 0)]);
+    const result = moveItems(source, ["a", "a"], translation);
+    expect(result).toEqual({ ok: false, reason: "invalid-selection", layout: source });
+  });
+
+  it("fails with item-not-found when any requested id is missing", () => {
+    const source = layout([item("a", 0, 0)]);
+    const result = moveItems(source, ["a", "ghost"], translation);
+    expect(result).toEqual({ ok: false, reason: "item-not-found", layout: source });
+  });
+
+  it("fails with invalid-translation for fractional deltas", () => {
+    const source = layout([item("a", 0, 0)]);
+    const result = moveItems(source, ["a"], { columnDelta: 1.5, rowDelta: 0 });
+    expect(result).toEqual({ ok: false, reason: "invalid-translation", layout: source });
+  });
+
+  it("fails with invalid-translation for NaN and Infinity deltas", () => {
+    const source = layout([item("a", 0, 0)]);
+    expect(moveItems(source, ["a"], { columnDelta: Number.NaN, rowDelta: 0 })).toEqual({
+      ok: false,
+      reason: "invalid-translation",
+      layout: source,
+    });
+    expect(moveItems(source, ["a"], { columnDelta: 1, rowDelta: Number.POSITIVE_INFINITY })).toEqual({
+      ok: false,
+      reason: "invalid-translation",
+      layout: source,
+    });
+  });
+
+  it("fails with invalid-layout when the layout itself has duplicate ids", () => {
+    const source = layout([item("a", 0, 0), item("a", 2, 2)]);
+    const result = moveItems(source, ["a"], translation);
+    expect(result).toEqual({ ok: false, reason: "invalid-layout", layout: source });
+  });
+
+  it("matches moveItem exactly for a single selected item", () => {
+    const source = layout([item("a", 0, 0), item("b", 2, 2)]);
+    const groupResult = moveItems(source, ["a"], translation);
+    const singleResult = moveItem(source, "a", { column: 1, row: 0 });
+    expect(groupResult).toEqual(singleResult);
+  });
+
+  it("matches moveItem nearest-free for a single selected item", () => {
+    const source = layout([item("a", 0, 0), item("b", 1, 0)]);
+    const groupResult = moveItems(source, ["a"], translation, { placement: "nearest-free" });
+    const singleResult = moveItem(source, "a", { column: 1, row: 0 }, { placement: "nearest-free" });
+    expect(groupResult).toEqual(singleResult);
+  });
+
+  it("moves two items rigidly and preserves their relative offset", () => {
+    const a = item("a", 0, 0);
+    const b = item("b", 1, 2);
+    const c = item("c", 0, 3);
+    const source = layout([a, b, c]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 2, rowDelta: 1 });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.layout.items.map((entry) => entry.id)).toEqual(["a", "b", "c"]);
+      expect(result.layout.items[0]).toEqual(item("a", 2, 1));
+      expect(result.layout.items[1]).toEqual(item("b", 3, 3));
+      expect(result.layout.items[2]).toBe(c);
+    }
+  });
+
+  it("keeps mixed spans and never mutates the input", () => {
+    const big = item("big", 0, 0, 2, 2);
+    const small = item("small", 0, 2);
+    const source = layout([big, small, item("c", 3, 0)]);
+    const frozen = JSON.parse(JSON.stringify(source));
+
+    const result = moveItems(source, ["big", "small"], { columnDelta: 1, rowDelta: 1 });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.layout.items[0]).toEqual(item("big", 1, 1, 2, 2));
+      expect(result.layout.items[1]).toEqual(item("small", 1, 3));
+    }
+    expect(JSON.parse(JSON.stringify(source))).toEqual(frozen);
+  });
+
+  it("returns the original layout reference for a zero translation", () => {
+    const source = layout([item("a", 0, 0), item("b", 2, 2)]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 0, rowDelta: 0 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.layout).toBe(source);
+    }
+  });
+
+  it("fails with out-of-bounds when any selected rect leaves the grid", () => {
+    const source = layout([item("a", 3, 3), item("b", 0, 0)]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 1, rowDelta: 0 });
+    expect(result).toEqual({ ok: false, reason: "out-of-bounds", layout: source });
+  });
+
+  it("fails with collision against unselected items and reports them deterministically", () => {
+    const source = layout([
+      item("a", 0, 0),
+      item("b", 0, 1),
+      item("x", 2, 0),
+      item("y", 2, 1),
+    ]);
+    // Moving a and b by +2 columns lands each on x's and y's cells.
+    const result = moveItems(source, ["a", "b"], { columnDelta: 2, rowDelta: 0 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("collision");
+      expect(result.collidingItemIds).toEqual(["x", "y"]);
+    }
+  });
+
+  it("never reports a collision between two selected items", () => {
+    // a and b overlap each other in the source layout (a pre-existing
+    // defect); moving the whole group must not report self collision.
+    const source = layout([item("a", 0, 0, 2, 2), item("b", 1, 1), item("c", 3, 3)]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 0, rowDelta: 0 });
+    expect(result.ok).toBe(true);
+  });
+
+  it("finds the nearest rigid translation for a group around a blocker", () => {
+    // Group a(0,0) b(1,0) wants +2 columns; the whole row ahead is walled
+    // off, so the nearest legal rigid translation is +2/+1 (below the wall).
+    const source = layout([
+      item("a", 0, 0),
+      item("b", 1, 0),
+      item("x", 2, 0),
+      item("y", 3, 0),
+    ]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 2, rowDelta: 0 }, {
+      placement: "nearest-free",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const positions = new Map(result.layout.items.map((entry) => [entry.id, entry.position]));
+      expect(positions.get("a")).toEqual({ column: 2, row: 1 });
+      expect(positions.get("b")).toEqual({ column: 3, row: 1 });
+      // Offsets preserved: a->b stays (+1, 0).
+      expect(positions.get("b")!.column - positions.get("a")!.column).toBe(1);
+      expect(positions.get("b")!.row - positions.get("a")!.row).toBe(0);
+    }
+  });
+
+  it("resolves a walled-off diagonal desired deterministically", () => {
+    // The whole column ahead of the a/b group is walled off, so the desired
+    // diagonal (1,1) cannot be honored; the deterministic nearest outcome
+    // is one row down inside column 0.
+    const source = layout([
+      item("a", 0, 1),
+      item("b", 0, 2),
+      item("x", 1, 0),
+      item("y", 1, 1),
+      item("z", 1, 2),
+    ]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 1, rowDelta: 1 }, {
+      placement: "nearest-free",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const positions = new Map(result.layout.items.map((entry) => [entry.id, entry.position]));
+      expect(positions.get("a")).toEqual({ column: 0, row: 2 });
+      expect(positions.get("b")).toEqual({ column: 0, row: 3 });
+    }
+  });
+
+  it("breaks full distance ties by smaller group left column", () => {
+    // Repair scenario: the group overlaps wall items y/z, so staying put is
+    // illegal, up is blocked by w and down is blocked by the grid edge. The
+    // two surviving candidates (-1,-1) and (1,-1) tie on distance AND top
+    // row; the smaller left column wins.
+    const source = layout([
+      item("a", 1, 1),
+      item("b", 1, 2),
+      item("w", 1, 0),
+      item("y", 1, 1),
+      item("z", 1, 2),
+    ]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 0, rowDelta: 0 }, {
+      placement: "nearest-free",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const positions = new Map(result.layout.items.map((entry) => [entry.id, entry.position]));
+      expect(positions.get("a")).toEqual({ column: 0, row: 1 });
+      expect(positions.get("b")).toEqual({ column: 0, row: 2 });
+    }
+  });
+
+  it("fails with no-space when the group cannot fit the grid at all", () => {
+    // Repair scenario: the group's bounding box (2 columns) exceeds this
+    // 1-column grid, so no rigid translation is even bounded.
+    const source = { id: "page-1", grid: { columns: 1, rows: 2 }, items: [item("a", 0, 0), item("b", 1, 0)] };
+    const result = moveItems(source, ["a", "b"], { columnDelta: 0, rowDelta: 1 }, {
+      placement: "nearest-free",
+    });
+    expect(result).toEqual({ ok: false, reason: "no-space", layout: source });
+  });
+
+  it("does not count the grid-boundary-locked group as no-space when it already sits at its best spot", () => {
+    const source = layout([item("a", 0, 0), item("b", 1, 0), item("c", 3, 3)]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 0, rowDelta: 0 }, {
+      placement: "nearest-free",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.layout).toBe(source);
     }
   });
 });

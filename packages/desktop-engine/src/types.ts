@@ -69,6 +69,8 @@ export interface FindNearestFreePositionArgs extends IgnoreItemsOptions {
 export type LayoutOperationFailureReason =
   | "item-not-found"
   | "invalid-layout"
+  | "invalid-selection"
+  | "invalid-translation"
   | "out-of-bounds"
   | "collision"
   | "no-space";
@@ -88,6 +90,20 @@ export type LayoutOperationResult =
 
 /** Placement strategy for moveItem. */
 export interface MoveItemOptions {
+  readonly placement?: "exact" | "nearest-free";
+}
+
+/**
+ * Rigid translation applied to a whole selection: every selected item moves
+ * by the same integer cell delta, preserving relative geometry.
+ */
+export interface GridTranslation {
+  readonly columnDelta: number;
+  readonly rowDelta: number;
+}
+
+/** Placement strategy for moveItems. */
+export interface MoveItemsOptions {
   readonly placement?: "exact" | "nearest-free";
 }
 
