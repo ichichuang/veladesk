@@ -49,6 +49,7 @@ import { AddAppDialog } from "./add-app-dialog";
 import type { AddAppDestination } from "./add-app-dialog";
 import { canRedo, canUndo, reconcilePageHistory } from "./arrange-history";
 import type { ArrangeHistories } from "./arrange-history";
+import { resolveArrangeHistoryCommand } from "./arrange-shortcuts";
 import { ConfirmDialog } from "./confirm-dialog";
 import { DesktopGridView } from "./desktop-grid";
 import { Dock } from "./dock";
@@ -662,24 +663,26 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         (event.metaKey || event.ctrlKey) &&
         !event.altKey
       ) {
-        const key = event.key.toLowerCase();
-        if (key === "z") {
-          const pageId = pageIdRef.current;
-          if (pageId !== null) {
-            event.preventDefault();
-            applyHistoryStep(pageId, event.shiftKey ? "redo" : "undo");
-          }
+        const pageId = pageIdRef.current;
+        // Availability comes from the imperative history map, never the
+        // closure's React state — a keydown must see the freshest history.
+        const command = resolveArrangeHistoryCommand({
+          key: event.key,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          shiftKey: event.shiftKey,
+          altKey: event.altKey,
+          canUndo: pageId !== null && canUndo(arrangeHistoriesRef.current, pageId),
+          canRedo: pageId !== null && canRedo(arrangeHistoriesRef.current, pageId),
+        });
+        if (pageId !== null && command !== null) {
+          // Only a runnable command is consumed: an unavailable undo/redo
+          // leaves the event untouched for the browser/OS.
+          event.preventDefault();
+          applyHistoryStep(pageId, command);
           return;
         }
-        if (key === "y" && event.ctrlKey && !event.metaKey) {
-          const pageId = pageIdRef.current;
-          if (pageId !== null) {
-            event.preventDefault();
-            applyHistoryStep(pageId, "redo");
-          }
-          return;
-        }
-        if (key === "a" && activePage !== undefined) {
+        if (event.key.toLowerCase() === "a" && activePage !== undefined) {
           event.preventDefault();
           applySelection(selectAllIds(new Set(activePage.layout.items.map((item) => item.id))));
           return;
