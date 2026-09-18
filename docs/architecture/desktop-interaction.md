@@ -113,6 +113,11 @@ absolute pixel positions are persisted anywhere.
 
 ## Shared UI adapters
 
+Since the arrange-session task the shared atomic drag hook
+(`useAtomicGridDrag`) also supports rigid selected-item groups — one
+translation for every dragged id, with a transient peer preview — while
+keeping single-item lab compatibility unchanged.
+
 The React measurement adapter (`useGridMetrics`) and the atomic drag
 session that consumes these conversions live in
 `apps/web/features/desktop-grid/` and are shared by the production desktop

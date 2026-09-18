@@ -743,10 +743,47 @@ button.vela-sync:disabled {
  * Context menus
  * ------------------------------------------------------------------------- */
 
-/* Display-contents wrapper: hosts the desktop context-menu handler without
-   affecting the viewport layout. */
-.vela-desktop__menu-area {
+/* Display-contents wrappers: host the desktop context-menu/marquee
+   handlers and the item-element lookup without affecting layout. */
+.vela-desktop__menu-area,
+.vela-desktop__area-shell {
   display: contents;
+}
+
+/* --- Arrange session: selection, marquee, history controls -------------- */
+
+.vela-item[data-selected="true"] .vela-item__icon,
+.vela-item--widget[data-selected="true"] {
+  box-shadow:
+    0 0 0 2px var(--vd-accent),
+    0 10px 26px oklch(0 0 0 / 0.35);
+}
+
+.vela-marquee {
+  position: fixed;
+  z-index: 25;
+  pointer-events: none;
+  border: 1px solid var(--vd-accent);
+  background: oklch(0.6 0.1 205 / 0.16);
+  border-radius: 4px;
+}
+
+.vela-topbar__arrange-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vela-topbar__history-button {
+  padding: 5px 10px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.vela-topbar__selection-count {
+  font-size: 12.5px;
+  color: var(--vd-text-muted);
+  white-space: nowrap;
 }
 
 .vela-context-menu {

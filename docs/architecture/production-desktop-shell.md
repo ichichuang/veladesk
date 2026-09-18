@@ -107,6 +107,12 @@ Mode controls lock while a drag is live. Grid metrics measurement
 (`useGridMetrics`) moved to the same shared `features/desktop-grid/`
 module.
 
+Since the arrange-session task, arrange mode also carries a session-only
+selection (click, Cmd/Ctrl toggle, marquee, Cmd/Ctrl+A), rigid group
+drags with a transient peer preview, keyboard nudges and a per-page
+movement-only Undo/Redo — see
+[arrange-session.md](./arrange-session.md).
+
 ## Add App v1
 
 One dialog, two fields (name, URL), stored verbatim: no protocol

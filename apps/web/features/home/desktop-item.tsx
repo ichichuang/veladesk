@@ -16,6 +16,10 @@ interface DesktopItemProps {
   /** Arrange mode allows dragging; view mode launches/opens on activation. */
   readonly arrange: boolean;
   readonly metricsAvailable: boolean;
+  /** Whether this item is in the session-only arrange selection. */
+  readonly selected: boolean;
+  /** Arrange-mode click: plain selects, Cmd/Ctrl toggles (shell decides). */
+  readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (
     entityId: EntityId,
     x: number,
@@ -29,16 +33,18 @@ interface DesktopItemProps {
  *
  * Apps are buttons: native focus and Enter/Space keep launch accessible in
  * view mode, while dnd-kit's keyboard sensor owns drag gestures in arrange
- * mode. Folders open their overlay on a view-mode click. Right-click and
- * Shift+F10 / ContextMenu open the shared entity context menu for apps and
- * folders; a missing entity renders a restrained placeholder instead of
- * crashing the desktop.
+ * mode. View-mode clicks launch apps / open folders; arrange-mode clicks
+ * drive the session selection. Right-click and Shift+F10 / ContextMenu open
+ * the shared entity context menu for apps and folders; a missing entity
+ * renders a restrained placeholder instead of crashing the desktop.
  */
 export function DesktopItem({
   item,
   workspace,
   arrange,
   metricsAvailable,
+  selected,
+  onItemSelect,
   onEntityContextMenu,
   onOpenFolder,
 }: DesktopItemProps) {
@@ -61,6 +67,8 @@ export function DesktopItem({
       entity={entity}
       arrange={arrange}
       metricsAvailable={metricsAvailable}
+      selected={selected}
+      onItemSelect={onItemSelect}
       onEntityContextMenu={onEntityContextMenu}
       onOpenFolder={onOpenFolder}
     />
@@ -78,6 +86,8 @@ interface DesktopEntityProps {
   readonly entity: WorkspaceEntity;
   readonly arrange: boolean;
   readonly metricsAvailable: boolean;
+  readonly selected: boolean;
+  readonly onItemSelect: DesktopItemProps["onItemSelect"];
   readonly onEntityContextMenu: DesktopItemProps["onEntityContextMenu"];
   readonly onOpenFolder: DesktopItemProps["onOpenFolder"];
 }
@@ -87,6 +97,8 @@ function DesktopEntity({
   entity,
   arrange,
   metricsAvailable,
+  selected,
+  onItemSelect,
   onEntityContextMenu,
   onOpenFolder,
 }: DesktopEntityProps) {
@@ -114,25 +126,38 @@ function DesktopEntity({
     onEntityContextMenu(entity.id, anchor.x, anchor.y);
   }
 
+  function handleClick(event: ReactMouseEvent<HTMLElement>) {
+    if (!arrange) {
+      // View mode: apps launch, folders open. Widgets have no activation.
+      if (entity.kind === "app") {
+        launchApp(entity);
+      } else if (entity.kind === "folder") {
+        onOpenFolder(entity.id);
+      }
+      return;
+    }
+    // Arrange mode reserves clicks for the session selection. A plain click
+    // selects only this item; Cmd/Ctrl toggles it in or out.
+    onItemSelect(entity.id, event.metaKey || event.ctrlKey);
+  }
+
+  const selectionProps = { "data-selected": selected ? "true" : undefined } as const;
+
   if (entity.kind === "app") {
     return (
       <button
         type="button"
         ref={ref}
+        data-item-id={item.id}
         className="vela-item"
         data-kind="app"
         {...draggingProps}
+        {...selectionProps}
         style={commonStyle}
         title={entity.name}
         onContextMenu={handleContextMenu}
         onKeyDown={handleKeyDown}
-        onClick={() => {
-          // Arrange mode reserves clicks for focus/drag; only view launches.
-          if (arrange) {
-            return;
-          }
-          launchApp(entity);
-        }}
+        onClick={handleClick}
       >
         <span className="vela-item__icon" aria-hidden="true">
           {appIconText(entity)}
@@ -147,21 +172,17 @@ function DesktopEntity({
       <button
         type="button"
         ref={ref}
+        data-item-id={item.id}
         className="vela-item"
         data-kind="folder"
         {...draggingProps}
+        {...selectionProps}
         style={commonStyle}
         title={entity.name}
         aria-haspopup="dialog"
         onContextMenu={handleContextMenu}
         onKeyDown={handleKeyDown}
-        onClick={() => {
-          // Arrange mode reserves clicks for focus/drag; only view opens.
-          if (arrange) {
-            return;
-          }
-          onOpenFolder(entity.id);
-        }}
+        onClick={handleClick}
       >
         <span className="vela-item__icon vela-item__icon--folder" aria-hidden="true">
           <FolderGlyph />
@@ -174,12 +195,15 @@ function DesktopEntity({
   return (
     <div
       ref={ref}
+      data-item-id={item.id}
       className="vela-item vela-item--widget"
       data-kind="widget"
       {...draggingProps}
+      {...selectionProps}
       style={commonStyle}
       tabIndex={0}
       onContextMenu={swallowContextMenu}
+      onClick={handleClick}
     >
       <span className="vela-item__widget-title">{entity.title ?? entity.widgetType}</span>
     </div>
