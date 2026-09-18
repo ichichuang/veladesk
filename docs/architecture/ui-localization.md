@@ -4,8 +4,10 @@
 
 Task 014-D gives the production UI a bilingual foundation: Simplified
 Chinese is the product default, English is switchable, and the switch is a
-browser-local preference. No i18n package is used — the whole layer is a
-few small modules under `apps/web/features/i18n/`.
+browser-local preference. Task 014-E makes Chinese-first verifiable in
+real browsers (the v2 storage reset) and exposes a compact 中/EN switch in
+the top bar. No i18n package is used — the whole layer is a few small
+modules under `apps/web/features/i18n/`.
 
 ## Scope
 
@@ -24,13 +26,17 @@ folder names, page names, URLs and tags render verbatim in every locale.
 `UiLocale` is exactly `"zh-CN" | "en-US"`, with `DEFAULT_UI_LOCALE =
 "zh-CN"`. The first visit is Chinese — the locale is deliberately NOT
 inferred from `navigator.language`; switching is an explicit user action
-in Settings → General. Anything unparsable or unsupported falls back to
-zh-CN (`parseUiLocale`).
+(the topbar 中/EN switch or Settings → General). Anything unparsable or
+unsupported falls back to zh-CN (`parseUiLocale`).
 
 ## Browser-local persistence, never workspace data
 
 The UI language is a per-browser preference stored under the localStorage
-key `veladesk.ui-locale.v1`. Switching languages:
+key `veladesk.ui-locale.v2` (014-E). The v1 key is dead: it may hold
+`en-US` in real browser profiles polluted during development/automation,
+so it is never read and never migrated. When v2 is absent the locale is
+unconditionally zh-CN — a language choice only exists once explicitly
+written to v2. Switching languages:
 
 - does not stage the workspace,
 - does not bump `localGeneration`,
@@ -104,7 +110,11 @@ is findable via 设置, "settings" or "theme", and the sync command via
 | `{param}` interpolation  | `features/i18n/format-message.ts`         |
 | Provider (external store) | `features/i18n/ui-locale-provider.tsx`   |
 | Consumer hook (`t`, `setLocale`) | `features/i18n/use-i18n.ts`       |
+| Topbar switch model | `features/i18n/locale-switch.ts`            |
+| Topbar switch component | `features/home/locale-switch.tsx`        |
 
 The Settings Center's General section (界面语言 / Interface language)
 renders the two endonym labels — 中文 and English — in every locale, with
-a hint explaining that the language is browser-local only.
+a hint explaining that the language is browser-local only. The topbar's
+compact 中/EN switch (`buildLocaleSwitchButtons`) writes the exact same
+UiLocale store — one source of truth, two entry points.

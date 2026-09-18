@@ -73,6 +73,7 @@ import {
 } from "./layout-handoff";
 import type { PendingLayoutHandoff } from "./layout-handoff";
 import { launchApp } from "./launch-app";
+import { LocaleSwitch } from "./locale-switch";
 import { buildAppearanceTheme } from "./appearance-theme";
 import { disableDndDropAnimation } from "./dnd-static-drop";
 import { useI18n } from "../i18n/use-i18n";
@@ -1227,6 +1228,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         >
           {t("topbar.add")}
         </button>
+        <LocaleSwitch />
         <div className="vela-segment" role="group" aria-label={t("mode.desktopModeLabel")}>
           <button
             type="button"
