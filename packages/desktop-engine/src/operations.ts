@@ -139,6 +139,35 @@ function selectionIsWellFormed(itemIds: readonly LayoutItemId[]): boolean {
 }
 
 /**
+ * Whether the selected group has a definable internal geometry for a rigid
+ * translation: every anchor is an integer cell, and no two selected items
+ * overlap each other.
+ *
+ * A rigid translation preserves relative positions, so a selected-selected
+ * overlap can never be repaired by the same delta — it is a source layout
+ * invariant defect ("invalid-layout"), never a target "collision". A
+ * fractional anchor would leak non-integer cells into both the translated
+ * group and the nearest-free delta search. Selected-vs-unselected overlap
+ * and partially out-of-bounds groups are deliberately NOT defects here:
+ * those stay repairable through the existing repair semantics.
+ */
+function selectedGroupIsStructurallySound(selectedEntries: readonly LayoutItem[]): boolean {
+  for (const entry of selectedEntries) {
+    if (!Number.isInteger(entry.position.column) || !Number.isInteger(entry.position.row)) {
+      return false;
+    }
+  }
+  for (const [index, first] of selectedEntries.entries()) {
+    for (const second of selectedEntries.slice(index + 1)) {
+      if (rectsOverlap(toGridRect(first), toGridRect(second))) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
  * Whether a rigid translation is applicable at all: both deltas must be
  * integers (NaN and Infinity are not integers either).
  */
@@ -159,16 +188,19 @@ function translationIsApplicable(translation: GridTranslation): boolean {
  *
  * Failures never mutate or replace the input layout:
  * - invalid-selection: empty or duplicated requested ids
- * - invalid-layout: the layout has duplicate item ids (or, beyond the
- *   moved selection, structurally unsound items)
+ * - invalid-layout: the layout has duplicate item ids, structurally unsound
+ *   items beyond the moved selection, or a selection group without a
+ *   definable internal geometry (a fractional anchor or a selected-selected
+ *   overlap — no rigid translation can repair those)
  * - invalid-translation: non-integer / non-finite deltas
  * - item-not-found: any requested id missing from the layout
  * - out-of-bounds / collision (exact): the translated group would leave
- *   the grid or overlap an unselected item
+ *   the grid or overlap an unselected item — a zero translation is checked
+ *   like any other, so an illegally placed group cannot fake success
  * - no-space (nearest-free): no rigid translation of the whole group
  *   resolves legally
  *
- * A zero translation returns the original layout reference. A
+ * A LEGAL zero translation returns the original layout reference. A
  * single-item selection delegates to `moveItem`, keeping both behaviors
  * exactly equivalent.
  */
@@ -213,9 +245,12 @@ export function moveItems(
   const others = layout.items.filter((entry) => !selected.has(entry.id));
 
   // The moved group must sit on top of a sound remaining layout: every
-  // selected span valid, every unselected item valid, in-grid and mutually
-  // collision-free.
+  // selected span valid on an integer anchor, no selected-selected overlap,
+  // every unselected item valid, in-grid and mutually collision-free.
   if (!selectedEntries.every((entry) => isValidGridSpan(entry.span))) {
+    return { ok: false, reason: "invalid-layout", layout };
+  }
+  if (!selectedGroupIsStructurallySound(selectedEntries)) {
     return { ok: false, reason: "invalid-layout", layout };
   }
   if (!othersAreSound(layout, new Set(selectedEntries))) {
@@ -320,10 +355,11 @@ export function moveItems(
     return { ok: true, layout: { ...layout, items: translated(best.columnDelta, best.rowDelta) } };
   }
 
-  // Exact zero translation: nothing to move, original layout reference.
-  if (translation.columnDelta === 0 && translation.rowDelta === 0) {
-    return { ok: true, layout };
-  }
+  // Exact placement: the translated group — a zero translation included —
+  // must be legal as given. A source defect of the group (out of bounds,
+  // overlapping an unselected item) surfaces as out-of-bounds / collision
+  // even when nothing moves; only a LEGAL zero translation is a no-op that
+  // returns the original layout reference.
   const movedItems = translated(translation.columnDelta, translation.rowDelta);
   for (const entry of movedItems) {
     if (!selected.has(entry.id)) {
@@ -336,6 +372,9 @@ export function moveItems(
   const colliding = collidesWithOthers(translation.columnDelta, translation.rowDelta);
   if (colliding.length > 0) {
     return { ok: false, reason: "collision", layout, collidingItemIds: colliding };
+  }
+  if (translation.columnDelta === 0 && translation.rowDelta === 0) {
+    return { ok: true, layout };
   }
   return { ok: true, layout: { ...layout, items: movedItems } };
 }

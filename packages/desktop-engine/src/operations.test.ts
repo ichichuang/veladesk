@@ -402,12 +402,54 @@ describe("moveItems", () => {
     }
   });
 
-  it("never reports a collision between two selected items", () => {
-    // a and b overlap each other in the source layout (a pre-existing
-    // defect); moving the whole group must not report self collision.
+  it("rejects internally overlapping selected groups as invalid-layout", () => {
+    // a and b overlap each other in the source layout. A rigid translation
+    // preserves relative positions, so that overlap is a source defect no
+    // delta can repair — even a zero translation must not fake success.
     const source = layout([item("a", 0, 0, 2, 2), item("b", 1, 1), item("c", 3, 3)]);
     const result = moveItems(source, ["a", "b"], { columnDelta: 0, rowDelta: 0 });
-    expect(result.ok).toBe(true);
+    expect(result).toEqual({ ok: false, reason: "invalid-layout", layout: source });
+  });
+
+  it("rejects internally overlapping selected groups for non-zero exact translations too", () => {
+    const source = layout([item("a", 0, 0, 2, 2), item("b", 1, 1), item("c", 3, 3)]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 1, rowDelta: 0 });
+    expect(result).toEqual({ ok: false, reason: "invalid-layout", layout: source });
+  });
+
+  it("rejects fractional selected positions as invalid-layout", () => {
+    const fractionalColumn = { ...item("a", 0, 0), position: { column: 0.5, row: 0 } };
+    const fractionalRow = { ...item("b", 2, 2), position: { column: 2, row: 2.5 } };
+    const source = layout([fractionalColumn, fractionalRow]);
+    expect(moveItems(source, ["a", "b"], { columnDelta: 0, rowDelta: 0 })).toEqual({
+      ok: false,
+      reason: "invalid-layout",
+      layout: source,
+    });
+    expect(moveItems(source, ["a", "b"], { columnDelta: 1, rowDelta: 1 })).toEqual({
+      ok: false,
+      reason: "invalid-layout",
+      layout: source,
+    });
+  });
+
+  it("reports collision for a legal group whose zero translation overlaps an unselected item", () => {
+    // The selected pair is internally sound, but b sits on unselected x in
+    // the source; a zero translation is still a placement that must be legal.
+    const source = layout([item("a", 0, 0), item("b", 2, 2), item("x", 2, 2)]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 0, rowDelta: 0 });
+    expect(result).toEqual({
+      ok: false,
+      reason: "collision",
+      layout: source,
+      collidingItemIds: ["x"],
+    });
+  });
+
+  it("reports out-of-bounds for a selected item already outside the grid under a zero translation", () => {
+    const source = layout([item("a", 0, 0), item("b", 3, 3, 2, 2)]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 0, rowDelta: 0 });
+    expect(result).toEqual({ ok: false, reason: "out-of-bounds", layout: source });
   });
 
   it("finds the nearest rigid translation for a group around a blocker", () => {
@@ -500,5 +542,32 @@ describe("moveItems", () => {
     if (result.ok) {
       expect(result.layout).toBe(source);
     }
+  });
+
+  it("repairs a selected group that overlaps an unselected item via nearest-free", () => {
+    // Repair capability: b sits on unselected x in the source, so staying
+    // put is illegal; the nearest legal rigid translation moves the whole
+    // group past x on the same row (distance tie with one row down is broken
+    // by the smaller top row).
+    const source = layout([item("a", 0, 0), item("b", 1, 0), item("x", 1, 0)]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 1, rowDelta: 0 }, {
+      placement: "nearest-free",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const positions = new Map(result.layout.items.map((entry) => [entry.id, entry.position]));
+      expect(positions.get("a")).toEqual({ column: 2, row: 0 });
+      expect(positions.get("b")).toEqual({ column: 3, row: 0 });
+    }
+  });
+
+  it("rejects internally overlapping selected groups for nearest-free as invalid-layout", () => {
+    // Selected-selected overlap cannot be repaired by ANY rigid translation,
+    // so nearest-free must not go hunting for one either.
+    const source = layout([item("a", 0, 0, 2, 2), item("b", 1, 1), item("c", 3, 3)]);
+    const result = moveItems(source, ["a", "b"], { columnDelta: 1, rowDelta: 0 }, {
+      placement: "nearest-free",
+    });
+    expect(result).toEqual({ ok: false, reason: "invalid-layout", layout: source });
   });
 });
