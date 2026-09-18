@@ -16,7 +16,10 @@ import "./home-shell.css";
  */
 export function VelaHome() {
   return (
-    <WorkspaceRuntimeProvider errorFallback={(error) => <HomeRecoveryScreen error={error} />}>
+    <WorkspaceRuntimeProvider
+      loadingFallback={<StartupScreen />}
+      errorFallback={(error) => <HomeRecoveryScreen error={error} />}
+    >
       <HomeScreen />
     </WorkspaceRuntimeProvider>
   );
