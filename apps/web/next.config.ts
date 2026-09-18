@@ -2,9 +2,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 
+import { parseDevAllowedOrigins } from "./server/dev-origins";
+
 // ESM/TS config: derive directories from import.meta.url, never __dirname.
 const webDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(webDir, "../..");
+
+// LAN development: comma-separated hostnames allowed to fetch dev-only
+// resources (/_next/hmr, /__nextjs_font/*) from the dev server. Only read
+// in development; production standalone never touches this env var.
+const devAllowedOrigins = parseDevAllowedOrigins(
+  process.env.VELADESK_DEV_ALLOWED_ORIGINS,
+);
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -26,6 +35,12 @@ const nextConfig: NextConfig = {
     "@veladesk/local-store",
     "@veladesk/sync",
   ],
+  // Only surface the dev-origin allowlist in development and only when the
+  // operator actually configured hostnames, so production builds (and dev
+  // without LAN access) see an unchanged config shape.
+  ...(process.env.NODE_ENV === "development" && devAllowedOrigins.length > 0
+    ? { allowedDevOrigins: [...devAllowedOrigins] }
+    : {}),
 };
 
 export default nextConfig;

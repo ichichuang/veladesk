@@ -55,6 +55,19 @@ pnpm dev
 
 Other scripts: `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test:run`, `pnpm clean`.
 
+**LAN development**
+
+To reach the dev server from another device on your LAN (e.g. `http://10.100.50.74:3100`), pass the hostnames you will browse from so Next.js does not block dev resources (HMR, fonts) as cross-origin:
+
+```bash
+VELADESK_DEV_ALLOWED_ORIGINS=10.100.50.74 \
+pnpm --filter @veladesk/web exec next dev \
+  -H 0.0.0.0 \
+  -p 3100
+```
+
+`VELADESK_DEV_ALLOWED_ORIGINS` is a comma-separated hostname list used only by the Next.js development server's origin allowlist; it is not a production setting.
+
 **Workspace overview**
 
 | Path | Description |
