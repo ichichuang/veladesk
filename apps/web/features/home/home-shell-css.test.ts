@@ -98,11 +98,91 @@ describe("home-shell.css grid geometry contract", () => {
       /grid-template-rows:\s*repeat\(var\(--vd-grid-rows\),\s*minmax\(0,\s*1fr\)\)/
     );
   });
+});
 
-  it("styles guide cells with a restrained 1px line, never a fill", () => {
+describe("home-shell.css snap lattice contract (014-E)", () => {
+  /**
+   * The arrange-mode grid is a LOGICAL SNAP LATTICE, never a visible tile
+   * board: guide elements keep their DOM geometry (one per logical cell,
+   * rect = CSS grid rect) but must carry zero box chrome — no border, no
+   * fill. The only visual is a tiny dot at the slot's icon anchor.
+   */
+  it("draws guide cells with no border and no background fill", () => {
     const guide = ruleBlock(".vela-desktop__grid-guide");
-    expect(guide).toMatch(/border:\s*1px\s+solid\s+var\(--vd-grid-line\)/);
-    expect(guide).not.toMatch(/background(?!-)/);
-    expect(guide).toMatch(/border-radius:\s*\d+px/);
+    expect(guide).toMatch(/border:\s*none/);
+    expect(guide).toMatch(/background:\s*none/);
+    // Exactly one guide-cell rule may exist — no second rule can sneak a
+    // tile look back in through another context.
+    const guideRules = css.match(/^\.vela-desktop__grid-guide\s*\{/gm) ?? [];
+    expect(guideRules.length).toBe(1);
+  });
+
+  it("marks the snap anchor with a tiny round dot, never a box or ring", () => {
+    const marker = ruleBlock(".vela-desktop__grid-guide::after");
+    for (const axis of ["width", "height"]) {
+      const size = marker.match(new RegExp(`${axis}:\\s*([\\d.]+)px`));
+      expect(size, `${axis} in px`).not.toBeNull();
+      expect(parseFloat(size![1]!)).toBeLessThanOrEqual(8);
+    }
+    expect(marker).toMatch(/border-radius:\s*999px/);
+    expect(marker).toMatch(/background:\s*var\(--vd-grid-dot\)/);
+    // A border on the marker would read as a tiny tile/ring — forbidden.
+    expect(marker).not.toMatch(/(?:^|[\s;])border:/);
+  });
+
+  it("anchors the dot at the slot's icon origin shared with .vela-item", () => {
+    const marker = ruleBlock(".vela-desktop__grid-guide::after");
+    // The icon's top-center is the one anchor that never moves: the item
+    // column is flex-start, so tight rows may flex-shrink the icon box
+    // vertically but its top edge stays at --vd-item-pad-top forever.
+    expect(marker).toMatch(/top:\s*var\(--vd-item-pad-top\)/);
+    expect(marker).toMatch(/left:\s*50%/);
+    // Single source: the item's own top padding feeds the anchor calc, so
+    // label length, icon size or locale can never shift the slot anchor.
+    const item = ruleBlock(".vela-item");
+    expect(item).toMatch(/padding:\s*var\(--vd-item-pad-top\)\s+4px/);
+    // Horizontal anchor: items center their icon column.
+    expect(item).toMatch(/align-items:\s*center/);
+  });
+
+  it("pins the slot anchor contract on items explicitly", () => {
+    const item = ruleBlock(".vela-item");
+    expect(item).toMatch(/align-self:\s*stretch/);
+    expect(item).toMatch(/justify-self:\s*stretch/);
+  });
+
+  it("fades the guide layer in quickly, by opacity only", () => {
+    const guides = ruleBlock(".vela-desktop__grid-guides");
+    const animation = guides.match(/animation:\s*vela-guides-in\s+(\d+)ms/);
+    expect(animation).not.toBeNull();
+    const duration = parseInt(animation![1]!, 10);
+    expect(duration).toBeGreaterThanOrEqual(120);
+    expect(duration).toBeLessThanOrEqual(160);
+    const keyframes = css.match(/@keyframes vela-guides-in\s*\{([\s\S]*?)\n\}/);
+    expect(keyframes).not.toBeNull();
+    // Markers may appear, never move: the fade must not touch transform.
+    expect(keyframes![1]!).not.toMatch(/transform/);
+    expect(keyframes![1]!).toMatch(/opacity:\s*0/);
+  });
+
+  it("disables the guide fade under reduced motion", () => {
+    const start = css.indexOf("@media (prefers-reduced-motion: reduce)");
+    const end = css.indexOf("@media", start + 1);
+    const reduced = css.slice(start, end === -1 ? undefined : end);
+    expect(reduced).toContain(".vela-desktop__grid-guides");
+    expect(reduced).toMatch(/animation:\s*none/);
+  });
+
+  it("sizes the icon box through the single --vd-slot-icon-size variable", () => {
+    const icon = ruleBlock(".vela-item__icon");
+    expect(icon).toMatch(/width:\s*var\(--vd-slot-icon-size\)/);
+    expect(icon).toMatch(/height:\s*var\(--vd-slot-icon-size\)/);
+    // The responsive shrink redefines the shared variable instead of
+    // duplicating icon calcs, so the anchor dot tracks the icon everywhere.
+    const responsive = css.match(
+      /@media \(max-width: 1023px\)\s*\{[\s\S]*?\n\}/
+    );
+    expect(responsive).not.toBeNull();
+    expect(responsive![0]!).toMatch(/--vd-slot-icon-size:\s*calc\(var\(--vd-icon-size\)\s*\*\s*0\.84\)/);
   });
 });

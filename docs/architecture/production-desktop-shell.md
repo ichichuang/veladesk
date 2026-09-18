@@ -113,7 +113,7 @@ drags with a transient peer preview, keyboard nudges and a per-page
 movement-only Undo/Redo — see
 [arrange-session.md](./arrange-session.md).
 
-### Grid geometry and guides (014-D)
+### Grid geometry and snap lattice (014-D / 014-E)
 
 Grid metrics are measured against the CSS Grid **content box** (client box
 minus paddings — see
@@ -127,6 +127,21 @@ sharing the viewport's exact `grid-template` / gap / padding through the
 variant overrides the variables). Guide rects therefore equal actual
 track rects — the earlier repeating-background estimate is gone. View
 mode renders no guides.
+
+Visually the grid is a **logical snap lattice, never a tile board**
+(014-E): guide cells carry no border, no fill and no radius — the only
+visual is one 4px dot (`::after` on each guide, `--vd-grid-dot`) at the
+slot's icon placement origin. Items fill their cell
+(`align-self`/`justify-self: stretch`) and pin the icon at the top,
+horizontally centered (`align-items: center`). The dot marks the icon's
+top-center: the item column is flex-start, so the icon's top edge always
+sits exactly at `--vd-item-pad-top` — even when tight row heights
+flex-shrink the icon box and label vertically (the icon top never moves;
+its center would). Entering arrange fades the dot layer in with a 140ms
+opacity-only animation (`vela-guides-in`, disabled under
+`prefers-reduced-motion`); the desktop stays the wallpaper, not a field
+of empty card slots. The visual contract — borderless/fill-less guides,
+marker ≤ 8px — is pinned by `home-shell-css.test.ts`.
 
 ### Drop = snapped and still (014-D)
 

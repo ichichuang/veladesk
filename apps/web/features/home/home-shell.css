@@ -391,7 +391,15 @@
   --vd-blur: 18px;
   --vd-radius: 14px;
   --vd-icon-size: 62px;
-  --vd-grid-line: oklch(0.9 0.02 264 / 0.05);
+  /* Snap-lattice hint color (014-E): a tiny 4px dot can afford a higher
+     alpha than the old 1px tile borders did — presence stays whisper-low. */
+  --vd-grid-dot: oklch(0.92 0.03 260 / 0.38);
+  /* Slot anchor geometry (014-E): items pin their icon at the top of the
+     cell (flex-start + --vd-item-pad-top), horizontally centered. The
+     lattice dot marks that origin. --vd-slot-icon-size single-sources the
+     icon box size (the responsive shrink redefines the same variable). */
+  --vd-item-pad-top: 6px;
+  --vd-slot-icon-size: var(--vd-icon-size);
   --vd-label-shadow: 0 1px 3px oklch(0 0 0 / 0.55);
 
   position: fixed;
@@ -431,7 +439,7 @@
   --vd-accent-wash: oklch(0.56 0.14 var(--vd-accent-hue) / 0.16);
   --vd-field: oklch(1 0 0 / 0.85);
   --vd-chip: oklch(0.55 0.02 264 / 0.12);
-  --vd-grid-line: oklch(0 0 0 / 0.07);
+  --vd-grid-dot: oklch(0.25 0.02 264 / 0.32);
   --vd-label-shadow: none;
 }
 
@@ -461,7 +469,7 @@
     --vd-accent-wash: oklch(0.56 0.14 var(--vd-accent-hue) / 0.16);
     --vd-field: oklch(1 0 0 / 0.85);
     --vd-chip: oklch(0.55 0.02 264 / 0.12);
-    --vd-grid-line: oklch(0 0 0 / 0.07);
+    --vd-grid-dot: oklch(0.25 0.02 264 / 0.32);
     --vd-label-shadow: none;
   }
 }
@@ -593,6 +601,7 @@
   cursor: default;
 }
 
+
 /* --- Desktop viewport grid ---------------------------------------------- */
 
 /*
@@ -625,6 +634,8 @@
  * Absolutely positioned over the padding box and reusing the viewport's
  * exact template/gap/padding, so every guide rect equals the actual track
  * rect. Never a pointer target, never part of layout measurement.
+ * Entering arrange fades the hint layer in gently (opacity only — the
+ * dots themselves never move); leaving arrange unmounts it entirely.
  */
 .vela-desktop__grid-guides {
   position: absolute;
@@ -636,12 +647,48 @@
   padding: var(--vd-grid-padding-y) var(--vd-grid-padding-x);
   grid-template-columns: repeat(var(--vd-grid-columns), minmax(0, 1fr));
   grid-template-rows: repeat(var(--vd-grid-rows), minmax(0, 1fr));
+  animation: vela-guides-in 140ms ease;
 }
 
-/* Restrained cell boundary: a 1px line, no fill, slight rounding. */
+@keyframes vela-guides-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/*
+ * Snap lattice (014-E): the grid is a logical snap lattice, never a
+ * visible tile board. Guide cells keep their DOM geometry (guide rect =
+ * track rect) but carry zero box chrome — no border, no fill, no radius.
+ * The only visual is one 4px dot at the slot's icon anchor, marking
+ * exactly where a dropped item's icon begins (its top-center origin).
+ */
 .vela-desktop__grid-guide {
-  border: 1px solid var(--vd-grid-line);
-  border-radius: 8px;
+  position: relative;
+  border: none;
+  background: none;
+}
+
+/*
+ * The dot marks the icon's placement ORIGIN, not the box center: the item
+ * column is flex-start, so the icon's top edge always sits exactly at
+ * --vd-item-pad-top — even when tight row heights flex-shrink the icon
+ * box and the label (the icon top never moves, its center would). X is
+ * the cell center, where align-items: center pins the icon.
+ */
+.vela-desktop__grid-guide::after {
+  content: "";
+  position: absolute;
+  top: var(--vd-item-pad-top);
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 999px;
+  background: var(--vd-grid-dot);
 }
 
 /* --- Desktop items ------------------------------------------------------- */
@@ -654,7 +701,13 @@
   gap: 8px;
   min-width: 0;
   min-height: 0;
-  padding: 6px 4px;
+  /* Slot anchor contract (014-E): every item fills its cell(s) exactly and
+     anchors its icon at the top, horizontally centered — label length,
+     icon size and locale can never shift the visual anchor. The arrange
+     lattice dot marks this same anchor (see --vd-item-pad-top). */
+  align-self: stretch;
+  justify-self: stretch;
+  padding: var(--vd-item-pad-top) 4px;
   border: none;
   background: transparent;
   color: var(--vd-text);
@@ -697,15 +750,18 @@
 .vela-item__icon {
   display: grid;
   place-items: center;
-  width: var(--vd-icon-size);
-  height: var(--vd-icon-size);
-  border-radius: calc(var(--vd-icon-size) * 0.26);
+  /* The shared slot variable (not --vd-icon-size directly) so the lattice
+     dot's anchor calc and the icon stay in lockstep, including the
+     responsive shrink. */
+  width: var(--vd-slot-icon-size);
+  height: var(--vd-slot-icon-size);
+  border-radius: calc(var(--vd-slot-icon-size) * 0.26);
   background:
     linear-gradient(150deg, oklch(0.52 0.09 250 / 0.9), oklch(0.38 0.07 300 / 0.9));
   box-shadow:
     0 10px 26px oklch(0 0 0 / 0.35),
     inset 0 1px 0 oklch(0.95 0.02 260 / 0.22);
-  font-size: calc(var(--vd-icon-size) * 0.34);
+  font-size: calc(var(--vd-slot-icon-size) * 0.34);
   font-weight: 650;
   letter-spacing: 0.02em;
   color: oklch(0.97 0.01 260);
@@ -1635,6 +1691,7 @@ button.vela-sync:disabled {
     transform: translateX(0);
   }
 
+  .vela-desktop__grid-guides,
   .vela-item,
   .vela-dock__item,
   .vela-pages__dot,
@@ -1681,12 +1738,11 @@ button.vela-sync:disabled {
  * ------------------------------------------------------------------------- */
 
 @media (max-width: 1023px) {
-  /* Icons shrink proportionally to the icon-size setting — never the grid. */
-  .vela-item__icon {
-    width: calc(var(--vd-icon-size) * 0.84);
-    height: calc(var(--vd-icon-size) * 0.84);
-    font-size: calc(var(--vd-icon-size) * 0.29);
-    border-radius: calc(var(--vd-icon-size) * 0.21);
+  /* Icons shrink proportionally to the icon-size setting — never the grid.
+     Redefining the shared slot variable keeps the lattice dot on the icon
+     anchor at this size too. */
+  .vela-desktop {
+    --vd-slot-icon-size: calc(var(--vd-icon-size) * 0.84);
   }
 
   .vela-item__label {
