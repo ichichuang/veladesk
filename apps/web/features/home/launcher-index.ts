@@ -45,6 +45,7 @@ const LOCAL_COMMAND_LABELS: Readonly<
 > = {
   "add-app": "Add App",
   "new-folder": "New Folder",
+  "open-settings": "Settings",
 };
 
 const MODE_COMMAND: Readonly<Record<LauncherMode, { label: string; secondary: readonly string[] }>> = {
@@ -150,6 +151,11 @@ export function buildLauncherEntries(
     "new-folder",
     LOCAL_COMMAND_LABELS["new-folder"],
     ["new folder", "create folder"],
+  );
+  pushCommand(
+    "open-settings",
+    LOCAL_COMMAND_LABELS["open-settings"],
+    ["settings", "preferences", "appearance", "theme", "desktop"],
   );
   pushCommand(
     "toggle-mode",

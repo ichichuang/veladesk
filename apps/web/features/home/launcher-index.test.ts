@@ -9,6 +9,7 @@ import type {
 } from "@veladesk/domain";
 
 import { buildLauncherEntries } from "./launcher-index";
+import { searchLauncherEntries } from "./launcher-search";
 
 interface AppOptions {
   readonly url?: string;
@@ -142,6 +143,7 @@ describe("buildLauncherEntries — entity scope", () => {
     expect(keys).toEqual([
       "command:add-app",
       "command:new-folder",
+      "command:open-settings",
       "command:toggle-mode",
       "command:pull-current",
       "app:app-solo",
@@ -203,6 +205,7 @@ describe("buildLauncherEntries — empty-query ordering", () => {
     expect(keys).toEqual([
       "command:add-app",
       "command:new-folder",
+      "command:open-settings",
       "command:toggle-mode",
       "app:app-openai",
       "folder:folder-tools",
@@ -300,13 +303,28 @@ describe("buildLauncherEntries — commands", () => {
     expect(arrangeToggle?.label).toBe("Switch to View");
   });
 
-  it("always leads with add-app, new-folder, toggle-mode in that order", () => {
+  it("always leads with add-app, new-folder, open-settings, toggle-mode in that order", () => {
     const keys = keysOf(richInput({ syncState: "dirty" }));
-    expect(keys.slice(0, 4)).toEqual([
+    expect(keys.slice(0, 5)).toEqual([
       "command:add-app",
       "command:new-folder",
+      "command:open-settings",
       "command:toggle-mode",
       "command:sync-current",
     ]);
+  });
+
+  it("offers the local Settings command regardless of sync state", () => {
+    for (const syncState of ["clean", "dirty", "conflict"] as const) {
+      const keys = keysOf(richInput({ syncState }));
+      expect(keys).toContain("command:open-settings");
+    }
+  });
+
+  it("finds Settings by its label and metadata keywords", () => {
+    for (const query of ["settings", "theme", "preferences", "appearance"]) {
+      const results = searchLauncherEntries(buildLauncherEntries(richInput({ syncState: "conflict" })), query);
+      expect(results[0]?.key).toBe("command:open-settings");
+    }
   });
 });

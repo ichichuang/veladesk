@@ -4,12 +4,14 @@ import type { DesktopPageId, EntityId } from "@veladesk/domain";
  * Commands of the V1 workspace launcher.
  *
  * A deliberately closed set: local structure commands (Add App, New
- * Folder, mode toggle) plus exactly one remote command that depends on the
- * working copy's sync state — never both at once.
+ * Folder, Settings, mode toggle) plus exactly one remote command that
+ * depends on the working copy's sync state — never both at once. The
+ * Settings command is local-only and exists in every sync state.
  */
 export type LauncherCommandId =
   | "add-app"
   | "new-folder"
+  | "open-settings"
   | "toggle-mode"
   | "sync-current"
   | "pull-current";
