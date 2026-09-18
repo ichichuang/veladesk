@@ -113,6 +113,16 @@ drags with a transient peer preview, keyboard nudges and a per-page
 movement-only Undo/Redo — see
 [arrange-session.md](./arrange-session.md).
 
+## Global launcher
+
+The ready shell hosts the workspace launcher: `Ctrl/Cmd+K` or the
+top-bar Search button opens a modal search surface over the current
+workspace (apps, folders, pages, fixed commands) with deterministic
+ranking, combobox/listbox keyboard semantics and focus restore. Opening
+and closing it never touches selection, arrange history or the
+workspace; activation reuses the existing launch/overlay/dialog/sync
+flows. See [global-launcher.md](./global-launcher.md).
+
 ## Add App v1
 
 One dialog, two fields (name, URL), stored verbatim: no protocol
@@ -147,6 +157,6 @@ usable (including local edits) with a conflict present.
 ## Scope
 
 Not in this stage: folder opening or creation, dock pin/unpin/reorder,
-settings center, theme studio, global launcher, real icon fetching,
-widget implementations, active-workspace persistence, animation engine.
+settings center, theme studio, real icon fetching, widget
+implementations, active-workspace persistence, animation engine.
 Visual motion is CSS-only with `prefers-reduced-motion` fallbacks.

@@ -82,3 +82,5 @@ Group drags, nudges, undo and redo all follow the same contract as every
 other edit: pure operation → local stage → UI → explicit sync attempt.
 Offline the UI changes immediately and the workspace goes
 dirty/Pending-Offline; conflicts keep local editing fully available.
+Opening or closing the global launcher itself never modifies the
+arrange selection or history.
