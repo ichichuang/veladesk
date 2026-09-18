@@ -34,10 +34,11 @@ interface DesktopGridViewProps {
  * The desktop viewport: a fixed CSS grid sized by the page layout.
  *
  * Occupies the space between top bar and dock so the body never scrolls.
- * In arrange mode, faint cell guides appear (pixel pitch from the measured
- * metrics) and the empty grid background starts a marquee selection.
- * Pure rendering — drag sessions, selection state and context menus live
- * in the shell.
+ * In arrange mode, a guide overlay renders one real CSS-grid cell per
+ * logical cell (same template/gap/padding as the viewport, so guide rects
+ * are actual track rects) and the empty grid background starts a marquee
+ * selection. Pure rendering — drag sessions, selection state and context
+ * menus live in the shell.
  */
 export function DesktopGridView({
   layout,
@@ -57,13 +58,15 @@ export function DesktopGridView({
   const gridStyle = {
     "--vd-grid-columns": layout.grid.columns,
     "--vd-grid-rows": layout.grid.rows,
-    ...(metrics === null
-      ? {}
-      : {
-          "--vd-pitch-x": `${metrics.cellWidth + metrics.columnGap}px`,
-          "--vd-pitch-y": `${metrics.cellHeight + metrics.rowGap}px`,
-        }),
   } as CSSProperties;
+
+  const guides = Array.from(
+    { length: layout.grid.columns * layout.grid.rows },
+    (_, index) => ({
+      column: (index % layout.grid.columns) + 1,
+      row: Math.floor(index / layout.grid.columns) + 1,
+    }),
+  );
 
   return (
     <div
@@ -75,6 +78,18 @@ export function DesktopGridView({
       onPointerMove={onViewportPointerMove}
       onPointerUp={onViewportPointerUp}
     >
+      {arrange ? (
+        <div className="vela-desktop__grid-guides" aria-hidden="true">
+          {guides.map(({ column, row }) => (
+            <span
+              key={`${column}-${row}`}
+              className="vela-desktop__grid-guide"
+              data-grid-column={column}
+              data-grid-row={row}
+            />
+          ))}
+        </div>
+      ) : null}
       {layout.items.map((item) => (
         <DesktopItem
           key={item.id}

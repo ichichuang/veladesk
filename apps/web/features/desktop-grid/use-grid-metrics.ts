@@ -7,15 +7,19 @@ import {
   type GridPixelMetrics,
 } from "@veladesk/desktop-interaction";
 
+import { calculateGridContentSize } from "./grid-box";
 import { areGridPixelMetricsEqual } from "./grid-metrics";
 
 /**
  * Measures the rendered grid container and derives grid pixel metrics.
  *
  * ResizeObserver and DOM reads stay in this React UI adapter; the conversion
- * itself is the pure `calculateGridPixelMetrics` from
- * @veladesk/desktop-interaction. Metrics state is only replaced when a value
- * actually changed, so resize observation cannot cause render loops.
+ * itself is pure (`calculateGridContentSize` +
+ * `calculateGridPixelMetrics`). CSS Grid tracks live in the container's
+ * content box, so the measurement uses clientWidth/clientHeight minus the
+ * computed paddings — never the whole bounding rect, which would
+ * systematically inflate every cell. Metrics state is only replaced when a
+ * value actually changed, so resize observation cannot cause render loops.
  *
  * Logical layout is never touched here — resizing only affects pixel metrics.
  *
@@ -34,12 +38,19 @@ export function useGridMetrics(grid: GridDefinition): {
     }
 
     const measure = () => {
-      const rect = node.getBoundingClientRect();
       const style = window.getComputedStyle(node);
       try {
+        const content = calculateGridContentSize({
+          clientWidth: node.clientWidth,
+          clientHeight: node.clientHeight,
+          paddingLeft: Number.parseFloat(style.paddingLeft) || 0,
+          paddingRight: Number.parseFloat(style.paddingRight) || 0,
+          paddingTop: Number.parseFloat(style.paddingTop) || 0,
+          paddingBottom: Number.parseFloat(style.paddingBottom) || 0,
+        });
         const next = calculateGridPixelMetrics({
-          width: rect.width,
-          height: rect.height,
+          width: content.width,
+          height: content.height,
           columnGap: Number.parseFloat(style.columnGap) || 0,
           rowGap: Number.parseFloat(style.rowGap) || 0,
           grid,

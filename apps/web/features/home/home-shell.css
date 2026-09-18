@@ -595,7 +595,18 @@
 
 /* --- Desktop viewport grid ---------------------------------------------- */
 
+/*
+ * Grid geometry single source: the viewport and the arrange-mode guide
+ * overlay both consume these custom properties, so guides and tracks can
+ * never drift apart. CSS Grid tracks live in the content box (inside this
+ * padding), which is exactly what useGridMetrics measures.
+ */
 .vela-desktop__viewport {
+  --vd-grid-column-gap: 16px;
+  --vd-grid-row-gap: 16px;
+  --vd-grid-padding-x: 34px;
+  --vd-grid-padding-y: 30px;
+
   position: absolute;
   top: var(--vd-topbar-height);
   right: 0;
@@ -603,18 +614,34 @@
   left: 0;
   z-index: 1;
   display: grid;
-  gap: 16px;
-  padding: 30px 34px;
+  gap: var(--vd-grid-row-gap) var(--vd-grid-column-gap);
+  padding: var(--vd-grid-padding-y) var(--vd-grid-padding-x);
   grid-template-columns: repeat(var(--vd-grid-columns), minmax(0, 1fr));
   grid-template-rows: repeat(var(--vd-grid-rows), minmax(0, 1fr));
 }
 
-/* Faint cell guides while arranging, sized from the measured pixel pitch. */
-.vela-desktop__viewport[data-arrange="true"] {
-  background-image:
-    linear-gradient(to right, var(--vd-grid-line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--vd-grid-line) 1px, transparent 1px);
-  background-size: var(--vd-pitch-x) var(--vd-pitch-y);
+/*
+ * Arrange-mode guide overlay: real CSS-grid cells, not a painted pitch.
+ * Absolutely positioned over the padding box and reusing the viewport's
+ * exact template/gap/padding, so every guide rect equals the actual track
+ * rect. Never a pointer target, never part of layout measurement.
+ */
+.vela-desktop__grid-guides {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: grid;
+  gap: var(--vd-grid-row-gap) var(--vd-grid-column-gap);
+  padding: var(--vd-grid-padding-y) var(--vd-grid-padding-x);
+  grid-template-columns: repeat(var(--vd-grid-columns), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--vd-grid-rows), minmax(0, 1fr));
+}
+
+/* Restrained cell boundary: a 1px line, no fill, slight rounding. */
+.vela-desktop__grid-guide {
+  border: 1px solid var(--vd-grid-line);
+  border-radius: 8px;
 }
 
 /* --- Desktop items ------------------------------------------------------- */
@@ -1665,8 +1692,10 @@ button.vela-sync:disabled {
   }
 
   .vela-desktop__viewport {
-    gap: 12px;
-    padding: 22px;
+    --vd-grid-column-gap: 12px;
+    --vd-grid-row-gap: 12px;
+    --vd-grid-padding-x: 22px;
+    --vd-grid-padding-y: 22px;
     bottom: 96px;
   }
 
