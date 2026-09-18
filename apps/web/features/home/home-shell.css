@@ -5,18 +5,34 @@
  * reserved for the top bar, dock and dialogs/overlays; desktop apps are
  * icons and labels in space, never cards. All motion is explicit-property
  * CSS with prefers-reduced-motion fallbacks.
+ *
+ * Theming contract (Task014): `:root` keeps the neutral dark startup
+ * palette used by boot/onboarding/picker screens. The workspace desktop
+ * (`.vela-desktop`) shadows every appearance variable in its own scope —
+ * fed inline by the resolved workspace appearance (or the Settings live
+ * preview) via `buildAppearanceTheme` — so every surface inside the shell
+ * inherits the workspace theme without per-component reads.
  */
 
 :root {
   --vd-bg: oklch(0.17 0.02 264);
-  --vd-surface: oklch(0.24 0.02 264 / 0.55);
-  --vd-surface-strong: oklch(0.27 0.02 264 / 0.78);
+  --vd-accent-hue: 205;
+  --vd-surface-opacity: 0.55;
+  --vd-surface-strong-opacity: 0.78;
+  --vd-surface: oklch(0.24 0.02 264 / var(--vd-surface-opacity));
+  --vd-surface-strong: oklch(0.27 0.02 264 / var(--vd-surface-strong-opacity));
   --vd-border: oklch(0.9 0.02 264 / 0.14);
   --vd-text: oklch(0.95 0.01 260);
   --vd-text-muted: oklch(0.74 0.02 264);
-  --vd-accent: oklch(0.78 0.12 205);
+  --vd-accent: oklch(0.78 0.12 var(--vd-accent-hue));
+  --vd-accent-strong: oklch(0.6 0.1 var(--vd-accent-hue) / 0.85);
+  --vd-accent-strong-hover: oklch(0.66 0.11 var(--vd-accent-hue) / 0.9);
+  --vd-accent-contrast: oklch(0.98 0.01 210);
+  --vd-field: oklch(0.2 0.02 264 / 0.6);
+  --vd-chip: oklch(0.2 0.02 264 / 0.45);
   --vd-radius: 14px;
   --vd-blur: 18px;
+  --vd-icon-size: 62px;
   --vd-topbar-height: 52px;
   --vd-font:
     system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -63,13 +79,13 @@
 }
 
 .vela-button--primary {
-  background: oklch(0.6 0.1 205 / 0.85);
+  background: var(--vd-accent-strong);
   border-color: transparent;
-  color: oklch(0.98 0.01 210);
+  color: var(--vd-accent-contrast);
 }
 
 .vela-button--primary:hover:not(:disabled) {
-  background: oklch(0.66 0.11 205 / 0.9);
+  background: var(--vd-accent-strong-hover);
 }
 
 /* ---------------------------------------------------------------------------
@@ -238,7 +254,7 @@
   padding: 9px 12px;
   border: 1px solid var(--vd-border);
   border-radius: 10px;
-  background: oklch(0.2 0.02 264 / 0.6);
+  background: var(--vd-field);
   color: var(--vd-text);
   font-family: var(--vd-font);
   font-size: 14px;
@@ -315,17 +331,167 @@
  * Desktop shell
  * ------------------------------------------------------------------------- */
 
+/*
+ * Workspace-scoped theme. The base values here are exactly the Task013
+ * dark palette (no drift): DesktopShell feeds the resolved appearance —
+ * persisted preferences or the Settings live preview — into these
+ * variables via inline style, and `data-vd-color-mode` /
+ * `data-vd-wallpaper` select the palette and wallpaper variant.
+ *
+ * Wallpaper presets only set blob hues (and chroma factors); the mode
+ * palettes set blob lightness/alpha, so every preset stays readable in
+ * dark and light without per-preset-per-mode rules.
+ */
 .vela-desktop {
+  --vd-wall-l1: 0.3;
+  --vd-wall-c1: 0.08;
+  --vd-wall-a1: 0.5;
+  --vd-wall-l2: 0.27;
+  --vd-wall-c2: 0.08;
+  --vd-wall-a2: 0.48;
+  --vd-wall-l3: 0.31;
+  --vd-wall-c3: 0.07;
+  --vd-wall-a3: 0.42;
+  --vd-wall-cf1: 1;
+  --vd-wall-cf2: 1;
+  --vd-wall-cf3: 1;
+  /* Aurora hues = the Task013 default wallpaper. */
+  --vd-wall-h1: 278;
+  --vd-wall-h2: 218;
+  --vd-wall-h3: 318;
+  --vd-wall-1: oklch(
+    var(--vd-wall-l1) calc(var(--vd-wall-c1) * var(--vd-wall-cf1)) var(--vd-wall-h1) /
+      var(--vd-wall-a1)
+  );
+  --vd-wall-2: oklch(
+    var(--vd-wall-l2) calc(var(--vd-wall-c2) * var(--vd-wall-cf2)) var(--vd-wall-h2) /
+      var(--vd-wall-a2)
+  );
+  --vd-wall-3: oklch(
+    var(--vd-wall-l3) calc(var(--vd-wall-c3) * var(--vd-wall-cf3)) var(--vd-wall-h3) /
+      var(--vd-wall-a3)
+  );
+
+  --vd-bg: oklch(0.17 0.02 264);
+  --vd-accent-hue: 205;
+  --vd-surface-opacity: 0.55;
+  --vd-surface-strong-opacity: 0.78;
+  --vd-surface: oklch(0.24 0.02 264 / var(--vd-surface-opacity));
+  --vd-surface-strong: oklch(0.27 0.02 264 / var(--vd-surface-strong-opacity));
+  --vd-border: oklch(0.9 0.02 264 / 0.14);
+  --vd-text: oklch(0.95 0.01 260);
+  --vd-text-muted: oklch(0.74 0.02 264);
+  --vd-accent: oklch(0.78 0.12 var(--vd-accent-hue));
+  --vd-accent-strong: oklch(0.6 0.1 var(--vd-accent-hue) / 0.85);
+  --vd-accent-strong-hover: oklch(0.66 0.11 var(--vd-accent-hue) / 0.9);
+  --vd-accent-contrast: oklch(0.98 0.01 210);
+  --vd-accent-wash: oklch(0.6 0.1 var(--vd-accent-hue) / 0.2);
+  --vd-field: oklch(0.2 0.02 264 / 0.6);
+  --vd-chip: oklch(0.2 0.02 264 / 0.45);
+  --vd-blur: 18px;
+  --vd-radius: 14px;
+  --vd-icon-size: 62px;
+  --vd-grid-line: oklch(0.9 0.02 264 / 0.05);
+  --vd-label-shadow: 0 1px 3px oklch(0 0 0 / 0.55);
+
   position: fixed;
   inset: 0;
   overflow: hidden;
   font-family: var(--vd-font);
   color: var(--vd-text);
   background:
-    radial-gradient(120% 90% at 12% 8%, oklch(0.3 0.08 278 / 0.5), transparent 62%),
-    radial-gradient(110% 85% at 88% 16%, oklch(0.27 0.08 218 / 0.48), transparent 58%),
-    radial-gradient(130% 110% at 50% 112%, oklch(0.31 0.07 318 / 0.42), transparent 60%),
+    radial-gradient(120% 90% at 12% 8%, var(--vd-wall-1), transparent 62%),
+    radial-gradient(110% 85% at 88% 16%, var(--vd-wall-2), transparent 58%),
+    radial-gradient(130% 110% at 50% 112%, var(--vd-wall-3), transparent 60%),
     var(--vd-bg);
+}
+
+/* Explicit light palette — complete, not just a white background. */
+.vela-desktop[data-vd-color-mode="light"] {
+  --vd-wall-l1: 0.85;
+  --vd-wall-c1: 0.06;
+  --vd-wall-a1: 0.55;
+  --vd-wall-l2: 0.8;
+  --vd-wall-c2: 0.06;
+  --vd-wall-a2: 0.5;
+  --vd-wall-l3: 0.88;
+  --vd-wall-c3: 0.05;
+  --vd-wall-a3: 0.5;
+
+  --vd-bg: oklch(0.96 0.008 264);
+  --vd-surface: oklch(1 0 0 / var(--vd-surface-opacity));
+  --vd-surface-strong: oklch(1 0 0 / var(--vd-surface-strong-opacity));
+  --vd-border: oklch(0.35 0.02 264 / 0.18);
+  --vd-text: oklch(0.24 0.02 264);
+  --vd-text-muted: oklch(0.42 0.02 264);
+  --vd-accent: oklch(0.56 0.16 var(--vd-accent-hue));
+  --vd-accent-strong: oklch(0.56 0.14 var(--vd-accent-hue) / 0.92);
+  --vd-accent-strong-hover: oklch(0.6 0.15 var(--vd-accent-hue) / 0.95);
+  --vd-accent-contrast: oklch(0.99 0.005 264);
+  --vd-accent-wash: oklch(0.56 0.14 var(--vd-accent-hue) / 0.16);
+  --vd-field: oklch(1 0 0 / 0.85);
+  --vd-chip: oklch(0.55 0.02 264 / 0.12);
+  --vd-grid-line: oklch(0 0 0 / 0.07);
+  --vd-label-shadow: none;
+}
+
+/* System mode follows the OS preference via CSS only — no JS matchMedia. */
+@media (prefers-color-scheme: light) {
+  .vela-desktop[data-vd-color-mode="system"] {
+    --vd-wall-l1: 0.85;
+    --vd-wall-c1: 0.06;
+    --vd-wall-a1: 0.55;
+    --vd-wall-l2: 0.8;
+    --vd-wall-c2: 0.06;
+    --vd-wall-a2: 0.5;
+    --vd-wall-l3: 0.88;
+    --vd-wall-c3: 0.05;
+    --vd-wall-a3: 0.5;
+
+    --vd-bg: oklch(0.96 0.008 264);
+    --vd-surface: oklch(1 0 0 / var(--vd-surface-opacity));
+    --vd-surface-strong: oklch(1 0 0 / var(--vd-surface-strong-opacity));
+    --vd-border: oklch(0.35 0.02 264 / 0.18);
+    --vd-text: oklch(0.24 0.02 264);
+    --vd-text-muted: oklch(0.42 0.02 264);
+    --vd-accent: oklch(0.56 0.16 var(--vd-accent-hue));
+    --vd-accent-strong: oklch(0.56 0.14 var(--vd-accent-hue) / 0.92);
+    --vd-accent-strong-hover: oklch(0.6 0.15 var(--vd-accent-hue) / 0.95);
+    --vd-accent-contrast: oklch(0.99 0.005 264);
+    --vd-accent-wash: oklch(0.56 0.14 var(--vd-accent-hue) / 0.16);
+    --vd-field: oklch(1 0 0 / 0.85);
+    --vd-chip: oklch(0.55 0.02 264 / 0.12);
+    --vd-grid-line: oklch(0 0 0 / 0.07);
+    --vd-label-shadow: none;
+  }
+}
+
+/* Wallpaper presets — hue/chroma variants of the shared blob geometry. */
+.vela-desktop[data-vd-wallpaper="midnight"] {
+  --vd-wall-h1: 265;
+  --vd-wall-h2: 292;
+  --vd-wall-h3: 240;
+  --vd-wall-cf1: 1;
+  --vd-wall-cf2: 0.95;
+  --vd-wall-cf3: 1;
+}
+
+.vela-desktop[data-vd-wallpaper="dawn"] {
+  --vd-wall-h1: 60;
+  --vd-wall-h2: 35;
+  --vd-wall-h3: 15;
+  --vd-wall-cf1: 0.75;
+  --vd-wall-cf2: 0.85;
+  --vd-wall-cf3: 0.7;
+}
+
+.vela-desktop[data-vd-wallpaper="mist"] {
+  --vd-wall-h1: 250;
+  --vd-wall-h2: 230;
+  --vd-wall-h3: 270;
+  --vd-wall-cf1: 0.3;
+  --vd-wall-cf2: 0.28;
+  --vd-wall-cf3: 0.32;
 }
 
 /* The single ambient pseudo layer — a slow, soft drift behind everything. */
@@ -369,7 +535,7 @@
   padding: 3px 10px;
   border: 1px solid var(--vd-border);
   border-radius: 8px;
-  background: oklch(0.2 0.02 264 / 0.45);
+  background: var(--vd-chip);
   font-size: 12.5px;
   color: var(--vd-text-muted);
   max-width: 260px;
@@ -413,8 +579,8 @@
 }
 
 .vela-segment__button[aria-pressed="true"] {
-  background: oklch(0.6 0.1 205 / 0.8);
-  color: oklch(0.98 0.01 210);
+  background: var(--vd-accent-strong);
+  color: var(--vd-accent-contrast);
 }
 
 .vela-segment__button:focus-visible {
@@ -446,8 +612,8 @@
 /* Faint cell guides while arranging, sized from the measured pixel pitch. */
 .vela-desktop__viewport[data-arrange="true"] {
   background-image:
-    linear-gradient(to right, oklch(0.9 0.02 264 / 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, oklch(0.9 0.02 264 / 0.05) 1px, transparent 1px);
+    linear-gradient(to right, var(--vd-grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--vd-grid-line) 1px, transparent 1px);
   background-size: var(--vd-pitch-x) var(--vd-pitch-y);
 }
 
@@ -490,15 +656,15 @@
 .vela-item__icon {
   display: grid;
   place-items: center;
-  width: 62px;
-  height: 62px;
-  border-radius: 16px;
+  width: var(--vd-icon-size);
+  height: var(--vd-icon-size);
+  border-radius: calc(var(--vd-icon-size) * 0.26);
   background:
     linear-gradient(150deg, oklch(0.52 0.09 250 / 0.9), oklch(0.38 0.07 300 / 0.9));
   box-shadow:
     0 10px 26px oklch(0 0 0 / 0.35),
     inset 0 1px 0 oklch(0.95 0.02 260 / 0.22);
-  font-size: 21px;
+  font-size: calc(var(--vd-icon-size) * 0.34);
   font-weight: 650;
   letter-spacing: 0.02em;
   color: oklch(0.97 0.01 260);
@@ -514,7 +680,7 @@
   font-size: 12.5px;
   line-height: 1.25;
   text-align: center;
-  text-shadow: 0 1px 3px oklch(0 0 0 / 0.55);
+  text-shadow: var(--vd-label-shadow);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -662,8 +828,8 @@
 }
 
 .vela-dock__utility[aria-pressed="true"] {
-  background: oklch(0.6 0.1 205 / 0.8);
-  color: oklch(0.98 0.01 210);
+  background: var(--vd-accent-strong);
+  color: var(--vd-accent-contrast);
 }
 
 .vela-dock__item:focus-visible,
@@ -695,7 +861,7 @@
   padding: 5px 11px;
   border: 1px solid var(--vd-border);
   border-radius: 999px;
-  background: oklch(0.2 0.02 264 / 0.45);
+  background: var(--vd-chip);
   font-family: var(--vd-font);
   font-size: 12px;
   color: var(--vd-text-muted);
@@ -764,7 +930,7 @@ button.vela-sync:disabled {
   z-index: 25;
   pointer-events: none;
   border: 1px solid var(--vd-accent);
-  background: oklch(0.6 0.1 205 / 0.16);
+  background: var(--vd-accent-wash);
   border-radius: 4px;
 }
 
@@ -1016,7 +1182,7 @@ button.vela-sync:disabled {
   padding: 11px 14px;
   border: 1px solid var(--vd-border);
   border-radius: 10px;
-  background: oklch(0.2 0.02 264 / 0.6);
+  background: var(--vd-field);
   color: var(--vd-text);
   font-family: var(--vd-font);
   font-size: 15px;
@@ -1057,7 +1223,7 @@ button.vela-sync:disabled {
 
 .vela-launcher__option:hover,
 .vela-launcher__option[data-active="true"] {
-  background: oklch(0.6 0.1 205 / 0.22);
+  background: var(--vd-accent-wash);
 }
 
 .vela-launcher__option:focus-visible {
@@ -1113,6 +1279,285 @@ button.vela-sync:disabled {
   color: var(--vd-text-muted);
 }
 
+/* ---------------------------------------------------------------------------
+ * Settings Center
+ * ------------------------------------------------------------------------- */
+
+.vela-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: oklch(0 0 0 / 0.5);
+  animation: vela-fade 160ms ease;
+}
+
+.vela-settings {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: min(84vh, 720px);
+  border: 1px solid var(--vd-border);
+  border-radius: calc(var(--vd-radius) + 6px);
+  background: var(--vd-surface-strong);
+  backdrop-filter: blur(var(--vd-blur));
+  -webkit-backdrop-filter: blur(var(--vd-blur));
+  box-shadow: 0 24px 70px oklch(0 0 0 / 0.5);
+  animation: vela-rise 200ms ease;
+}
+
+.vela-settings__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--vd-border);
+}
+
+.vela-settings__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  outline: none;
+}
+
+.vela-settings__spacer {
+  flex: 1;
+}
+
+.vela-settings__close {
+  padding: 4px 12px;
+  font-size: 15px;
+}
+
+.vela-settings__body {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.vela-settings__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 10px;
+  border-right: 1px solid var(--vd-border);
+}
+
+.vela-settings__nav-button {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--vd-text-muted);
+  font-family: var(--vd-font);
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.vela-settings__nav-button:hover {
+  color: var(--vd-text);
+}
+
+.vela-settings__nav-button[aria-current="true"] {
+  background: var(--vd-accent-wash);
+  color: var(--vd-text);
+}
+
+.vela-settings__nav-button:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: -1px;
+}
+
+.vela-settings__content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 22px;
+}
+
+.vela-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.vela-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vela-settings__field-label {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--vd-text-muted);
+}
+
+.vela-settings__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vela-settings__range {
+  flex: 1;
+  accent-color: var(--vd-accent);
+}
+
+.vela-settings__range:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: 2px;
+}
+
+.vela-settings__value {
+  min-width: 48px;
+  text-align: right;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vd-text-muted);
+}
+
+.vela-settings__radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.vela-settings__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  color: var(--vd-text);
+}
+
+.vela-settings__radio input {
+  accent-color: var(--vd-accent);
+  width: 15px;
+  height: 15px;
+}
+
+.vela-settings__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--vd-text-muted);
+}
+
+.vela-settings__swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.vela-settings__swatch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--vd-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--vd-text);
+  font-family: var(--vd-font);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.vela-settings__swatch[aria-pressed="true"] {
+  border-color: var(--vd-accent);
+  box-shadow: 0 0 0 1px var(--vd-accent);
+}
+
+.vela-settings__swatch:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: 2px;
+}
+
+.vela-settings__swatch-preview {
+  height: 40px;
+  border-radius: 6px;
+}
+
+/* Miniature gradients mirror the wallpaper presets (static swatches). */
+.vela-settings__swatch-preview[data-wallpaper="aurora"] {
+  background:
+    radial-gradient(90% 90% at 20% 20%, oklch(0.45 0.09 278 / 0.8), transparent 70%),
+    radial-gradient(80% 80% at 80% 30%, oklch(0.4 0.09 218 / 0.7), transparent 70%),
+    radial-gradient(90% 90% at 50% 100%, oklch(0.45 0.08 318 / 0.6), transparent 70%),
+    oklch(0.17 0.02 264);
+}
+
+.vela-settings__swatch-preview[data-wallpaper="midnight"] {
+  background:
+    radial-gradient(90% 90% at 20% 20%, oklch(0.32 0.08 265 / 0.9), transparent 70%),
+    radial-gradient(80% 80% at 80% 30%, oklch(0.3 0.07 292 / 0.8), transparent 70%),
+    radial-gradient(90% 90% at 50% 100%, oklch(0.3 0.07 240 / 0.8), transparent 70%),
+    oklch(0.13 0.02 264);
+}
+
+.vela-settings__swatch-preview[data-wallpaper="dawn"] {
+  background:
+    radial-gradient(90% 90% at 20% 20%, oklch(0.68 0.08 60 / 0.75), transparent 70%),
+    radial-gradient(80% 80% at 80% 30%, oklch(0.62 0.09 35 / 0.7), transparent 70%),
+    radial-gradient(90% 90% at 50% 100%, oklch(0.58 0.07 15 / 0.65), transparent 70%),
+    oklch(0.32 0.03 50);
+}
+
+.vela-settings__swatch-preview[data-wallpaper="mist"] {
+  background:
+    radial-gradient(90% 90% at 20% 20%, oklch(0.55 0.02 250 / 0.8), transparent 70%),
+    radial-gradient(80% 80% at 80% 30%, oklch(0.5 0.02 230 / 0.7), transparent 70%),
+    radial-gradient(90% 90% at 50% 100%, oklch(0.55 0.018 270 / 0.7), transparent 70%),
+    oklch(0.3 0.008 264);
+}
+
+.vela-select {
+  padding: 8px 10px;
+  border: 1px solid var(--vd-border);
+  border-radius: 10px;
+  background: var(--vd-field);
+  color: var(--vd-text);
+  font-family: var(--vd-font);
+  font-size: 13.5px;
+  max-width: 280px;
+}
+
+.vela-select:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: 1px;
+}
+
+.vela-settings__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px 14px;
+  border-top: 1px solid var(--vd-border);
+}
+
+.vela-settings__error {
+  flex: 1;
+  margin: 0;
+  font-size: 12.5px;
+  color: oklch(0.72 0.16 25);
+}
+
+.vela-settings__dirty {
+  flex: 1;
+  margin: 0;
+  font-size: 12px;
+  color: var(--vd-text-muted);
+}
+
 @keyframes vela-fade {
   from {
     opacity: 0;
@@ -1163,9 +1608,29 @@ button.vela-sync:disabled {
   .vela-folder-overlay__panel,
   .vela-launcher-backdrop,
   .vela-launcher,
-  .vela-launcher__option {
+  .vela-launcher__option,
+  .vela-settings-backdrop,
+  .vela-settings,
+  .vela-settings__nav-button,
+  .vela-settings__swatch {
     transition: none;
     animation: none;
+  }
+}
+
+/* Settings small-screen adaptation: navigation turns horizontal, content
+   scrolls locally, body never scrolls. */
+@media (max-width: 719px) {
+  .vela-settings__body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .vela-settings__nav {
+    flex-direction: row;
+    padding: 10px 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--vd-border);
   }
 }
 
@@ -1175,11 +1640,12 @@ button.vela-sync:disabled {
  * ------------------------------------------------------------------------- */
 
 @media (max-width: 1023px) {
+  /* Icons shrink proportionally to the icon-size setting — never the grid. */
   .vela-item__icon {
-    width: 52px;
-    height: 52px;
-    font-size: 18px;
-    border-radius: 13px;
+    width: calc(var(--vd-icon-size) * 0.84);
+    height: calc(var(--vd-icon-size) * 0.84);
+    font-size: calc(var(--vd-icon-size) * 0.29);
+    border-radius: calc(var(--vd-icon-size) * 0.21);
   }
 
   .vela-item__label {

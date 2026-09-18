@@ -7,12 +7,15 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   deleteApp,
   dissolveFolderToPage,
   findDesktopPage,
   moveAppToPage,
   pinEntityToDock,
+  replaceWorkspacePreferences,
+  resolveWorkspaceAppearance,
   unpinEntityFromDock,
 } from "@veladesk/domain";
 import type {
@@ -21,6 +24,7 @@ import type {
   DesktopPageId,
   EntityId,
   Folder,
+  WorkspaceAppearancePreferences,
   WorkspaceEntity,
   WorkspaceSnapshot,
 } from "@veladesk/domain";
@@ -63,9 +67,16 @@ import { SyncIndicator } from "./sync-indicator";
 import { replacePageLayout } from "./workspace-layout";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import { launchApp } from "./launch-app";
+import { buildAppearanceTheme } from "./appearance-theme";
 import { Launcher } from "./launcher";
 import { buildLauncherEntries } from "./launcher-index";
 import type { LauncherCommandId, LauncherEntry } from "./launcher-types";
+import { SettingsCenter } from "./settings-center";
+import type { SettingsSaveResult } from "./settings-center";
+import {
+  preferencesFromSettingsDraft,
+} from "./settings-draft";
+import type { WorkspaceSettingsDraft } from "./settings-draft";
 import "./home-shell.css";
 
 /** UI-only desktop mode. Session state — never persisted back to preferences. */
@@ -149,9 +160,25 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const [arrangeHistories, setArrangeHistories] = useState<ArrangeHistories>({});
   const [launcherOpen, setLauncherOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /**
+   * Session-only live preview from the Settings Center. It never stages or
+   * syncs; it is dropped on Cancel and on a successful Save (the persisted
+   * snapshot then carries the same appearance, so no flash-back).
+   */
+  const [appearancePreview, setAppearancePreview] = useState<WorkspaceAppearancePreferences | null>(null);
   const arrange = mode === "arrange";
 
   const activePage = resolveActivePage(snapshot, sessionPageId);
+
+  /**
+   * The rendered theme: the Settings preview while open, otherwise the
+   * persisted appearance (legacy snapshots resolve to the Task013
+   * defaults). This is the ONLY theme source — no component reads
+   * appearance individually, everything inherits the CSS variables.
+   */
+  const resolvedAppearance = appearancePreview ?? resolveWorkspaceAppearance(snapshot.preferences);
+  const theme = useMemo(() => buildAppearanceTheme(resolvedAppearance), [resolvedAppearance]);
 
   // The launcher index follows the live snapshot: a sync or edit landing
   // while the launcher is open recomputes the entries on the next render.
@@ -214,6 +241,64 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   function closeFolderOverlay() {
     setFolderActionError(null);
     setOverlayFolderId(null);
+  }
+
+  /**
+   * Settings is the top surface: opening it clears any stale preview and
+   * closes stray presentation state, but never stacks on top of another
+   * modal (the keyboard guard and entry points keep it exclusive).
+   */
+  function openSettings() {
+    setContextMenu(null);
+    setAppearancePreview(null);
+    setSettingsOpen(true);
+  }
+
+  /** Cancel/close: the preview dies with the surface, nothing was staged. */
+  function closeSettings() {
+    setAppearancePreview(null);
+    setSettingsOpen(false);
+  }
+
+  /**
+   * Settings save path: draft → full preferences → immutable domain edit →
+   * local stage + sync attempt. The appearance persisted on success, so
+   * the preview can be dropped without a theme flash-back. Staging
+   * failures keep Settings open with the preview alive for correction.
+   *
+   * A changed default page must not yank the view: the session pins the
+   * page it is currently showing, so only the next session boots into the
+   * new default.
+   */
+  async function handleSettingsSave(draft: WorkspaceSettingsDraft): Promise<SettingsSaveResult> {
+    const preferences = preferencesFromSettingsDraft(draft);
+    const result = replaceWorkspacePreferences(snapshot, preferences);
+    if (!result.ok) {
+      return {
+        ok: false,
+        message:
+          result.reason === "default-page-not-found"
+            ? "The default page no longer exists."
+            : "The selected appearance values are invalid.",
+      };
+    }
+    // pageIdRef is the freshest session page — the render closure can go
+    // stale while the save promise is in flight.
+    const currentPageId = pageIdRef.current;
+    const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
+    if (!staged.ok) {
+      console.error(`VelaDesk: settings were not staged (${staged.reason})`);
+      return { ok: false, message: "Settings could not be saved." };
+    }
+    if (
+      preferences.defaultPageId !== snapshot.preferences.defaultPageId &&
+      currentPageId !== null
+    ) {
+      setSessionPageId(currentPageId);
+    }
+    setAppearancePreview(null);
+    setSettingsOpen(false);
+    return { ok: true };
   }
 
   /** Selection + history reconcile after every workspace/active-page change. */
@@ -606,6 +691,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       case "new-folder":
         openDialog({ kind: "new-folder" });
         return;
+      case "open-settings":
+        openSettings();
+        return;
       case "toggle-mode":
         switchMode(arrange ? "view" : "arrange");
         return;
@@ -712,7 +800,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         contextMenu !== null ||
         dialog !== null ||
         overlayFolderId !== null ||
-        launcherOpen;
+        launcherOpen ||
+        settingsOpen;
 
       if (event.key === "Escape") {
         // Open surfaces consume Escape themselves; otherwise it clears the
@@ -836,7 +925,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [arrange, contextMenu, dialog, overlayFolderId, launcherOpen, dragging, activePage, nudgeSelection, applyHistoryStep, switchToPage]);
+  }, [arrange, contextMenu, dialog, overlayFolderId, launcherOpen, settingsOpen, dragging, activePage, nudgeSelection, applyHistoryStep, switchToPage]);
 
   if (activePage === undefined) {
     // Invariant violation (a workspace always has pages) — stay calm, stay
@@ -888,7 +977,13 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   }
 
   return (
-    <div className="vela-desktop" data-arrange={arrange ? "true" : "false"}>
+    <div
+      className="vela-desktop"
+      data-arrange={arrange ? "true" : "false"}
+      data-vd-color-mode={theme.colorMode}
+      data-vd-wallpaper={theme.wallpaperPreset}
+      style={theme.style as CSSProperties}
+    >
       <header className="vela-topbar">
         <span className="vela-topbar__brand">VelaDesk</span>
         <span className="vela-topbar__workspace">{snapshot.name}</span>
@@ -940,6 +1035,13 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           onClick={() => setLauncherOpen(true)}
         >
           Search <kbd className="vela-topbar__kbd">⌘K</kbd>
+        </button>
+        <button
+          type="button"
+          className="vela-button vela-topbar__settings"
+          onClick={openSettings}
+        >
+          Settings
         </button>
         <button
           type="button"
@@ -1133,6 +1235,15 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           entries={launcherEntries}
           onActivate={activateLauncherEntry}
           onClose={() => setLauncherOpen(false)}
+        />
+      ) : null}
+
+      {settingsOpen ? (
+        <SettingsCenter
+          workspace={snapshot}
+          onPreviewAppearance={setAppearancePreview}
+          onSave={handleSettingsSave}
+          onClose={closeSettings}
         />
       ) : null}
     </div>
