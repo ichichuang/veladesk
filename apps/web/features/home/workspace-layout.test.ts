@@ -108,6 +108,7 @@ describe("addAppToPage", () => {
     expect(layoutOf(result.workspace, "page-1").items).toEqual([
       { id: "app-openai", position: { column: 2, row: 1 }, span: { columns: 1, rows: 1 } },
     ]);
+    expect(validateWorkspace(result.workspace)).toEqual([]);
   });
 
   it("defaults the desired position to the top-left cell", () => {
@@ -123,6 +124,7 @@ describe("addAppToPage", () => {
       column: 0,
       row: 0,
     });
+    expect(validateWorkspace(result.workspace)).toEqual([]);
   });
 
   it("resolves the nearest free cell when the desired cell is occupied", () => {
@@ -143,6 +145,7 @@ describe("addAppToPage", () => {
     expect(items).toHaveLength(2);
     expect(items[1]?.id).toBe("app-b");
     expect(items[1]?.position).not.toEqual({ column: 1, row: 1 });
+    expect(validateWorkspace(second.workspace)).toEqual([]);
   });
 
   it("fails with no-space on a completely full grid", () => {

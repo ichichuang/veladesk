@@ -14,6 +14,8 @@ import "./home-shell.css";
 interface FolderOverlayProps {
   readonly folder: Folder;
   readonly workspace: WorkspaceSnapshot;
+  /** Presentation-only action error (e.g. no-space on Move to Desktop). */
+  readonly error?: string | undefined;
   readonly onClose: () => void;
   readonly onAddApp: () => void;
   readonly onLaunchApp: (app: AppShortcut) => void;
@@ -30,6 +32,7 @@ interface FolderOverlayProps {
 export function FolderOverlay({
   folder,
   workspace,
+  error,
   onClose,
   onAddApp,
   onLaunchApp,
@@ -94,6 +97,11 @@ export function FolderOverlay({
             ✕
           </button>
         </header>
+        {error !== undefined && error.length > 0 ? (
+          <p className="vela-folder-overlay__error" role="alert">
+            {error}
+          </p>
+        ) : null}
         <div className="vela-folder-overlay__grid">
           {children.map(({ childId, entity }) => {
             if (entity === undefined) {

@@ -195,7 +195,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         snapshot,
         activePageId: activePage?.id ?? null,
         onOpenApp: (app) => launchApp(app),
-        onOpenFolder: (folderId) => setOverlayFolderId(folderId),
+        onOpenFolder: (folderId) => openFolderOverlay(folderId),
         onEditApp: (appId) => openDialog({ kind: "edit-app", entityId: appId }),
         onDeleteApp: (appId) => openDialog({ kind: "delete-app", entityId: appId }),
         onMoveToFolder: (appId, currentFolderId) =>
@@ -240,6 +240,22 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     }
   }
 
+  /**
+   * Presentation-only error for folder-overlay actions (Move to Desktop).
+   * Never written into the workspace snapshot.
+   */
+  const [folderActionError, setFolderActionError] = useState<string | null>(null);
+
+  function openFolderOverlay(folderId: EntityId) {
+    setFolderActionError(null);
+    setOverlayFolderId(folderId);
+  }
+
+  function closeFolderOverlay() {
+    setFolderActionError(null);
+    setOverlayFolderId(null);
+  }
+
   async function moveToDesktop(appId: EntityId) {
     const pageId = activePage?.id;
     if (pageId === undefined) {
@@ -247,10 +263,19 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     }
     const result = moveAppToPage(snapshot, appId, pageId);
     if (!result.ok) {
-      console.error(`VelaDesk: move to desktop refused (${result.reason})`);
+      setFolderActionError(
+        result.reason === "no-space"
+          ? "Not enough room on this page to move the app out of the folder."
+          : "The app could not be moved to the desktop."
+      );
       return;
     }
-    await stageWorkspaceAndTrySync(runtime, result.workspace);
+    const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
+    if (!staged.ok) {
+      setFolderActionError("The app could not be moved to the desktop.");
+      return;
+    }
+    setFolderActionError(null);
   }
 
   async function handleDeleteApp(appId: EntityId) {
@@ -288,7 +313,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       return;
     }
     if (overlayFolderId === folderId) {
-      setOverlayFolderId(null);
+      closeFolderOverlay();
     }
     closeDialog();
   }
@@ -437,7 +462,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             onEntityContextMenu={(entityId, x, y) =>
               openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })
             }
-            onOpenFolder={(folderId) => setOverlayFolderId(folderId)}
+            onOpenFolder={(folderId) => openFolderOverlay(folderId)}
           />
         </div>
       </DragDropProvider>
@@ -465,7 +490,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         dragging={dragging}
         onToggleMode={() => setMode(arrange ? "view" : "arrange")}
         onCreateMenu={(x, y) => openContextMenu({ kind: "desktop", x, y })}
-        onOpenFolder={(folderId) => setOverlayFolderId(folderId)}
+        onOpenFolder={(folderId) => openFolderOverlay(folderId)}
         onEntityContextMenu={(entityId, x, y) =>
           openContextMenu({ kind: "entity", entityId, source: "dock", x, y })
         }
@@ -475,7 +500,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         <FolderOverlay
           folder={overlayFolder}
           workspace={snapshot}
-          onClose={() => setOverlayFolderId(null)}
+          error={folderActionError ?? undefined}
+          onClose={closeFolderOverlay}
           onAddApp={() =>
             openDialog({
               kind: "add-app",
