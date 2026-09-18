@@ -154,6 +154,28 @@ when dirty and pulls when clean; conflicts are display-only — they are
 never re-sent or auto-resolved in this stage, and the desktop stays fully
 usable (including local edits) with a conflict present.
 
+## Workspace appearance & Settings Center
+
+Since Task 014 the shell owns the workspace-scoped theme. The resolved
+appearance — the Settings live preview while open, otherwise
+`resolveWorkspaceAppearance(snapshot.preferences)` — flows through
+`buildAppearanceTheme` into CSS custom properties (`--vd-accent-hue`,
+`--vd-surface-opacity`, `--vd-surface-strong-opacity`, `--vd-blur`,
+`--vd-radius`, `--vd-icon-size`) plus `data-vd-color-mode` /
+`data-vd-wallpaper` on the `.vela-desktop` root. Every surface inside the
+shell (top bar, dock, dialogs, folder overlay, context menu, launcher,
+Settings itself) inherits the theme from that scope; no component reads
+appearance individually. Boot/onboarding/picker keep the neutral `:root`
+dark theme — the workspace theme applies only after ready.
+
+The Settings Center (`settings-center.tsx`) is a draft + presentation
+overlay (role=dialog, Escape/backdrop cancel, opener focus restore): the
+Appearance section previews live without staging, the Desktop section
+edits the default page (current view is pinned; only the next session
+boots into the new default) and the startup View-mode default. Save goes
+through `replaceWorkspacePreferences` + `stageWorkspaceAndTrySync`; see
+[appearance-settings.md](./appearance-settings.md).
+
 ## Scope
 
 Not in this stage: folder opening or creation, dock pin/unpin/reorder,

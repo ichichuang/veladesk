@@ -67,6 +67,9 @@ Activation is resolved by the shell against the live snapshot:
 - page → `switchToPage` (selection cleared, session-only)
 - `add-app` → existing Add App dialog on the active page
 - `new-folder` → existing folder dialog on the active page
+- `open-settings` → Settings Center (local command, available in
+  clean/dirty/conflict states; closes the launcher, then the shell opens
+  Settings — see [appearance-settings.md](./appearance-settings.md))
 - `toggle-mode` → existing `switchMode` helper (view ↔ arrange)
 - dirty workspace → `Sync Now` (`runtime.syncCurrent()`)
 - clean workspace → `Refresh from Server` (`runtime.pullCurrent()`)
@@ -96,8 +99,8 @@ the workspace dirty and leaves reporting to the existing sync indicator
 ## Conflict
 
 A conflicted workspace hides the remote commands but keeps every local
-action (launch, folder, page switch, Add App, New Folder, mode toggle):
-the working copy stays editable.
+action (launch, folder, page switch, Add App, New Folder, Settings, mode
+toggle): the working copy stays editable.
 
 ## Persistence
 

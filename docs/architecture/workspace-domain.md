@@ -38,6 +38,19 @@ Collections are arrays, not records, on purpose: JSON-direct serialization,
 deterministic ordering, inherently ordered collections (pages, categories,
 dock pins, folder children), and small early-stage workspaces.
 
+### WorkspacePreferences appearance
+
+Since Task 014, `WorkspacePreferences` carries an optional
+`appearance: WorkspaceAppearancePreferences` (color mode, accent hue,
+wallpaper preset, surface opacity, blur, radius, icon size). It is optional
+for backward compatibility: snapshots persisted before the field existed
+remain valid forever — the decoder accepts its absence, validation runs
+only when it is present, and readers resolve it to
+`DEFAULT_WORKSPACE_APPEARANCE` without writing a migration. The stored
+"upgrade" of a legacy snapshot happens only when the user saves Settings
+(`replaceWorkspacePreferences`, see
+[appearance-settings.md](./appearance-settings.md)).
+
 ## Entity identity
 
 `EntityId` is globally unique across all entity kinds within one workspace:
