@@ -99,11 +99,20 @@ kept, so draggable items stay focusable and keyboard-operable.
 ## Pixel measurement
 
 `useGridMetrics` (React layer only) observes the grid container with a
-`ResizeObserver`, reads `getBoundingClientRect` and computed `column-gap` /
-`row-gap`, and feeds them to the pure `calculateGridPixelMetrics`. Viewport
-resizes therefore only update pixel metrics; the logical PageLayout is never
-modified by a resize. Metrics state updates only when a measured value
-actually changed.
+`ResizeObserver` and feeds the pure converters. Since task 014-D the
+measurement is the CSS **content box**, not the bounding rect: CSS Grid
+lays out tracks inside the content box, so `getBoundingClientRect()`
+(which includes the viewport's `30px 34px` padding) systematically
+inflates every cell. The hook reads `clientWidth` / `clientHeight`
+(padding included, border excluded) plus the computed paddings and
+subtracts them through the pure `calculateGridContentSize`
+(`features/desktop-grid/grid-box.ts`, finite/non-negative validated —
+unmeasurable or too-small containers throw and yield "no metrics yet"
+instead of wrong ones). Computed `column-gap` / `row-gap` then flow into
+`calculateGridPixelMetrics` as before. Viewport resizes therefore only
+update pixel metrics; the logical PageLayout is never modified by a
+resize. Metrics state updates only when a measured value actually
+changed.
 
 ## Rendering
 

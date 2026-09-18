@@ -113,6 +113,39 @@ drags with a transient peer preview, keyboard nudges and a per-page
 movement-only Undo/Redo — see
 [arrange-session.md](./arrange-session.md).
 
+### Grid geometry and guides (014-D)
+
+Grid metrics are measured against the CSS Grid **content box** (client box
+minus paddings — see
+[desktop-interaction.md](./desktop-interaction.md)), so drag pitch equals
+the real track pitch. In arrange mode `DesktopGridView` renders a true
+guide overlay: one CSS-grid cell per logical cell (`.vela-desktop__grid-
+guides` / `-guide`), absolutely positioned, `pointer-events: none`, and
+sharing the viewport's exact `grid-template` / gap / padding through the
+`--vd-grid-column-gap`, `--vd-grid-row-gap`, `--vd-grid-padding-x`,
+`--vd-grid-padding-y` custom properties (single source; the responsive
+variant overrides the variables). Guide rects therefore equal actual
+track rects — the earlier repeating-background estimate is gone. View
+mode renders no guides.
+
+### Drop = snapped and still (014-D)
+
+An arrange drop has zero decorative motion: the hover lift and its easing
+are scoped to `.vela-desktop[data-arrange="false"]`, and dnd-kit's
+default 250ms drop animation is disabled through the official Feedback
+plugin API (`dropAnimation = null`, see `dnd-static-drop.ts`). The
+pointer-follow transform during the drag is untouched. Release means the
+destination paints and nothing moves afterwards — no lift, no bounce, no
+settle.
+
+## UI locale (014-D)
+
+The production UI is bilingual (zh-CN default, en-US switchable) through
+the browser-local locale layer in `features/i18n/` — see
+[ui-localization.md](./ui-localization.md). The `<html lang>` attribute
+starts zh-CN on the server and follows the active locale on the client;
+switching languages never stages, syncs or dirties workspace data.
+
 ## Global launcher
 
 The ready shell hosts the workspace launcher: `Ctrl/Cmd+K` or the
