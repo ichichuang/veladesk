@@ -12,6 +12,12 @@ interface DesktopGridViewProps {
   readonly layout: PageLayout;
   readonly workspace: WorkspaceSnapshot;
   readonly arrange: boolean;
+  /**
+   * Whether items may start drag sessions at all. Independent of `arrange`:
+   * a pending drop handoff briefly disables new drags without pretending
+   * the desktop left arrange mode.
+   */
+  readonly dragEnabled: boolean;
   readonly metrics: GridPixelMetrics | null;
   readonly gridRef: (node: HTMLDivElement | null) => void;
   readonly selectedIds: ReadonlySet<EntityId>;
@@ -37,6 +43,7 @@ export function DesktopGridView({
   layout,
   workspace,
   arrange,
+  dragEnabled,
   metrics,
   gridRef,
   selectedIds,
@@ -74,6 +81,7 @@ export function DesktopGridView({
           item={item}
           workspace={workspace}
           arrange={arrange}
+          dragEnabled={dragEnabled}
           metricsAvailable={metrics !== null}
           selected={selectedIds.has(item.id)}
           onItemSelect={onItemSelect}

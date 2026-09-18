@@ -15,6 +15,12 @@ interface DesktopItemProps {
   readonly workspace: WorkspaceSnapshot;
   /** Arrange mode allows dragging; view mode launches/opens on activation. */
   readonly arrange: boolean;
+  /**
+   * Whether drag sessions may start at all (a pending drop handoff briefly
+   * disables them). Kept separate from `arrange` so the mode stays a pure
+   * user-facing concept.
+   */
+  readonly dragEnabled: boolean;
   readonly metricsAvailable: boolean;
   /** Whether this item is in the session-only arrange selection. */
   readonly selected: boolean;
@@ -42,6 +48,7 @@ export function DesktopItem({
   item,
   workspace,
   arrange,
+  dragEnabled,
   metricsAvailable,
   selected,
   onItemSelect,
@@ -66,6 +73,7 @@ export function DesktopItem({
       item={item}
       entity={entity}
       arrange={arrange}
+      dragEnabled={dragEnabled}
       metricsAvailable={metricsAvailable}
       selected={selected}
       onItemSelect={onItemSelect}
@@ -85,6 +93,7 @@ interface DesktopEntityProps {
   readonly item: LayoutItem;
   readonly entity: WorkspaceEntity;
   readonly arrange: boolean;
+  readonly dragEnabled: boolean;
   readonly metricsAvailable: boolean;
   readonly selected: boolean;
   readonly onItemSelect: DesktopItemProps["onItemSelect"];
@@ -96,6 +105,7 @@ function DesktopEntity({
   item,
   entity,
   arrange,
+  dragEnabled,
   metricsAvailable,
   selected,
   onItemSelect,
@@ -104,7 +114,7 @@ function DesktopEntity({
 }: DesktopEntityProps) {
   const { ref, isDragging } = useDraggable({
     id: item.id,
-    disabled: !arrange || !metricsAvailable,
+    disabled: !arrange || !dragEnabled || !metricsAvailable,
   });
 
   const commonStyle = { ...placementStyle(item), ...(isDragging ? { zIndex: 30 } : {}) };

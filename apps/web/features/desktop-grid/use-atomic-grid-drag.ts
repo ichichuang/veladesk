@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from "@dnd-kit/react";
 import { moveItem, moveItems } from "@veladesk/desktop-engine";
 import type { GridPosition, LayoutItemId, PageLayout } from "@veladesk/desktop-engine";
@@ -83,6 +83,16 @@ export function useAtomicGridDrag({
 } {
   const [dragging, setDragging] = useState(false);
   const sessionRef = useRef<ActiveDragSession | null>(null);
+  /**
+   * A valid drop whose peer preview must be cleared only after the commit
+   * render. Clearing synchronously would paint one frame with the peers'
+   * transforms gone and their grid cells still at the pre-drop positions —
+   * a one-frame rebound — so the clear is deferred to a layout effect that
+   * runs after the optimistic layout renders but before paint. Cancel,
+   * invalidation and refusal paths still clear synchronously (returning to
+   * the unchanged layout is the correct visual there).
+   */
+  const pendingPeerClearRef = useRef<ActiveDragSession | null>(null);
   const layoutRef = useRef<PageLayout | null>(layout);
   const metricsRef = useRef<GridPixelMetrics | null>(metrics);
   const onCommitRef = useRef(onCommit);
@@ -107,6 +117,21 @@ export function useAtomicGridDrag({
   useEffect(() => {
     resolveItemElementRef.current = resolveItemElement;
   });
+
+  // Zero-bounce peer handoff: the drop render (with the consumer's
+  // optimistic display layout, if any) commits, THEN the transient peer
+  // transforms are dropped — both land in the same paint, before the
+  // browser gets a chance to show a half-teardown frame.
+  useLayoutEffect(() => {
+    if (dragging) {
+      return;
+    }
+    const session = pendingPeerClearRef.current;
+    if (session !== null) {
+      pendingPeerClearRef.current = null;
+      clearPeerPreview(session);
+    }
+  }, [dragging]);
 
   /** Transient peer preview: peers follow the source's pixel translation. */
   function applyPeerPreview(
@@ -205,12 +230,12 @@ export function useAtomicGridDrag({
     // invalidation, stale layout, engine refusal — before any early return.
     const session = sessionRef.current;
     sessionRef.current = null;
-    setDragging(false);
-    if (session !== null) {
-      clearPeerPreview(session);
-    }
 
     if (event.canceled || session === null) {
+      setDragging(false);
+      if (session !== null) {
+        clearPeerPreview(session);
+      }
       return;
     }
 
@@ -221,12 +246,16 @@ export function useAtomicGridDrag({
       currentMetrics === null ||
       !areGridPixelMetricsEqual(currentMetrics, session.metricsAtStart)
     ) {
+      setDragging(false);
+      clearPeerPreview(session);
       return;
     }
 
     // The layout this drag started from is no longer the current one: the
     // session is stale and must not commit against a newer world.
     if (layoutRef.current !== session.layoutAtStart) {
+      setDragging(false);
+      clearPeerPreview(session);
       return;
     }
 
@@ -251,8 +280,20 @@ export function useAtomicGridDrag({
         : moveItems(session.layoutAtStart, session.itemIds, translation, {
             placement: "nearest-free",
           });
+    // On a valid drop, onCommit runs BEFORE the drag teardown: the consumer
+    // establishes its optimistic display layout synchronously there, so the
+    // dnd-kit transform release and the peer preview clear paint directly
+    // into the destination cells (zero-bounce handoff). The peer clear is
+    // deferred to the post-render layout effect so it cannot paint one
+    // frame ahead of the moved grid.
     if (result.ok) {
       onCommitRef.current(result.layout, session.layoutAtStart);
+    }
+    setDragging(false);
+    if (result.ok) {
+      pendingPeerClearRef.current = session;
+    } else {
+      clearPeerPreview(session);
     }
   };
 

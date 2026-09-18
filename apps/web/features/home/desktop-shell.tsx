@@ -29,6 +29,7 @@ import type {
   WorkspaceSnapshot,
 } from "@veladesk/domain";
 import {
+  arePageLayoutsEqual,
   commitLayout,
   createLayoutHistory,
   moveItems,
@@ -66,6 +67,11 @@ import { normalizeSelectionRect, selectIntersectingItemIds } from "./selection-g
 import { SyncIndicator } from "./sync-indicator";
 import { replacePageLayout } from "./workspace-layout";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
+import {
+  reconcileHandoff,
+  resolveDisplayLayout,
+} from "./layout-handoff";
+import type { PendingLayoutHandoff } from "./layout-handoff";
 import { launchApp } from "./launch-app";
 import { buildAppearanceTheme } from "./appearance-theme";
 import { Launcher } from "./launcher";
@@ -119,6 +125,16 @@ interface MarqueeState {
   readonly additive: boolean;
 }
 
+/**
+ * How one serialized layout-commit attempt ended. Internal to the shell —
+ * the drop handoff must know whether the durable local stage landed, was a
+ * no-op, or failed, but this is never part of a package API.
+ */
+type LayoutCommitOutcome =
+  | { readonly status: "staged" }
+  | { readonly status: "noop" }
+  | { readonly status: "failed" };
+
 interface DesktopShellProps {
   readonly workspace: LocalWorkspaceRecord;
   readonly lastRemoteResult?: WorkspaceRuntimeRemoteResult | undefined;
@@ -167,7 +183,22 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    * snapshot then carries the same appearance, so no flash-back).
    */
   const [appearancePreview, setAppearancePreview] = useState<WorkspaceAppearancePreferences | null>(null);
+  /**
+   * Session-only optimistic display layout for a just-dropped arrange drag.
+   * It is established synchronously at drop time — before any IndexedDB
+   * promise is awaited — so the CSS grid shows the destination the moment
+   * the dnd-kit transform steps down, and the authoritative snapshot
+   * catches up invisibly a few frames later. Presentation state only: it
+   * never touches the WorkspaceSnapshot, IndexedDB, the server or
+   * localStorage, and dies with the session (a reload boots purely from
+   * the authoritative snapshot).
+   */
+  const [pendingLayoutHandoff, setPendingLayoutHandoff] = useState<PendingLayoutHandoff | null>(
+    null
+  );
   const arrange = mode === "arrange";
+  /** True only while a display layout outruns the durable snapshot. */
+  const handoffLock = pendingLayoutHandoff !== null;
 
   const activePage = resolveActivePage(snapshot, sessionPageId);
 
@@ -204,6 +235,12 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const marqueeOriginRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const menuAreaRef = useRef<HTMLDivElement | null>(null);
   const layoutQueueRef = useRef<Promise<void>>(Promise.resolve());
+  /** Generation counter for drop handoffs — stale completions never win. */
+  const handoffTokenRef = useRef(0);
+  /** Imperative mirror of `pendingLayoutHandoff` for event handlers. */
+  const pendingHandoffRef = useRef<PendingLayoutHandoff | null>(null);
+  /** Handoffs whose stage attempt has settled (staged/noop/failed). */
+  const settledHandoffTokensRef = useRef<ReadonlySet<number>>(new Set());
   useEffect(() => {
     workspaceRef.current = workspace;
   }, [workspace]);
@@ -219,7 +256,18 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     setSelectedItemIds(next);
   }
 
+  /** Establishes/clears the optimistic display layout, mirror ref included. */
+  function stagePendingHandoff(next: PendingLayoutHandoff | null) {
+    pendingHandoffRef.current = next;
+    setPendingLayoutHandoff(next);
+  }
+
   function switchMode(next: DesktopMode) {
+    // A pending handoff means the display layout outruns the durable
+    // snapshot — mode changes wait the few ms until the stage lands.
+    if (pendingHandoffRef.current !== null) {
+      return;
+    }
     setMode(next);
     // Leaving arrange clears the session selection; re-entering arrange
     // starts fresh (the per-page history survives the round-trip).
@@ -229,6 +277,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   }
 
   const switchToPage = useCallback((pageId: DesktopPageId) => {
+    if (pendingHandoffRef.current !== null) {
+      return;
+    }
     applySelection(new Set());
     setSessionPageId(pageId);
   }, []);
@@ -317,41 +368,93 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   }, [activePage]);
 
   /**
+   * Drop-handoff reconcile after every workspace snapshot change: once the
+   * authoritative layout for the handoff's page is semantically equal to the
+   * pending one, the override is dropped (pixel-identical hand-off). A
+   * handoff whose stage attempt settled but whose page moved somewhere else
+   * yields to the authoritative state; a page that vanished drops the
+   * override outright. Settled tokens are pruned as their handoffs resolve.
+   */
+  useEffect(() => {
+    const current = pendingLayoutHandoff;
+    if (current === null) {
+      return;
+    }
+    const page = findDesktopPage(snapshot, current.pageId);
+    const next = reconcileHandoff(
+      current,
+      page,
+      settledHandoffTokensRef.current.has(current.token)
+    );
+    if (next !== current) {
+      const remaining = new Set(settledHandoffTokensRef.current);
+      remaining.delete(current.token);
+      settledHandoffTokensRef.current = remaining;
+      stagePendingHandoff(next);
+    }
+  }, [snapshot, pendingLayoutHandoff]);
+
+  /**
    * Serialized local-first layout commits: compute the candidate history,
    * stage the new snapshot, and only accept the candidate history after a
    * successful stage — a stage failure rolls the candidate back by never
    * accepting it into state.
+   *
+   * The optional `onSettled` callback reports the attempt's outcome exactly
+   * once (staged / noop / failed) so the drag handoff can reconcile; the
+   * callback never runs after a newer handoff replaced this one's token.
    */
   const enqueueLayoutCommit = useCallback(
-    (pageId: DesktopPageId, movedLayout: PageLayout) => {
+    (
+      pageId: DesktopPageId,
+      movedLayout: PageLayout,
+      onSettled?: (outcome: LayoutCommitOutcome) => void
+    ) => {
+      let settled = false;
+      const settle = (outcome: LayoutCommitOutcome) => {
+        if (!settled) {
+          settled = true;
+          onSettled?.(outcome);
+        }
+      };
       const run = async () => {
-        const current = workspaceRef.current;
-        const page = findDesktopPage(current.snapshot, pageId);
-        if (page === undefined) {
-          return;
+        try {
+          const current = workspaceRef.current;
+          const page = findDesktopPage(current.snapshot, pageId);
+          if (page === undefined) {
+            settle({ status: "noop" });
+            return;
+          }
+          const base = arrangeHistoriesRef.current[pageId] ?? createLayoutHistory(page.layout);
+          const candidate = commitLayout(base, movedLayout);
+          if (candidate === base) {
+            // Resolved back to the same layout: no semantic change, no
+            // history entry, no staging.
+            settle({ status: "noop" });
+            return;
+          }
+          const replaced = replacePageLayout(current.snapshot, pageId, candidate.present);
+          if (!replaced.ok) {
+            settle({ status: "noop" });
+            return;
+          }
+          const staged = await stageWorkspaceAndTrySync(runtime, replaced.workspace);
+          if (!staged.ok) {
+            console.error(`VelaDesk: layout change was not staged (${staged.reason})`);
+            settle({ status: "failed" });
+            return;
+          }
+          const nextMap: ArrangeHistories = {
+            ...arrangeHistoriesRef.current,
+            [pageId]: candidate,
+          };
+          arrangeHistoriesRef.current = nextMap;
+          setArrangeHistories(nextMap);
+          settle({ status: "staged" });
+        } catch (error) {
+          console.error("VelaDesk: layout change could not be committed", error);
+          settle({ status: "failed" });
         }
-        const base = arrangeHistoriesRef.current[pageId] ?? createLayoutHistory(page.layout);
-        const candidate = commitLayout(base, movedLayout);
-        if (candidate === base) {
-          // Resolved back to the same layout: no semantic change, no
-          // history entry, no staging.
-          return;
-        }
-        const replaced = replacePageLayout(current.snapshot, pageId, candidate.present);
-        if (!replaced.ok) {
-          return;
-        }
-        const staged = await stageWorkspaceAndTrySync(runtime, replaced.workspace);
-        if (!staged.ok) {
-          console.error(`VelaDesk: layout change was not staged (${staged.reason})`);
-          return;
-        }
-        const nextMap: ArrangeHistories = {
-          ...arrangeHistoriesRef.current,
-          [pageId]: candidate,
-        };
-        arrangeHistoriesRef.current = nextMap;
-        setArrangeHistories(nextMap);
       };
       layoutQueueRef.current = layoutQueueRef.current.then(run, run);
     },
@@ -371,7 +474,38 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       if (page === undefined || page.layout !== layoutAtStart) {
         return;
       }
-      enqueueLayoutCommit(pageId, movedLayout);
+      // No-op drop (dragged back to its own cell): no handoff, no stage, no
+      // history, no sync — the drag simply ends where it began.
+      if (arePageLayoutsEqual(movedLayout, layoutAtStart)) {
+        return;
+      }
+      // Visual target first: the display grid shows the destination before
+      // any IndexedDB promise is awaited, so the drop render paints straight
+      // into the destination cell — the old authoritative layout never
+      // becomes visible, and there is no origin rebound.
+      const token = handoffTokenRef.current + 1;
+      handoffTokenRef.current = token;
+      stagePendingHandoff({ token, pageId, layout: movedLayout });
+      // Durable local stage second; the outcome reconciles the handoff.
+      enqueueLayoutCommit(pageId, movedLayout, (outcome) => {
+        if (outcome.status === "failed") {
+          // The only true revert: the stage refused, so the optimistic
+          // display layout falls back to the authoritative (pre-drag) layout.
+          if (pendingHandoffRef.current?.token === token) {
+            settledHandoffTokensRef.current = new Set([
+              ...settledHandoffTokensRef.current,
+              token,
+            ]);
+            stagePendingHandoff(null);
+          }
+          return;
+        }
+        // staged/noop: not cleared here — the external-store snapshot may not
+        // have caught up in the current render yet. The reconcile effect
+        // drops the handoff once the authoritative layout is semantically
+        // equal, making the pending → authoritative switch invisible.
+        settledHandoffTokensRef.current = new Set([...settledHandoffTokensRef.current, token]);
+      });
     },
     [enqueueLayoutCommit]
   );
@@ -379,6 +513,11 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   /** Undo/Redo: the resulting layout is a brand-new local edit. */
   const applyHistoryStep = useCallback(
     (pageId: DesktopPageId, direction: "undo" | "redo") => {
+      // History rewrites geometry against the durable snapshot — never while
+      // a display handoff still outruns it.
+      if (pendingHandoffRef.current !== null) {
+        return;
+      }
       const run = async () => {
         const base = arrangeHistoriesRef.current[pageId];
         if (base === undefined) {
@@ -425,7 +564,12 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const nudgeSelection = useCallback(
     (columnDelta: number, rowDelta: number) => {
       const pageId = pageIdRef.current;
-      if (pageId === null || selectionRef.current.size === 0) {
+      if (
+        pageId === null ||
+        selectionRef.current.size === 0 ||
+        // Nudges compute against the durable snapshot — wait out any handoff.
+        pendingHandoffRef.current !== null
+      ) {
         return;
       }
       const current = workspaceRef.current;
@@ -448,11 +592,22 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     [enqueueLayoutCommit]
   );
 
+  /**
+   * The layout the desktop renders this frame: the pending drop handoff
+   * while it targets the active page, otherwise the authoritative layout.
+   * Only the current-desktop render consumes it — persistence still flows
+   * exclusively through the domain/runtime path.
+   */
+  const displayLayout =
+    activePage !== undefined
+      ? resolveDisplayLayout(pendingLayoutHandoff, activePage.id, activePage.layout)
+      : null;
+
   const { gridRef, metrics } = useGridMetrics(
-    activePage !== undefined ? activePage.layout.grid : { columns: 1, rows: 1 }
+    displayLayout !== null ? displayLayout.grid : { columns: 1, rows: 1 }
   );
   const { dragging, handleDragStart, handleDragMove, handleDragEnd } = useAtomicGridDrag({
-    layout: activePage !== undefined ? activePage.layout : null,
+    layout: displayLayout,
     metrics,
     onCommit: commitDraggedLayout,
     getDragItemIds: useCallback(
@@ -472,6 +627,11 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
 
   const wrappedHandleDragStart = useCallback(
     (event: Parameters<typeof handleDragStart>[0]) => {
+      // A pending handoff means the durable snapshot is behind the display;
+      // a second geometry session must not start on that base.
+      if (pendingHandoffRef.current !== null) {
+        return;
+      }
       // Drag-source selection semantics: grabbing an unselected item makes
       // it the whole drag; grabbing a selected one drags the selection.
       const sourceId = event.operation.source?.id;
@@ -849,14 +1009,19 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         const pageId = pageIdRef.current;
         // Availability comes from the imperative history map, never the
         // closure's React state — a keydown must see the freshest history.
+        // A pending handoff makes undo/redo unavailable for the moment,
+        // leaving the chord untouched for the browser/OS.
+        const historyAvailable = pendingHandoffRef.current === null;
         const command = resolveArrangeHistoryCommand({
           key: event.key,
           ctrlKey: event.ctrlKey,
           metaKey: event.metaKey,
           shiftKey: event.shiftKey,
           altKey: event.altKey,
-          canUndo: pageId !== null && canUndo(arrangeHistoriesRef.current, pageId),
-          canRedo: pageId !== null && canRedo(arrangeHistoriesRef.current, pageId),
+          canUndo:
+            pageId !== null && historyAvailable && canUndo(arrangeHistoriesRef.current, pageId),
+          canRedo:
+            pageId !== null && historyAvailable && canRedo(arrangeHistoriesRef.current, pageId),
         });
         if (pageId !== null && command !== null) {
           // Only a runnable command is consumed: an unavailable undo/redo
@@ -880,7 +1045,13 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       if (!isArrow) {
         return;
       }
-      if (arrange && !surfaceOpen && !draggingRef.current && selectionRef.current.size > 0) {
+      if (
+        arrange &&
+        !surfaceOpen &&
+        !draggingRef.current &&
+        pendingHandoffRef.current === null &&
+        selectionRef.current.size > 0
+      ) {
         // A held key never produces extra history entries.
         if (event.repeat) {
           event.preventDefault();
@@ -894,9 +1065,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         return;
       }
 
-      // Page switching — Left/Right only, never while dragging, and never
-      // while a selection owns the arrows.
-      if (dragging || surfaceOpen) {
+      // Page switching — Left/Right only, never while dragging or while a
+      // handoff is in flight, and never while a selection owns the arrows.
+      if (dragging || surfaceOpen || pendingHandoffRef.current !== null) {
         return;
       }
       if (arrange && selectionRef.current.size > 0) {
@@ -995,7 +1166,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
               className="vela-button vela-topbar__history-button"
               title="Undo arrange (Ctrl/Cmd+Z)"
               aria-label="Undo arrange"
-              disabled={dragging || !canUndo(arrangeHistories, activePage.id)}
+              disabled={dragging || handoffLock || !canUndo(arrangeHistories, activePage.id)}
               onClick={() => applyHistoryStep(activePage.id, "undo")}
             >
               ⟲
@@ -1005,7 +1176,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
               className="vela-button vela-topbar__history-button"
               title="Redo arrange (Ctrl/Cmd+Shift+Z)"
               aria-label="Redo arrange"
-              disabled={dragging || !canRedo(arrangeHistories, activePage.id)}
+              disabled={dragging || handoffLock || !canRedo(arrangeHistories, activePage.id)}
               onClick={() => applyHistoryStep(activePage.id, "redo")}
             >
               ⟳
@@ -1057,7 +1228,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             type="button"
             className="vela-segment__button"
             aria-pressed={!arrange}
-            disabled={dragging}
+            disabled={dragging || handoffLock}
             onClick={() => switchMode("view")}
           >
             View
@@ -1066,7 +1237,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             type="button"
             className="vela-segment__button"
             aria-pressed={arrange}
-            disabled={dragging}
+            disabled={dragging || handoffLock}
             onClick={() => switchMode("arrange")}
           >
             Arrange
@@ -1090,7 +1261,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             }}
           >
             <DesktopGridView
-              layout={activePage.layout}
+              layout={displayLayout ?? activePage.layout}
+              dragEnabled={!handoffLock}
               workspace={snapshot}
               arrange={arrange}
               metrics={metrics}
@@ -1131,7 +1303,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
               data-active={page.id === activePage.id ? "true" : undefined}
               aria-label={page.name}
               title={page.name}
-              disabled={dragging}
+              disabled={dragging || handoffLock}
               onClick={() => switchToPage(page.id)}
             />
           ))}
