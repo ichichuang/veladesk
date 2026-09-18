@@ -6,7 +6,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteApp,
   dissolveFolderToPage,
@@ -63,6 +63,9 @@ import { SyncIndicator } from "./sync-indicator";
 import { replacePageLayout } from "./workspace-layout";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import { launchApp } from "./launch-app";
+import { Launcher } from "./launcher";
+import { buildLauncherEntries } from "./launcher-index";
+import type { LauncherCommandId, LauncherEntry } from "./launcher-types";
 import "./home-shell.css";
 
 /** UI-only desktop mode. Session state — never persisted back to preferences. */
@@ -145,9 +148,23 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const [selectedItemIds, setSelectedItemIds] = useState<ReadonlySet<LayoutItemId>>(new Set());
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const [arrangeHistories, setArrangeHistories] = useState<ArrangeHistories>({});
+  const [launcherOpen, setLauncherOpen] = useState(false);
   const arrange = mode === "arrange";
 
   const activePage = resolveActivePage(snapshot, sessionPageId);
+
+  // The launcher index follows the live snapshot: a sync or edit landing
+  // while the launcher is open recomputes the entries on the next render.
+  const launcherEntries = useMemo(
+    () =>
+      buildLauncherEntries({
+        workspace: snapshot,
+        activePageId: activePage !== undefined ? activePage.id : null,
+        mode,
+        syncState: workspace.syncState,
+      }),
+    [snapshot, activePage, mode, workspace.syncState],
+  );
 
   // Latest-value mirrors for async/session callbacks (drag commit, keyboard
   // navigation) that must always see the current render's data.
@@ -552,6 +569,56 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   }
 
   /**
+   * Launcher activation orchestration: entries are pure data, the shell
+   * resolves them against the live snapshot (a stale entry can no longer
+   * launch) and reuses the existing open/launch/switch flows.
+   */
+  function activateLauncherEntry(entry: LauncherEntry) {
+    setLauncherOpen(false);
+    switch (entry.kind) {
+      case "app": {
+        const app = snapshot.entities.find(
+          (candidate): candidate is AppShortcut =>
+            candidate.kind === "app" && candidate.id === entry.entityId,
+        );
+        if (app !== undefined) {
+          launchApp(app);
+        }
+        return;
+      }
+      case "folder":
+        openFolderOverlay(entry.entityId);
+        return;
+      case "page":
+        switchToPage(entry.pageId);
+        return;
+      case "command":
+        activateLauncherCommand(entry.commandId);
+        return;
+    }
+  }
+
+  function activateLauncherCommand(commandId: LauncherCommandId) {
+    switch (commandId) {
+      case "add-app":
+        openDialog({ kind: "add-app", destination: pageDestination() });
+        return;
+      case "new-folder":
+        openDialog({ kind: "new-folder" });
+        return;
+      case "toggle-mode":
+        switchMode(arrange ? "view" : "arrange");
+        return;
+      case "sync-current":
+        void runtime.syncCurrent();
+        return;
+      case "pull-current":
+        void runtime.pullCurrent();
+        return;
+    }
+  }
+
+  /**
    * Runs a domain dock edit and stages it. Dock edits have no inline error
    * surface of their own (menu actions) — failures are logged, never
    * silently swallowed into a fake success.
@@ -641,7 +708,11 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           target.tagName === "TEXTAREA" ||
           target.tagName === "SELECT" ||
           target.isContentEditable);
-      const surfaceOpen = contextMenu !== null || dialog !== null || overlayFolderId !== null;
+      const surfaceOpen =
+        contextMenu !== null ||
+        dialog !== null ||
+        overlayFolderId !== null ||
+        launcherOpen;
 
       if (event.key === "Escape") {
         // Open surfaces consume Escape themselves; otherwise it clears the
@@ -652,6 +723,29 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         }
         return;
       }
+
+      // Launcher chord: Ctrl/Cmd+K toggles the launcher, but never steals
+      // the chord from another modal surface or an in-flight drag (and the
+      // launcher never nests on top of one).
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "k"
+      ) {
+        if (launcherOpen) {
+          event.preventDefault();
+          setLauncherOpen(false);
+          return;
+        }
+        if (surfaceOpen || draggingRef.current) {
+          return;
+        }
+        event.preventDefault();
+        setLauncherOpen(true);
+        return;
+      }
+
       if (inField) {
         return;
       }
@@ -742,7 +836,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [arrange, contextMenu, dialog, overlayFolderId, dragging, activePage, nudgeSelection, applyHistoryStep, switchToPage]);
+  }, [arrange, contextMenu, dialog, overlayFolderId, launcherOpen, dragging, activePage, nudgeSelection, applyHistoryStep, switchToPage]);
 
   if (activePage === undefined) {
     // Invariant violation (a workspace always has pages) — stay calm, stay
@@ -839,6 +933,14 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           </span>
         ) : null}
         <SyncIndicator workspace={workspace} lastRemoteResult={lastRemoteResult} />
+        <button
+          type="button"
+          className="vela-button vela-topbar__search"
+          title="Search (Ctrl/Cmd+K)"
+          onClick={() => setLauncherOpen(true)}
+        >
+          Search <kbd className="vela-topbar__kbd">⌘K</kbd>
+        </button>
         <button
           type="button"
           className="vela-button vela-topbar__add"
@@ -1024,6 +1126,14 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
 
       {contextMenu !== null ? (
         <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />
+      ) : null}
+
+      {launcherOpen ? (
+        <Launcher
+          entries={launcherEntries}
+          onActivate={activateLauncherEntry}
+          onClose={() => setLauncherOpen(false)}
+        />
       ) : null}
     </div>
   );
