@@ -5,6 +5,9 @@ import type {
 } from "@veladesk/domain";
 import type { LocalWorkspaceSyncState } from "@veladesk/local-store";
 
+import type { UiLocale } from "../i18n/locale";
+import { translate } from "../i18n/messages";
+import type { TranslationKey } from "../i18n/messages";
 import type { LauncherCommandId, LauncherEntry } from "./launcher-types";
 
 /**
@@ -33,6 +36,8 @@ export interface BuildLauncherEntriesInput {
   readonly activePageId: DesktopPageId | null;
   readonly mode: LauncherMode;
   readonly syncState: LocalWorkspaceSyncState;
+  /** UI locale for command labels; search metadata is bilingual either way. */
+  readonly locale: UiLocale;
 }
 
 interface EntryDraft {
@@ -40,23 +45,22 @@ interface EntryDraft {
   readonly entry: LauncherEntry;
 }
 
-const LOCAL_COMMAND_LABELS: Readonly<
-  Record<Exclude<LauncherCommandId, "toggle-mode" | "sync-current" | "pull-current">, string>
-> = {
-  "add-app": "Add App",
-  "new-folder": "New Folder",
-  "open-settings": "Settings",
+const MODE_COMMAND_LABEL: Readonly<Record<LauncherMode, TranslationKey>> = {
+  arrange: "launcher.command.switchToView",
+  view: "launcher.command.switchToArrange",
 };
 
-const MODE_COMMAND: Readonly<Record<LauncherMode, { label: string; secondary: readonly string[] }>> = {
-  arrange: { label: "Switch to View", secondary: ["view", "arrange", "layout"] },
-  view: { label: "Switch to Arrange", secondary: ["arrange", "edit layout", "move icons"] },
+/* Search metadata is bilingual in both locales: Chinese users can find
+   Settings via 设置 or "settings", English users via "folder" or 文件夹. */
+const MODE_COMMAND_SECONDARY: Readonly<Record<LauncherMode, readonly string[]>> = {
+  arrange: ["view", "arrange", "layout", "查看", "整理", "布局"],
+  view: ["arrange", "edit layout", "move icons", "整理", "编辑布局", "移动图标"],
 };
 
 export function buildLauncherEntries(
   input: BuildLauncherEntriesInput,
 ): readonly LauncherEntry[] {
-  const { workspace, activePageId, mode, syncState } = input;
+  const { workspace, activePageId, mode, syncState, locale } = input;
 
   const drafts: EntryDraft[] = [];
   const seen = new Set<string>();
@@ -106,7 +110,7 @@ export function buildLauncherEntries(
         secondary.push(category.name);
       }
     }
-    secondary.push("app");
+    secondary.push("app", "应用");
     push({
       key: `app:${app.id}`,
       entry: {
@@ -135,42 +139,65 @@ export function buildLauncherEntries(
         key: `folder:${folder.id}`,
         entityId: folder.id,
         label: folder.name,
-        secondary: ["folder"],
+        secondary: ["folder", "文件夹"],
         baseOrder: 0,
       },
     });
   }
 
   // 1. Commands — fixed local order; exactly one remote command by sync state.
-  pushCommand(
-    "add-app",
-    LOCAL_COMMAND_LABELS["add-app"],
-    ["add app", "new shortcut", "create app"],
-  );
-  pushCommand(
-    "new-folder",
-    LOCAL_COMMAND_LABELS["new-folder"],
-    ["new folder", "create folder"],
-  );
-  pushCommand(
-    "open-settings",
-    LOCAL_COMMAND_LABELS["open-settings"],
-    ["settings", "preferences", "appearance", "theme", "desktop"],
-  );
+  pushCommand("add-app", translate(locale, "launcher.command.addApp"), [
+    "add app",
+    "new shortcut",
+    "create app",
+    "添加应用",
+    "新建快捷方式",
+  ]);
+  pushCommand("new-folder", translate(locale, "launcher.command.newFolder"), [
+    "new folder",
+    "create folder",
+    "新建文件夹",
+    "创建文件夹",
+  ]);
+  pushCommand("open-settings", translate(locale, "launcher.command.openSettings"), [
+    "settings",
+    "preferences",
+    "appearance",
+    "theme",
+    "desktop",
+    "设置",
+    "偏好",
+    "外观",
+    "主题",
+    "桌面",
+  ]);
   pushCommand(
     "toggle-mode",
-    MODE_COMMAND[mode].label,
-    MODE_COMMAND[mode].secondary,
+    translate(locale, MODE_COMMAND_LABEL[mode]),
+    MODE_COMMAND_SECONDARY[mode],
   );
   if (syncState === "dirty") {
-    pushCommand("sync-current", "Sync Now", ["sync", "save", "upload", "server"]);
+    pushCommand("sync-current", translate(locale, "launcher.command.syncNow"), [
+      "sync",
+      "save",
+      "upload",
+      "server",
+      "同步",
+      "保存",
+      "上传",
+      "服务器",
+    ]);
   }
   if (syncState === "clean") {
-    pushCommand("pull-current", "Refresh from Server", [
+    pushCommand("pull-current", translate(locale, "launcher.command.refreshFromServer"), [
       "refresh",
       "pull",
       "reload workspace",
       "server",
+      "刷新",
+      "拉取",
+      "重新加载工作区",
+      "服务器",
     ]);
   }
 
@@ -224,7 +251,7 @@ export function buildLauncherEntries(
         key: `page:${page.id}`,
         pageId: page.id,
         label: page.name,
-        secondary: ["page", page.id],
+        secondary: ["page", "页面", page.id],
         baseOrder: 0,
       },
     });

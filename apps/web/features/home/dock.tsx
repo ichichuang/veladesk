@@ -3,6 +3,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import type { EntityId, WorkspaceSnapshot } from "@veladesk/domain";
 
+import { useI18n } from "../i18n/use-i18n";
 import {
   contextMenuAnchorFromElement,
   isContextMenuKeyEvent,
@@ -39,6 +40,8 @@ export function Dock({
   onOpenFolder,
   onEntityContextMenu,
 }: DockProps) {
+  const { t } = useI18n();
+
   const dockEntities = workspace.dock.items
     .map((entityId) => workspace.entities.find((entity) => entity.id === entityId))
     .filter((entity): entity is NonNullable<typeof entity> => entity !== undefined)
@@ -76,7 +79,7 @@ export function Dock({
   }
 
   return (
-    <nav className="vela-dock" aria-label="Dock">
+    <nav className="vela-dock" aria-label={t("dock.label")}>
       {dockEntities.map((entity) =>
         entity.kind === "app" ? (
           <button
@@ -84,7 +87,7 @@ export function Dock({
             type="button"
             className="vela-dock__item"
             title={entity.name}
-            aria-label={`Open ${entity.name}`}
+            aria-label={t("dock.openApp", { name: entity.name })}
             onClick={() => launchApp(entity)}
             onContextMenu={(event) => handleEntityContextMenu(event, entity.id)}
             onKeyDown={(event) => handleEntityKeyDown(event, entity.id)}
@@ -96,8 +99,8 @@ export function Dock({
             key={entity.id}
             type="button"
             className="vela-dock__item vela-dock__item--folder"
-            title={`${entity.name} — open folder`}
-            aria-label={`Open folder ${entity.name}`}
+            title={entity.name}
+            aria-label={t("dock.openFolder", { name: entity.name })}
             aria-haspopup="dialog"
             onClick={() => onOpenFolder(entity.id)}
             onContextMenu={(event) => handleEntityContextMenu(event, entity.id)}
@@ -112,8 +115,8 @@ export function Dock({
       <button
         type="button"
         className="vela-dock__utility"
-        title="Create"
-        aria-label="Create"
+        title={t("dock.create")}
+        aria-label={t("dock.create")}
         aria-haspopup="menu"
         disabled={dragging}
         onClick={handleCreate}
@@ -124,12 +127,12 @@ export function Dock({
       <button
         type="button"
         className="vela-dock__utility vela-dock__utility--text"
-        title={arrange ? "Switch to view mode" : "Switch to arrange mode"}
+        title={arrange ? t("dock.switchToViewTitle") : t("dock.switchToArrangeTitle")}
         aria-pressed={arrange}
         disabled={dragging}
         onClick={onToggleMode}
       >
-        {arrange ? "View" : "Arrange"}
+        {arrange ? t("mode.view") : t("mode.arrange")}
       </button>
     </nav>
   );

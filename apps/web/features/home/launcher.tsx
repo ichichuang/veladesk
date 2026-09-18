@@ -9,6 +9,8 @@ import type {
 import { moveLauncherIndex } from "./launcher-navigation";
 import { LAUNCHER_MAX_RESULTS, searchLauncherEntries } from "./launcher-search";
 import type { LauncherEntry } from "./launcher-types";
+import type { TranslationKey } from "../i18n/messages";
+import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
 
 const LISTBOX_ID = "vela-launcher-listbox";
@@ -17,18 +19,12 @@ function optionId(index: number): string {
   return `vela-launcher-option-${index}`;
 }
 
-function kindLabel(entry: LauncherEntry): string {
-  switch (entry.kind) {
-    case "app":
-      return "App";
-    case "folder":
-      return "Folder";
-    case "page":
-      return "Page";
-    case "command":
-      return "Command";
-  }
-}
+const KIND_LABEL_KEY: Readonly<Record<LauncherEntry["kind"], TranslationKey>> = {
+  app: "launcher.kind.app",
+  folder: "launcher.kind.folder",
+  page: "launcher.kind.page",
+  command: "launcher.kind.command",
+};
 
 interface LauncherProps {
   readonly entries: readonly LauncherEntry[];
@@ -48,6 +44,7 @@ interface LauncherProps {
  * element and restores focus to it on close.
  */
 export function Launcher({ entries, onActivate, onClose }: LauncherProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [requestedIndex, setRequestedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -173,7 +170,7 @@ export function Launcher({ entries, onActivate, onClose }: LauncherProps) {
         className="vela-launcher"
         role="dialog"
         aria-modal="true"
-        aria-label="Search workspace"
+        aria-label={t("launcher.dialogLabel")}
       >
         <input
           ref={inputRef}
@@ -182,10 +179,10 @@ export function Launcher({ entries, onActivate, onClose }: LauncherProps) {
           aria-expanded="true"
           aria-controls={LISTBOX_ID}
           aria-activedescendant={activeIndex >= 0 ? optionId(activeIndex) : undefined}
-          aria-label="Search workspace"
+          aria-label={t("launcher.dialogLabel")}
           autoComplete="off"
           spellCheck={false}
-          placeholder="Search apps, folders, pages and commands…"
+          placeholder={t("launcher.placeholder")}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -207,15 +204,15 @@ export function Launcher({ entries, onActivate, onClose }: LauncherProps) {
               onClick={() => onActivate(entry)}
             >
               <span className="vela-launcher__label">{entry.label}</span>
-              <span className="vela-launcher__kind">{kindLabel(entry)}</span>
+              <span className="vela-launcher__kind">{t(KIND_LABEL_KEY[entry.kind])}</span>
             </button>
           ))}
-          {results.length === 0 ? <p className="vela-launcher__empty">No matches</p> : null}
+          {results.length === 0 ? <p className="vela-launcher__empty">{t("launcher.noMatches")}</p> : null}
         </div>
         <footer className="vela-launcher__footer" aria-hidden="true">
-          <span>↑↓ navigate</span>
-          <span>↵ open</span>
-          <span>esc close</span>
+          <span>{t("launcher.hintNavigate")}</span>
+          <span>{t("launcher.hintOpen")}</span>
+          <span>{t("launcher.hintClose")}</span>
         </footer>
       </section>
     </div>

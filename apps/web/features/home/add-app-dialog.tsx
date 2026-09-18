@@ -7,6 +7,8 @@ import { addAppToFolder, addAppToPage } from "@veladesk/domain";
 import type { WorkspaceEditFailureReason } from "@veladesk/domain";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
+import { useI18n } from "../i18n/use-i18n";
+import type { TranslateFn } from "../i18n/use-i18n";
 import { createBrowserId } from "./browser-id";
 import { generatedIconText } from "./generated-icon";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
@@ -35,6 +37,7 @@ interface AddAppDialogProps {
  */
 export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,11 +59,11 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
       return;
     }
     if (name.trim().length === 0) {
-      setError("Enter a name.");
+      setError(t("dialog.addApp.error.enterName"));
       return;
     }
     if (url.trim().length === 0) {
-      setError("Enter a URL.");
+      setError(t("dialog.addApp.error.enterUrl"));
       return;
     }
     setBusy(true);
@@ -81,13 +84,13 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
           ? addAppToPage(workspace, destination.pageId, app)
           : addAppToFolder(workspace, destination.folderId, app);
       if (!added.ok) {
-        setError(describeAddFailure(added.reason));
+        setError(describeAddFailure(added.reason, t));
         setBusy(false);
         return;
       }
       const staged = await stageWorkspaceAndTrySync(runtime, added.workspace);
       if (!staged.ok) {
-        setError("The app could not be added to this workspace.");
+        setError(t("dialog.addApp.error.addFailed"));
         setBusy(false);
         return;
       }
@@ -95,7 +98,7 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
       onClose();
     } catch (dialogError: unknown) {
       setError(
-        dialogError instanceof Error ? dialogError.message : "Adding the app failed."
+        dialogError instanceof Error ? dialogError.message : t("dialog.addApp.error.exception")
       );
       setBusy(false);
     }
@@ -117,11 +120,11 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
         aria-labelledby="vela-add-app-title"
       >
         <h2 id="vela-add-app-title" className="vela-dialog__title">
-          Add app
+          {t("dialog.addApp.title")}
         </h2>
         <form className="vela-form" onSubmit={handleSubmit}>
           <label className="vela-form__label" htmlFor="vela-add-app-name">
-            Name
+            {t("dialog.nameLabel")}
           </label>
           <input
             id="vela-add-app-name"
@@ -135,7 +138,7 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
             onChange={(event) => setName(event.target.value)}
           />
           <label className="vela-form__label" htmlFor="vela-add-app-url">
-            URL
+            {t("dialog.urlLabel")}
           </label>
           <input
             id="vela-add-app-url"
@@ -162,10 +165,10 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
               onClick={onClose}
               disabled={busy}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button type="submit" className="vela-button vela-button--primary" disabled={busy}>
-              {busy ? "Adding…" : "Add app"}
+              {busy ? t("dialog.addApp.adding") : t("dialog.addApp.add")}
             </button>
           </div>
         </form>
@@ -174,21 +177,21 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
   );
 }
 
-function describeAddFailure(reason: WorkspaceEditFailureReason): string {
+function describeAddFailure(reason: WorkspaceEditFailureReason, t: TranslateFn): string {
   switch (reason) {
     case "page-not-found":
-      return "The target page no longer exists.";
+      return t("dialog.addApp.error.pageGone");
     case "folder-not-found":
-      return "This folder no longer exists.";
+      return t("dialog.addApp.error.folderGone");
     case "duplicate-entity-id":
-      return "This app already exists in the workspace.";
+      return t("dialog.addApp.error.duplicate");
     case "no-space":
-      return "This page is full — remove something or switch pages first.";
+      return t("dialog.addApp.error.noSpace");
     case "invalid-name":
-      return "Enter a name.";
+      return t("dialog.addApp.error.enterName");
     case "invalid-url":
-      return "Enter a URL.";
+      return t("dialog.addApp.error.enterUrl");
     default:
-      return "The app could not be added.";
+      return t("dialog.addApp.error.addFailed");
   }
 }

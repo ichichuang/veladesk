@@ -108,6 +108,7 @@ function richInput(
     activePageId: "page-home",
     mode: "view",
     syncState: "clean",
+    locale: "en-US",
     ...overrides,
   };
 }
@@ -139,6 +140,7 @@ describe("buildLauncherEntries — entity scope", () => {
       activePageId: "page-1",
       mode: "view",
       syncState: "clean",
+      locale: "en-US",
     });
     expect(keys).toEqual([
       "command:add-app",
@@ -191,6 +193,7 @@ describe("buildLauncherEntries — entity scope", () => {
       activePageId: "page-1",
       mode: "view",
       syncState: "clean",
+      locale: "en-US",
     }).find((candidate) => candidate.kind === "app");
     if (entry?.kind !== "app") {
       throw new Error("expected an app entry");
@@ -224,6 +227,7 @@ describe("buildLauncherEntries — empty-query ordering", () => {
       activePageId: "page-home",
       mode: "view",
       syncState: "conflict",
+      locale: "en-US",
     });
     expect(keys.indexOf("folder:folder-tools")).toBeLessThan(keys.indexOf("app:app-openai"));
   });
@@ -326,5 +330,88 @@ describe("buildLauncherEntries — commands", () => {
       const results = searchLauncherEntries(buildLauncherEntries(richInput({ syncState: "conflict" })), query);
       expect(results[0]?.key).toBe("command:open-settings");
     }
+  });
+});
+
+describe("buildLauncherEntries — localization", () => {
+  it("labels commands in Chinese and keeps the fixed command order (zh-CN)", () => {
+    const entries = buildLauncherEntries(richInput({ locale: "zh-CN", syncState: "dirty" }));
+    const commands = entries.filter((entry) => entry.kind === "command");
+    expect(commands.map((entry) => entry.label)).toEqual([
+      "添加应用",
+      "新建文件夹",
+      "设置",
+      "切换到整理模式",
+      "立即同步",
+    ]);
+    expect(commands.map((entry) => entry.key)).toEqual([
+      "command:add-app",
+      "command:new-folder",
+      "command:open-settings",
+      "command:toggle-mode",
+      "command:sync-current",
+    ]);
+  });
+
+  it("labels commands in English and keeps the fixed command order (en-US)", () => {
+    const entries = buildLauncherEntries(richInput({ locale: "en-US", syncState: "dirty" }));
+    const commands = entries.filter((entry) => entry.kind === "command");
+    expect(commands.map((entry) => entry.label)).toEqual([
+      "Add App",
+      "New Folder",
+      "Settings",
+      "Switch to Arrange",
+      "Sync Now",
+    ]);
+  });
+
+  it("labels the toggle command for arrange mode in Chinese", () => {
+    const entries = buildLauncherEntries(richInput({ locale: "zh-CN", mode: "arrange" }));
+    const toggle = entries.find(
+      (entry) => entry.kind === "command" && entry.commandId === "toggle-mode",
+    );
+    expect(toggle?.label).toBe("切换到查看模式");
+  });
+
+  it("finds the Settings command from Chinese queries", () => {
+    for (const query of ["设置", "外观", "主题"]) {
+      const results = searchLauncherEntries(
+        buildLauncherEntries(richInput({ locale: "zh-CN", syncState: "conflict" })),
+        query,
+      );
+      expect(results[0]?.key).toBe("command:open-settings");
+    }
+  });
+
+  it("finds the Settings command from English queries", () => {
+    const results = searchLauncherEntries(
+      buildLauncherEntries(richInput({ locale: "zh-CN", syncState: "conflict" })),
+      "settings",
+    );
+    expect(results[0]?.key).toBe("command:open-settings");
+  });
+
+  it("searches across languages: Chinese keyword finds the sync command in English UI", () => {
+    const results = searchLauncherEntries(
+      buildLauncherEntries(richInput({ locale: "en-US", syncState: "dirty" })),
+      "同步",
+    );
+    expect(results[0]?.key).toBe("command:sync-current");
+  });
+
+  it("searches across languages: English keyword finds a folder in Chinese UI", () => {
+    const results = searchLauncherEntries(
+      buildLauncherEntries(richInput({ locale: "zh-CN" })),
+      "folder",
+    );
+    expect(results.map((entry) => entry.key)).toContain("folder:folder-tools");
+  });
+
+  it("never translates user data labels (app, folder, page names)", () => {
+    const entries = buildLauncherEntries(richInput({ locale: "zh-CN" }));
+    const labels = entries.filter((e) => e.kind !== "command").map((e) => e.label);
+    expect(labels).toContain("OpenAI");
+    expect(labels).toContain("Tools");
+    expect(labels).toContain("Home");
   });
 });

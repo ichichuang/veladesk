@@ -10,11 +10,11 @@ import {
 import type { WorkspaceEditFailureReason } from "@veladesk/domain";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
+import { useI18n } from "../i18n/use-i18n";
+import type { TranslateFn } from "../i18n/use-i18n";
 import { createBrowserId } from "./browser-id";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import "./home-shell.css";
-
-const DEFAULT_FOLDER_NAME = "New Folder";
 
 interface FolderDialogProps {
   readonly workspace: WorkspaceSnapshot;
@@ -30,7 +30,11 @@ interface FolderDialogProps {
  */
 export function FolderDialog({ workspace, pageId, folder, onClose }: FolderDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
-  const [name, setName] = useState(folder !== undefined ? folder.name : DEFAULT_FOLDER_NAME);
+  const { t } = useI18n();
+  // null = untouched: shows the locale default until the stored locale
+  // restores; the user's own typing always wins.
+  const [nameInput, setNameInput] = useState<string | null>(null);
+  const name = nameInput ?? (folder !== undefined ? folder.name : t("dialog.folder.defaultName"));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,7 +56,7 @@ export function FolderDialog({ workspace, pageId, folder, onClose }: FolderDialo
       return;
     }
     if (name.trim().length === 0) {
-      setError("Enter a folder name.");
+      setError(t("dialog.folder.error.enterName"));
       return;
     }
     setBusy(true);
@@ -67,19 +71,21 @@ export function FolderDialog({ workspace, pageId, folder, onClose }: FolderDialo
             children: [],
           });
       if (!result.ok) {
-        setError(describeFolderFailure(result.reason));
+        setError(describeFolderFailure(result.reason, t));
         setBusy(false);
         return;
       }
       const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
       if (!staged.ok) {
-        setError("The folder could not be saved.");
+        setError(t("dialog.folder.error.saveFailed"));
         setBusy(false);
         return;
       }
       onClose();
     } catch (dialogError: unknown) {
-      setError(dialogError instanceof Error ? dialogError.message : "Saving the folder failed.");
+      setError(
+        dialogError instanceof Error ? dialogError.message : t("dialog.folder.error.exception")
+      );
       setBusy(false);
     }
   }
@@ -95,11 +101,11 @@ export function FolderDialog({ workspace, pageId, folder, onClose }: FolderDialo
     >
       <div className="vela-dialog" role="dialog" aria-modal="true" aria-labelledby="vela-folder-title">
         <h2 id="vela-folder-title" className="vela-dialog__title">
-          {renaming ? "Rename folder" : "New folder"}
+          {renaming ? t("dialog.folder.renameTitle") : t("dialog.folder.newTitle")}
         </h2>
         <form className="vela-form" onSubmit={handleSubmit}>
           <label className="vela-form__label" htmlFor="vela-folder-name">
-            Folder name
+            {t("dialog.folder.nameLabel")}
           </label>
           <input
             id="vela-folder-name"
@@ -110,7 +116,7 @@ export function FolderDialog({ workspace, pageId, folder, onClose }: FolderDialo
             autoFocus
             autoComplete="off"
             spellCheck={false}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => setNameInput(event.target.value)}
             aria-describedby={error !== null ? "vela-folder-error" : undefined}
           />
           {error !== null ? (
@@ -120,10 +126,10 @@ export function FolderDialog({ workspace, pageId, folder, onClose }: FolderDialo
           ) : null}
           <div className="vela-dialog__actions">
             <button type="button" className="vela-button" onClick={onClose} disabled={busy}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button type="submit" className="vela-button vela-button--primary" disabled={busy}>
-              {busy ? "Saving…" : renaming ? "Rename" : "Create folder"}
+              {busy ? t("dialog.folder.saving") : renaming ? t("dialog.folder.rename") : t("dialog.folder.create")}
             </button>
           </div>
         </form>
@@ -132,21 +138,21 @@ export function FolderDialog({ workspace, pageId, folder, onClose }: FolderDialo
   );
 }
 
-function describeFolderFailure(reason: WorkspaceEditFailureReason): string {
+function describeFolderFailure(reason: WorkspaceEditFailureReason, t: TranslateFn): string {
   switch (reason) {
     case "page-not-found":
-      return "The active page no longer exists.";
+      return t("dialog.folder.error.pageGone");
     case "folder-not-found":
-      return "This folder no longer exists.";
+      return t("dialog.folder.error.folderGone");
     case "duplicate-entity-id":
-      return "This folder already exists in the workspace.";
+      return t("dialog.folder.error.duplicate");
     case "folder-must-be-empty":
-      return "New folders must start empty.";
+      return t("dialog.folder.error.mustBeEmpty");
     case "invalid-name":
-      return "Enter a folder name.";
+      return t("dialog.folder.error.enterName");
     case "no-space":
-      return "This page is full — remove something first.";
+      return t("dialog.folder.error.noSpace");
     default:
-      return "The folder could not be saved.";
+      return t("dialog.folder.error.saveFailed");
   }
 }

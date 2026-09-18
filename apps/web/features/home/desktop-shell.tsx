@@ -75,6 +75,8 @@ import type { PendingLayoutHandoff } from "./layout-handoff";
 import { launchApp } from "./launch-app";
 import { buildAppearanceTheme } from "./appearance-theme";
 import { disableDndDropAnimation } from "./dnd-static-drop";
+import { useI18n } from "../i18n/use-i18n";
+import type { TranslateFn } from "../i18n/use-i18n";
 import { Launcher } from "./launcher";
 import { buildLauncherEntries } from "./launcher-index";
 import type { LauncherCommandId, LauncherEntry } from "./launcher-types";
@@ -156,6 +158,7 @@ interface DesktopShellProps {
  */
 export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps) {
   const runtime = useWorkspaceRuntimeInstance();
+  const { locale, t } = useI18n();
   const snapshot = workspace.snapshot;
 
   const [mode, setMode] = useState<DesktopMode>(() =>
@@ -221,8 +224,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         activePageId: activePage !== undefined ? activePage.id : null,
         mode,
         syncState: workspace.syncState,
+        locale,
       }),
-    [snapshot, activePage, mode, workspace.syncState],
+    [snapshot, activePage, mode, workspace.syncState, locale],
   );
 
   // Latest-value mirrors for async/session callbacks (drag commit, keyboard
@@ -330,8 +334,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         ok: false,
         message:
           result.reason === "default-page-not-found"
-            ? "The default page no longer exists."
-            : "The selected appearance values are invalid.",
+            ? t("settings.error.defaultPageGone")
+            : t("settings.error.invalidAppearance"),
       };
     }
     // pageIdRef is the freshest session page — the render closure can go
@@ -340,7 +344,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
     if (!staged.ok) {
       console.error(`VelaDesk: settings were not staged (${staged.reason})`);
-      return { ok: false, message: "Settings could not be saved." };
+      return { ok: false, message: t("settings.error.saveFailed") };
     }
     if (
       preferences.defaultPageId !== snapshot.preferences.defaultPageId &&
@@ -747,10 +751,10 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   );
 
   function openContextMenu(target: ContextMenuTarget) {
-    setContextMenu(buildContextMenuState(target));
+    setContextMenu(buildContextMenuState(target, t));
   }
 
-  function buildContextMenuState(target: ContextMenuTarget): ContextMenuState {
+  function buildContextMenuState(target: ContextMenuTarget, t: TranslateFn): ContextMenuState {
     if (target.kind === "desktop") {
       return {
         x: target.x,
@@ -758,17 +762,17 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         actions: [
           {
             id: "add-app",
-            label: "Add App",
+            label: t("menu.addApp"),
             onSelect: () => openDialog({ kind: "add-app", destination: pageDestination() }),
           },
           {
             id: "new-folder",
-            label: "New Folder",
+            label: t("menu.newFolder"),
             onSelect: () => openDialog({ kind: "new-folder" }),
           },
           {
             id: "toggle-mode",
-            label: arrange ? "Switch to View mode" : "Switch to Arrange mode",
+            label: arrange ? t("menu.switchToView") : t("menu.switchToArrange"),
             onSelect: () => switchMode(arrange ? "view" : "arrange"),
           },
         ],
@@ -783,6 +787,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       x: target.x,
       y: target.y,
       actions: buildEntityMenuActions(entity, target.source, {
+        t,
         snapshot,
         activePageId: activePage?.id ?? null,
         onOpenApp: (app) => launchApp(app),
@@ -893,14 +898,14 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     if (!result.ok) {
       setFolderActionError(
         result.reason === "no-space"
-          ? "Not enough room on this page to move the app out of the folder."
-          : "The app could not be moved to the desktop."
+          ? t("shell.error.moveOutOfFolderNoSpace")
+          : t("shell.error.moveToDesktopFailed")
       );
       return;
     }
     const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
     if (!staged.ok) {
-      setFolderActionError("The app could not be moved to the desktop.");
+      setFolderActionError(t("shell.error.moveToDesktopFailed"));
       return;
     }
     setFolderActionError(null);
@@ -909,12 +914,12 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   async function handleDeleteApp(appId: EntityId) {
     const result = deleteApp(snapshot, appId);
     if (!result.ok) {
-      setDialogError("This app no longer exists.");
+      setDialogError(t("dialog.deleteApp.error.appGone"));
       return;
     }
     const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
     if (!staged.ok) {
-      setDialogError("The app could not be deleted.");
+      setDialogError(t("dialog.deleteApp.error.failed"));
       return;
     }
     closeDialog();
@@ -923,21 +928,21 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   async function handleDeleteFolder(folderId: EntityId) {
     const pageId = activePage?.id;
     if (pageId === undefined) {
-      setDialogError("There is no active page to move the apps to.");
+      setDialogError(t("dialog.deleteFolder.error.noActivePage"));
       return;
     }
     const result = dissolveFolderToPage(snapshot, folderId, pageId);
     if (!result.ok) {
       setDialogError(
         result.reason === "no-space"
-          ? "Not enough room on this page to remove the folder."
-          : "This folder no longer exists."
+          ? t("dialog.deleteFolder.error.noSpace")
+          : t("dialog.deleteFolder.error.folderGone")
       );
       return;
     }
     const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
     if (!staged.ok) {
-      setDialogError("The folder could not be removed.");
+      setDialogError(t("dialog.deleteFolder.error.failed"));
       return;
     }
     if (overlayFolderId === folderId) {
@@ -1107,15 +1112,13 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         <div className="vela-screen__ambient" aria-hidden="true" />
         <section className="vela-screen__panel">
           <h1 className="vela-wordmark">VelaDesk</h1>
-          <p className="vela-screen__lead">
-            This workspace contains no pages, so there is nothing to display.
-          </p>
+          <p className="vela-screen__lead">{t("recovery.noPages")}</p>
           <button
             type="button"
             className="vela-button"
             onClick={() => window.location.reload()}
           >
-            Reload
+            {t("common.retry")}
           </button>
         </section>
       </main>
@@ -1165,8 +1168,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             <button
               type="button"
               className="vela-button vela-topbar__history-button"
-              title="Undo arrange (Ctrl/Cmd+Z)"
-              aria-label="Undo arrange"
+              title={t("topbar.undoTitle")}
+              aria-label={t("topbar.undoArrange")}
               disabled={dragging || handoffLock || !canUndo(arrangeHistories, activePage.id)}
               onClick={() => applyHistoryStep(activePage.id, "undo")}
             >
@@ -1175,8 +1178,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             <button
               type="button"
               className="vela-button vela-topbar__history-button"
-              title="Redo arrange (Ctrl/Cmd+Shift+Z)"
-              aria-label="Redo arrange"
+              title={t("topbar.redoTitle")}
+              aria-label={t("topbar.redoArrange")}
               disabled={dragging || handoffLock || !canRedo(arrangeHistories, activePage.id)}
               onClick={() => applyHistoryStep(activePage.id, "redo")}
             >
@@ -1185,15 +1188,15 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             {selectedItemIds.size > 0 ? (
               <>
                 <span className="vela-topbar__selection-count" aria-live="polite">
-                  {selectedItemIds.size} selected
+                  {t("topbar.selectionCount", { count: selectedItemIds.size })}
                 </span>
                 <button
                   type="button"
                   className="vela-button"
-                  aria-label="Clear selection"
+                  aria-label={t("topbar.clearSelection")}
                   onClick={() => applySelection(new Set())}
                 >
-                  Clear
+                  {t("topbar.clearSelection")}
                 </button>
               </>
             ) : null}
@@ -1203,17 +1206,17 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         <button
           type="button"
           className="vela-button vela-topbar__search"
-          title="Search (Ctrl/Cmd+K)"
+          title={t("topbar.searchTitle")}
           onClick={() => setLauncherOpen(true)}
         >
-          Search <kbd className="vela-topbar__kbd">⌘K</kbd>
+          {t("topbar.search")} <kbd className="vela-topbar__kbd">⌘K</kbd>
         </button>
         <button
           type="button"
           className="vela-button vela-topbar__settings"
           onClick={openSettings}
         >
-          Settings
+          {t("topbar.settings")}
         </button>
         <button
           type="button"
@@ -1222,9 +1225,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           onClick={handleTopbarCreate}
           onKeyDown={handleTopbarCreateKeyDown}
         >
-          Add
+          {t("topbar.add")}
         </button>
-        <div className="vela-segment" role="group" aria-label="Desktop mode">
+        <div className="vela-segment" role="group" aria-label={t("mode.desktopModeLabel")}>
           <button
             type="button"
             className="vela-segment__button"
@@ -1232,7 +1235,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             disabled={dragging || handoffLock}
             onClick={() => switchMode("view")}
           >
-            View
+            {t("mode.view")}
           </button>
           <button
             type="button"
@@ -1241,7 +1244,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             disabled={dragging || handoffLock}
             onClick={() => switchMode("arrange")}
           >
-            Arrange
+            {t("mode.arrange")}
           </button>
         </div>
       </header>
@@ -1296,7 +1299,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       ) : null}
 
       {pages.length > 1 ? (
-        <div className="vela-pages" role="group" aria-label="Pages">
+        <div className="vela-pages" role="group" aria-label={t("launcher.kind.page")}>
           {pages.map((page) => (
             <button
               key={page.id}
@@ -1391,9 +1394,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       ) : null}
       {dialog !== null && dialog.kind === "delete-folder" ? (
         <ConfirmDialog
-          title="Delete folder?"
-          message="Apps inside will be returned to the current desktop."
-          confirmLabel="Delete folder"
+          title={t("dialog.deleteFolder.title")}
+          message={t("dialog.deleteFolder.message")}
+          confirmLabel={t("dialog.deleteFolder.confirm")}
           error={dialogError}
           onConfirm={() => void handleDeleteFolder(dialog.folderId)}
           onCancel={closeDialog}
@@ -1461,14 +1464,15 @@ function DeleteAppConfirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useI18n();
   const app = workspace.entities.find(
     (entity): entity is AppShortcut => entity.kind === "app" && entity.id === appId
   );
   return (
     <ConfirmDialog
-      title={`Delete ${app?.name ?? "app"}?`}
-      message="The app and every reference to it (pages, folders, dock) will be removed."
-      confirmLabel="Delete app"
+      title={t("dialog.deleteApp.title", { name: app?.name ?? t("launcher.kind.app") })}
+      message={t("dialog.deleteApp.message")}
+      confirmLabel={t("dialog.deleteApp.confirm")}
       error={error}
       onConfirm={onConfirm}
       onCancel={onCancel}
@@ -1477,6 +1481,7 @@ function DeleteAppConfirm({
 }
 
 interface EntityMenuCallbacks {
+  readonly t: TranslateFn;
   readonly snapshot: WorkspaceSnapshot;
   readonly activePageId: DesktopPageId | null;
   readonly onOpenApp: (app: AppShortcut) => void;
@@ -1505,11 +1510,11 @@ function buildEntityMenuActions(
   source: "desktop" | "dock" | "folder",
   callbacks: EntityMenuCallbacks
 ): readonly ContextMenuAction[] {
-  const { snapshot } = callbacks;
+  const { t, snapshot } = callbacks;
   const pinned = snapshot.dock.items.includes(entity.id);
   const pinAction: ContextMenuAction = pinned
-    ? { id: "unpin", label: "Remove from Dock", onSelect: () => callbacks.onUnpin(entity.id) }
-    : { id: "pin", label: "Pin to Dock", onSelect: () => callbacks.onPin(entity.id) };
+    ? { id: "unpin", label: t("menu.removeFromDock"), onSelect: () => callbacks.onUnpin(entity.id) }
+    : { id: "pin", label: t("menu.pinToDock"), onSelect: () => callbacks.onPin(entity.id) };
 
   if (entity.kind === "app") {
     const eligible = eligibleFoldersForMove(
@@ -1517,20 +1522,20 @@ function buildEntityMenuActions(
       source === "folder" ? containerFolderId(snapshot, entity.id) : null
     );
     const actions: ContextMenuAction[] = [
-      { id: "open", label: "Open", onSelect: () => callbacks.onOpenApp(entity) },
-      { id: "edit", label: "Edit", onSelect: () => callbacks.onEditApp(entity.id) },
+      { id: "open", label: t("menu.open"), onSelect: () => callbacks.onOpenApp(entity) },
+      { id: "edit", label: t("menu.edit"), onSelect: () => callbacks.onEditApp(entity.id) },
     ];
     if (source === "folder") {
       actions.push({
         id: "move-to-desktop",
-        label: "Move to Desktop",
+        label: t("menu.moveToDesktop"),
         disabled: callbacks.activePageId === null,
         onSelect: () => callbacks.onMoveToDesktop(entity.id),
       });
     }
     actions.push({
       id: "move-to-folder",
-      label: "Move to Folder…",
+      label: t("menu.moveToFolder"),
       disabled: eligible.length === 0,
       onSelect: () =>
         callbacks.onMoveToFolder(
@@ -1541,7 +1546,7 @@ function buildEntityMenuActions(
     actions.push(pinAction);
     actions.push({
       id: "delete",
-      label: "Delete",
+      label: t("menu.delete"),
       onSelect: () => callbacks.onDeleteApp(entity.id),
     });
     return actions;
@@ -1549,12 +1554,12 @@ function buildEntityMenuActions(
 
   if (entity.kind === "folder") {
     return [
-      { id: "open", label: "Open", onSelect: () => callbacks.onOpenFolder(entity.id) },
-      { id: "rename", label: "Rename", onSelect: () => callbacks.onRenameFolder(entity.id) },
+      { id: "open", label: t("menu.open"), onSelect: () => callbacks.onOpenFolder(entity.id) },
+      { id: "rename", label: t("menu.rename"), onSelect: () => callbacks.onRenameFolder(entity.id) },
       pinAction,
       {
         id: "delete-folder",
-        label: "Delete Folder",
+        label: t("menu.deleteFolder"),
         onSelect: () => callbacks.onDeleteFolder(entity.id),
       },
     ];
@@ -1562,7 +1567,7 @@ function buildEntityMenuActions(
 
   // Widgets are not editable in this stage — no menu actions.
   return [
-    { id: "widget-later", label: "Widget editing later", disabled: true, onSelect: () => {} },
+    { id: "widget-later", label: t("menu.widgetLater"), disabled: true, onSelect: () => {} },
   ];
 }
 

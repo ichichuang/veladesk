@@ -7,6 +7,8 @@ import { replaceApp } from "@veladesk/domain";
 import type { WorkspaceEditFailureReason } from "@veladesk/domain";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
+import { useI18n } from "../i18n/use-i18n";
+import type { TranslateFn } from "../i18n/use-i18n";
 import { generatedIconText } from "./generated-icon";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import "./home-shell.css";
@@ -29,6 +31,7 @@ interface EditAppDialogProps {
  */
 export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
+  const { t } = useI18n();
   const existing = workspace.entities.find(
     (entity): entity is AppShortcut => entity.kind === "app" && entity.id === appId
   );
@@ -58,11 +61,11 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
       return;
     }
     if (name.trim().length === 0) {
-      setError("Enter a name.");
+      setError(t("dialog.addApp.error.enterName"));
       return;
     }
     if (url.trim().length === 0) {
-      setError("Enter a URL.");
+      setError(t("dialog.addApp.error.enterUrl"));
       return;
     }
     setBusy(true);
@@ -81,20 +84,35 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
       };
       const result = replaceApp(workspace, nextApp);
       if (!result.ok) {
-        setError(describeEditFailure(result.reason));
+        setError(describeEditFailure(result.reason, t));
         setBusy(false);
         return;
       }
       const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
       if (!staged.ok) {
-        setError("The changes could not be saved.");
+        setError(t("dialog.editApp.error.saveFailed"));
         setBusy(false);
         return;
       }
       onClose();
     } catch (dialogError: unknown) {
-      setError(dialogError instanceof Error ? dialogError.message : "Saving the app failed.");
+      setError(
+        dialogError instanceof Error ? dialogError.message : t("dialog.editApp.error.exception")
+      );
       setBusy(false);
+    }
+  }
+
+  function describeOpenMode(mode: AppOpenMode): string {
+    switch (mode) {
+      case "new-tab":
+        return t("dialog.editApp.mode.newTab");
+      case "same-tab":
+        return t("dialog.editApp.mode.sameTab");
+      case "new-window":
+        return t("dialog.editApp.mode.newWindow");
+      case "popup":
+        return t("dialog.editApp.mode.popup");
     }
   }
 
@@ -109,11 +127,11 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
     >
       <div className="vela-dialog" role="dialog" aria-modal="true" aria-labelledby="vela-edit-app-title">
         <h2 id="vela-edit-app-title" className="vela-dialog__title">
-          Edit app
+          {t("dialog.editApp.title")}
         </h2>
         <form className="vela-form" onSubmit={handleSubmit}>
           <label className="vela-form__label" htmlFor="vela-edit-app-name">
-            Name
+            {t("dialog.nameLabel")}
           </label>
           <input
             id="vela-edit-app-name"
@@ -127,7 +145,7 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
             onChange={(event) => setName(event.target.value)}
           />
           <label className="vela-form__label" htmlFor="vela-edit-app-url">
-            URL
+            {t("dialog.urlLabel")}
           </label>
           <input
             id="vela-edit-app-url"
@@ -143,7 +161,7 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
             aria-describedby={error !== null ? "vela-edit-app-error" : undefined}
           />
           <label className="vela-form__label" htmlFor="vela-edit-app-mode">
-            Open mode
+            {t("dialog.editApp.openMode")}
           </label>
           <select
             id="vela-edit-app-mode"
@@ -164,10 +182,10 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
           ) : null}
           <div className="vela-dialog__actions">
             <button type="button" className="vela-button" onClick={onClose} disabled={busy}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button type="submit" className="vela-button vela-button--primary" disabled={busy}>
-              {busy ? "Saving…" : "Save changes"}
+              {busy ? t("dialog.editApp.saving") : t("dialog.editApp.saveChanges")}
             </button>
           </div>
         </form>
@@ -176,28 +194,15 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
   );
 }
 
-function describeOpenMode(mode: AppOpenMode): string {
-  switch (mode) {
-    case "new-tab":
-      return "New tab";
-    case "same-tab":
-      return "Same tab";
-    case "new-window":
-      return "New window";
-    case "popup":
-      return "Popup window";
-  }
-}
-
-function describeEditFailure(reason: WorkspaceEditFailureReason): string {
+function describeEditFailure(reason: WorkspaceEditFailureReason, t: TranslateFn): string {
   switch (reason) {
     case "app-not-found":
-      return "This app no longer exists.";
+      return t("dialog.editApp.error.appGone");
     case "invalid-name":
-      return "Enter a name.";
+      return t("dialog.addApp.error.enterName");
     case "invalid-url":
-      return "Enter a URL.";
+      return t("dialog.addApp.error.enterUrl");
     default:
-      return "The changes could not be saved.";
+      return t("dialog.editApp.error.saveFailed");
   }
 }

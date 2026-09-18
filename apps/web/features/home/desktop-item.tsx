@@ -8,6 +8,7 @@ import type { LayoutItem } from "@veladesk/desktop-engine";
 import { contextMenuAnchorFromElement, isContextMenuKeyEvent } from "./context-menu";
 import { generatedIconText } from "./generated-icon";
 import { launchApp } from "./launch-app";
+import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
 
 interface DesktopItemProps {
@@ -55,16 +56,17 @@ export function DesktopItem({
   onEntityContextMenu,
   onOpenFolder,
 }: DesktopItemProps) {
+  const { t } = useI18n();
   const entity = workspace.entities.find((candidate) => candidate.id === item.id);
   if (entity === undefined) {
     return (
       <div
         className="vela-item vela-item--missing"
         style={placementStyle(item)}
-        title="This item references a missing entity"
+        title={t("item.missingTitle")}
         onContextMenu={swallowContextMenu}
       >
-        <span className="vela-item__label">Missing item</span>
+        <span className="vela-item__label">{t("item.missing")}</span>
       </div>
     );
   }

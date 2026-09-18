@@ -5,6 +5,8 @@ import { moveAppToFolder } from "@veladesk/domain";
 import type { EntityId, Folder, WorkspaceSnapshot, WorkspaceEditFailureReason } from "@veladesk/domain";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
+import { useI18n } from "../i18n/use-i18n";
+import type { TranslateFn } from "../i18n/use-i18n";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import "./home-shell.css";
 
@@ -46,6 +48,7 @@ export function MoveToFolderDialog({
   onClose,
 }: MoveToFolderDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
+  const { t } = useI18n();
   const [movingId, setMovingId] = useState<EntityId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const folders = eligibleFoldersForMove(workspace, currentFolderId);
@@ -69,19 +72,19 @@ export function MoveToFolderDialog({
     try {
       const result = moveAppToFolder(workspace, appId, folderId);
       if (!result.ok) {
-        setError(describeMoveFailure(result.reason));
+        setError(describeMoveFailure(result.reason, t));
         setMovingId(null);
         return;
       }
       const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
       if (!staged.ok) {
-        setError("The app could not be moved.");
+        setError(t("dialog.moveToFolder.error.failed"));
         setMovingId(null);
         return;
       }
       onClose();
     } catch (moveError: unknown) {
-      setError(moveError instanceof Error ? moveError.message : "Moving the app failed.");
+      setError(moveError instanceof Error ? moveError.message : t("dialog.moveToFolder.error.exception"));
       setMovingId(null);
     }
   }
@@ -97,10 +100,10 @@ export function MoveToFolderDialog({
     >
       <div className="vela-dialog" role="dialog" aria-modal="true" aria-labelledby="vela-move-title">
         <h2 id="vela-move-title" className="vela-dialog__title">
-          Move to folder
+          {t("dialog.moveToFolder.title")}
         </h2>
         {folders.length === 0 ? (
-          <p className="vela-dialog__message">No reachable folders yet.</p>
+          <p className="vela-dialog__message">{t("dialog.moveToFolder.empty")}</p>
         ) : (
           <ul className="vela-picker">
             {folders.map((folder) => (
@@ -116,7 +119,7 @@ export function MoveToFolderDialog({
                 >
                   <span className="vela-picker__name">{folder.name}</span>
                   <span className="vela-picker__meta">
-                    {folder.children.length} {folder.children.length === 1 ? "app" : "apps"}
+                    {t("dialog.moveToFolder.appCount", { count: folder.children.length })}
                   </span>
                 </button>
               </li>
@@ -130,7 +133,7 @@ export function MoveToFolderDialog({
         ) : null}
         <div className="vela-dialog__actions">
           <button type="button" className="vela-button" onClick={onClose} disabled={movingId !== null}>
-            Cancel
+            {t("common.cancel")}
           </button>
         </div>
       </div>
@@ -138,15 +141,15 @@ export function MoveToFolderDialog({
   );
 }
 
-function describeMoveFailure(reason: WorkspaceEditFailureReason): string {
+function describeMoveFailure(reason: WorkspaceEditFailureReason, t: TranslateFn): string {
   switch (reason) {
     case "app-not-found":
-      return "This app no longer exists.";
+      return t("dialog.moveToFolder.error.appGone");
     case "folder-not-found":
-      return "This folder no longer exists.";
+      return t("dialog.moveToFolder.error.folderGone");
     case "already-in-folder":
-      return "The app is already in that folder.";
+      return t("dialog.moveToFolder.error.alreadyInside");
     default:
-      return "The app could not be moved.";
+      return t("dialog.moveToFolder.error.failed");
   }
 }

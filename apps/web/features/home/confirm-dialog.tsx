@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
 
 interface ConfirmDialogProps {
@@ -17,12 +18,14 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({
   title,
   message,
-  confirmLabel = "Confirm",
+  confirmLabel,
   busy = false,
   error = null,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { t } = useI18n();
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -54,7 +57,7 @@ export function ConfirmDialog({
         ) : null}
         <div className="vela-dialog__actions">
           <button type="button" className="vela-button" onClick={onCancel} disabled={busy}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -62,7 +65,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? "Working…" : confirmLabel}
+            {busy ? t("common.working") : (confirmLabel ?? t("common.save"))}
           </button>
         </div>
       </div>

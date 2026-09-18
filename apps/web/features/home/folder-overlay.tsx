@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import type { AppShortcut, EntityId, Folder, WorkspaceSnapshot } from "@veladesk/domain";
 
+import { useI18n } from "../i18n/use-i18n";
 import { generatedIconText } from "./generated-icon";
 import {
   contextMenuAnchorFromElement,
@@ -38,6 +39,8 @@ export function FolderOverlay({
   onLaunchApp,
   onChildContextMenu,
 }: FolderOverlayProps) {
+  const { t } = useI18n();
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -86,12 +89,12 @@ export function FolderOverlay({
           <h2 className="vela-folder-overlay__title">{folder.name}</h2>
           <span className="vela-folder-overlay__spacer" />
           <button type="button" className="vela-button" onClick={onAddApp}>
-            Add App
+            {t("overlay.addApp")}
           </button>
           <button
             type="button"
             className="vela-button vela-folder-overlay__close"
-            aria-label="Close folder"
+            aria-label={t("overlay.close")}
             onClick={onClose}
           >
             ✕
@@ -106,16 +109,16 @@ export function FolderOverlay({
           {children.map(({ childId, entity }) => {
             if (entity === undefined) {
               return (
-                <div key={childId} className="vela-item vela-item--missing" title="Missing app">
-                  <span className="vela-item__label">Missing app</span>
+                <div key={childId} className="vela-item vela-item--missing" title={t("overlay.missingApp")}>
+                  <span className="vela-item__label">{t("overlay.missingApp")}</span>
                 </div>
               );
             }
             if (entity.kind !== "app") {
               // V1 folders contain apps only — render defensively.
               return (
-                <div key={childId} className="vela-item vela-item--missing" title="Unsupported item">
-                  <span className="vela-item__label">Unsupported item</span>
+                <div key={childId} className="vela-item vela-item--missing" title={t("overlay.unsupported")}>
+                  <span className="vela-item__label">{t("overlay.unsupported")}</span>
                 </div>
               );
             }
@@ -138,7 +141,7 @@ export function FolderOverlay({
             );
           })}
           {children.length === 0 ? (
-            <p className="vela-folder-overlay__empty">This folder is empty.</p>
+            <p className="vela-folder-overlay__empty">{t("overlay.empty")}</p>
           ) : null}
         </div>
       </section>

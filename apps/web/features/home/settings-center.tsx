@@ -14,6 +14,9 @@ import type {
   WorkspaceWallpaperPreset,
 } from "@veladesk/domain";
 
+import { useI18n } from "../i18n/use-i18n";
+import type { UiLocale } from "../i18n/locale";
+import type { TranslationKey } from "../i18n/messages";
 import {
   areWorkspaceSettingsDraftsEqual,
   createWorkspaceSettingsDraft,
@@ -41,34 +44,46 @@ interface SettingsCenterProps {
   readonly onClose: () => void;
 }
 
-type SettingsSection = "appearance" | "desktop";
+type SettingsSection = "appearance" | "desktop" | "general";
 
-const COLOR_MODE_OPTIONS: readonly { readonly value: WorkspaceColorMode; readonly label: string }[] = [
-  { value: "system", label: "System" },
-  { value: "dark", label: "Dark" },
-  { value: "light", label: "Light" },
+const SECTION_LABEL_KEY: Readonly<Record<SettingsSection, TranslationKey>> = {
+  appearance: "settings.section.appearance",
+  desktop: "settings.section.desktop",
+  general: "settings.section.general",
+};
+
+const COLOR_MODE_OPTIONS: readonly {
+  readonly value: WorkspaceColorMode;
+  readonly labelKey: TranslationKey;
+}[] = [
+  { value: "system", labelKey: "settings.colorMode.system" },
+  { value: "dark", labelKey: "settings.colorMode.dark" },
+  { value: "light", labelKey: "settings.colorMode.light" },
 ];
 
 const WALLPAPER_OPTIONS: readonly {
   readonly value: WorkspaceWallpaperPreset;
-  readonly label: string;
+  readonly labelKey: TranslationKey;
 }[] = [
-  { value: "aurora", label: "Aurora" },
-  { value: "midnight", label: "Midnight" },
-  { value: "dawn", label: "Dawn" },
-  { value: "mist", label: "Mist" },
+  { value: "aurora", labelKey: "settings.wallpaper.aurora" },
+  { value: "midnight", labelKey: "settings.wallpaper.midnight" },
+  { value: "dawn", labelKey: "settings.wallpaper.dawn" },
+  { value: "mist", labelKey: "settings.wallpaper.mist" },
 ];
 
-const ICON_SIZE_OPTIONS: readonly { readonly value: WorkspaceIconSize; readonly label: string }[] = [
-  { value: "small", label: "Small" },
-  { value: "medium", label: "Medium" },
-  { value: "large", label: "Large" },
+const ICON_SIZE_OPTIONS: readonly {
+  readonly value: WorkspaceIconSize;
+  readonly labelKey: TranslationKey;
+}[] = [
+  { value: "small", labelKey: "settings.iconSize.small" },
+  { value: "medium", labelKey: "settings.iconSize.medium" },
+  { value: "large", labelKey: "settings.iconSize.large" },
 ];
 
 /**
  * The workspace Settings Center: one large glass overlay with section
- * navigation (Appearance / Desktop) over a draft model of the workspace
- * preferences.
+ * navigation (Appearance / Desktop / General) over a draft model of the
+ * workspace preferences.
  *
  * The component never imports the client runtime and never stages
  * anything: appearance changes preview live through `onPreviewAppearance`,
@@ -76,6 +91,11 @@ const ICON_SIZE_OPTIONS: readonly { readonly value: WorkspaceIconSize; readonly 
  * local stage. Cancel (Escape / backdrop / button) simply closes — the
  * shell then drops the preview and the desktop reverts to the persisted
  * appearance.
+ *
+ * The General section's interface language is deliberately NOT part of the
+ * draft: it is a browser-local preference (see ui-localization.md) that
+ * applies and persists immediately via `setLocale`, so switching it can
+ * never dirty the draft or change the Save button state.
  */
 export function SettingsCenter({
   workspace,
@@ -83,6 +103,7 @@ export function SettingsCenter({
   onSave,
   onClose,
 }: SettingsCenterProps) {
+  const { locale, setLocale, t } = useI18n();
   const [draft, setDraft] = useState<WorkspaceSettingsDraft>(() =>
     createWorkspaceSettingsDraft(workspace),
   );
@@ -134,6 +155,13 @@ export function SettingsCenter({
     onPreviewAppearance(next.appearance);
   }
 
+  /** Immediate locale switch — browser preference, never part of the draft. */
+  function updateLocale(next: UiLocale) {
+    if (next !== locale) {
+      setLocale(next);
+    }
+  }
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Escape") {
       return;
@@ -181,13 +209,13 @@ export function SettingsCenter({
             ref={headingRef}
             tabIndex={-1}
           >
-            Settings
+            {t("settings.title")}
           </h2>
           <span className="vela-settings__spacer" />
           <button
             type="button"
             className="vela-button vela-settings__close"
-            aria-label="Close settings"
+            aria-label={t("settings.close")}
             onClick={onClose}
           >
             ×
@@ -195,23 +223,18 @@ export function SettingsCenter({
         </header>
 
         <div className="vela-settings__body">
-          <nav className="vela-settings__nav" aria-label="Settings sections">
-            <button
-              type="button"
-              className="vela-settings__nav-button"
-              aria-current={activeSection === "appearance" ? "true" : undefined}
-              onClick={() => setActiveSection("appearance")}
-            >
-              Appearance
-            </button>
-            <button
-              type="button"
-              className="vela-settings__nav-button"
-              aria-current={activeSection === "desktop" ? "true" : undefined}
-              onClick={() => setActiveSection("desktop")}
-            >
-              Desktop
-            </button>
+          <nav className="vela-settings__nav" aria-label={t("settings.sections")}>
+            {(Object.keys(SECTION_LABEL_KEY) as readonly SettingsSection[]).map((section) => (
+              <button
+                key={section}
+                type="button"
+                className="vela-settings__nav-button"
+                aria-current={activeSection === section ? "true" : undefined}
+                onClick={() => setActiveSection(section)}
+              >
+                {t(SECTION_LABEL_KEY[section])}
+              </button>
+            ))}
           </nav>
 
           <div className="vela-settings__content">
@@ -223,7 +246,7 @@ export function SettingsCenter({
                   aria-labelledby="vela-settings-color-mode-label"
                 >
                   <p className="vela-settings__field-label" id="vela-settings-color-mode-label">
-                    Color mode
+                    {t("settings.colorMode")}
                   </p>
                   <div className="vela-settings__radio-row">
                     {COLOR_MODE_OPTIONS.map((option) => (
@@ -234,18 +257,16 @@ export function SettingsCenter({
                           checked={draft.appearance.colorMode === option.value}
                           onChange={() => updateAppearance({ colorMode: option.value })}
                         />
-                        {option.label}
+                        {t(option.labelKey)}
                       </label>
                     ))}
                   </div>
-                  <p className="vela-settings__hint">
-                    System follows your operating system preference.
-                  </p>
+                  <p className="vela-settings__hint">{t("settings.colorMode.hint")}</p>
                 </div>
 
                 <div className="vela-settings__field">
                   <label className="vela-settings__field-label" htmlFor="vela-settings-accent-hue">
-                    Accent hue
+                    {t("settings.accentHue")}
                   </label>
                   <div className="vela-settings__row">
                     <input
@@ -268,7 +289,7 @@ export function SettingsCenter({
 
                 <div className="vela-settings__field">
                   <p className="vela-settings__field-label" id="vela-settings-wallpaper-label">
-                    Wallpaper
+                    {t("settings.wallpaper")}
                   </p>
                   <div
                     className="vela-settings__swatches"
@@ -288,7 +309,7 @@ export function SettingsCenter({
                           data-wallpaper={option.value}
                           aria-hidden="true"
                         />
-                        {option.label}
+                        {t(option.labelKey)}
                       </button>
                     ))}
                   </div>
@@ -296,7 +317,7 @@ export function SettingsCenter({
 
                 <div className="vela-settings__field">
                   <label className="vela-settings__field-label" htmlFor="vela-settings-opacity">
-                    Surface opacity
+                    {t("settings.surfaceOpacity")}
                   </label>
                   <div className="vela-settings__row">
                     <input
@@ -319,7 +340,7 @@ export function SettingsCenter({
 
                 <div className="vela-settings__field">
                   <label className="vela-settings__field-label" htmlFor="vela-settings-blur">
-                    Blur
+                    {t("settings.blur")}
                   </label>
                   <div className="vela-settings__row">
                     <input
@@ -342,7 +363,7 @@ export function SettingsCenter({
 
                 <div className="vela-settings__field">
                   <label className="vela-settings__field-label" htmlFor="vela-settings-radius">
-                    Corner radius
+                    {t("settings.cornerRadius")}
                   </label>
                   <div className="vela-settings__row">
                     <input
@@ -369,7 +390,7 @@ export function SettingsCenter({
                   aria-labelledby="vela-settings-icon-size-label"
                 >
                   <p className="vela-settings__field-label" id="vela-settings-icon-size-label">
-                    Icon size
+                    {t("settings.iconSize")}
                   </p>
                   <div className="vela-settings__radio-row">
                     {ICON_SIZE_OPTIONS.map((option) => (
@@ -380,7 +401,7 @@ export function SettingsCenter({
                           checked={draft.appearance.iconSize === option.value}
                           onChange={() => updateAppearance({ iconSize: option.value })}
                         />
-                        {option.label}
+                        {t(option.labelKey)}
                       </label>
                     ))}
                   </div>
@@ -393,18 +414,16 @@ export function SettingsCenter({
                     onClick={resetAppearance}
                     disabled={busy}
                   >
-                    Reset appearance
+                    {t("settings.resetAppearance")}
                   </button>
-                  <p className="vela-settings__hint">
-                    Restores the default look in this draft — nothing is saved until you press Save.
-                  </p>
+                  <p className="vela-settings__hint">{t("settings.resetHint")}</p>
                 </div>
               </div>
-            ) : (
+            ) : activeSection === "desktop" ? (
               <div className="vela-settings__section">
                 <div className="vela-settings__field">
                   <label className="vela-settings__field-label" htmlFor="vela-settings-default-page">
-                    Default page
+                    {t("settings.defaultPage")}
                   </label>
                   <select
                     id="vela-settings-default-page"
@@ -418,9 +437,7 @@ export function SettingsCenter({
                       </option>
                     ))}
                   </select>
-                  <p className="vela-settings__hint">
-                    Applied the next time the workspace loads — the current page does not switch.
-                  </p>
+                  <p className="vela-settings__hint">{t("settings.defaultPageHint")}</p>
                 </div>
 
                 <div className="vela-settings__field">
@@ -432,12 +449,44 @@ export function SettingsCenter({
                         updateDesktop({ layoutLocked: event.target.checked })
                       }
                     />
-                    Start in View mode
+                    {t("settings.startInView")}
                   </label>
-                  <p className="vela-settings__hint">
-                    Startup default only — the current mode is not switched, and the workspace
-                    opens in View mode when checked or Arrange mode when unchecked.
+                  <p className="vela-settings__hint">{t("settings.startInViewHint")}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="vela-settings__section">
+                <div
+                  className="vela-settings__field"
+                  role="radiogroup"
+                  aria-labelledby="vela-settings-language-label"
+                >
+                  <p className="vela-settings__field-label" id="vela-settings-language-label">
+                    {t("settings.language")}
                   </p>
+                  <div className="vela-settings__radio-row">
+                    {/* Endonyms by design: 中文 and English read natively in
+                        every locale. */}
+                    <label className="vela-settings__radio">
+                      <input
+                        type="radio"
+                        name="vela-settings-language"
+                        checked={locale === "zh-CN"}
+                        onChange={() => updateLocale("zh-CN")}
+                      />
+                      {t("settings.language.chinese")}
+                    </label>
+                    <label className="vela-settings__radio">
+                      <input
+                        type="radio"
+                        name="vela-settings-language"
+                        checked={locale === "en-US"}
+                        onChange={() => updateLocale("en-US")}
+                      />
+                      {t("settings.language.english")}
+                    </label>
+                  </div>
+                  <p className="vela-settings__hint">{t("settings.language.hint")}</p>
                 </div>
               </div>
             )}
@@ -451,11 +500,11 @@ export function SettingsCenter({
             </p>
           ) : (
             <p className="vela-settings__dirty" aria-live="polite">
-              {dirty ? "Unsaved changes" : "Up to date"}
+              {dirty ? t("settings.unsavedChanges") : t("settings.upToDate")}
             </p>
           )}
           <button type="button" className="vela-button" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -463,7 +512,7 @@ export function SettingsCenter({
             onClick={() => void handleSave()}
             disabled={!dirty || busy}
           >
-            {busy ? "Saving…" : "Save"}
+            {busy ? t("settings.saving") : t("common.save")}
           </button>
         </footer>
       </section>

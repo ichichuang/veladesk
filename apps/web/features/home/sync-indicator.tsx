@@ -5,6 +5,7 @@ import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
+import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
 
 interface SyncIndicatorProps {
@@ -21,6 +22,7 @@ interface SyncIndicatorProps {
  */
 export function SyncIndicator({ workspace, lastRemoteResult }: SyncIndicatorProps) {
   const runtime = useWorkspaceRuntimeInstance();
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
 
   const { syncState } = workspace;
@@ -29,7 +31,11 @@ export function SyncIndicator({ workspace, lastRemoteResult }: SyncIndicatorProp
     (lastRemoteResult?.status === "network-error" || lastRemoteResult?.status === "server-error");
 
   const label =
-    syncState === "clean" ? "Synced" : syncState === "dirty" ? (offline ? "Offline" : "Pending") : "Conflict";
+    syncState === "clean"
+      ? t("sync.synced")
+      : syncState === "dirty"
+        ? (offline ? t("sync.offline") : t("sync.pending"))
+        : t("sync.conflict");
 
   function handleClick() {
     if (busy || syncState === "conflict") {
@@ -46,9 +52,9 @@ export function SyncIndicator({ workspace, lastRemoteResult }: SyncIndicatorProp
 
   if (syncState === "conflict") {
     return (
-      <span className="vela-sync" data-state="conflict" title="Conflict — resolution comes in a later update">
+      <span className="vela-sync" data-state="conflict" title={t("sync.conflictTitle")}>
         <span className="vela-sync__dot" aria-hidden="true" />
-        Conflict
+        {t("sync.conflict")}
       </span>
     );
   }
@@ -59,11 +65,11 @@ export function SyncIndicator({ workspace, lastRemoteResult }: SyncIndicatorProp
       className="vela-sync"
       data-state={syncState}
       disabled={busy}
-      title={syncState === "dirty" ? "Sync now" : "Refresh from server"}
+      title={syncState === "dirty" ? t("sync.syncNowTitle") : t("sync.refreshTitle")}
       onClick={handleClick}
     >
       <span className="vela-sync__dot" aria-hidden="true" />
-      {busy ? "Syncing…" : label}
+      {busy ? t("sync.syncing") : label}
     </button>
   );
 }
