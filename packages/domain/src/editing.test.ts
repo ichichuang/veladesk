@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { createEmptyWorkspace, validateWorkspace } from "@veladesk/domain";
-import type { AppShortcut, Folder, WidgetInstance, WorkspaceSnapshot } from "@veladesk/domain";
+import type {
+  AppShortcut,
+  Folder,
+  WidgetInstance,
+  WorkspaceAppearancePreferences,
+  WorkspacePreferences,
+  WorkspaceSnapshot,
+} from "@veladesk/domain";
 
 import {
   addAppToFolder,
@@ -14,6 +21,7 @@ import {
   pinEntityToDock,
   renameFolder,
   replaceApp,
+  replaceWorkspacePreferences,
   unpinEntityFromDock,
 } from "./editing";
 
@@ -773,6 +781,137 @@ describe("dissolveFolderToPage", () => {
     expect(dissolveFolderToPage(folderCreated.workspace, "folder-1", "page-x")).toEqual({
       ok: false,
       reason: "page-not-found",
+    });
+  });
+});
+
+describe("replaceWorkspacePreferences", () => {
+  function twoPageWorkspace(): WorkspaceSnapshot {
+    const base = baseWorkspace();
+    return {
+      ...base,
+      pages: [
+        ...base.pages,
+        {
+          id: "page-2",
+          name: "Work",
+          layout: { id: "page-2", grid: { columns: 3, rows: 3 }, items: [] },
+        },
+      ],
+    };
+  }
+
+  const validAppearance: WorkspaceAppearancePreferences = {
+    colorMode: "light",
+    accentHue: 310,
+    wallpaperPreset: "mist",
+    surfaceOpacity: 0.7,
+    blurPx: 8,
+    radiusPx: 20,
+    iconSize: "large",
+  };
+
+  it("replaces the default page and keeps every other field by reference", () => {
+    const workspace = twoPageWorkspace();
+    const next: WorkspacePreferences = {
+      ...workspace.preferences,
+      defaultPageId: "page-2",
+    };
+
+    const result = replaceWorkspacePreferences(workspace, next);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.workspace.preferences.defaultPageId).toBe("page-2");
+      expect(result.workspace.pages).toBe(workspace.pages);
+      expect(result.workspace.entities).toBe(workspace.entities);
+      expect(result.workspace.categories).toBe(workspace.categories);
+      expect(result.workspace.dock).toBe(workspace.dock);
+      expectValid(result.workspace);
+    }
+  });
+
+  it("replaces layoutLocked without touching anything else", () => {
+    const workspace = twoPageWorkspace();
+    const next: WorkspacePreferences = {
+      ...workspace.preferences,
+      layoutLocked: false,
+    };
+
+    const result = replaceWorkspacePreferences(workspace, next);
+
+    expect(result.ok && result.workspace.preferences.layoutLocked).toBe(false);
+  });
+
+  it("replaces the appearance with a valid non-default one", () => {
+    const workspace = twoPageWorkspace();
+    const next: WorkspacePreferences = {
+      ...workspace.preferences,
+      appearance: validAppearance,
+    };
+
+    const result = replaceWorkspacePreferences(workspace, next);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.workspace.preferences.appearance).toEqual(validAppearance);
+      expectValid(result.workspace);
+    }
+  });
+
+  it("accepts legacy-style preferences without an appearance field", () => {
+    const workspace = twoPageWorkspace();
+    const next: WorkspacePreferences = {
+      defaultPageId: "page-1",
+      layoutLocked: true,
+    };
+
+    const result = replaceWorkspacePreferences(workspace, next);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.workspace.preferences.appearance).toBeUndefined();
+      expectValid(result.workspace);
+    }
+  });
+
+  it("refuses a default page that does not exist and keeps the input unchanged", () => {
+    const workspace = twoPageWorkspace();
+    const next: WorkspacePreferences = {
+      ...workspace.preferences,
+      defaultPageId: "page-missing",
+    };
+
+    expect(replaceWorkspacePreferences(workspace, next)).toEqual({
+      ok: false,
+      reason: "default-page-not-found",
+    });
+    expectUnchanged(workspace, () => replaceWorkspacePreferences(workspace, next));
+  });
+
+  it("refuses an appearance with an out-of-range hue", () => {
+    const workspace = twoPageWorkspace();
+    const next: WorkspacePreferences = {
+      ...workspace.preferences,
+      appearance: { ...validAppearance, accentHue: 999 },
+    };
+
+    expect(replaceWorkspacePreferences(workspace, next)).toEqual({
+      ok: false,
+      reason: "invalid-appearance",
+    });
+  });
+
+  it("refuses an appearance with an out-of-range surface opacity", () => {
+    const workspace = twoPageWorkspace();
+    const next: WorkspacePreferences = {
+      ...workspace.preferences,
+      appearance: { ...validAppearance, surfaceOpacity: 5 },
+    };
+
+    expect(replaceWorkspacePreferences(workspace, next)).toEqual({
+      ok: false,
+      reason: "invalid-appearance",
     });
   });
 });

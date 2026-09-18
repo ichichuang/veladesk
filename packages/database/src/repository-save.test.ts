@@ -218,3 +218,58 @@ describe("transaction atomicity", () => {
     expect(current?.updatedAt).toBe(1_700_000_000_000);
   });
 });
+
+describe("appearance preferences persistence", () => {
+  const nonDefaultAppearance = {
+    colorMode: "light",
+    accentHue: 310,
+    wallpaperPreset: "mist",
+    surfaceOpacity: 0.7,
+    blurPx: 8,
+    radiusPx: 20,
+    iconSize: "large",
+  } as const;
+
+  function withAppearance(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
+    return {
+      ...snapshot,
+      preferences: { ...snapshot.preferences, appearance: nonDefaultAppearance },
+    };
+  }
+
+  function legacySnapshot(): WorkspaceSnapshot {
+    const snapshot = buildRichWorkspaceSnapshot();
+    const preferences = { ...snapshot.preferences };
+    delete (preferences as { appearance?: unknown }).appearance;
+    return { ...snapshot, preferences };
+  }
+
+  it("persists a non-default appearance through create/save/load as part of the JSON snapshot", () => {
+    const { repository } = context();
+    repository.createWorkspace(withAppearance(buildRichWorkspaceSnapshot()));
+
+    const saved = repository.saveWorkspace(
+      withAppearance(renamed(buildRichWorkspaceSnapshot(), "Desk v2")),
+      1
+    );
+    expect(saved.ok).toBe(true);
+
+    const loaded = repository.loadWorkspace("workspace-1");
+    expect(loaded?.snapshot.preferences.appearance).toEqual(nonDefaultAppearance);
+
+    // History rows keep the appearance too (JSON snapshot storage).
+    const revision2 = repository.loadWorkspaceRevision("workspace-1", 2);
+    expect(revision2?.snapshot.preferences.appearance).toEqual(nonDefaultAppearance);
+  });
+
+  it("round-trips a legacy snapshot without appearance untouched", () => {
+    const { repository } = context();
+    repository.createWorkspace(legacySnapshot());
+
+    repository.saveWorkspace(legacySnapshot(), 1);
+
+    const loaded = repository.loadWorkspace("workspace-1");
+    expect(loaded?.snapshot.preferences.appearance).toBeUndefined();
+    expect(loaded?.snapshot.preferences.defaultPageId).toBe("page-1");
+  });
+});

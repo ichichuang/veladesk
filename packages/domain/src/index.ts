@@ -8,6 +8,13 @@
 export { createEmptyWorkspace } from "./workspace";
 export type { CreateEmptyWorkspaceArgs } from "./workspace";
 
+export {
+  DEFAULT_WORKSPACE_APPEARANCE,
+  resolveWorkspaceAppearance,
+  validateWorkspaceAppearance,
+} from "./appearance";
+export type { WorkspaceAppearanceValidationIssue } from "./appearance";
+
 export { findCategory, findDesktopPage, findWorkspaceEntity } from "./lookup";
 
 export { decodeWorkspaceSnapshot } from "./decoding";
@@ -26,6 +33,7 @@ export {
   pinEntityToDock,
   renameFolder,
   replaceApp,
+  replaceWorkspacePreferences,
   unpinEntityFromDock,
 } from "./editing";
 export type { WorkspaceEditFailureReason, WorkspaceEditResult } from "./editing";
@@ -46,8 +54,12 @@ export type {
   JsonPrimitive,
   JsonValue,
   WidgetInstance,
+  WorkspaceAppearancePreferences,
+  WorkspaceColorMode,
   WorkspaceEntity,
+  WorkspaceIconSize,
   WorkspaceId,
   WorkspacePreferences,
   WorkspaceSnapshot,
+  WorkspaceWallpaperPreset,
 } from "./types";

@@ -458,3 +458,127 @@ describe("handlers over the real SQLite repository", () => {
     }
   });
 });
+
+describe("appearance preferences over HTTP", () => {
+  const modernAppearance = {
+    colorMode: "light",
+    accentHue: 310,
+    wallpaperPreset: "mist",
+    surfaceOpacity: 0.7,
+    blurPx: 8,
+    radiusPx: 20,
+    iconSize: "large",
+  } as const;
+
+  function legacySnapshotJson(): WorkspaceSnapshot {
+    const snapshot = snapshotJson();
+    const preferences = { ...snapshot.preferences };
+    delete (preferences as { appearance?: unknown }).appearance;
+    return { ...snapshot, preferences };
+  }
+
+  it("rejects a structurally-valid appearance with an out-of-range hue as 422 and stores nothing", async () => {
+    const database = openDatabase({ filename: ":memory:" });
+    try {
+      applyMigrations(database, realMigrationsDir);
+      const repository = createWorkspaceRepository(database);
+      const base = snapshotJson();
+      const snapshot: WorkspaceSnapshot = {
+        ...base,
+        preferences: {
+          ...base.preferences,
+          appearance: { ...modernAppearance, colorMode: "dark", accentHue: 999 },
+        },
+      };
+
+      const response = await handleCreateWorkspace(
+        repository,
+        post(JSON.stringify({ snapshot })),
+      );
+
+      expect(response.status).toBe(422);
+      expect(await errorBody(response)).toEqual({
+        error: {
+          code: "invalid-workspace",
+          issues: [
+            {
+              type: "invalid-appearance-preference",
+              issue: { type: "invalid-accent-hue" },
+            },
+          ],
+        },
+      });
+      expect(repository.listWorkspaces()).toEqual([]);
+      expect(handleGetWorkspace(repository, "workspace-1").status).toBe(404);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps legacy snapshots without appearance fully functional over GET and PUT", async () => {
+    const database = openDatabase({ filename: ":memory:" });
+    try {
+      applyMigrations(database, realMigrationsDir);
+      const repository = createWorkspaceRepository(database);
+      const snapshot = legacySnapshotJson();
+
+      const created = await handleCreateWorkspace(
+        repository,
+        post(JSON.stringify({ snapshot })),
+      );
+      expect(created.status).toBe(201);
+
+      const fetched = handleGetWorkspace(repository, "workspace-1");
+      expect(fetched.status).toBe(200);
+      const stored = ((await fetched.json()) as { workspace: StoredWorkspace }).workspace;
+      expect(stored.snapshot.preferences).toEqual({
+        defaultPageId: "page-1",
+        layoutLocked: true,
+      });
+
+      const saved = await handleSaveWorkspace(
+        repository,
+        new Request("http://localhost/x", {
+          method: "PUT",
+          body: JSON.stringify({
+            snapshot: legacySnapshotJson(),
+            expectedRevision: 1,
+          }),
+        }),
+        "workspace-1",
+      );
+      expect(saved.status).toBe(200);
+      const savedBody = (await saved.json()) as { workspace: StoredWorkspace };
+      expect(savedBody.workspace.revision).toBe(2);
+      expect(savedBody.workspace.snapshot.preferences.appearance).toBeUndefined();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("persists a valid non-default appearance through POST and GET", async () => {
+    const database = openDatabase({ filename: ":memory:" });
+    try {
+      applyMigrations(database, realMigrationsDir);
+      const repository = createWorkspaceRepository(database);
+      const base = snapshotJson();
+      const snapshot: WorkspaceSnapshot = {
+        ...base,
+        preferences: { ...base.preferences, appearance: modernAppearance },
+      };
+
+      const created = await handleCreateWorkspace(
+        repository,
+        post(JSON.stringify({ snapshot })),
+      );
+      expect(created.status).toBe(201);
+
+      const fetched = handleGetWorkspace(repository, "workspace-1");
+      expect(fetched.status).toBe(200);
+      const stored = ((await fetched.json()) as { workspace: StoredWorkspace }).workspace;
+      expect(stored.snapshot.preferences.appearance).toEqual(modernAppearance);
+    } finally {
+      database.close();
+    }
+  });
+});

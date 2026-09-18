@@ -1,6 +1,7 @@
 import { createGridDefinition } from "@veladesk/desktop-engine";
 import type { GridDefinition } from "@veladesk/desktop-engine";
 
+import { DEFAULT_WORKSPACE_APPEARANCE } from "./appearance";
 import type { DesktopPageId, WorkspaceId, WorkspaceSnapshot } from "./types";
 
 /** Arguments of {@link createEmptyWorkspace}. Callers provide all ids. */
@@ -22,7 +23,8 @@ function assertNonEmptyTrimmed(value: string, name: string): void {
 
 /**
  * Deterministic factory for an empty workspace: one page, empty layout,
- * empty entities/categories/dock, locked layout, no generated ids.
+ * empty entities/categories/dock, locked layout, explicit default
+ * appearance, no generated ids.
  *
  * Names are validated (non-empty after trimming) but stored verbatim.
  * The grid is validated with the same semantics as the engine's
@@ -56,6 +58,9 @@ export function createEmptyWorkspace(args: CreateEmptyWorkspaceArgs): WorkspaceS
     preferences: {
       defaultPageId: args.pageId,
       layoutLocked: true,
+      // Fresh workspaces persist the defaults explicitly (a spread per call,
+      // so callers can never mutate the shared constant).
+      appearance: { ...DEFAULT_WORKSPACE_APPEARANCE },
     },
   };
 }

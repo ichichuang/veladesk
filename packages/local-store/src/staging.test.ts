@@ -310,3 +310,109 @@ describe("reopen persistence of staged state", () => {
     expect(outbox?.queuedAt).toBe(60_000);
   });
 });
+
+describe("appearance preferences staging", () => {
+  const nonDefaultAppearance = {
+    colorMode: "light",
+    accentHue: 310,
+    wallpaperPreset: "mist",
+    surfaceOpacity: 0.7,
+    blurPx: 8,
+    radiusPx: 20,
+    iconSize: "large",
+  } as const;
+
+  it("rejects a structurally-valid appearance with out-of-range values as invalid-workspace", async () => {
+    const store = await openTestStore();
+    const base = buildSnapshot("ws-appearance");
+    const invalid = {
+      ...base,
+      preferences: { ...base.preferences, appearance: { ...nonDefaultAppearance, accentHue: 999 } },
+    };
+
+    const result = await store.stageWorkspaceCreate(invalid);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.reason === "invalid-workspace") {
+      expect(result.issues).toEqual([
+        { type: "invalid-appearance-preference", issue: { type: "invalid-accent-hue" } },
+      ]);
+    } else {
+      expect.unreachable("expected invalid-workspace result");
+    }
+    expect(await store.getWorkspace("ws-appearance")).toBeUndefined();
+    expect(await store.listOutboxEntries()).toEqual([]);
+  });
+
+  it("stages a modern snapshot with a valid non-default appearance verbatim", async () => {
+    const store = await openTestStore();
+    const base = buildSnapshot("ws-modern");
+    const snapshot = {
+      ...base,
+      preferences: { ...base.preferences, appearance: nonDefaultAppearance },
+    };
+
+    const result = await store.stageWorkspaceCreate(snapshot);
+
+    expect(result.ok).toBe(true);
+    expect(
+      result.ok ? result.workspace.snapshot.preferences.appearance : undefined
+    ).toEqual(nonDefaultAppearance);
+  });
+
+  it("stages a legacy snapshot without appearance under the existing domain rules", async () => {
+    const store = await openTestStore();
+    const base = buildSnapshot("ws-legacy");
+    const preferences = { ...base.preferences };
+    delete (preferences as { appearance?: unknown }).appearance;
+    const snapshot = { ...base, preferences };
+
+    const result = await store.stageWorkspaceCreate(snapshot);
+
+    expect(result.ok).toBe(true);
+    const record = await store.getWorkspace("ws-legacy");
+    expect(record?.snapshot.preferences.appearance).toBeUndefined();
+  });
+
+  it("hydrates a legacy server snapshot without appearance", async () => {
+    const store = await openTestStore();
+    const base = buildSnapshot("ws-legacy-hydrate");
+    const preferences = { ...base.preferences };
+    delete (preferences as { appearance?: unknown }).appearance;
+    const snapshot = { ...base, preferences };
+
+    const result = await store.hydrateWorkspaceFromServer(snapshot, 3);
+
+    expect(result.ok).toBe(true);
+    expect(
+      result.ok ? result.workspace.snapshot.preferences.appearance : undefined
+    ).toBeUndefined();
+  });
+
+  it("rejects a stageWorkspaceUpdate with an invalid appearance without touching the record", async () => {
+    const clock = manualClock(10_000);
+    const store = await openTestStore({ now: clock.now });
+    await store.stageWorkspaceCreate(buildSnapshot("ws-update"));
+    const base = buildSnapshot("ws-update");
+    const invalid = {
+      ...base,
+      name: "Renamed",
+      preferences: { ...base.preferences, appearance: { ...nonDefaultAppearance, blurPx: 99 } },
+    };
+
+    const result = await store.stageWorkspaceUpdate(invalid);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.reason === "invalid-workspace") {
+      expect(result.issues).toEqual([
+        { type: "invalid-appearance-preference", issue: { type: "invalid-blur-px" } },
+      ]);
+    } else {
+      expect.unreachable("expected invalid-workspace result");
+    }
+    const record = await store.getWorkspace("ws-update");
+    expect(record?.snapshot.name).toBe("Test Desk");
+    expect(record?.localGeneration).toBe(1);
+    expect((await store.listOutboxEntries()).length).toBe(1);
+  });
+});

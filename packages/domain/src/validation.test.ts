@@ -6,6 +6,7 @@ import type {
   AppShortcut,
   Folder,
   WidgetInstance,
+  WorkspaceAppearancePreferences,
   WorkspaceEntity,
   WorkspaceSnapshot,
 } from "./types";
@@ -825,6 +826,79 @@ describe("validateWorkspace: deterministic multi-issue order", () => {
       // 9. preferences/default page
       { type: "default-page-missing", pageId: "page-9" },
       // 10. app category references — app-1 has no categoryId
+    ]);
+  });
+});
+
+describe("validateWorkspace — appearance preferences", () => {
+  function withoutAppearance(workspace: WorkspaceSnapshot): WorkspaceSnapshot {
+    const preferences = { ...workspace.preferences };
+    delete (preferences as { appearance?: unknown }).appearance;
+    return { ...workspace, preferences };
+  }
+
+  function withAppearance(
+    appearance: WorkspaceAppearancePreferences
+  ): WorkspaceSnapshot {
+    const workspace = buildValidWorkspace();
+    return {
+      ...workspace,
+      preferences: { ...workspace.preferences, appearance },
+    };
+  }
+
+  it("keeps a legacy workspace without appearance fully valid", () => {
+    expect(validateWorkspace(withoutAppearance(buildValidWorkspace()))).toEqual([]);
+  });
+
+  it("accepts a valid non-default appearance", () => {
+    expect(
+      validateWorkspace(
+        withAppearance({
+          colorMode: "light",
+          accentHue: 310,
+          wallpaperPreset: "mist",
+          surfaceOpacity: 0.7,
+          blurPx: 8,
+          radiusPx: 20,
+          iconSize: "large",
+        })
+      )
+    ).toEqual([]);
+  });
+
+  it("reports an invalid accent hue as a nested appearance issue", () => {
+    expect(
+      validateWorkspace(
+        withAppearance({
+          colorMode: "dark",
+          accentHue: 999,
+          wallpaperPreset: "aurora",
+          surfaceOpacity: 0.55,
+          blurPx: 18,
+          radiusPx: 14,
+          iconSize: "medium",
+        })
+      )
+    ).toEqual([{ type: "invalid-appearance-preference", issue: { type: "invalid-accent-hue" } }]);
+  });
+
+  it("reports invalid blur and radius as nested appearance issues", () => {
+    const issues = validateWorkspace(
+      withAppearance({
+        colorMode: "dark",
+        accentHue: 205,
+        wallpaperPreset: "aurora",
+        surfaceOpacity: 0.55,
+        blurPx: 99,
+        radiusPx: 1,
+        iconSize: "medium",
+      })
+    );
+
+    expect(issues).toEqual([
+      { type: "invalid-appearance-preference", issue: { type: "invalid-blur-px" } },
+      { type: "invalid-appearance-preference", issue: { type: "invalid-radius-px" } },
     ]);
   });
 });

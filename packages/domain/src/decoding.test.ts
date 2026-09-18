@@ -272,6 +272,126 @@ describe("decodeWorkspaceSnapshot — structural/semantic boundary", () => {
   });
 });
 
+describe("decodeWorkspaceSnapshot — appearance preferences", () => {
+  const validAppearance = {
+    colorMode: "dark",
+    accentHue: 205,
+    wallpaperPreset: "aurora",
+    surfaceOpacity: 0.55,
+    blurPx: 18,
+    radiusPx: 14,
+    iconSize: "medium",
+  };
+
+  /** A pre-Task014 snapshot: preferences carry no appearance field at all. */
+  function legacySnapshot(): Record<string, unknown> {
+    const value = minimalSnapshot();
+    const preferences = { ...(value.preferences as Record<string, unknown>) };
+    delete preferences.appearance;
+    return { ...value, preferences };
+  }
+
+  function withAppearance(appearance: unknown): Record<string, unknown> {
+    return {
+      ...minimalSnapshot(),
+      preferences: { defaultPageId: "page-1", layoutLocked: true, appearance },
+    };
+  }
+
+  it("decodes a legacy snapshot without appearance; the field stays undefined", () => {
+    const decoded = decodeWorkspaceSnapshot(legacySnapshot());
+
+    expect(decoded).toBeDefined();
+    expect(decoded?.preferences.appearance).toBeUndefined();
+  });
+
+  it("decodes a structurally valid appearance", () => {
+    const decoded = decodeWorkspaceSnapshot(withAppearance(validAppearance));
+
+    expect(decoded).toBeDefined();
+    expect(decoded?.preferences.appearance).toEqual(validAppearance);
+  });
+
+  it("decodes every color mode", () => {
+    for (const colorMode of ["system", "dark", "light"]) {
+      expect(
+        decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, colorMode }))
+      ).toBeDefined();
+    }
+  });
+
+  it("decodes every wallpaper preset", () => {
+    for (const wallpaperPreset of ["aurora", "midnight", "dawn", "mist"]) {
+      expect(
+        decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, wallpaperPreset }))
+      ).toBeDefined();
+    }
+  });
+
+  it("decodes every icon size", () => {
+    for (const iconSize of ["small", "medium", "large"]) {
+      expect(
+        decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, iconSize }))
+      ).toBeDefined();
+    }
+  });
+
+  it("rejects an unknown color mode structurally", () => {
+    expect(
+      decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, colorMode: "sepia" }))
+    ).toBeUndefined();
+  });
+
+  it("rejects an unknown wallpaper preset structurally", () => {
+    expect(
+      decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, wallpaperPreset: "ocean" }))
+    ).toBeUndefined();
+  });
+
+  it("rejects an unknown icon size structurally", () => {
+    expect(
+      decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, iconSize: "huge" }))
+    ).toBeUndefined();
+  });
+
+  it("rejects a wrong numeric type structurally", () => {
+    expect(
+      decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, accentHue: "205" }))
+    ).toBeUndefined();
+    expect(
+      decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, blurPx: null }))
+    ).toBeUndefined();
+    expect(
+      decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, surfaceOpacity: undefined, blurPx: 18 }))
+    ).toBeUndefined();
+  });
+
+  it("rejects a non-object appearance", () => {
+    expect(decodeWorkspaceSnapshot(withAppearance(null))).toBeUndefined();
+    expect(decodeWorkspaceSnapshot(withAppearance("dark"))).toBeUndefined();
+  });
+
+  it("decodes a semantically out-of-range hue; validateWorkspace rejects it", () => {
+    const decoded = decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, accentHue: 999 }));
+
+    expect(decoded).toBeDefined();
+    expect(validateWorkspace(decoded!)).toEqual([
+      { type: "invalid-appearance-preference", issue: { type: "invalid-accent-hue" } },
+    ]);
+  });
+
+  it("decodes a semantically out-of-range opacity; validateWorkspace rejects it", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      withAppearance({ ...validAppearance, surfaceOpacity: 5 })
+    );
+
+    expect(decoded).toBeDefined();
+    expect(validateWorkspace(decoded!)).toEqual([
+      { type: "invalid-appearance-preference", issue: { type: "invalid-surface-opacity" } },
+    ]);
+  });
+});
+
 function minimalSnapshotPageLayout(): unknown {
   return {
     id: "page-1",

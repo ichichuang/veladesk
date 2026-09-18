@@ -139,11 +139,36 @@ function isDock(value: unknown): boolean {
   return isRecord(value) && isStringArray(value.items);
 }
 
+const COLOR_MODES: readonly string[] = ["system", "dark", "light"];
+const WALLPAPER_PRESETS: readonly string[] = ["aurora", "midnight", "dawn", "mist"];
+const ICON_SIZES: readonly string[] = ["small", "medium", "large"];
+
+/**
+ * Structural shape of `WorkspaceAppearancePreferences` only — numeric
+ * ranges are semantic and belong to `validateWorkspaceAppearance`
+ * (accentHue 999 decodes fine and fails validation later).
+ */
+function isAppearancePreferences(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    COLOR_MODES.includes(value.colorMode as string) &&
+    typeof value.accentHue === "number" &&
+    WALLPAPER_PRESETS.includes(value.wallpaperPreset as string) &&
+    typeof value.surfaceOpacity === "number" &&
+    typeof value.blurPx === "number" &&
+    typeof value.radiusPx === "number" &&
+    ICON_SIZES.includes(value.iconSize as string)
+  );
+}
+
 function isPreferences(value: unknown): boolean {
   return (
     isRecord(value) &&
     typeof value.defaultPageId === "string" &&
-    typeof value.layoutLocked === "boolean"
+    typeof value.layoutLocked === "boolean" &&
+    // Optional for backward compatibility: pre-appearance snapshots stay
+    // decodable forever; only a structurally valid appearance is accepted.
+    (value.appearance === undefined || isAppearancePreferences(value.appearance))
   );
 }
 

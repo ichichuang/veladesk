@@ -2,6 +2,7 @@ import { findNearestFreePosition } from "@veladesk/desktop-engine";
 import type { GridPosition, LayoutItem, PageLayout } from "@veladesk/desktop-engine";
 
 import { findDesktopPage } from "./lookup";
+import { validateWorkspaceAppearance } from "./appearance";
 import type {
   AppShortcut,
   DesktopPageId,
@@ -9,6 +10,7 @@ import type {
   EntityId,
   Folder,
   WorkspaceEntity,
+  WorkspacePreferences,
   WorkspaceSnapshot,
 } from "./types";
 
@@ -30,7 +32,9 @@ export type WorkspaceEditFailureReason =
   | "not-pinned"
   | "dock-kind-not-allowed"
   | "invalid-name"
-  | "invalid-url";
+  | "invalid-url"
+  | "default-page-not-found"
+  | "invalid-appearance";
 
 /** Result of an immutable workspace editing operation. Failures keep the input. */
 export type WorkspaceEditResult =
@@ -481,6 +485,32 @@ export function unpinEntityFromDock(
       items: workspace.dock.items.filter((itemId) => itemId !== entityId),
     }),
   };
+}
+
+/**
+ * Replaces the whole preferences object of a workspace, immutably.
+ *
+ * This is the single domain write-path for Settings: the default page must
+ * exist, and an appearance — when present — must pass semantic validation
+ * (legacy-style preferences without an appearance stay legal). On success
+ * ONLY `workspace.preferences` is replaced; pages, entities, categories and
+ * the dock keep their references, and no active-page/session state is
+ * consulted or touched.
+ */
+export function replaceWorkspacePreferences(
+  workspace: WorkspaceSnapshot,
+  nextPreferences: WorkspacePreferences
+): WorkspaceEditResult {
+  if (findDesktopPage(workspace, nextPreferences.defaultPageId) === undefined) {
+    return { ok: false, reason: "default-page-not-found" };
+  }
+  if (nextPreferences.appearance !== undefined) {
+    const issues = validateWorkspaceAppearance(nextPreferences.appearance);
+    if (issues.length > 0) {
+      return { ok: false, reason: "invalid-appearance" };
+    }
+  }
+  return { ok: true, workspace: { ...workspace, preferences: nextPreferences } };
 }
 
 /**

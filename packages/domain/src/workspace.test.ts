@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { createEmptyWorkspace } from "./workspace";
+import { DEFAULT_WORKSPACE_APPEARANCE } from "./appearance";
+import { validateWorkspace } from "./validation";
 import type { GridDefinition } from "@veladesk/desktop-engine";
 
 const grid: GridDefinition = { columns: 12, rows: 8 };
@@ -30,7 +32,11 @@ describe("createEmptyWorkspace", () => {
       entities: [],
       categories: [],
       dock: { items: [] },
-      preferences: { defaultPageId: "page-1", layoutLocked: true },
+      preferences: {
+        defaultPageId: "page-1",
+        layoutLocked: true,
+        appearance: DEFAULT_WORKSPACE_APPEARANCE,
+      },
     });
   });
 
@@ -46,7 +52,15 @@ describe("createEmptyWorkspace", () => {
     expect(workspace.preferences).toEqual({
       defaultPageId: "page-1",
       layoutLocked: true,
+      appearance: DEFAULT_WORKSPACE_APPEARANCE,
     });
+  });
+
+  it("explicitly stores the default appearance and produces a fully valid snapshot", () => {
+    const workspace = createEmptyWorkspace(baseArgs);
+
+    expect(workspace.preferences.appearance).toEqual(DEFAULT_WORKSPACE_APPEARANCE);
+    expect(validateWorkspace(workspace)).toEqual([]);
   });
 
   it("uses the provided grid for the page layout", () => {

@@ -148,6 +148,38 @@ export interface Dock {
   readonly items: readonly EntityId[];
 }
 
+/** Visual color scheme of a workspace. `system` follows `prefers-color-scheme`. */
+export type WorkspaceColorMode = "system" | "dark" | "light";
+
+/** Built-in CSS-gradient wallpaper. No images in v1. */
+export type WorkspaceWallpaperPreset = "aurora" | "midnight" | "dawn" | "mist";
+
+/** Desktop icon scale. Grid cells and drag metrics are never affected. */
+export type WorkspaceIconSize = "small" | "medium" | "large";
+
+/**
+ * Persisted visual preferences of a workspace.
+ *
+ * Ranges are semantic (see `validateWorkspaceAppearance`): accentHue is an
+ * integer 0–359, surfaceOpacity 0.35–0.9, blurPx an integer 0–32 and
+ * radiusPx an integer 8–24.
+ */
+export interface WorkspaceAppearancePreferences {
+  readonly colorMode: WorkspaceColorMode;
+
+  readonly accentHue: number;
+
+  readonly wallpaperPreset: WorkspaceWallpaperPreset;
+
+  readonly surfaceOpacity: number;
+
+  readonly blurPx: number;
+
+  readonly radiusPx: number;
+
+  readonly iconSize: WorkspaceIconSize;
+}
+
 /** Persisted workspace preferences. Runtime drag state never lives here. */
 export interface WorkspacePreferences {
   readonly defaultPageId: DesktopPageId;
@@ -157,6 +189,13 @@ export interface WorkspacePreferences {
    * Runtime current drag state does not belong here.
    */
   readonly layoutLocked: boolean;
+
+  /**
+   * Visual preferences. Optional for backward compatibility: snapshots
+   * persisted before appearance existed stay valid forever; readers resolve
+   * them to `DEFAULT_WORKSPACE_APPEARANCE` without writing a migration.
+   */
+  readonly appearance?: WorkspaceAppearancePreferences;
 }
 
 /**

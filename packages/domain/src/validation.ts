@@ -1,6 +1,8 @@
 import { validatePageLayout } from "@veladesk/desktop-engine";
 import type { LayoutValidationIssue } from "@veladesk/desktop-engine";
 
+import { validateWorkspaceAppearance } from "./appearance";
+import type { WorkspaceAppearanceValidationIssue } from "./appearance";
 import type {
   CategoryId,
   DesktopPageId,
@@ -111,6 +113,10 @@ export type WorkspaceValidationIssue =
       readonly pageId: DesktopPageId;
     }
   | {
+      readonly type: "invalid-appearance-preference";
+      readonly issue: WorkspaceAppearanceValidationIssue;
+    }
+  | {
       readonly type: "app-category-missing";
       readonly appId: EntityId;
       readonly categoryId: CategoryId;
@@ -140,7 +146,7 @@ function isBlank(value: string): boolean {
  * 6. folder references
  * 7. exclusive-container violations
  * 8. dock
- * 9. preferences/default page
+ * 9. preferences/default page + appearance semantics
  * 10. app category references
  *
  * Within a group, issues follow the source array order. Identifier strings
@@ -331,6 +337,15 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
       type: "default-page-missing",
       pageId: workspace.preferences.defaultPageId,
     });
+  }
+
+  // 9b. Appearance semantics — only when a persisted appearance exists.
+  // Legacy snapshots without one are valid by definition; the shared range
+  // rules live in `validateWorkspaceAppearance` and are never duplicated.
+  if (workspace.preferences.appearance !== undefined) {
+    for (const issue of validateWorkspaceAppearance(workspace.preferences.appearance)) {
+      issues.push({ type: "invalid-appearance-preference", issue });
+    }
   }
 
   // 10. App category references: assigned categories must exist.
