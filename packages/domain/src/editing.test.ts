@@ -108,6 +108,58 @@ describe("addAppToPage", () => {
       reason: "no-space",
     });
   });
+
+  it("rejects blank names and blank urls (011-B regression)", () => {
+    const workspace = baseWorkspace();
+    const before = JSON.parse(JSON.stringify(workspace));
+
+    expect(addAppToPage(workspace, "page-1", app("app-a", ""))).toEqual({
+      ok: false,
+      reason: "invalid-name",
+    });
+    expect(addAppToPage(workspace, "page-1", app("app-a", "   "))).toEqual({
+      ok: false,
+      reason: "invalid-name",
+    });
+    expect(addAppToPage(workspace, "page-1", { ...app("app-a"), url: "" })).toEqual({
+      ok: false,
+      reason: "invalid-url",
+    });
+    expect(addAppToPage(workspace, "page-1", { ...app("app-a"), url: "   " })).toEqual({
+      ok: false,
+      reason: "invalid-url",
+    });
+    expect(JSON.parse(JSON.stringify(workspace))).toEqual(before);
+  });
+
+  it("keeps blank-name precedence behind duplicate id and page existence", () => {
+    const seeded = addAppToPage(baseWorkspace(), "page-1", app("app-a"));
+    if (!seeded.ok) throw new Error("fixture failed");
+    expect(addAppToPage(seeded.workspace, "page-1", app("app-a", "  "))).toEqual({
+      ok: false,
+      reason: "duplicate-entity-id",
+    });
+    expect(addAppToPage(baseWorkspace(), "page-x", app("app-a", "  "))).toEqual({
+      ok: false,
+      reason: "page-not-found",
+    });
+  });
+
+  it("stores valid custom protocols verbatim and keeps the workspace valid", () => {
+    const custom: AppShortcut = {
+      ...app("app-notes", "Notes"),
+      url: "obsidian://open?vault=Notes",
+    };
+
+    const result = addAppToPage(baseWorkspace(), "page-1", custom, { column: 0, row: 0 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const stored = result.workspace.entities[0];
+    expect(stored?.kind === "app" && stored.url).toBe("obsidian://open?vault=Notes");
+    expect(stored?.kind === "app" && stored.name).toBe("Notes");
+    expect(validateWorkspace(result.workspace)).toEqual([]);
+  });
 });
 
 describe("addAppToFolder", () => {

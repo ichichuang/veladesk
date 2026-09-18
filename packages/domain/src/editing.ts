@@ -175,7 +175,9 @@ function withLayoutItem(
  *
  * The entity id must not exist yet anywhere in the workspace (entity ids
  * are unique across kinds and pages) and the target page must exist. The
- * desired anchor (default top-left) is resolved with the desktop engine's
+ * app's name and url must be non-blank after trimming (custom protocols
+ * stay valid — urls are stored verbatim, never rewritten). The desired
+ * anchor (default top-left) is resolved with the desktop engine's
  * nearest-free placement against the page's CURRENT layout; with no free
  * cell the edit fails and the input stays untouched. On success the entity
  * is appended to `entities` and a matching `LayoutItem` is appended to the
@@ -193,6 +195,12 @@ export function addAppToPage(
   const page = findDesktopPage(workspace, pageId);
   if (page === undefined) {
     return { ok: false, reason: "page-not-found" };
+  }
+  if (isBlank(app.name)) {
+    return { ok: false, reason: "invalid-name" };
+  }
+  if (isBlank(app.url)) {
+    return { ok: false, reason: "invalid-url" };
   }
   const item = placeItem(page.layout, app.id, desiredPosition ?? DEFAULT_POSITION);
   if (item === undefined) {
