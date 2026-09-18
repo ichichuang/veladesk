@@ -635,6 +635,17 @@
   touch-action: none;
   user-select: none;
   cursor: pointer;
+  /* Transform ownership: arrange drags move items via the drag source's
+     dnd-kit transform and the peers' transient preview. No transition here —
+     a transform easing would animate the drag itself and the drop handoff
+     (the icon visibly gliding back to its old cell). View-mode app hover
+     re-introduces its own scoped easing below. */
+  transition: none;
+}
+
+/* View mode only: the hover lift is decorative, so it may ease. Arrange mode
+   never eases item transforms — drag and hover transforms must not compete. */
+.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"] {
   transition: transform 160ms ease;
 }
 
