@@ -6,6 +6,12 @@
  * browser preference only: it lives in localStorage, never in the
  * WorkspaceSnapshot, so switching languages cannot stage a workspace,
  * bump localGeneration, fill the outbox or fire a sync.
+ *
+ * Storage is the v2 key (014-E). The v1 key may still hold `en-US` in
+ * real browser profiles polluted during development/automation — v1 is
+ * never read and never migrated. When v2 is absent the locale is
+ * unconditionally zh-CN; a user language choice only exists once it is
+ * explicitly written to v2.
  */
 
 /** The two supported UI languages. */
@@ -14,7 +20,7 @@ export type UiLocale = "zh-CN" | "en-US";
 /** First-use and fallback locale. Always Simplified Chinese. */
 export const DEFAULT_UI_LOCALE: UiLocale = "zh-CN";
 
-export const UI_LOCALE_STORAGE_KEY = "veladesk.ui-locale.v1";
+export const UI_LOCALE_STORAGE_KEY = "veladesk.ui-locale.v2";
 
 const SUPPORTED_LOCALES: readonly UiLocale[] = ["zh-CN", "en-US"];
 

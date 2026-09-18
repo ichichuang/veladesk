@@ -47,13 +47,54 @@ describe("ui locale", () => {
     expect(htmlLangFor("en-US")).toBe("en-US");
   });
 
-  it("uses the documented storage key", () => {
-    expect(UI_LOCALE_STORAGE_KEY).toBe("veladesk.ui-locale.v1");
+  it("uses the documented v2 storage key", () => {
+    expect(UI_LOCALE_STORAGE_KEY).toBe("veladesk.ui-locale.v2");
+  });
+
+  it("ignores a polluted v1 preference entirely (v2 reset, 014-E)", () => {
+    // v1 may hold en-US from dev/automation profiles; v2 is a clean slate.
+    // v2 absent → zh-CN unconditionally, v1 is never read or migrated.
+    expect(
+      readStoredUiLocale(memoryStorage({ "veladesk.ui-locale.v1": "en-US" }))
+    ).toBe("zh-CN");
+    expect(
+      readStoredUiLocale(memoryStorage({ "veladesk.ui-locale.v1": "zh-CN" }))
+    ).toBe("zh-CN");
+  });
+
+  it("resolves the v1/v2 presence matrix", () => {
+    // v1=en-US + v2 absent → zh-CN (the reset path real users hit).
+    expect(
+      readStoredUiLocale(
+        memoryStorage({ "veladesk.ui-locale.v1": "en-US" })
+      )
+    ).toBe("zh-CN");
+    // v1=en-US + v2=zh-CN → zh-CN (v2 is the only voice).
+    expect(
+      readStoredUiLocale(
+        memoryStorage({
+          "veladesk.ui-locale.v1": "en-US",
+          "veladesk.ui-locale.v2": "zh-CN",
+        })
+      )
+    ).toBe("zh-CN");
+    // v1=zh-CN + v2=en-US → en-US (an explicit later choice wins).
+    expect(
+      readStoredUiLocale(
+        memoryStorage({
+          "veladesk.ui-locale.v1": "zh-CN",
+          "veladesk.ui-locale.v2": "en-US",
+        })
+      )
+    ).toBe("en-US");
+    // Fresh browser → zh-CN.
+    expect(readStoredUiLocale(memoryStorage())).toBe("zh-CN");
   });
 
   it("reads a persisted locale and falls back on garbage", () => {
-    expect(readStoredUiLocale(memoryStorage({ "veladesk.ui-locale.v1": "en-US" }))).toBe("en-US");
-    expect(readStoredUiLocale(memoryStorage({ "veladesk.ui-locale.v1": "de-DE" }))).toBe("zh-CN");
+    expect(readStoredUiLocale(memoryStorage({ "veladesk.ui-locale.v2": "en-US" }))).toBe("en-US");
+    expect(readStoredUiLocale(memoryStorage({ "veladesk.ui-locale.v2": "zh-CN" }))).toBe("zh-CN");
+    expect(readStoredUiLocale(memoryStorage({ "veladesk.ui-locale.v2": "de-DE" }))).toBe("zh-CN");
     expect(readStoredUiLocale(memoryStorage())).toBe("zh-CN");
   });
 
@@ -69,9 +110,11 @@ describe("ui locale", () => {
     expect(() => persistUiLocale("en-US", exploding)).not.toThrow();
   });
 
-  it("persists the locale under the storage key", () => {
-    const storage = memoryStorage();
+  it("persists the locale under the v2 storage key only", () => {
+    const storage = memoryStorage({ "veladesk.ui-locale.v1": "en-US" });
     persistUiLocale("en-US", storage);
+    expect(storage.getItem("veladesk.ui-locale.v2")).toBe("en-US");
+    // No migration: v1 is left exactly as it was.
     expect(storage.getItem("veladesk.ui-locale.v1")).toBe("en-US");
   });
 });
