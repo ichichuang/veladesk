@@ -1,6 +1,6 @@
 "use client";
 
-import { DragDropProvider } from "@dnd-kit/react";
+import { DragDropProvider, useDragDropManager } from "@dnd-kit/react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -74,6 +74,7 @@ import {
 import type { PendingLayoutHandoff } from "./layout-handoff";
 import { launchApp } from "./launch-app";
 import { buildAppearanceTheme } from "./appearance-theme";
+import { disableDndDropAnimation } from "./dnd-static-drop";
 import { Launcher } from "./launcher";
 import { buildLauncherEntries } from "./launcher-index";
 import type { LauncherCommandId, LauncherEntry } from "./launcher-types";
@@ -1250,6 +1251,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         onDragMove={handleDragMove}
         onDragEnd={wrappedHandleDragEnd}
       >
+        <StaticDropFeedback />
         <div className="vela-desktop__menu-area" ref={menuAreaRef}>
           <div
             className="vela-desktop__area-shell"
@@ -1420,6 +1422,22 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       ) : null}
     </div>
   );
+}
+
+/**
+ * Mounts inside the DragDropProvider and configures its manager once:
+ * decorative drop animation off (official Feedback#dropAnimation = null),
+ * so an arrange drop paints straight into its snapped cell and stays
+ * still. See dnd-static-drop.ts for the product rationale.
+ */
+function StaticDropFeedback() {
+  const manager = useDragDropManager();
+  useEffect(() => {
+    if (manager !== null) {
+      disableDndDropAnimation(manager);
+    }
+  }, [manager]);
+  return null;
 }
 
 function findFolderEntity(

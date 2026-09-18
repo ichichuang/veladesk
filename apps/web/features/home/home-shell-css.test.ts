@@ -39,9 +39,29 @@ describe("home-shell.css transform ownership", () => {
     expect(body).toMatch(/transition:\s*transform\s+1[4-8]0ms\s+ease/);
   });
 
-  it("keeps the hover lift excluded from dragging items", () => {
-    const hover = ruleBlock('.vela-item[data-kind="app"]:hover:not([data-dragging="true"])');
+  it("scopes the hover lift to view mode and excludes dragging items", () => {
+    const hover = ruleBlock(
+      '.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"]:hover:not([data-dragging="true"])'
+    );
     expect(hover).toMatch(/transform:\s*translateY\(-2px\)/);
+    // Arrange mode must never apply a hover transform: the pointer rests on
+    // the just-dropped item and would lift it 2px off its snapped cell.
+    const unscoped = css.match(/^[^@\n]*\.vela-item\[data-kind="app"\]:hover[^{]*\{/m);
+    if (unscoped !== null) {
+      expect(unscoped[0]).toContain('[data-arrange="false"]');
+    }
+  });
+
+  it("keeps arrange-mode item transforms at none", () => {
+    // No hover rule may declare a transform outside the view-mode scope.
+    // Matching from line start keeps the full compound selector visible.
+    const hoverRules = css.match(/^.*\.vela-item.*:hover.*\{[^}]*\}/gm) ?? [];
+    expect(hoverRules.length).toBeGreaterThan(0);
+    for (const rule of hoverRules) {
+      if (/transform:/.test(rule)) {
+        expect(rule).toContain('[data-arrange="false"]');
+      }
+    }
   });
 });
 

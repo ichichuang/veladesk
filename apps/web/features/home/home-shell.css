@@ -676,7 +676,10 @@
   transition: transform 160ms ease;
 }
 
-.vela-item[data-kind="app"]:hover:not([data-dragging="true"]) {
+/* The hover lift itself is View-scoped too: in Arrange the pointer rests on
+   the just-dropped item, and this translate would visibly lift it 2px off
+   its snapped cell after the drop. */
+.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"]:hover:not([data-dragging="true"]) {
   transform: translateY(-2px);
 }
 
