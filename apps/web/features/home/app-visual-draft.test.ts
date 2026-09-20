@@ -36,6 +36,7 @@ describe("draftFromApp", () => {
     expect(draft).toEqual({
       source: "text",
       libraryIcon: "",
+      assetId: "",
       textMode: "auto",
       customText: "",
       iconScale: 1,
@@ -64,6 +65,16 @@ describe("draftFromApp", () => {
     expect(draft.decorationStyle).toBe("glass");
     expect(draft.foregroundColor).toBe("#aabbcc");
     expect(draft.decorationColor).toBe("#112233");
+  });
+
+  it("opens an upload draft for an existing asset icon", () => {
+    const draft = draftFromApp(
+      makeApp({ icon: { kind: "asset", assetId: "asset-sha256-" + "a".repeat(64) } })
+    );
+
+    expect(draft.source).toBe("upload");
+    expect(draft.assetId).toBe("asset-sha256-" + "a".repeat(64));
+    expect(draftEquals(draft, draftFromApp(makeApp({ icon: { kind: "asset", assetId: "asset-sha256-" + "a".repeat(64) } })))).toBe(true);
   });
 
   it("opens a text/custom draft for custom generated text", () => {
@@ -148,6 +159,21 @@ describe("buildDraftIcon", () => {
       text: "CH",
       source: "auto",
     });
+  });
+
+  it("projects the chosen asset id as an asset icon (preview and save)", () => {
+    const app = makeApp();
+    const assetId = "asset-sha256-" + "b".repeat(64);
+    const draft = { ...draftFromApp(app), source: "upload" as const, assetId };
+
+    expect(buildDraftIcon(app, draft)).toEqual({ kind: "asset", assetId });
+  });
+
+  it("falls back to derived initials while no upload is chosen", () => {
+    const app = makeApp();
+    const draft = { ...draftFromApp(app), source: "upload" as const, assetId: "" };
+
+    expect(buildDraftIcon(app, draft)).toEqual({ kind: "generated", text: "GI", source: "auto" });
   });
 
   it("stores custom text verbatim with the custom source", () => {
@@ -255,6 +281,13 @@ describe("isDraftSavable", () => {
     expect(
       isDraftSavable({ ...draft, libraryIcon: 'simple-icons:github' })
     ).toBe(true);
+  });
+
+  it("requires a chosen asset id in upload mode", () => {
+    const draft = { ...draftFromApp(makeApp()), source: "upload" as const, assetId: "" };
+
+    expect(isDraftSavable(draft)).toBe(false);
+    expect(isDraftSavable({ ...draft, assetId: "asset-sha256-" + "c".repeat(64) })).toBe(true);
   });
 
   it("requires valid custom text in custom mode", () => {

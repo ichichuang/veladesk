@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent, DragEvent as ReactDragEvent, FormEvent, ClipboardEvent as ReactClipboardEvent } from "react";
 import type { AppShortcut, WorkspaceSnapshot } from "@veladesk/domain";
 import { replaceApp } from "@veladesk/domain";
 import type { WorkspaceEditFailureReason } from "@veladesk/domain";
+import type { PreparedAsset } from "@veladesk/assets/core";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
 import { useI18n } from "../i18n/use-i18n";
 import type { TranslateFn } from "../i18n/use-i18n";
-import { AppIconTile } from "./app-icon-renderer";
+import { getBrowserAssetRuntime } from "../assets/browser-assets";
+import { AppIconTile, appIconDecorationProps } from "./app-icon-renderer";
 import {
   MAX_SCALE_PERCENT,
   MIN_SCALE_PERCENT,
@@ -24,21 +26,34 @@ import {
   validateIconText,
 } from "./app-visual-draft";
 import type { AppVisualDraft } from "./app-visual-draft";
+import { firstClipboardImage, firstImageFile, prepareUploadedImage } from "./asset-upload";
+import type { UploadValidationIssue } from "./asset-upload";
 import { IconPicker } from "./icon-picker";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import "./home-shell.css";
 
 /**
- * App Visual Editor (task 016-A) — icon source, size, colors and
+ * App Visual Editor (task 016-A/016-B) — icon source, size, colors and
  * decoration style for ONE app, opened from the app context menu's
  * "Edit appearance…".
  *
  * The top preview renders the draft through the same AppIconRenderer as
  * the desktop. Every change stays in the draft: nothing is staged until
- * Save (`replaceApp` → local stage → sync attempt), and Cancel closes
- * with zero mutation. The upload tab is displayed disabled on purpose —
- * uploaded assets arrive in 016-B and are not faked here.
+ * Save, and Cancel closes with zero mutation.
+ *
+ * Upload flow (016-B): a chosen file is validated immediately (size,
+ * magic bytes, browser decode, dimension budget) and kept in REACT
+ * STATE ONLY — no IndexedDB write, no workspace mutation, no HTTP before
+ * Save. Save stages the asset FIRST (content-addressed, so the returned
+ * id must equal the draft's), then replaceApp → workspace stage → sync;
+ * the sync transport wrapper guarantees the asset PUT precedes the
+ * workspace PUT.
  */
+
+interface PendingUpload {
+  readonly asset: PreparedAsset;
+  readonly previewUrl: string;
+}
 
 interface AppVisualEditorProps {
   readonly workspace: WorkspaceSnapshot;
@@ -55,8 +70,12 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
   const [draft, setDraft] = useState<AppVisualDraft | undefined>(() =>
     existing === undefined ? undefined : draftFromApp(existing)
   );
+  const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
+  const [uploadIssue, setUploadIssue] = useState<UploadValidationIssue | null>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -67,6 +86,16 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
+
+  // Object-URL hygiene: replacing a pending upload revokes the old URL;
+  // closing the editor revokes the last one.
+  useEffect(() => {
+    return () => {
+      if (pendingUpload !== null) {
+        URL.revokeObjectURL(pendingUpload.previewUrl);
+      }
+    };
+  }, [pendingUpload]);
 
   if (existing === undefined || draft === undefined) {
     return null;
@@ -82,6 +111,57 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
     setDraft((current) =>
       current === undefined ? current : ({ ...current, ...next } as AppVisualDraft)
     );
+  }
+
+  async function acceptImage(blob: Blob) {
+    setUploadBusy(true);
+    setUploadIssue(null);
+    try {
+      const prepared = await prepareUploadedImage(blob);
+      if (!prepared.ok) {
+        setUploadIssue(prepared.issue);
+        return;
+      }
+      // Deterministic draft: same bytes ⇒ same id ⇒ draft equality holds.
+      setPendingUpload((current) => {
+        if (current !== null) {
+          URL.revokeObjectURL(current.previewUrl);
+        }
+        return { asset: prepared.upload.asset, previewUrl: prepared.upload.previewUrl };
+      });
+      patch({ source: "upload", assetId: prepared.upload.asset.id });
+    } finally {
+      setUploadBusy(false);
+    }
+  }
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files;
+    if (files === null) {
+      return;
+    }
+    const file = firstImageFile(files);
+    if (file !== undefined) {
+      void acceptImage(file);
+    }
+    event.target.value = "";
+  }
+
+  function handleDrop(event: ReactDragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const file = firstImageFile(event.dataTransfer.files);
+    if (file !== undefined) {
+      void acceptImage(file);
+    }
+  }
+
+  function handlePaste(event: ReactClipboardEvent<HTMLDivElement>) {
+    const image = firstClipboardImage(event.clipboardData);
+    if (image !== undefined) {
+      event.preventDefault();
+      void acceptImage(image);
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -103,6 +183,20 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
     setBusy(true);
     setError(null);
     try {
+      // Save ordering (016-B): a NEW pending upload is staged into the
+      // asset store FIRST, and the staged content id must equal the
+      // draft's. Nothing workspace-side happens until the bytes are
+      // durably local. An existing asset app without a new file never
+      // re-stages.
+      if (draft.source === "upload" && pendingUpload !== null) {
+        const assetRuntime = await getBrowserAssetRuntime();
+        const stagedAsset = await assetRuntime.stageAsset(pendingUpload.asset.blob);
+        if (!stagedAsset.ok || stagedAsset.record.id !== draft.assetId) {
+          setError(t("visualEditor.error.saveAssetFailed"));
+          setBusy(false);
+          return;
+        }
+      }
       const nextApp = buildDraftApp(existing, draft);
       const result = replaceApp(workspace, nextApp);
       if (!result.ok) {
@@ -125,6 +219,23 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
     }
   }
 
+  function describeUploadIssue(issue: UploadValidationIssue): string {
+    switch (issue) {
+      case "asset-too-large":
+        return t("visualEditor.error.tooLarge");
+      case "unsupported-image-type":
+        return t("visualEditor.error.unsupportedType");
+      case "decode-failed":
+        return t("visualEditor.error.decodeFailed");
+      case "dimensions-too-large":
+        return t("visualEditor.error.dimensionsTooLarge");
+      case "asset-empty":
+        return t("visualEditor.error.decodeFailed");
+    }
+  }
+
+  const uploadSelected = draft.source === "upload" && draft.assetId.length > 0;
+
   return (
     <div
       className="vela-dialog-backdrop"
@@ -144,9 +255,27 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
           {t("visualEditor.title", { name: existing.name })}
         </h2>
 
-        {/* Live draft preview — same renderer as the desktop, larger slot. */}
+        {/* Live draft preview — same renderer as the desktop, larger slot.
+            A pending (not yet staged) upload previews from its own object
+            URL; everything else goes through the shared renderer. */}
         <div className="vela-visual-editor__preview" data-vd-slot-size="preview">
-          <AppIconTile app={previewApp} />
+          {draft.source === "upload" && pendingUpload !== null ? (
+            <span
+              aria-hidden="true"
+              className="vela-item__icon vela-app-icon"
+              {...appIconDecorationProps(previewApp)}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- local object URL, not an optimizable remote image */}
+              <img
+                className="vela-app-icon__image"
+                src={pendingUpload.previewUrl}
+                alt=""
+                draggable={false}
+              />
+            </span>
+          ) : (
+            <AppIconTile app={previewApp} />
+          )}
           <span className="vela-visual-editor__preview-name">{existing.name}</span>
         </div>
 
@@ -173,10 +302,9 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
             <button
               type="button"
               role="tab"
-              aria-selected={false}
-              disabled
+              aria-selected={draft.source === "upload"}
               className="vela-visual-editor__tab"
-              title={t("visualEditor.tab.uploadLater")}
+              onClick={() => patch({ source: "upload" })}
             >
               {t("visualEditor.tab.upload")}
             </button>
@@ -187,6 +315,59 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
               selectedId={draft.libraryIcon.length > 0 ? draft.libraryIcon : null}
               onSelect={(iconId) => patch({ libraryIcon: iconId })}
             />
+          ) : draft.source === "upload" ? (
+            <div className="vela-visual-editor__upload">
+              <div
+                className="vela-upload-dropzone"
+                data-busy={uploadBusy ? "true" : undefined}
+                tabIndex={0}
+                role="button"
+                aria-label={t("visualEditor.upload.dropHere")}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={handleDrop}
+                onPaste={handlePaste}
+              >
+                {pendingUpload !== null ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- local object URL, not an optimizable remote image */}
+                    <img
+                      className="vela-upload-dropzone__preview"
+                      src={pendingUpload.previewUrl}
+                      alt=""
+                      draggable={false}
+                    />
+                  </>
+                ) : (
+                  <span className="vela-upload-dropzone__hint">
+                    {uploadSelected
+                      ? t("visualEditor.upload.replaceHint")
+                      : t("visualEditor.upload.dropHere")}
+                  </span>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="vela-upload-input"
+                accept=".png,.jpg,.jpeg,.webp,.avif,image/png,image/jpeg,image/webp,image/avif"
+                onChange={handleFileChange}
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+              {uploadIssue !== null ? (
+                <p className="vela-form__error" role="alert">
+                  {describeUploadIssue(uploadIssue)}
+                </p>
+              ) : null}
+              <p className="vela-visual-editor__hint">{t("visualEditor.upload.hint")}</p>
+            </div>
           ) : (
             <div className="vela-visual-editor__text">
               <label className="vela-form__label" htmlFor="vela-visual-text-mode">

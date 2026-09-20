@@ -18,12 +18,18 @@ export const MAX_SCALE_PERCENT = 160;
 export const SCALE_STEP_PERCENT = 5;
 
 /** Where the icon comes from — the editor's icon-source tabs. */
-export type AppVisualDraftSource = "library" | "text";
+export type AppVisualDraftSource = "library" | "text" | "upload";
 
 export interface AppVisualDraft {
   readonly source: AppVisualDraftSource;
   /** The selected library icon id (`<collection>:<name>`); "" = none yet. */
   readonly libraryIcon: string;
+  /**
+   * The selected uploaded asset id (upload tab); "" = no file chosen yet.
+   * The BLOB itself never enters the draft — it lives in component state
+   * as a pending upload and is staged only on Save.
+   */
+  readonly assetId: string;
   /** Text mode: derived initials that follow renames, or user-owned text. */
   readonly textMode: "auto" | "custom";
   readonly customText: string;
@@ -50,11 +56,15 @@ export function draftFromApp(app: AppShortcut): AppVisualDraft {
   const visual = app.visual;
   let source: AppVisualDraftSource = "text";
   let libraryIcon = "";
+  let assetId = "";
   let textMode: "auto" | "custom" = "auto";
   let customText = "";
   if (icon.kind === "iconify") {
     source = "library";
     libraryIcon = icon.icon;
+  } else if (icon.kind === "asset") {
+    source = "upload";
+    assetId = icon.assetId;
   } else if (icon.kind === "generated" && icon.source === "custom") {
     textMode = "custom";
     customText = icon.text;
@@ -62,6 +72,7 @@ export function draftFromApp(app: AppShortcut): AppVisualDraft {
   return {
     source,
     libraryIcon,
+    assetId,
     textMode,
     customText,
     iconScale: visual?.iconScale ?? 1,
@@ -108,6 +119,10 @@ export function buildDraftIcon(app: AppShortcut, draft: AppVisualDraft): AppIcon
   if (draft.source === "library") {
     return { kind: "iconify", icon: draft.libraryIcon };
   }
+  if (draft.source === "upload" && draft.assetId.length > 0) {
+    // Preview/save projection of the chosen upload (existing or pending).
+    return { kind: "asset", assetId: draft.assetId };
+  }
   if (draft.textMode === "custom") {
     return { kind: "generated", text: draft.customText, source: "custom" };
   }
@@ -146,6 +161,7 @@ export function draftEquals(a: AppVisualDraft, b: AppVisualDraft): boolean {
   return (
     a.source === b.source &&
     a.libraryIcon === b.libraryIcon &&
+    a.assetId === b.assetId &&
     a.textMode === b.textMode &&
     a.customText === b.customText &&
     a.iconScale === b.iconScale &&
@@ -159,6 +175,11 @@ export function draftEquals(a: AppVisualDraft, b: AppVisualDraft): boolean {
 export function isDraftSavable(draft: AppVisualDraft): boolean {
   if (draft.source === "library") {
     return draft.libraryIcon.length > 0;
+  }
+  if (draft.source === "upload") {
+    // A chosen (or pre-existing) asset id is required; the BLOB is staged
+    // at Save time, never before.
+    return draft.assetId.length > 0;
   }
   return draft.textMode === "auto" || validateIconText(draft.customText) === undefined;
 }
