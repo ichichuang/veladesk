@@ -1,0 +1,24 @@
+{
+  "name": "@veladesk/icon-catalog",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted, bundled icon catalog for VelaDesk: four IconifyJSON collections with deterministic search and local SVG rendering. Server-side pure data only.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "1.2.134",
+    "@iconify-json/ph": "1.2.2",
+    "@iconify-json/simple-icons": "1.2.96",
+    "@iconify-json/tabler": "1.2.38",
+    "@iconify/utils": "3.1.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
