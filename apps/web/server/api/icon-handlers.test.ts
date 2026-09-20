@@ -6,6 +6,13 @@ function searchRequest(query: string): Request {
   return new Request(`http://localhost:3000/api/v1/icons/search${query}`);
 }
 
+/**
+ * Touching scope=all parses all nine bundled IconifyJSON sets on first use
+ * (~46 MB across the process), which vitest's JSON transform makes far
+ * slower than the runtime's own parse. Those tests get a wider budget.
+ */
+const FULL_CATALOG_TIMEOUT = 60_000;
+
 describe("handleIconSearch", () => {
   it("returns icons for a query", async () => {
     const response = await handleIconSearch(searchRequest("?q=github&collection=simple-icons"));
@@ -15,16 +22,80 @@ describe("handleIconSearch", () => {
     const body = (await response.json()) as {
       icons: { id: string; collection: string; name: string; label: string }[];
     };
-    expect(body.icons[0]).toEqual({
+    expect(body.icons[0]).toMatchObject({
       id: "simple-icons:github",
       collection: "simple-icons",
       name: "github",
       label: "github",
+      category: "brand",
+      palette: "monochrome",
     });
   });
 
+  it("labels every result with its category and palette", async () => {
+    const response = await handleIconSearch(
+      searchRequest("?q=docker&scope=all&collection=devicon")
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      icons: { category: string; palette: string }[];
+    };
+    expect(body.icons[0]).toMatchObject({ category: "development", palette: "multicolor" });
+  });
+
+  it(
+    "reports total and nextOffset for pagination",
+    async () => {
+      const response = await handleIconSearch(searchRequest("?scope=all&limit=96"));
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        icons: unknown[];
+        total: number;
+        nextOffset: number | null;
+      };
+      expect(body.icons).toHaveLength(96);
+      expect(body.total).toBeGreaterThan(96);
+      expect(body.nextOffset).toBe(96);
+    },
+    FULL_CATALOG_TIMEOUT
+  );
+
+  it(
+    "pages with an explicit offset",
+    async () => {
+      const first = await handleIconSearch(searchRequest("?scope=all&limit=10"));
+      const second = await handleIconSearch(searchRequest("?scope=all&limit=10&offset=10"));
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      const firstBody = (await first.json()) as { icons: { id: string }[] };
+      const secondBody = (await second.json()) as { icons: { id: string }[] };
+      expect(secondBody.icons).toHaveLength(10);
+      const firstIds = new Set(firstBody.icons.map((icon) => icon.id));
+      expect(secondBody.icons.every((icon) => !firstIds.has(icon.id))).toBe(true);
+    },
+    FULL_CATALOG_TIMEOUT
+  );
+
+  it(
+    "maps the scope parameter onto the catalog facets",
+    async () => {
+      const response = await handleIconSearch(searchRequest("?scope=color&limit=120"));
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { icons: { palette: string }[] };
+      expect(body.icons).toHaveLength(120);
+      expect(body.icons.every((icon) => icon.palette === "multicolor")).toBe(true);
+    },
+    FULL_CATALOG_TIMEOUT
+  );
+
   it("browses a collection when the query is missing", async () => {
-    const response = await handleIconSearch(searchRequest("?collection=lucide&limit=5"));
+    const response = await handleIconSearch(
+      searchRequest("?scope=all&collection=lucide&limit=5")
+    );
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as { icons: unknown[] };
@@ -47,10 +118,26 @@ describe("handleIconSearch", () => {
   });
 
   it("maps a bad limit to 400 invalid-limit", async () => {
-    const response = await handleIconSearch(searchRequest("?q=home&limit=0"));
+    for (const limit of ["0", "121", "abc"]) {
+      const response = await handleIconSearch(searchRequest(`?q=home&limit=${limit}`));
+      expect(response.status, limit).toBe(400);
+      expect(await response.json()).toEqual({ error: { code: "invalid-limit" } });
+    }
+  });
+
+  it("maps a bad offset to 400 invalid-offset", async () => {
+    for (const offset of ["-1", "1.5", "abc"]) {
+      const response = await handleIconSearch(searchRequest(`?scope=all&offset=${offset}`));
+      expect(response.status, offset).toBe(400);
+      expect(await response.json()).toEqual({ error: { code: "invalid-offset" } });
+    }
+  });
+
+  it("maps an unknown scope to 400 invalid-scope", async () => {
+    const response = await handleIconSearch(searchRequest("?scope=everything"));
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: { code: "invalid-limit" } });
+    expect(await response.json()).toEqual({ error: { code: "invalid-scope" } });
   });
 
   it("maps an unknown collection to 400 unknown-collection", async () => {

@@ -4,55 +4,38 @@ import type { IconifyIcon } from "@iconify/utils";
 import type { IconCollectionId, IconSet } from "./types";
 
 /**
- * The four bundled collections.
+ * The bundled collection loaders.
  *
  * Every icon set comes from an `@iconify-json/*` package in `node_modules`
  * and ships with the VelaDesk server — the Iconify public API, CDNs and any
- * other remote icon source are never contacted at runtime.
- *
- * Display order puts brands first (`simple-icons`), because most VelaDesk
- * shortcuts are website links; general-purpose sets follow alphabetically.
+ * other remote icon source are never contacted at runtime. Collection
+ * metadata (ids, labels, order, category, palette) lives in the
+ * browser-safe `meta.ts`; this module only maps an id to its JSON loader.
  */
-export interface IconCollectionInfo {
-  readonly id: IconCollectionId;
-  /** English display name (the web layer localizes further if wanted). */
-  readonly label: string;
-  /** Stable display order across the whole catalog. */
-  readonly order: number;
-}
 
-export const ICON_COLLECTIONS: readonly IconCollectionInfo[] = [
-  { id: "simple-icons", label: "Brands", order: 0 },
-  { id: "lucide", label: "Lucide", order: 1 },
-  { id: "tabler", label: "Tabler", order: 2 },
-  { id: "ph", label: "Phosphor", order: 3 },
-];
-
-const COLLECTIONS_BY_ID: ReadonlyMap<string, IconCollectionInfo> = new Map(
-  ICON_COLLECTIONS.map((collection) => [collection.id, collection])
-);
-
-/** The collection metadata for `id`, or undefined for an unknown id. */
-export function findIconCollection(id: string): IconCollectionInfo | undefined {
-  return COLLECTIONS_BY_ID.get(id);
-}
-
-/** Whether `value` is one of the four bundled collection ids. */
-export function isIconCollectionId(value: unknown): value is IconCollectionId {
-  return typeof value === "string" && COLLECTIONS_BY_ID.has(value);
-}
+export {
+  ICON_COLLECTIONS,
+  findIconCollection,
+  isIconCollectionId,
+} from "./meta";
+export type { IconCollectionInfo } from "./meta";
 
 /**
  * Bundler-friendly lazy loaders: one static string per collection so both
  * webpack/turbopack and Vitest can analyze the chunk boundaries, while the
  * multi-megabyte JSON bodies stay out of every route that does not need
- * them.
+ * them (a collection is parsed only when a search or browse touches it).
  */
 const ICON_SET_LOADERS: Record<IconCollectionId, () => Promise<{ default: IconSet }>> = {
   "simple-icons": () => import("@iconify-json/simple-icons/icons.json"),
   lucide: () => import("@iconify-json/lucide/icons.json"),
   tabler: () => import("@iconify-json/tabler/icons.json"),
   ph: () => import("@iconify-json/ph/icons.json"),
+  "fluent-color": () => import("@iconify-json/fluent-color/icons.json"),
+  devicon: () => import("@iconify-json/devicon/icons.json"),
+  "vscode-icons": () => import("@iconify-json/vscode-icons/icons.json"),
+  catppuccin: () => import("@iconify-json/catppuccin/icons.json"),
+  noto: () => import("@iconify-json/noto/icons.json"),
 };
 
 /**

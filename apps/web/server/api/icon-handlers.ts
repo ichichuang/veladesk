@@ -16,13 +16,19 @@ export async function handleIconSearch(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const outcome = await searchIconCatalog({
     q: url.searchParams.get("q") ?? undefined,
+    scope: url.searchParams.get("scope") ?? undefined,
     collection: url.searchParams.get("collection") ?? undefined,
+    offset: url.searchParams.get("offset") ?? undefined,
     limit: url.searchParams.get("limit") ?? undefined,
   });
   if (!outcome.ok) {
     return errorResponse(400, outcome.issue);
   }
-  return jsonResponse({ icons: outcome.icons });
+  return jsonResponse({
+    icons: outcome.icons,
+    total: outcome.total,
+    nextOffset: outcome.nextOffset,
+  });
 }
 
 /**
