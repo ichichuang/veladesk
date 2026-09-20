@@ -8,24 +8,28 @@ import {
   appIconDisplayText,
   appVisual,
   buildAppIconStyleVars,
-  iconSvgUrlForId,
+  iconifyGlyphModel,
 } from "./app-icon";
 import { generatedIconText } from "./generated-icon";
 import { getBrowserAssetRuntime } from "../assets/browser-assets";
 import "./home-shell.css";
 
 /**
- * AppIconRenderer (task 016-A/016-B) — the ONE icon renderer for apps,
- * shared by the desktop grid, the dock, the folder overlay and the visual
- * editor preview.
+ * AppIconRenderer (task 016-A/016-B, multicolor split in 016-C) — the ONE
+ * icon renderer for apps, shared by the desktop grid, the dock, the folder
+ * overlay, the visual editor preview and the catalog picker.
  *
- * Library icons load from the self-hosted SVG endpoint and are tinted via
- * a CSS mask (`mask-image` + background color) — never `innerHTML`, never
- * an `<img>` that cannot take a foreground color. Uploaded assets render
- * through a local-first object URL (IndexedDB hit, hash-verified remote
- * hydrate on a miss) and keep their OWN colors — `foregroundColor` never
- * tints them. Any load failure degrades to the generated text initials,
- * so a broken icon never renders as a broken image. Decoration styles and
+ * Monochrome library icons load from the self-hosted SVG endpoint and are
+ * tinted via a CSS mask (`mask-image` + background color) — never
+ * `innerHTML`, never an `<img>` that cannot take a foreground color.
+ * Multicolor library icons (fluent-color, devicon, vscode-icons,
+ * catppuccin, noto) ship their own pigments, so they render as a plain
+ * same-origin `<img>` and are never masked — masking them would flatten
+ * every collection to one accent color. Uploaded assets render through a
+ * local-first object URL (IndexedDB hit, hash-verified remote hydrate on a
+ * miss) and keep their OWN colors too — `foregroundColor` never tints
+ * them. Any load failure degrades to the generated text initials, so a
+ * broken icon never renders as a broken image. Decoration styles and
  * colors come from the resolved `AppVisualStyle`; all CSS values are
  * composed in `app-icon.ts` from validated data.
  */
@@ -91,13 +95,33 @@ function AssetImageGlyph({ assetId, fallback }: { assetId: string; fallback: str
   );
 }
 
-/** One library glyph: masked self-hosted SVG with generated-text fallback. */
+/** CSS mask that paints a monochrome glyph in the tile's foreground color. */
+export function glyphMaskStyle(url: string): CSSProperties {
+  return {
+    WebkitMaskImage: `url("${url}")`,
+    maskImage: `url("${url}")`,
+    WebkitMaskSize: "contain",
+    maskSize: "contain",
+    WebkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+    WebkitMaskPosition: "center",
+    maskPosition: "center",
+  };
+}
+
+/**
+ * One library glyph: masked self-hosted SVG for monochrome collections, a
+ * plain same-origin `<img>` for multicolor ones, generated-text fallback on
+ * any failure. The id is validated at parse time, so the URL only ever
+ * contains bundled collection ids and strict icon names.
+ */
 function LibraryIconGlyph({ icon, fallback }: { icon: string; fallback: string }) {
-  // Validated at parse time: the URL only ever contains bundled collection
-  // ids and strict icon names, so quoting is safe.
-  const url = iconSvgUrlForId(icon);
+  const model = iconifyGlyphModel(icon);
+  const url = model?.url;
   const [loadStatus, setLoadStatus] = useState<IconLoadStatus>("loading");
 
+  // Probing with an Image() means a 404 or a decode failure renders the
+  // initials — a multicolor icon never shows up as a broken image.
   useEffect(() => {
     if (url === undefined) {
       return;
@@ -120,22 +144,23 @@ function LibraryIconGlyph({ icon, fallback }: { icon: string; fallback: string }
     };
   }, [url]);
 
-  // An unparseable id is a permanent failure — derived, never state.
   const status: IconLoadStatus = url === undefined ? "failed" : loadStatus;
-  if (status !== "ready" || url === undefined) {
+  if (status !== "ready" || model === undefined) {
     return <span className="vela-app-icon__text">{fallback}</span>;
   }
-  const maskStyle: CSSProperties = {
-    WebkitMaskImage: `url("${url}")`,
-    maskImage: `url("${url}")`,
-    WebkitMaskSize: "contain",
-    maskSize: "contain",
-    WebkitMaskRepeat: "no-repeat",
-    maskRepeat: "no-repeat",
-    WebkitMaskPosition: "center",
-    maskPosition: "center",
-  };
-  return <span className="vela-app-icon__glyph" style={maskStyle} />;
+  if (model.kind === "image") {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- same-origin SVG route, not an optimizable static asset
+      <img
+        className="vela-app-icon__glyph vela-app-icon__glyph--image"
+        src={model.url}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
+    );
+  }
+  return <span className="vela-app-icon__glyph" style={glyphMaskStyle(model.url)} />;
 }
 
 /** The inner glyph of an app icon — text, masked library SVG, or uploaded image. */

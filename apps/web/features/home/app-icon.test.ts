@@ -3,6 +3,7 @@ import type { AppShortcut } from "@veladesk/domain";
 import { DEFAULT_APP_VISUAL_STYLE } from "@veladesk/domain";
 
 import {
+  appGlyphColorModel,
   appIconDisplayText,
   appVisual,
   buildAppIconStyleVars,
@@ -10,6 +11,7 @@ import {
   generatedIconFollowsName,
   iconSvgUrl,
   iconSvgUrlForId,
+  iconifyGlyphModel,
   normalizeAppHexColor,
   parseIconifyIconId,
   rgbaFromAppHex,
@@ -30,7 +32,7 @@ function makeApp(overrides: Partial<AppShortcut> = {}): AppShortcut {
 }
 
 describe("parseIconifyIconId", () => {
-  it("parses ids of all four bundled collections", () => {
+  it("parses ids of every bundled collection", () => {
     expect(parseIconifyIconId("simple-icons:github")).toEqual({
       collection: "simple-icons",
       name: "github",
@@ -41,6 +43,24 @@ describe("parseIconifyIconId", () => {
     });
     expect(parseIconifyIconId("tabler:server")).toEqual({ collection: "tabler", name: "server" });
     expect(parseIconifyIconId("ph:robot")).toEqual({ collection: "ph", name: "robot" });
+    expect(parseIconifyIconId("fluent-color:mail-24")).toEqual({
+      collection: "fluent-color",
+      name: "mail-24",
+    });
+    expect(parseIconifyIconId("devicon:docker")).toEqual({
+      collection: "devicon",
+      name: "docker",
+    });
+    // The collection id itself carries a dash.
+    expect(parseIconifyIconId("vscode-icons:file-type-reactjs")).toEqual({
+      collection: "vscode-icons",
+      name: "file-type-reactjs",
+    });
+    expect(parseIconifyIconId("catppuccin:typescript")).toEqual({
+      collection: "catppuccin",
+      name: "typescript",
+    });
+    expect(parseIconifyIconId("noto:robot")).toEqual({ collection: "noto", name: "robot" });
   });
 
   it("accepts dashed and digit names", () => {
@@ -66,9 +86,63 @@ describe("parseIconifyIconId", () => {
       "lucide:home--",
       "lucide:-home",
       "simple-icons:github:extra",
+      "vscode-icons:file-type-reactjs:extra",
     ]) {
       expect(parseIconifyIconId(bad)).toBeUndefined();
     }
+  });
+});
+
+describe("iconifyGlyphModel", () => {
+  it("draws monochrome collections through the mask model", () => {
+    for (const id of ["simple-icons:github", "lucide:terminal", "tabler:server", "ph:robot"]) {
+      expect(iconifyGlyphModel(id), id).toEqual({
+        kind: "mask",
+        url: iconSvgUrl(...(id.split(":") as [string, string])),
+      });
+    }
+  });
+
+  it("draws multicolor collections through the image model", () => {
+    for (const id of [
+      "fluent-color:mail-24",
+      "devicon:docker",
+      "vscode-icons:file-type-reactjs",
+      "catppuccin:typescript",
+      "noto:robot",
+    ]) {
+      const model = iconifyGlyphModel(id);
+      expect(model?.kind, id).toBe("image");
+      // Still the self-hosted same-origin SVG route — never a CDN.
+      expect(model?.url, id).toMatch(/^\/api\/v1\/icons\//);
+      expect(model?.url, id).not.toMatch(/^https?:/);
+    }
+  });
+
+  it("returns undefined for ids that can never render", () => {
+    expect(iconifyGlyphModel("material-symbols:home")).toBeUndefined();
+    expect(iconifyGlyphModel("garbage")).toBeUndefined();
+  });
+});
+
+describe("appGlyphColorModel", () => {
+  it("tints monochrome library icons and generated text", () => {
+    expect(appGlyphColorModel(makeApp({ icon: { kind: "iconify", icon: "lucide:house" } }))).toBe(
+      "tinted"
+    );
+    expect(appGlyphColorModel(makeApp())).toBe("tinted");
+  });
+
+  it("leaves multicolor libraries and uploaded images in their own colors", () => {
+    expect(appGlyphColorModel(makeApp({ icon: { kind: "iconify", icon: "devicon:docker" } }))).toBe(
+      "original"
+    );
+    expect(
+      appGlyphColorModel(makeApp({ icon: { kind: "iconify", icon: "noto:robot" } }))
+    ).toBe("original");
+    expect(appGlyphColorModel(makeApp({ icon: { kind: "asset", assetId: "a1" } }))).toBe(
+      "original"
+    );
   });
 });
 

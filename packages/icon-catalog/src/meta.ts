@@ -14,6 +14,15 @@ import type { IconCategory, IconCollectionId, IconPalette } from "./types";
  * purpose outline sets, then the colored development sets, then emoji.
  */
 
+// The vocabulary a client needs travels with the metadata so one subpath
+// import covers every catalog concept the browser layer touches.
+export type {
+  IconCategory,
+  IconCollectionId,
+  IconPalette,
+  IconSearchScope,
+} from "./types";
+
 export interface IconCollectionInfo {
   readonly id: IconCollectionId;
   /** English display name (the web layer localizes further if wanted). */

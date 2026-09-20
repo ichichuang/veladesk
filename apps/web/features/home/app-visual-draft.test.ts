@@ -11,8 +11,6 @@ import {
   draftEquals,
   draftFromApp,
   isDraftSavable,
-  percentFromScale,
-  scaleFromPercent,
   validateIconText,
 } from "./app-visual-draft";
 
@@ -129,16 +127,6 @@ describe("validateIconText", () => {
 
   it("matches the task's 4-code-point budget constant", () => {
     expect(APP_ICON_TEXT_MAX_CODE_POINTS).toBe(4);
-  });
-});
-
-describe("scale percent conversions", () => {
-  it("round-trips the slider range", () => {
-    for (const percent of [50, 75, 100, 115, 160]) {
-      expect(percentFromScale(scaleFromPercent(percent))).toBe(percent);
-    }
-    expect(scaleFromPercent(115)).toBe(1.15);
-    expect(scaleFromPercent(50)).toBe(0.5);
   });
 });
 

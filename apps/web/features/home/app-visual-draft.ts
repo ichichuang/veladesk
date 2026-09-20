@@ -13,10 +13,6 @@ import { generatedIconText } from "./generated-icon";
 
 export const APP_ICON_TEXT_MAX_CODE_POINTS = 4;
 
-export const MIN_SCALE_PERCENT = 50;
-export const MAX_SCALE_PERCENT = 160;
-export const SCALE_STEP_PERCENT = 5;
-
 /** Where the icon comes from — the editor's icon-source tabs. */
 export type AppVisualDraftSource = "library" | "text" | "upload";
 
@@ -99,15 +95,6 @@ export function validateIconText(text: string): IconTextIssue | undefined {
     return "too-long";
   }
   return undefined;
-}
-
-/** Slider percent ↔ stored scale factor. */
-export function scaleFromPercent(percent: number): number {
-  return Math.round((percent / 100) * 100) / 100;
-}
-
-export function percentFromScale(scale: number): number {
-  return Math.round(scale * 100);
 }
 
 /**

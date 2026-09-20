@@ -1,28 +1,39 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { findIconCollection } from "@veladesk/icon-catalog/meta";
+import type { IconCollectionId, IconSearchScope } from "@veladesk/icon-catalog/meta";
 
 import { useI18n } from "../i18n/use-i18n";
 import {
   ICON_PICKER_DEBOUNCE_MS,
-  ICON_PICKER_TABS,
+  ICON_PICKER_SCOPES,
+  appendIconPickerPage,
   buildIconSearchUrl,
-  decodeIconSearchResponse,
+  collectionsForScope,
+  decodeIconSearchPage,
+  scopeMessageKey,
 } from "./icon-picker-model";
-import type { IconPickerEntry, IconPickerTab } from "./icon-picker-model";
-import { parseIconifyIconId, iconSvgUrl } from "./app-icon";
+import type { IconPickerEntry } from "./icon-picker-model";
+import { iconifyGlyphModel } from "./app-icon";
+import { glyphMaskStyle } from "./app-icon-renderer";
 import "./home-shell.css";
 
 /**
- * Icon Catalog picker (task 016-A): search field, collection tabs and a
- * scrollable grid of every bundled icon.
+ * Icon Catalog picker v2 (016-A, rebuilt in 016-C): scope tabs, a source
+ * filter, a search field and a paginated grid of the whole bundled catalog.
  *
- * All data comes from the self-hosted `/api/v1/icons/search` endpoint —
- * the component never talks to any other host. The result grid is a local
- * scroll surface (`data-vd-wheel-scope="local"`) so wheeling through icons
- * never pages the section stack underneath. Keyboard: the search field
- * takes focus on open, results are plain buttons (Tab + Enter/Space).
+ * All data comes from the self-hosted `/api/v1/icons/search` endpoint — the
+ * component never talks to any other host. The grid is its own scroll
+ * surface (`data-vd-wheel-scope="local"`) so wheeling through icons never
+ * pages the section stack or moves the editor's pinned preview/footer.
+ *
+ * Paging: filters always reset to offset 0 and replace the results, while
+ * "load more" APPENDS the next page (deduped by id) until `nextOffset` is
+ * null. Every request carries a generation token, so a slow response from an
+ * abandoned query can never overwrite the current grid; a failed page keeps
+ * the results already on screen and offers a retry.
  */
 
 interface IconPickerProps {
@@ -31,24 +42,38 @@ interface IconPickerProps {
   readonly onSelect: (iconId: string) => void;
 }
 
+interface PickerResults {
+  /** The base URL the results belong to — a mismatch means "stale". */
+  readonly key: string;
+  readonly entries: readonly IconPickerEntry[];
+  readonly total: number;
+  readonly nextOffset: number | null;
+  readonly failed: boolean;
+}
+
+/**
+ * Load-more progress for ONE base query. Keyed by the URL it belongs to so
+ * a filter change retires it without any reset inside the fetch effect.
+ */
+interface AppendProgress {
+  readonly key: string;
+  readonly busy: boolean;
+  readonly failed: boolean;
+}
+
 export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
   const { t } = useI18n();
-  const [tab, setTab] = useState<IconPickerTab>("all");
+  const [scope, setScope] = useState<IconSearchScope>("recommended");
+  const [collection, setCollection] = useState<IconCollectionId | null>(null);
   const [rawQuery, setRawQuery] = useState("");
   const [query, setQuery] = useState("");
-  /**
-   * The last SETTLED response, tagged with the URL it came from. Renders
-   * derive visibility (stale results never show) instead of resetting
-   * state inside the effect.
-   */
-  const [settled, setSettled] = useState<{
-    readonly url: string;
-    readonly entries: IconPickerEntry[] | null;
-    readonly failed: boolean;
-  } | null>(null);
+  const [results, setResults] = useState<PickerResults | null>(null);
+  const [append, setAppend] = useState<AppendProgress | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  /** Bumped whenever the filters change; stale responses are dropped. */
+  const generationRef = useRef(0);
 
-  // Debounced query (spec: ~120–180ms).
+  // Debounced query (spec: ~150ms). "Load more" never goes through this.
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(rawQuery), ICON_PICKER_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
@@ -59,15 +84,17 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
     inputRef.current?.focus();
   }, []);
 
-  const url = useMemo(
-    () => buildIconSearchUrl({ query, tab }),
-    [query, tab]
+  const baseUrl = useMemo(
+    () => buildIconSearchUrl({ query, scope, collection }),
+    [query, scope, collection]
   );
 
   useEffect(() => {
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
     let cancelled = false;
     window
-      .fetch(url)
+      .fetch(baseUrl)
       .then(async (response) => {
         if (!response.ok) {
           throw new Error(`icon search failed (${response.status})`);
@@ -75,29 +102,89 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
         return response.json() as unknown;
       })
       .then((body) => {
-        if (cancelled) {
+        if (cancelled || generationRef.current !== generation) {
           return;
         }
-        const decoded = decodeIconSearchResponse(body);
-        setSettled(
+        const decoded = decodeIconSearchPage(body);
+        setResults(
           decoded === undefined
-            ? { url, entries: null, failed: true }
-            : { url, entries: decoded, failed: false }
+            ? { key: baseUrl, entries: [], total: 0, nextOffset: null, failed: true }
+            : { key: baseUrl, ...decoded, failed: false }
         );
       })
       .catch(() => {
-        if (!cancelled) {
-          setSettled({ url, entries: null, failed: true });
+        if (cancelled || generationRef.current !== generation) {
+          return;
         }
+        setResults({ key: baseUrl, entries: [], total: 0, nextOffset: null, failed: true });
       });
     return () => {
       cancelled = true;
     };
-  }, [url]);
+  }, [baseUrl]);
 
-  const current = settled !== null && settled.url === url ? settled : null;
-  const results = current?.entries ?? null;
+  // Results and append progress only apply to the URL currently requested —
+  // a leftover from an abandoned query is invisible by derivation.
+  const current = results !== null && results.key === baseUrl ? results : null;
+  const entries = current?.entries ?? [];
   const failed = current?.failed === true;
+  const nextOffset = current?.nextOffset ?? null;
+  const visible = current !== null && !failed;
+  const loadingFirstPage = current === null && !failed;
+  const appendState = append !== null && append.key === baseUrl ? append : null;
+  const appending = appendState?.busy === true;
+  const appendFailed = appendState?.failed === true;
+
+  const loadMore = useCallback(() => {
+    const offset = results !== null && results.key === baseUrl ? results.nextOffset : null;
+    if (offset === null || appending) {
+      return;
+    }
+    const generation = generationRef.current;
+    setAppend({ key: baseUrl, busy: true, failed: false });
+    window
+      .fetch(buildIconSearchUrl({ query, scope, collection, offset }))
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`icon search failed (${response.status})`);
+        }
+        return response.json() as unknown;
+      })
+      .then((body) => {
+        if (generationRef.current !== generation) {
+          return;
+        }
+        const decoded = decodeIconSearchPage(body);
+        if (decoded === undefined) {
+          setAppend({ key: baseUrl, busy: false, failed: true });
+          return;
+        }
+        setResults((previous) =>
+          previous === null || previous.key !== baseUrl
+            ? previous
+            : {
+                ...previous,
+                entries: appendIconPickerPage(previous.entries, decoded.entries),
+                total: decoded.total,
+                nextOffset: decoded.nextOffset,
+              }
+        );
+        setAppend({ key: baseUrl, busy: false, failed: false });
+      })
+      .catch(() => {
+        if (generationRef.current === generation) {
+          setAppend({ key: baseUrl, busy: false, failed: true });
+        }
+      });
+  }, [appending, baseUrl, collection, query, results, scope]);
+
+  function chooseScope(next: IconSearchScope) {
+    setScope(next);
+    // A source outside the new scope can only return an empty grid.
+    setCollection(null);
+  }
+
+  const sourceOptions = collectionsForScope(scope);
 
   return (
     <div className="vela-icon-picker" data-testid="icon-picker">
@@ -112,20 +199,44 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
         onChange={(event) => setRawQuery(event.target.value)}
       />
       <div className="vela-icon-picker__tabs" role="tablist" aria-label={t("iconPicker.collections")}>
-        {ICON_PICKER_TABS.map((candidate) => (
+        {ICON_PICKER_SCOPES.map((candidate) => (
           <button
             key={candidate}
             type="button"
             role="tab"
-            aria-selected={candidate === tab}
+            aria-selected={candidate === scope}
             className="vela-icon-picker__tab"
-            onClick={() => setTab(candidate)}
+            onClick={() => chooseScope(candidate)}
           >
-            {describeTab(candidate, t)}
+            {t(scopeMessageKey(candidate))}
           </button>
         ))}
       </div>
-      {tab === "simple-icons" ? (
+      <div className="vela-icon-picker__filters">
+        <label className="vela-icon-picker__source">
+          <span className="vela-icon-picker__source-label">{t("iconPicker.sourceLabel")}</span>
+          <select
+            className="vela-input vela-icon-picker__source-select"
+            value={collection ?? ""}
+            onChange={(event) =>
+              setCollection(event.target.value === "" ? null : (event.target.value as IconCollectionId))
+            }
+          >
+            <option value="">{t("iconPicker.sourceAll")}</option>
+            {sourceOptions.map((info) => (
+              <option key={info.id} value={info.id}>
+                {info.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {current !== null && !failed ? (
+          <span className="vela-icon-picker__count">
+            {t("iconPicker.loadedCount", { loaded: entries.length, total: current.total })}
+          </span>
+        ) : null}
+      </div>
+      {scope === "brand" ? (
         <p className="vela-icon-picker__note">{t("iconPicker.brandsNote")}</p>
       ) : null}
       {failed ? (
@@ -134,13 +245,13 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
         </p>
       ) : null}
       <div className="vela-icon-picker__grid" data-vd-wheel-scope="local">
-        {(results ?? []).map((entry) => (
+        {entries.map((entry) => (
           <button
             key={entry.id}
             type="button"
             className="vela-icon-picker__cell"
             data-selected={entry.id === selectedId ? "true" : undefined}
-            aria-label={`${entry.label} · ${describeTab(entry.collection as IconPickerTab, t)}`}
+            aria-label={`${entry.label} · ${findIconCollection(entry.collection)?.label ?? entry.collection}`}
             title={entry.label}
             onClick={() => onSelect(entry.id)}
           >
@@ -148,49 +259,64 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
           </button>
         ))}
       </div>
+      <div className="vela-icon-picker__footer">
+        {visible && entries.length === 0 ? (
+          <span className="vela-icon-picker__note">{t("iconPicker.noResults")}</span>
+        ) : null}
+        {appendFailed ? (
+          <>
+            <span className="vela-icon-picker__note" role="alert">
+              {t("iconPicker.loadMoreFailed")}
+            </span>
+            <button
+              type="button"
+              className="vela-button vela-icon-picker__more"
+              onClick={loadMore}
+              disabled={appending}
+            >
+              {t("iconPicker.retryLoadMore")}
+            </button>
+          </>
+        ) : nextOffset !== null ? (
+          <button
+            type="button"
+            className="vela-button vela-icon-picker__more"
+            onClick={loadMore}
+            disabled={appending}
+          >
+            {appending ? t("iconPicker.loadingMore") : t("iconPicker.loadMore")}
+          </button>
+        ) : null}
+        {loadingFirstPage ? (
+          <span className="vela-icon-picker__note">{t("common.working")}</span>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-/** Tab display names, localized (brands first per the catalog order). */
-function describeTab(
-  tab: IconPickerTab,
-  t: ReturnType<typeof useI18n>["t"]
-): string {
-  switch (tab) {
-    case "all":
-      return t("iconPicker.tab.all");
-    case "simple-icons":
-      return t("iconPicker.tab.brands");
-    case "lucide":
-      return "Lucide";
-    case "tabler":
-      return "Tabler";
-    case "ph":
-      return "Phosphor";
-  }
-}
-
 /**
- * One icon preview: the self-hosted SVG through a CSS mask, tinted with
- * the picker's foreground color. No <img>, no innerHTML, no third-party
- * host — the URL is built from validated catalog ids only.
+ * One icon preview: masked for monochrome collections, a same-origin
+ * `<img>` for multicolor ones so the real pigments show BEFORE selection —
+ * the grid must never render every icon in one flat color. No innerHTML,
+ * no third-party host; the URL comes from validated catalog ids only.
  */
 export function IconPreview({ iconId }: { iconId: string }) {
-  const parsed = parseIconifyIconId(iconId);
-  const url = parsed === undefined ? undefined : iconSvgUrl(parsed.collection, parsed.name);
-  const maskStyle: CSSProperties | undefined =
-    url === undefined
-      ? undefined
-      : {
-          WebkitMaskImage: `url("${url}")`,
-          maskImage: `url("${url}")`,
-          WebkitMaskSize: "contain",
-          maskSize: "contain",
-          WebkitMaskRepeat: "no-repeat",
-          maskRepeat: "no-repeat",
-          WebkitMaskPosition: "center",
-          maskPosition: "center",
-        };
-  return <span className="vela-icon-picker__preview" style={maskStyle} />;
+  const model = iconifyGlyphModel(iconId);
+  if (model === undefined) {
+    return <span className="vela-icon-picker__preview" />;
+  }
+  if (model.kind === "image") {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- same-origin SVG route, not an optimizable static asset
+      <img
+        className="vela-icon-picker__preview vela-icon-picker__preview--image"
+        src={model.url}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
+    );
+  }
+  return <span className="vela-icon-picker__preview" style={glyphMaskStyle(model.url)} />;
 }

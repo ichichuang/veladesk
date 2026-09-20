@@ -1026,6 +1026,15 @@ button.vela-section-nav__sync:focus-visible {
   mask-size: contain;
 }
 
+/* Multicolor library glyph: a same-origin <img> that keeps the collection's
+   own pigments. It must NOT be masked and must NOT inherit the monochrome
+   glyph's currentColor background — either would flatten every color. */
+.vela-app-icon__glyph--image {
+  background-color: transparent;
+  object-fit: contain;
+  pointer-events: none;
+}
+
 .vela-app-icon__text {
   line-height: 1;
 }
@@ -1917,11 +1926,50 @@ button.vela-section-nav__sync:focus-visible {
 
 /* --- Icon catalog picker + visual editor (016-A) --------------------------- */
 
+/* The visual editor is a FIXED SHELL. The dialog never scrolls: the header
+   (title + live preview + resize hint) and the footer (Cancel/Save) are grid
+   rows outside the one scrolling body, so editing a property at the bottom of
+   the form can never push the preview or the actions out of view. */
 .vela-visual-editor {
-  width: min(560px, 94vw);
-  max-height: min(84vh, 720px);
+  width: min(760px, calc(100vw - 32px));
+  height: min(86vh, 820px);
+  max-height: min(86vh, 820px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.vela-visual-editor__form {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.vela-visual-editor__header {
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--vd-border);
+}
+
+.vela-visual-editor__body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 14px 24px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Restrained but visible: the shell must read as scrollable. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--vd-border) transparent;
+}
+
+.vela-visual-editor__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--vd-border);
 }
 
 .vela-visual-editor__preview {
@@ -1929,9 +1977,14 @@ button.vela-section-nav__sync:focus-visible {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 18px 0 14px;
+  padding: 12px 0 6px;
   /* A larger preview slot: AppIconTile scales off --vd-slot-icon-size. */
   --vd-slot-icon-size: 84px;
+}
+
+.vela-visual-editor__resize-hint {
+  margin: 0;
+  text-align: center;
 }
 
 .vela-visual-editor__preview-name {
@@ -2099,6 +2152,55 @@ button.vela-section-nav__sync:focus-visible {
   color: var(--vd-text-muted);
 }
 
+/* Scope tabs stay in one row; the source filter and the loaded-count share
+   the next row so the grid keeps its width. */
+.vela-icon-picker__tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.vela-icon-picker__filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.vela-icon-picker__source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--vd-text-muted);
+  white-space: nowrap;
+}
+
+.vela-icon-picker__source-select {
+  width: auto;
+  min-width: 128px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.vela-icon-picker__count {
+  font-size: 11.5px;
+  color: var(--vd-text-muted);
+  white-space: nowrap;
+}
+
+.vela-icon-picker__footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 30px;
+}
+
+.vela-icon-picker__more {
+  padding: 5px 14px;
+  font-size: 12px;
+}
+
 .vela-icon-picker__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
@@ -2138,6 +2240,12 @@ button.vela-section-nav__sync:focus-visible {
   width: 26px;
   height: 26px;
   background-color: currentColor;
+}
+
+/* Multicolor preview: real pigments in the grid, before any selection. */
+.vela-icon-picker__preview--image {
+  background-color: transparent;
+  object-fit: contain;
 }
 
 /* Uploaded asset glyph (016-B): the image fills the tile and keeps its own

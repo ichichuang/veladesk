@@ -32,6 +32,9 @@ const nextConfig: NextConfig = {
     "@veladesk/desktop-engine",
     "@veladesk/desktop-interaction",
     "@veladesk/domain",
+    // The picker and icon renderer import the browser-safe `/meta` subpath
+    // (collection ids, palette, category) — never the loaders.
+    "@veladesk/icon-catalog",
     "@veladesk/local-store",
     "@veladesk/sync",
   ],

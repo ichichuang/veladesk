@@ -3,6 +3,7 @@ import {
   isValidAppHexColor,
   resolveAppVisualStyle,
 } from "@veladesk/domain";
+import { findIconCollection, isIconCollectionId } from "@veladesk/icon-catalog/meta";
 
 import { generatedIconText } from "./generated-icon";
 
@@ -10,18 +11,15 @@ import { generatedIconText } from "./generated-icon";
  * Pure helpers behind the shared AppIconRenderer (task 016-A).
  *
  * Every user-influenced value is validated before it may reach CSS: icon
- * ids must resolve to the four bundled collections with a strict name
- * shape, colors must be exact #RRGGBB, and the background strings are
- * composed HERE from validated parts — a renderer never interpolates a
- * persisted string into CSS directly.
+ * ids must resolve to a bundled collection with a strict name shape, colors
+ * must be exact #RRGGBB, and the background strings are composed HERE from
+ * validated parts — a renderer never interpolates a persisted string into
+ * CSS directly.
+ *
+ * Collection membership and palette come from the catalog's browser-safe
+ * metadata; this module never keeps its own collection list, so adding a
+ * collection is a catalog change and nothing else.
  */
-
-const BUNDLED_COLLECTIONS: ReadonlySet<string> = new Set([
-  "simple-icons",
-  "lucide",
-  "tabler",
-  "ph",
-]);
 
 const ICON_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -42,7 +40,7 @@ export function parseIconifyIconId(icon: string): ParsedIconifyIconId | undefine
   }
   const collection = icon.slice(0, separator);
   const name = icon.slice(separator + 1);
-  if (!BUNDLED_COLLECTIONS.has(collection) || !ICON_NAME_PATTERN.test(name)) {
+  if (!isIconCollectionId(collection) || !ICON_NAME_PATTERN.test(name)) {
     return undefined;
   }
   return { collection, name };
@@ -57,6 +55,49 @@ export function iconSvgUrl(collection: string, name: string): string {
 export function iconSvgUrlForId(icon: string): string | undefined {
   const parsed = parseIconifyIconId(icon);
   return parsed === undefined ? undefined : iconSvgUrl(parsed.collection, parsed.name);
+}
+
+/**
+ * How a library glyph must be drawn:
+ *  - `mask` — the body is `currentColor`, so a CSS mask + foreground color
+ *    gives the icon the app's tint (monochrome collections);
+ *  - `image` — the body ships its own pigments, so it is loaded as an
+ *    `<img>` from the same self-hosted route and its colors survive
+ *    (multicolor collections).
+ * `undefined` means the id can never render, which is the caller's cue to
+ * fall back to the generated initials.
+ */
+export type IconifyGlyphModel =
+  | { readonly kind: "mask"; readonly url: string }
+  | { readonly kind: "image"; readonly url: string };
+
+export function iconifyGlyphModel(icon: string): IconifyGlyphModel | undefined {
+  const parsed = parseIconifyIconId(icon);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const url = iconSvgUrl(parsed.collection, parsed.name);
+  const info = findIconCollection(parsed.collection);
+  return info?.palette === "multicolor" ? { kind: "image", url } : { kind: "mask", url };
+}
+
+/**
+ * Whether an app's glyph follows the app's own colors ("tinted", so
+ * `foregroundColor` applies) or keeps whatever the source drew
+ * ("original", so a foreground tint must be ignored). Multicolor library
+ * icons and uploaded images are always original — exactly like the
+ * generated-text case is always tinted.
+ */
+export type AppGlyphColorModel = "tinted" | "original";
+
+export function appGlyphColorModel(app: AppShortcut): AppGlyphColorModel {
+  if (app.icon.kind === "asset") {
+    return "original";
+  }
+  if (app.icon.kind === "iconify") {
+    return iconifyGlyphModel(app.icon.icon)?.kind === "image" ? "original" : "tinted";
+  }
+  return "tinted";
 }
 
 // --- Controlled color math (validated #RRGGBB in, derived #RRGGBB out) ---
