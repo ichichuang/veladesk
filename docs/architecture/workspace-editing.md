@@ -66,15 +66,52 @@ scope in this stage.
 ## Context menu
 
 Context menus are presentation-only shell state, never persisted. One
-primitive (`ContextMenu`, `role="menu"`/`menuitem`) serves entity menus
-(desktop, dock and folder-overlay sources), the empty-desktop menu (Add
-App / New Folder / mode toggle), and the Create menu behind the top-bar
-Add and dock "+" buttons. Opening works by right-click and by keyboard
+primitive (`ContextMenu`, `role="menu"`/`menuitem`, with separator
+entries) serves entity menus (desktop, dock and folder-overlay sources),
+the section menu (left-nav items) and the desktop command menu — since
+task 015 the one primary command surface (Add App / New Section /
+Search, arrange toggle + history, remote action / Settings / language),
+shared by the empty-area right-click and the left-nav ⋯ button. Opening
+works by right-click and by keyboard
 (Shift+F10 / ContextMenu key, anchored to the element rect); the menu is
 measured then clamped into the viewport (`clampContextMenuPosition`),
 focuses its first enabled item, supports Arrow/Home/End cycling and
 Escape, and closes on outside clicks. Entity right-clicks stop
 propagation so the empty-desktop menu cannot open underneath.
+
+## Sections (Pages as Sections, task 015)
+
+Desktop pages are user-facing sections (zh 分区, en Section). The domain
+owns explicit page CRUD: `addPage` (unique id, non-blank name,
+`layout.id === page.id`, empty layout, engine-validated grid),
+`renamePage` (verbatim name, position untouched), `movePage` (array order
+only, boundary-refused), `setDefaultPage` (only `preferences` change,
+appearance/layoutLocked preserved) and `deleteEmptyPage` (empty sections
+only, last page refused, default re-targets the next page at the deleted
+position or the previous one at the end). All failures are typed
+`WorkspaceEditFailureReason` values (`duplicate-page-id`,
+`invalid-page-name`, `page-layout-id-mismatch`, `page-must-be-empty`,
+`invalid-page-layout`, `page-not-empty`, `cannot-delete-last-page`,
+`page-order-boundary`) — ordinary edit failures never throw.
+
+Apps move BETWEEN sections with `relocateAppToPage` — unlike the older
+folder→desktop `moveAppToPage` (kept, unchanged), it accepts apps from
+anywhere: every page-layout item and folder-child reference is stripped
+on a working copy, then a 1×1 nearest-free placement lands on the target
+page. The dock is untouched (pins survive), the entity array keeps every
+entry, `already-on-page` and atomic `no-space` failures return the input
+completely unchanged. The web shell exposes this as the 移到分区… /
+Move to Section… dialog.
+
+## Folder legacy policy
+
+Folders remain fully valid workspace data — decode, validate, render,
+open, launch, rename, pin and dissolve all keep working, with no
+migration and no deletion. What changed in task 015 is reachability: the
+primary UI no longer offers folder creation, move-into-folder, or
+Add-App-inside-folder; the folder context menu's primary legacy action is
+dissolving into the current section (`dissolveFolderToPage`, unchanged
+and atomic).
 
 ## Local-first editing
 

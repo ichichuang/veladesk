@@ -25,8 +25,10 @@ deterministic ranking and immediate activation.
 ## Scope
 
 Active workspace only. Indexed: every app (desktop, folder child,
-dock-only, unplaced), every folder, every page, and the fixed command
-set (`add-app`, `new-folder`, `toggle-mode`, plus exactly one remote
+dock-only, unplaced), every folder, every page (user-facing 分区 /
+Section — search metadata keeps page/页面 and adds section/分区), and the
+fixed command
+set (`add-app`, `new-section`, `toggle-mode`, plus exactly one remote
 command chosen by sync state). Widgets are not indexed — V1 has no
 unified widget activation semantics. No cross-workspace search, no
 network/web/browser-history search, no AI search, no recents.
@@ -53,8 +55,8 @@ result list fully deterministic.
 
 An empty (or whitespace-only) query returns the entries unranked, in
 the discoverability order: commands, dock items (strict dock order),
-active-page entities (strict layout order), remaining apps/folders
-(strict entity order), pages (strict page order). An entity that is
+active-section entities (strict layout order), remaining apps/folders
+(strict entity order), sections (strict page order). An entity that is
 both docked and placed appears once — entries dedupe by key, first
 occurrence wins.
 
@@ -63,10 +65,12 @@ occurrence wins.
 Activation is resolved by the shell against the live snapshot:
 
 - app → existing `launchApp` (all open modes, custom protocols verbatim)
-- folder → existing folder overlay
-- page → `switchToPage` (selection cleared, session-only)
-- `add-app` → existing Add App dialog on the active page
-- `new-folder` → existing folder dialog on the active page
+- folder → existing folder overlay (legacy compatibility)
+- page → `scrollToSection` — the launcher only scrolls the real section
+  stack; the active state follows through the IntersectionObserver
+- `add-app` → existing Add App dialog on the active section
+- `new-section` → section dialog (create) on the active section — the
+  `new-folder` command is retired from the launcher (task 015)
 - `open-settings` → Settings Center (local command, available in
   clean/dirty/conflict states; closes the launcher, then the shell opens
   Settings — see [appearance-settings.md](./appearance-settings.md))
@@ -99,7 +103,7 @@ the workspace dirty and leaves reporting to the existing sync indicator
 ## Conflict
 
 A conflicted workspace hides the remote commands but keeps every local
-action (launch, folder, page switch, Add App, New Folder, Settings, mode
+action (launch, folder, section scroll, Add App, New Section, Settings, mode
 toggle): the working copy stays editable.
 
 ## Persistence

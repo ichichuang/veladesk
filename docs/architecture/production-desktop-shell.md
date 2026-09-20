@@ -5,6 +5,14 @@ production VelaDesk surface: a local-first desktop shell with boot,
 onboarding, workspace selection, ready desktop, drag & drop, Add App,
 launch and sync status.
 
+Task 015 restructured the ready desktop into a minimal section
+workspace: full-height scroll-snap section stack, floating left section
+navigation, an optional pinned-entity dock and the custom context menu as
+the primary command surface. The top bar, page dots and dock utilities
+are removed. See
+[section-navigation.md](./section-navigation.md) — this doc keeps the
+shell-level view.
+
 ## Responsibility
 
 Boundaries are unchanged from the existing architecture docs — the shell is
@@ -61,15 +69,21 @@ technical-details section. A workspace whose `pages` array is empty (schema
 invariant violation) renders a calm invalid-workspace state instead of
 crashing.
 
-The active page is ephemeral session state: it resolves the session choice,
-then `preferences.defaultPageId`, then the first page; it is never
-persisted in this stage.
+The active section is a reflection of the REAL scroll position
+(IntersectionObserver over the section stack); `preferences.defaultPageId`
+only chooses the boot position. It is never persisted beyond the
+preference — see [section-navigation.md](./section-navigation.md).
 
 ## Desktop rendering
 
 The ready shell is a fixed viewport (no body scroll): ambient wallpaper
-layer, compact glass top bar (brand, workspace name, sync indicator, Add,
-View/Arrange), the page grid, optional page dots, floating bottom dock.
+layer, a full-height section stack (one `DesktopPage` per snap viewport,
+native CSS scroll-snap paging), the floating left section navigation
+(page projection, ⋯ command fallback, quiet non-clean sync status), and a
+bottom dock that exists ONLY when entities are pinned. All desktop
+commands (Add App, New Section, Search, Arrange toggle, Undo/Redo,
+Sync/Refresh, Settings, language) live in the custom context menu — there
+is no top bar and there are no page dots.
 
 `DesktopGridView` renders `PageLayout` as a CSS grid (`grid-column` /
 `grid-row` with spans); each `LayoutItem.id` resolves to its entity:
@@ -78,10 +92,11 @@ this stage — no favicon/iconify/asset fetching), folders open their
 overlay on a view-mode click, widgets are the only glass-surface
 entities, and a layout item whose entity is missing renders a restrained
 "Missing item" placeholder. The dock renders `workspace.dock.items` in
-stored order — apps launch, folders open the overlay — next to a Create
-menu and a mode utility. Page dots and ArrowLeft/ArrowRight switching
-(ignored while a drag is live or focus is in a form field) appear only
-when a workspace has more than one page.
+stored order — apps launch, folders open the overlay, right-click opens
+the entity menu — and renders `null` (no DOM shell at all) when nothing
+is pinned. Section switching is real-scroll based: wheel/trackpad (native
+snap), left-nav clicks, ArrowUp/PageUp + ArrowDown/PageDown (no wrap,
+lowest keyboard priority) and launcher section results.
 
 Since the workspace editing task, entity interaction is rounded out by
 context menus (right-click or Shift+F10 on desktop/dock/overlay items,
@@ -122,9 +137,11 @@ the real track pitch. In arrange mode `DesktopGridView` renders a true
 guide overlay: one CSS-grid cell per logical cell (`.vela-desktop__grid-
 guides` / `-guide`), absolutely positioned, `pointer-events: none`, and
 sharing the viewport's exact `grid-template` / gap / padding through the
-`--vd-grid-column-gap`, `--vd-grid-row-gap`, `--vd-grid-padding-x`,
-`--vd-grid-padding-y` custom properties (single source; the responsive
-variant overrides the variables). Guide rects therefore equal actual
+`--vd-grid-column-gap`, `--vd-grid-row-gap`, `--vd-grid-padding-left/right/top/bottom`
+custom properties (single source; asymmetric since task 015 — the left
+padding reserves the section nav, the bottom padding only grows when a
+dock exists, `data-has-dock`; the responsive variant overrides the
+variables). Guide rects therefore equal actual
 track rects — the earlier repeating-background estimate is gone. View
 mode renders no guides.
 

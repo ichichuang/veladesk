@@ -5,16 +5,17 @@
 Task 014-D gives the production UI a bilingual foundation: Simplified
 Chinese is the product default, English is switchable, and the switch is a
 browser-local preference. Task 014-E makes Chinese-first verifiable in
-real browsers (the v2 storage reset) and exposes a compact 中/EN switch in
-the top bar. No i18n package is used — the whole layer is a few small
-modules under `apps/web/features/i18n/`.
+real browsers (the v2 storage reset). Since task 015 the desktop context
+menu and Settings → General are the language entry points (the compact
+top-bar switch is gone with the top bar). No i18n package is used — the
+whole layer is a few small modules under `apps/web/features/i18n/`.
 
 ## Scope
 
 Production `/` is fully bilingual: boot, onboarding, workspace picker,
-recovery screens, the desktop shell top bar, sync indicator, dock,
-selection count, context menus, all dialogs, the folder overlay, the
-launcher (UI, command labels, keyword metadata) and the Settings Center.
+recovery screens, the desktop shell (left section navigation, context
+menus, dock, all dialogs, the folder overlay, the launcher (UI, command
+labels, keyword metadata) and the Settings Center.
 The engineering labs (`/lab/desktop`, `/lab/workspace-runtime`) stay
 English and must keep working.
 
@@ -26,8 +27,9 @@ folder names, page names, URLs and tags render verbatim in every locale.
 `UiLocale` is exactly `"zh-CN" | "en-US"`, with `DEFAULT_UI_LOCALE =
 "zh-CN"`. The first visit is Chinese — the locale is deliberately NOT
 inferred from `navigator.language`; switching is an explicit user action
-(the topbar 中/EN switch or Settings → General). Anything unparsable or
-unsupported falls back to zh-CN (`parseUiLocale`).
+(the desktop context menu's language entry or Settings → General).
+Anything unparsable or unsupported falls back to zh-CN
+(`parseUiLocale`).
 
 ## Browser-local persistence, never workspace data
 
@@ -110,11 +112,10 @@ is findable via 设置, "settings" or "theme", and the sync command via
 | `{param}` interpolation  | `features/i18n/format-message.ts`         |
 | Provider (external store) | `features/i18n/ui-locale-provider.tsx`   |
 | Consumer hook (`t`, `setLocale`) | `features/i18n/use-i18n.ts`       |
-| Topbar switch model | `features/i18n/locale-switch.ts`            |
-| Topbar switch component | `features/home/locale-switch.tsx`        |
+| Locale store (v2) | `features/i18n/locale-switch.ts`        |
 
 The Settings Center's General section (界面语言 / Interface language)
 renders the two endonym labels — 中文 and English — in every locale, with
-a hint explaining that the language is browser-local only. The topbar's
-compact 中/EN switch (`buildLocaleSwitchButtons`) writes the exact same
-UiLocale store — one source of truth, two entry points.
+a hint explaining that the language is browser-local only. The desktop
+context menu's language entry writes the exact same UiLocale store — one
+source of truth, two entry points (context menu + Settings).
