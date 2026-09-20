@@ -3,10 +3,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
+import type { DesktopMenuEntry } from "./desktop-command-menu";
 import { clampContextMenuPosition } from "./context-menu-position";
 import "./home-shell.css";
 
-/** One selectable action in a context menu. */
+/** Back-compat alias: an action row of the unified menu entry model. */
 export interface ContextMenuAction {
   readonly id: string;
   readonly label: string;
@@ -14,10 +15,17 @@ export interface ContextMenuAction {
   readonly onSelect: () => void;
 }
 
+/**
+ * A context menu is a list of actions and separators (task 015): the
+ * separator renders as a non-focusable divider and is skipped by keyboard
+ * cycling, which only ever walks `[role="menuitem"]` rows.
+ */
+export type ContextMenuEntry = DesktopMenuEntry;
+
 export interface ContextMenuState {
   readonly x: number;
   readonly y: number;
-  readonly actions: readonly ContextMenuAction[];
+  readonly entries: readonly ContextMenuEntry[];
 }
 
 /** Whether a keyboard event asks for the context menu (Shift+F10 / Menu key). */
@@ -47,9 +55,10 @@ interface ContextMenuProps {
  * role="menu" semantics.
  *
  * Rendered unmeasured, then clamped against the real viewport with the
- * measured size. Keyboard: ArrowUp/Down/Home/End cycle enabled items,
- * Escape closes; the first enabled item receives focus on open; a click
- * outside closes.
+ * measured size. Very long menus scroll locally (`data-vd-wheel-scope`,
+ * contained overscroll) instead of growing past the viewport. Keyboard:
+ * ArrowUp/Down/Home/End cycle enabled items, Escape closes; the first
+ * enabled item receives focus on open; a click outside closes.
  */
 export function ContextMenu({ state, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -151,6 +160,7 @@ export function ContextMenu({ state, onClose }: ContextMenuProps) {
       className="vela-context-menu"
       role="menu"
       aria-orientation="vertical"
+      data-vd-wheel-scope="local"
       data-measured={position !== null ? "true" : undefined}
       style={
         position === null
@@ -163,21 +173,25 @@ export function ContextMenu({ state, onClose }: ContextMenuProps) {
         event.stopPropagation();
       }}
     >
-      {state.actions.map((action) => (
-        <button
-          key={action.id}
-          type="button"
-          role="menuitem"
-          className="vela-context-menu__item"
-          disabled={action.disabled === true}
-          onClick={() => {
-            onClose();
-            action.onSelect();
-          }}
-        >
-          {action.label}
-        </button>
-      ))}
+      {state.entries.map((entry, index) =>
+        entry.kind === "separator" ? (
+          <div key={`separator-${index}`} role="separator" className="vela-context-menu__separator" />
+        ) : (
+          <button
+            key={entry.id}
+            type="button"
+            role="menuitem"
+            className="vela-context-menu__item"
+            disabled={entry.disabled === true}
+            onClick={() => {
+              onClose();
+              entry.onSelect();
+            }}
+          >
+            {entry.label}
+          </button>
+        )
+      )}
     </div>
   );
 }

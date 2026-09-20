@@ -28,7 +28,8 @@ describe("message catalogs", () => {
     expect(zhCN["mode.view"]).toBe("查看");
     expect(zhCN["mode.arrange"]).toBe("整理");
     expect(zhCN["launcher.noMatches"]).toBe("没有匹配结果");
-    expect(zhCN["topbar.selectionCount"]).toBe("已选择 {count} 项");
+    expect(zhCN["launcher.kind.page"]).toBe("分区");
+    expect(zhCN["menu.newSection"]).toBe("新建分区");
     expect(zhCN["onboarding.defaultWorkspaceName"]).toBe("我的 VelaDesk");
     expect(zhCN["onboarding.defaultPageName"]).toBe("主页");
   });
@@ -37,7 +38,8 @@ describe("message catalogs", () => {
     expect(enUS["mode.view"]).toBe("View");
     expect(enUS["mode.arrange"]).toBe("Arrange");
     expect(enUS["launcher.noMatches"]).toBe("No matches");
-    expect(enUS["topbar.selectionCount"]).toBe("{count} selected");
+    expect(enUS["launcher.kind.page"]).toBe("Section");
+    expect(enUS["menu.newSection"]).toBe("New Section");
     expect(enUS["onboarding.defaultWorkspaceName"]).toBe("My VelaDesk");
     expect(enUS["onboarding.defaultPageName"]).toBe("Home");
   });
@@ -45,7 +47,7 @@ describe("message catalogs", () => {
   it("localizes every production launcher command label", () => {
     const commandKeys: readonly TranslationKey[] = [
       "launcher.command.addApp",
-      "launcher.command.newFolder",
+      "launcher.command.newSection",
       "launcher.command.openSettings",
       "launcher.command.switchToView",
       "launcher.command.switchToArrange",
@@ -58,11 +60,13 @@ describe("message catalogs", () => {
     }
     expect(zhCN["launcher.command.addApp"]).toBe("添加应用");
     expect(enUS["launcher.command.addApp"]).toBe("Add App");
+    expect(zhCN["launcher.command.newSection"]).toBe("新建分区");
+    expect(enUS["launcher.command.newSection"]).toBe("New Section");
   });
 
   it("translates with interpolation through translate()", () => {
-    expect(translate("zh-CN", "topbar.selectionCount", { count: 4 })).toBe("已选择 4 项");
-    expect(translate("en-US", "topbar.selectionCount", { count: 4 })).toBe("4 selected");
+    expect(translate("zh-CN", "dock.openApp", { name: "Mail" })).toBe("打开 Mail");
+    expect(translate("en-US", "dock.openApp", { name: "Mail" })).toBe("Open Mail");
     expect(translate("zh-CN", "mode.view")).toBe("查看");
   });
 

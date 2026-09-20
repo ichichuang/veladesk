@@ -2,7 +2,6 @@
 
 import { DragDropProvider, useDragDropManager } from "@dnd-kit/react";
 import type {
-  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
@@ -10,22 +9,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   deleteApp,
+  deleteEmptyPage,
   dissolveFolderToPage,
   findDesktopPage,
-  moveAppToPage,
+  movePage,
   pinEntityToDock,
   replaceWorkspacePreferences,
   resolveWorkspaceAppearance,
+  setDefaultPage,
   unpinEntityFromDock,
 } from "@veladesk/domain";
 import type {
   AppShortcut,
-  DesktopPage,
   DesktopPageId,
   EntityId,
   Folder,
   WorkspaceAppearancePreferences,
-  WorkspaceEntity,
   WorkspaceSnapshot,
 } from "@veladesk/domain";
 import {
@@ -46,25 +45,39 @@ import { useGridMetrics } from "../desktop-grid/use-grid-metrics";
 import { resolveDragItemIds } from "../desktop-grid/group-drag";
 import {
   ContextMenu,
-  contextMenuAnchorFromElement,
-  isContextMenuKeyEvent,
 } from "./context-menu";
-import type { ContextMenuAction, ContextMenuState } from "./context-menu";
+import type { ContextMenuState } from "./context-menu";
 import { AddAppDialog } from "./add-app-dialog";
-import type { AddAppDestination } from "./add-app-dialog";
 import { canRedo, canUndo, reconcilePageHistory } from "./arrange-history";
 import type { ArrangeHistories } from "./arrange-history";
 import { resolveArrangeHistoryCommand } from "./arrange-shortcuts";
 import { ConfirmDialog } from "./confirm-dialog";
 import { DesktopGridView } from "./desktop-grid";
 import { Dock } from "./dock";
+import { resolveDockEntities } from "./dock-model";
 import { EditAppDialog } from "./edit-app-dialog";
 import { FolderDialog } from "./folder-dialog";
 import { FolderOverlay } from "./folder-overlay";
-import { MoveToFolderDialog, eligibleFoldersForMove } from "./move-to-folder-dialog";
+import {
+  buildAppMenuEntries,
+  buildDesktopCommandEntries,
+  buildFolderMenuEntries,
+  buildSectionMenuEntries,
+} from "./desktop-command-menu";
+import type { DesktopMenuEntry } from "./desktop-command-menu";
+import { MoveToSectionDialog } from "./move-to-section-dialog";
+import { SectionDialog } from "./section-dialog";
+import { SectionNavigation } from "./section-navigation";
+import { SectionSyncStatus } from "./section-sync-status";
 import { normalizeSelection, selectAllIds, toggleSelection } from "./selection-state";
 import { normalizeSelectionRect, selectIntersectingItemIds } from "./selection-geometry";
-import { SyncIndicator } from "./sync-indicator";
+import {
+  nextSectionId,
+  previousSectionId,
+  resolveSectionAfterDelete,
+  sectionNavDirection,
+} from "./section-navigation-model";
+import { useSectionNavigation } from "./use-section-navigation";
 import { replacePageLayout } from "./workspace-layout";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import {
@@ -73,11 +86,9 @@ import {
 } from "./layout-handoff";
 import type { PendingLayoutHandoff } from "./layout-handoff";
 import { launchApp } from "./launch-app";
-import { LocaleSwitch } from "./locale-switch";
 import { buildAppearanceTheme } from "./appearance-theme";
 import { disableDndDropAnimation } from "./dnd-static-drop";
 import { useI18n } from "../i18n/use-i18n";
-import type { TranslateFn } from "../i18n/use-i18n";
 import { Launcher } from "./launcher";
 import { buildLauncherEntries } from "./launcher-index";
 import type { LauncherCommandId, LauncherEntry } from "./launcher-types";
@@ -92,12 +103,23 @@ import "./home-shell.css";
 /** UI-only desktop mode. Session state — never persisted back to preferences. */
 export type DesktopMode = "view" | "arrange";
 
-/** What a context menu was opened on. Presentation-only state, never persisted. */
+/**
+ * Which context-menu surface was opened. Presentation-only shell state.
+ * The desktop command menu (empty area / nav ⋯ / dock chrome) is built by
+ * `buildDesktopCommandEntries`; entities and sections get their own
+ * builders from the same module.
+ */
 export type ContextMenuTarget =
   | {
       readonly kind: "entity";
       readonly entityId: EntityId;
       readonly source: "desktop" | "dock" | "folder";
+      readonly x: number;
+      readonly y: number;
+    }
+  | {
+      readonly kind: "section";
+      readonly pageId: DesktopPageId;
       readonly x: number;
       readonly y: number;
     }
@@ -109,17 +131,15 @@ export type ContextMenuTarget =
 
 /** Overlay/dialog surfaces the shell can host, one at a time (plus overlay). */
 export type HomeDialog =
-  | { readonly kind: "add-app"; readonly destination: AddAppDestination }
+  | { readonly kind: "add-app"; readonly pageId: DesktopPageId }
   | { readonly kind: "edit-app"; readonly entityId: EntityId }
   | { readonly kind: "delete-app"; readonly entityId: EntityId }
-  | { readonly kind: "new-folder" }
+  | { readonly kind: "new-section" }
+  | { readonly kind: "rename-section"; readonly pageId: DesktopPageId }
+  | { readonly kind: "delete-section"; readonly pageId: DesktopPageId }
+  | { readonly kind: "move-to-section"; readonly appId: EntityId }
   | { readonly kind: "rename-folder"; readonly folderId: EntityId }
-  | { readonly kind: "delete-folder"; readonly folderId: EntityId }
-  | {
-      readonly kind: "move-to-folder";
-      readonly appId: EntityId;
-      readonly currentFolderId: EntityId | null;
-    };
+  | { readonly kind: "delete-folder"; readonly folderId: EntityId };
 
 interface MarqueeState {
   readonly startX: number;
@@ -139,45 +159,46 @@ type LayoutCommitOutcome =
   | { readonly status: "noop" }
   | { readonly status: "failed" };
 
+const EMPTY_SELECTION: ReadonlySet<LayoutItemId> = new Set();
+
 interface DesktopShellProps {
   readonly workspace: LocalWorkspaceRecord;
   readonly lastRemoteResult?: WorkspaceRuntimeRemoteResult | undefined;
 }
 
 /**
- * The ready-state production desktop: fixed viewport, ambient wallpaper,
- * top bar, entity grid, page dots and floating dock.
+ * The ready-state production desktop (task 015 IA): a full-viewport
+ * scroll-snap section stack, a floating left section navigation, an
+ * optional pinned-entity dock, and the custom context menu as the primary
+ * command surface. No top bar, no page dots, no utility dock.
  *
+ * The REAL scroll position is the source of truth for the active section
+ * (IntersectionObserver); navigation only ever scrolls the container.
  * Local-first editing: every edit runs a pure operation, stages the
- * resulting snapshot immediately (UI updates without waiting for the
- * network), then fires an explicit sync. Arrange mode adds a session-only
- * selection (click, Cmd/Ctrl toggle, marquee, Cmd/Ctrl+A), rigid group
- * drags with a transient peer preview, keyboard nudges, and a per-page
- * Arrange history (drag/nudge movement only, 50 entries, never persisted).
- * Context menus, dialogs, selection and the folder overlay are
- * presentation-only shell state.
+ * resulting snapshot immediately, then fires an explicit sync. Arrange
+ * mode belongs to the ACTIVE section only — selection, drags, nudges and
+ * the per-page history never cross sections.
  */
 export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps) {
   const runtime = useWorkspaceRuntimeInstance();
-  const { locale, t } = useI18n();
+  const { locale, setLocale, t } = useI18n();
   const snapshot = workspace.snapshot;
 
   const [mode, setMode] = useState<DesktopMode>(() =>
     snapshot.preferences.layoutLocked ? "view" : "arrange"
   );
-  const [sessionPageId, setSessionPageId] = useState<DesktopPageId | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [dialog, setDialog] = useState<HomeDialog | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [overlayFolderId, setOverlayFolderId] = useState<EntityId | null>(null);
 
   /**
-   * Presentation-only error for folder-overlay actions (Move to Desktop).
-   * Never written into the workspace snapshot.
+   * Presentation-only error for folder-overlay actions (dissolve). Never
+   * written into the workspace snapshot.
    */
   const [folderActionError, setFolderActionError] = useState<string | null>(null);
 
-  const [selectedItemIds, setSelectedItemIds] = useState<ReadonlySet<LayoutItemId>>(new Set());
+  const [selectedItemIds, setSelectedItemIds] = useState<ReadonlySet<LayoutItemId>>(EMPTY_SELECTION);
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const [arrangeHistories, setArrangeHistories] = useState<ArrangeHistories>({});
   const [launcherOpen, setLauncherOpen] = useState(false);
@@ -201,11 +222,31 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const [pendingLayoutHandoff, setPendingLayoutHandoff] = useState<PendingLayoutHandoff | null>(
     null
   );
+  /**
+   * A section to reveal on the NEXT DOM commit (create section, reorder,
+   * delete-active). A ref — handlers set it synchronously around a
+   * structural change, and the post-commit effect consumes it exactly
+   * once so the instant scroll lands on the right element.
+   */
+  const pendingRevealRef = useRef<DesktopPageId | null>(null);
+
   const arrange = mode === "arrange";
   /** True only while a display layout outruns the durable snapshot. */
   const handoffLock = pendingLayoutHandoff !== null;
 
-  const activePage = resolveActivePage(snapshot, sessionPageId);
+  const pageIds = useMemo(() => snapshot.pages.map((page) => page.id), [snapshot.pages]);
+  const navigation = useSectionNavigation({
+    pageIds,
+    defaultPageId: snapshot.preferences.defaultPageId,
+  });
+  const { activePageId, scrollToSection } = navigation;
+
+  /**
+   * The active section as data. Derived FROM the scroll position — the
+   * session never pins a page against it (the old sessionPageId is gone).
+   */
+  const activePage =
+    activePageId !== null ? findDesktopPage(snapshot, activePageId) : undefined;
 
   /**
    * The rendered theme: the Settings preview while open, otherwise the
@@ -222,18 +263,20 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     () =>
       buildLauncherEntries({
         workspace: snapshot,
-        activePageId: activePage !== undefined ? activePage.id : null,
+        activePageId,
         mode,
         syncState: workspace.syncState,
         locale,
       }),
-    [snapshot, activePage, mode, workspace.syncState, locale],
+    [snapshot, activePageId, mode, workspace.syncState, locale],
   );
+
+  const hasDock = useMemo(() => resolveDockEntities(snapshot).length > 0, [snapshot]);
 
   // Latest-value mirrors for async/session callbacks (drag commit, keyboard
   // navigation) that must always see the current render's data.
   const workspaceRef = useRef(workspace);
-  const pageIdRef = useRef<DesktopPageId | null>(activePage?.id ?? null);
+  const pageIdRef = useRef<DesktopPageId | null>(activePageId);
   const arrangeHistoriesRef = useRef(arrangeHistories);
   const selectionRef = useRef(selectedItemIds);
   const draggingRef = useRef(false);
@@ -251,8 +294,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     workspaceRef.current = workspace;
   }, [workspace]);
   useEffect(() => {
-    pageIdRef.current = activePage?.id ?? null;
-  }, [activePage]);
+    pageIdRef.current = activePageId;
+  }, [activePageId]);
   useEffect(() => {
     arrangeHistoriesRef.current = arrangeHistories;
   }, [arrangeHistories]);
@@ -278,17 +321,33 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     // Leaving arrange clears the session selection; re-entering arrange
     // starts fresh (the per-page history survives the round-trip).
     if (next === "view") {
-      applySelection(new Set());
+      applySelection(EMPTY_SELECTION);
     }
   }
 
-  const switchToPage = useCallback((pageId: DesktopPageId) => {
-    if (pendingHandoffRef.current !== null) {
+  /**
+   * The active section moved (real scroll): the arrange selection belongs
+   * to the section it was made on, so it never crosses sections.
+   */
+  const previousActiveRef = useRef<DesktopPageId | null>(activePageId);
+  useEffect(() => {
+    if (previousActiveRef.current !== activePageId) {
+      previousActiveRef.current = activePageId;
+      if (selectionRef.current.size > 0) {
+        applySelection(EMPTY_SELECTION);
+      }
+    }
+  }, [activePageId]);
+
+  /** Reveal a section right after the DOM reflects a structural change. */
+  useEffect(() => {
+    const target = pendingRevealRef.current;
+    if (target === null) {
       return;
     }
-    applySelection(new Set());
-    setSessionPageId(pageId);
-  }, []);
+    pendingRevealRef.current = null;
+    scrollToSection(target);
+  }, [scrollToSection, snapshot.pages]);
 
   function openFolderOverlay(folderId: EntityId) {
     setFolderActionError(null);
@@ -323,9 +382,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    * the preview can be dropped without a theme flash-back. Staging
    * failures keep Settings open with the preview alive for correction.
    *
-   * A changed default page must not yank the view: the session pins the
-   * page it is currently showing, so only the next session boots into the
-   * new default.
+   * The scroll position stays untouched: a changed default section only
+   * applies to the next session, never yanks the current view.
    */
   async function handleSettingsSave(draft: WorkspaceSettingsDraft): Promise<SettingsSaveResult> {
     const preferences = preferencesFromSettingsDraft(draft);
@@ -339,19 +397,10 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             : t("settings.error.invalidAppearance"),
       };
     }
-    // pageIdRef is the freshest session page — the render closure can go
-    // stale while the save promise is in flight.
-    const currentPageId = pageIdRef.current;
     const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
     if (!staged.ok) {
       console.error(`VelaDesk: settings were not staged (${staged.reason})`);
       return { ok: false, message: t("settings.error.saveFailed") };
-    }
-    if (
-      preferences.defaultPageId !== snapshot.preferences.defaultPageId &&
-      currentPageId !== null
-    ) {
-      setSessionPageId(currentPageId);
     }
     setAppearancePreview(null);
     setSettingsOpen(false);
@@ -599,9 +648,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   );
 
   /**
-   * The layout the desktop renders this frame: the pending drop handoff
-   * while it targets the active page, otherwise the authoritative layout.
-   * Only the current-desktop render consumes it — persistence still flows
+   * The layout the ACTIVE section renders this frame: the pending drop
+   * handoff while it targets the active page, otherwise the authoritative
+   * layout. Only the active section consumes it — persistence still flows
    * exclusively through the domain/runtime path.
    */
   const displayLayout =
@@ -668,7 +717,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     );
   }, []);
 
-  // --- Arrange marquee (rubber-band) selection ---------------------------
+  // --- Arrange marquee (rubber-band) selection, active section only -------
   const handleViewportPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!arrange || draggingRef.current || event.button !== 0) {
@@ -716,12 +765,14 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       if (moved < 4) {
         // Blank click: plain clears the selection, additive keeps it.
         if (!state.additive) {
-          applySelection(new Set());
+          applySelection(EMPTY_SELECTION);
         }
         return;
       }
-      const grid = menuAreaRef.current?.querySelector(".vela-desktop__viewport");
-      if (grid === null) {
+      const viewport = menuAreaRef.current?.querySelector(
+        '[data-active-section="true"] .vela-desktop__viewport'
+      );
+      if (viewport === null) {
         return;
       }
       const marqueeRect = normalizeSelectionRect(
@@ -734,7 +785,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         },
       );
       const items = Array.from(
-        (grid as HTMLElement).querySelectorAll<HTMLElement>("[data-item-id]"),
+        (viewport as HTMLElement).querySelectorAll<HTMLElement>("[data-item-id]"),
       ).map((element) => {
         const rect = element.getBoundingClientRect();
         return { id: element.dataset.itemId ?? "", rect };
@@ -751,63 +802,146 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     [marquee]
   );
 
+  // --- Context menu surface ----------------------------------------------
+  // While anything modal/drag-ish is up, the real section stack must not
+  // scroll (native CSS lock — no wheel parsing anywhere).
+  const scrollLocked =
+    dragging ||
+    handoffLock ||
+    settingsOpen ||
+    launcherOpen ||
+    dialog !== null ||
+    contextMenu !== null ||
+    overlayFolderId !== null;
+
   function openContextMenu(target: ContextMenuTarget) {
-    setContextMenu(buildContextMenuState(target, t));
-  }
-
-  function buildContextMenuState(target: ContextMenuTarget, t: TranslateFn): ContextMenuState {
     if (target.kind === "desktop") {
-      return {
-        x: target.x,
-        y: target.y,
-        actions: [
-          {
-            id: "add-app",
-            label: t("menu.addApp"),
-            onSelect: () => openDialog({ kind: "add-app", destination: pageDestination() }),
-          },
-          {
-            id: "new-folder",
-            label: t("menu.newFolder"),
-            onSelect: () => openDialog({ kind: "new-folder" }),
-          },
-          {
-            id: "toggle-mode",
-            label: arrange ? t("menu.switchToView") : t("menu.switchToArrange"),
-            onSelect: () => switchMode(arrange ? "view" : "arrange"),
-          },
-        ],
-      };
+      openDesktopCommandMenu(target.x, target.y);
+      return;
     }
-
-    const entity = snapshot.entities.find((candidate) => candidate.id === target.entityId);
-    if (entity === undefined) {
-      return { x: target.x, y: target.y, actions: [] };
+    if (target.kind === "section") {
+      openSectionMenu(target.pageId, target.x, target.y);
+      return;
     }
-    return {
-      x: target.x,
-      y: target.y,
-      actions: buildEntityMenuActions(entity, target.source, {
-        t,
-        snapshot,
-        activePageId: activePage?.id ?? null,
-        onOpenApp: (app) => launchApp(app),
-        onOpenFolder: (folderId) => openFolderOverlay(folderId),
-        onEditApp: (appId) => openDialog({ kind: "edit-app", entityId: appId }),
-        onDeleteApp: (appId) => openDialog({ kind: "delete-app", entityId: appId }),
-        onMoveToFolder: (appId, currentFolderId) =>
-          openDialog({ kind: "move-to-folder", appId, currentFolderId }),
-        onMoveToDesktop: (appId) => void moveToDesktop(appId),
-        onPin: (entityId) => void runDockEdit((input) => pinEntityToDock(input, entityId)),
-        onUnpin: (entityId) => void runDockEdit((input) => unpinEntityFromDock(input, entityId)),
-        onRenameFolder: (folderId) => openDialog({ kind: "rename-folder", folderId }),
-        onDeleteFolder: (folderId) => openDialog({ kind: "delete-folder", folderId }),
-      }),
-    };
+    openEntityMenu(target.entityId, target.x, target.y);
   }
 
-  function pageDestination(): AddAppDestination {
-    return { kind: "page", pageId: activePage?.id ?? snapshot.pages[0]?.id ?? "page" };
+  function openDesktopCommandMenu(x: number, y: number) {
+    const currentPageId = pageIdRef.current;
+    const historyUsable =
+      currentPageId !== null &&
+      !draggingRef.current &&
+      pendingHandoffRef.current === null;
+    setContextMenu({
+      x,
+      y,
+      entries: buildDesktopCommandEntries({
+        t,
+        arrange,
+        canUndo:
+          historyUsable && currentPageId !== null && canUndo(arrangeHistoriesRef.current, currentPageId),
+        canRedo:
+          historyUsable && currentPageId !== null && canRedo(arrangeHistoriesRef.current, currentPageId),
+        syncState: workspace.syncState,
+        callbacks: {
+          onAddApp: () => openDialog({ kind: "add-app", pageId: pageDestination() }),
+          onNewSection: () => openDialog({ kind: "new-section" }),
+          onSearch: () => setLauncherOpen(true),
+          onToggleMode: () => switchMode(arrange ? "view" : "arrange"),
+          onUndo: () => {
+            if (pageIdRef.current !== null) {
+              applyHistoryStep(pageIdRef.current, "undo");
+            }
+          },
+          onRedo: () => {
+            if (pageIdRef.current !== null) {
+              applyHistoryStep(pageIdRef.current, "redo");
+            }
+          },
+          onSync: () => void runtime.syncCurrent(),
+          onRefresh: () => void runtime.pullCurrent(),
+          onOpenSettings: openSettings,
+          onToggleLocale: () => setLocale(locale === "zh-CN" ? "en-US" : "zh-CN"),
+        },
+      }),
+    });
+  }
+
+  function openEntityMenu(entityId: EntityId, x: number, y: number) {
+    const entity = snapshot.entities.find((candidate) => candidate.id === entityId);
+    if (entity === undefined) {
+      setContextMenu({ x, y, entries: [] });
+      return;
+    }
+    const pinned = snapshot.dock.items.includes(entity.id);
+    let entries: readonly DesktopMenuEntry[];
+    if (entity.kind === "app") {
+      entries = buildAppMenuEntries({
+        t,
+        pinned,
+        callbacks: {
+          onOpen: () => launchApp(entity),
+          onEdit: () => openDialog({ kind: "edit-app", entityId: entity.id }),
+          onMoveToSection: () => openDialog({ kind: "move-to-section", appId: entity.id }),
+          onPinToggle: () =>
+            void runDockEdit((input) =>
+              pinned ? unpinEntityFromDock(input, entity.id) : pinEntityToDock(input, entity.id)
+            ),
+          onDelete: () => openDialog({ kind: "delete-app", entityId: entity.id }),
+        },
+      });
+    } else if (entity.kind === "folder") {
+      entries = buildFolderMenuEntries({
+        t,
+        pinned,
+        callbacks: {
+          onOpen: () => openFolderOverlay(entity.id),
+          onRename: () => openDialog({ kind: "rename-folder", folderId: entity.id }),
+          onPinToggle: () =>
+            void runDockEdit((input) =>
+              pinned ? unpinEntityFromDock(input, entity.id) : pinEntityToDock(input, entity.id)
+            ),
+          onDissolve: () => openDialog({ kind: "delete-folder", folderId: entity.id }),
+        },
+      });
+    } else {
+      // Widgets are not editable in this stage — one quiet row.
+      entries = [
+        { kind: "action", id: "widget-later", label: t("menu.widgetLater"), disabled: true, onSelect: () => {} },
+      ];
+    }
+    setContextMenu({ x, y, entries });
+  }
+
+  function openSectionMenu(pageId: DesktopPageId, x: number, y: number) {
+    const page = findDesktopPage(snapshot, pageId);
+    if (page === undefined) {
+      return;
+    }
+    const index = snapshot.pages.findIndex((candidate) => candidate.id === pageId);
+    setContextMenu({
+      x,
+      y,
+      entries: buildSectionMenuEntries({
+        t,
+        isDefault: pageId === snapshot.preferences.defaultPageId,
+        isFirst: index === 0,
+        isLast: index === snapshot.pages.length - 1,
+        isEmpty: page.layout.items.length === 0,
+        callbacks: {
+          onRename: () => openDialog({ kind: "rename-section", pageId }),
+          onSetDefault: () =>
+            void runSectionEdit(setDefaultPage(snapshot, pageId), null),
+          onMoveUp: () => void runSectionEdit(movePage(snapshot, pageId, "up"), pageId),
+          onMoveDown: () => void runSectionEdit(movePage(snapshot, pageId, "down"), pageId),
+          onDelete: () => openDialog({ kind: "delete-section", pageId }),
+        },
+      }),
+    });
+  }
+
+  function pageDestination(): DesktopPageId {
+    return activePageId ?? snapshot.pages[0]?.id ?? "page";
   }
 
   function openDialog(next: HomeDialog) {
@@ -823,7 +957,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   /**
    * Launcher activation orchestration: entries are pure data, the shell
    * resolves them against the live snapshot (a stale entry can no longer
-   * launch) and reuses the existing open/launch/switch flows.
+   * launch). Section results scroll the REAL stack — never a direct
+   * active-state write.
    */
   function activateLauncherEntry(entry: LauncherEntry) {
     setLauncherOpen(false);
@@ -842,7 +977,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         openFolderOverlay(entry.entityId);
         return;
       case "page":
-        switchToPage(entry.pageId);
+        scrollToSection(entry.pageId);
         return;
       case "command":
         activateLauncherCommand(entry.commandId);
@@ -853,10 +988,10 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   function activateLauncherCommand(commandId: LauncherCommandId) {
     switch (commandId) {
       case "add-app":
-        openDialog({ kind: "add-app", destination: pageDestination() });
+        openDialog({ kind: "add-app", pageId: pageDestination() });
         return;
-      case "new-folder":
-        openDialog({ kind: "new-folder" });
+      case "new-section":
+        openDialog({ kind: "new-section" });
         return;
       case "open-settings":
         openSettings();
@@ -890,26 +1025,49 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     }
   }
 
-  async function moveToDesktop(appId: EntityId) {
-    const pageId = activePage?.id;
-    if (pageId === undefined) {
+  /** Runs a section-structure edit and stages it; reveal kept on `pageId`. */
+  async function runSectionEdit(
+    result: ReturnType<typeof movePage>,
+    revealPageId: DesktopPageId | null
+  ) {
+    if (!result.ok) {
+      console.error(`VelaDesk: section edit refused (${result.reason})`);
       return;
     }
-    const result = moveAppToPage(snapshot, appId, pageId);
+    const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
+    if (!staged.ok) {
+      console.error(`VelaDesk: section edit was not staged (${staged.reason})`);
+      return;
+    }
+    if (revealPageId !== null) {
+      // The DOM order changed; the very next commit scrolls back to the
+      // SAME section so the user never sees a neighbor flash by.
+      pendingRevealRef.current = revealPageId;
+    }
+  }
+
+  async function handleDeleteSection(pageId: DesktopPageId) {
+    // Decide the surviving neighbor BEFORE the deletion so the scroll can
+    // never land on an index that no longer exists.
+    const neighbor = resolveSectionAfterDelete(pageIds, pageId);
+    const result = deleteEmptyPage(snapshot, pageId);
     if (!result.ok) {
-      setFolderActionError(
-        result.reason === "no-space"
-          ? t("shell.error.moveOutOfFolderNoSpace")
-          : t("shell.error.moveToDesktopFailed")
+      setDialogError(
+        result.reason === "page-not-found"
+          ? t("dialog.deleteSection.error.sectionGone")
+          : t("dialog.deleteSection.error.failed")
       );
       return;
     }
     const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
     if (!staged.ok) {
-      setFolderActionError(t("shell.error.moveToDesktopFailed"));
+      setDialogError(t("dialog.deleteSection.error.failed"));
       return;
     }
-    setFolderActionError(null);
+    closeDialog();
+    if (neighbor !== null) {
+      pendingRevealRef.current = neighbor;
+    }
   }
 
   async function handleDeleteApp(appId: EntityId) {
@@ -926,9 +1084,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     closeDialog();
   }
 
-  async function handleDeleteFolder(folderId: EntityId) {
-    const pageId = activePage?.id;
-    if (pageId === undefined) {
+  async function handleDissolveFolder(folderId: EntityId) {
+    const pageId = activePageId;
+    if (pageId === null) {
       setDialogError(t("dialog.deleteFolder.error.noActivePage"));
       return;
     }
@@ -952,8 +1110,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     closeDialog();
   }
 
-  // Keyboard: undo/redo, select all, Escape selection clear, arrow nudge
-  // (taking priority over page switching while a selection exists).
+  // Keyboard: undo/redo, select all, launcher chord, Escape selection
+  // clear, arrow nudge, then — lowest priority — real-scroll section nav.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target;
@@ -975,7 +1133,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         // session selection.
         if (!surfaceOpen && arrange && selectionRef.current.size > 0) {
           event.preventDefault();
-          applySelection(new Set());
+          applySelection(EMPTY_SELECTION);
         }
         return;
       }
@@ -1049,10 +1207,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         event.key === "ArrowRight" ||
         event.key === "ArrowUp" ||
         event.key === "ArrowDown";
-      if (!isArrow) {
-        return;
-      }
       if (
+        isArrow &&
         arrange &&
         !surfaceOpen &&
         !draggingRef.current &&
@@ -1072,40 +1228,59 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         return;
       }
 
-      // Page switching — Left/Right only, never while dragging or while a
-      // handoff is in flight, and never while a selection owns the arrows.
+      // Section keyboard navigation — the LOWEST priority: only when no
+      // input owns the event, no surface is open, nothing drags, and the
+      // arrange selection does not own the arrows. Scrolls the REAL stack;
+      // no wrap at either end.
       if (dragging || surfaceOpen || pendingHandoffRef.current !== null) {
         return;
       }
       if (arrange && selectionRef.current.size > 0) {
         return;
       }
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      const sectionKey = sectionNavDirection(event.key);
+      if (sectionKey === null) {
         return;
       }
       const pages = workspaceRef.current.snapshot.pages;
-      if (pages.length < 2) {
-        return;
-      }
       const currentId = pageIdRef.current;
-      const index = pages.findIndex((page) => page.id === currentId);
-      if (index < 0) {
+      if (pages.length < 2 || currentId === null) {
         return;
       }
-      const nextIndex =
-        event.key === "ArrowLeft"
-          ? Math.max(0, index - 1)
-          : Math.min(pages.length - 1, index + 1);
-      if (nextIndex !== index) {
+      const neighborId =
+        sectionKey === "prev"
+          ? previousSectionId(pages.map((page) => page.id), currentId)
+          : nextSectionId(pages.map((page) => page.id), currentId);
+      if (neighborId !== null) {
         event.preventDefault();
-        switchToPage(pages[nextIndex]!.id);
+        scrollToSection(neighborId);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [arrange, contextMenu, dialog, overlayFolderId, launcherOpen, settingsOpen, dragging, activePage, nudgeSelection, applyHistoryStep, switchToPage]);
+  }, [arrange, contextMenu, dialog, overlayFolderId, launcherOpen, settingsOpen, dragging, activePage, nudgeSelection, applyHistoryStep, scrollToSection]);
 
-  if (activePage === undefined) {
+  /**
+   * Empty-desktop right-click → the VelaDesk command menu. Text fields and
+   * anything opted in via data-vd-native-context-menu keep the BROWSER
+   * menu (copy/paste/spellcheck) — there is no global suppressor.
+   */
+  function handleAreaContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT" ||
+      target.isContentEditable ||
+      target.closest("[data-vd-native-context-menu='true']") !== null
+    ) {
+      return;
+    }
+    event.preventDefault();
+    openDesktopCommandMenu(event.clientX, event.clientY);
+  }
+
+  if (activePage === undefined && pageIds.length === 0) {
     // Invariant violation (a workspace always has pages) — stay calm, stay
     // inspectable, never crash the tab.
     return (
@@ -1134,123 +1309,15 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         )
       : undefined;
 
-  function handleTopbarCreate(event: ReactMouseEvent<HTMLButtonElement>) {
-    const anchor = contextMenuAnchorFromElement(event.currentTarget);
-    openContextMenu({
-      kind: "desktop",
-      x: anchor.x,
-      y: anchor.y,
-    });
-  }
-
-  function handleTopbarCreateKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
-    if (!isContextMenuKeyEvent(event)) {
-      return;
-    }
-    event.preventDefault();
-    const anchor = contextMenuAnchorFromElement(event.currentTarget);
-    openContextMenu({ kind: "desktop", x: anchor.x, y: anchor.y });
-  }
-
   return (
     <div
       className="vela-desktop"
       data-arrange={arrange ? "true" : "false"}
       data-vd-color-mode={theme.colorMode}
       data-vd-wallpaper={theme.wallpaperPreset}
+      data-has-dock={hasDock ? "true" : "false"}
       style={theme.style as CSSProperties}
     >
-      <header className="vela-topbar">
-        <span className="vela-topbar__brand">VelaDesk</span>
-        <span className="vela-topbar__workspace">{snapshot.name}</span>
-        <span className="vela-topbar__spacer" />
-        {arrange ? (
-          <span className="vela-topbar__arrange-cluster">
-            <button
-              type="button"
-              className="vela-button vela-topbar__history-button"
-              title={t("topbar.undoTitle")}
-              aria-label={t("topbar.undoArrange")}
-              disabled={dragging || handoffLock || !canUndo(arrangeHistories, activePage.id)}
-              onClick={() => applyHistoryStep(activePage.id, "undo")}
-            >
-              ⟲
-            </button>
-            <button
-              type="button"
-              className="vela-button vela-topbar__history-button"
-              title={t("topbar.redoTitle")}
-              aria-label={t("topbar.redoArrange")}
-              disabled={dragging || handoffLock || !canRedo(arrangeHistories, activePage.id)}
-              onClick={() => applyHistoryStep(activePage.id, "redo")}
-            >
-              ⟳
-            </button>
-            {selectedItemIds.size > 0 ? (
-              <>
-                <span className="vela-topbar__selection-count" aria-live="polite">
-                  {t("topbar.selectionCount", { count: selectedItemIds.size })}
-                </span>
-                <button
-                  type="button"
-                  className="vela-button"
-                  aria-label={t("topbar.clearSelection")}
-                  onClick={() => applySelection(new Set())}
-                >
-                  {t("topbar.clearSelection")}
-                </button>
-              </>
-            ) : null}
-          </span>
-        ) : null}
-        <SyncIndicator workspace={workspace} lastRemoteResult={lastRemoteResult} />
-        <button
-          type="button"
-          className="vela-button vela-topbar__search"
-          title={t("topbar.searchTitle")}
-          onClick={() => setLauncherOpen(true)}
-        >
-          {t("topbar.search")} <kbd className="vela-topbar__kbd">⌘K</kbd>
-        </button>
-        <button
-          type="button"
-          className="vela-button vela-topbar__settings"
-          onClick={openSettings}
-        >
-          {t("topbar.settings")}
-        </button>
-        <button
-          type="button"
-          className="vela-button vela-topbar__add"
-          aria-haspopup="menu"
-          onClick={handleTopbarCreate}
-          onKeyDown={handleTopbarCreateKeyDown}
-        >
-          {t("topbar.add")}
-        </button>
-        <LocaleSwitch />
-        <div className="vela-segment" role="group" aria-label={t("mode.desktopModeLabel")}>
-          <button
-            type="button"
-            className="vela-segment__button"
-            aria-pressed={!arrange}
-            disabled={dragging || handoffLock}
-            onClick={() => switchMode("view")}
-          >
-            {t("mode.view")}
-          </button>
-          <button
-            type="button"
-            className="vela-segment__button"
-            aria-pressed={arrange}
-            disabled={dragging || handoffLock}
-            onClick={() => switchMode("arrange")}
-          >
-            {t("mode.arrange")}
-          </button>
-        </div>
-      </header>
-
       <DragDropProvider
         onDragStart={wrappedHandleDragStart}
         onDragMove={handleDragMove}
@@ -1260,30 +1327,53 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         <div className="vela-desktop__menu-area" ref={menuAreaRef}>
           <div
             className="vela-desktop__area-shell"
-            onContextMenu={(event) => {
-              // Only reached when no entity handled the event (entities stop
-              // propagation).
-              event.preventDefault();
-              openContextMenu({ kind: "desktop", x: event.clientX, y: event.clientY });
-            }}
+            onContextMenu={handleAreaContextMenu}
           >
-            <DesktopGridView
-              layout={displayLayout ?? activePage.layout}
-              dragEnabled={!handoffLock}
-              workspace={snapshot}
-              arrange={arrange}
-              metrics={metrics}
-              gridRef={gridRef}
-              selectedIds={selectedItemIds}
-              onItemSelect={handleItemSelect}
-              onEntityContextMenu={(entityId, x, y) =>
-                openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })
-              }
-              onOpenFolder={(folderId) => openFolderOverlay(folderId)}
-              onViewportPointerDown={handleViewportPointerDown}
-              onViewportPointerMove={handleViewportPointerMove}
-              onViewportPointerUp={handleViewportPointerUp}
-            />
+            {/*
+              The one real scroll container: native CSS scroll-snap paging,
+              no wheel listeners, no JS physics. While a modal or a drag is
+              up, data-scroll-locked freezes it without changing scrollTop.
+            */}
+            <div
+              className="vela-section-stack"
+              ref={navigation.stackRef}
+              data-scroll-locked={scrollLocked ? "true" : undefined}
+            >
+              {pages.map((page) => {
+                const isActive = page.id === activePageId;
+                return (
+                  <section
+                    key={page.id}
+                    ref={navigation.registerSection(page.id)}
+                    data-page-id={page.id}
+                    data-active-section={isActive ? "true" : undefined}
+                    className="vela-section"
+                  >
+                    <DesktopGridView
+                      layout={isActive && displayLayout !== null ? displayLayout : page.layout}
+                      workspace={snapshot}
+                      arrange={arrange && isActive}
+                      dragEnabled={arrange && isActive && !handoffLock}
+                      metrics={isActive ? metrics : null}
+                      gridRef={isActive ? gridRef : undefined}
+                      selectedIds={isActive ? selectedItemIds : EMPTY_SELECTION}
+                      onItemSelect={handleItemSelect}
+                      onEntityContextMenu={(entityId, x, y) =>
+                        openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })
+                      }
+                      onOpenFolder={(folderId) => openFolderOverlay(folderId)}
+                      onViewportPointerDown={
+                        isActive ? handleViewportPointerDown : undefined
+                      }
+                      onViewportPointerMove={
+                        isActive ? handleViewportPointerMove : undefined
+                      }
+                      onViewportPointerUp={isActive ? handleViewportPointerUp : undefined}
+                    />
+                  </section>
+                );
+              })}
+            </div>
           </div>
         </div>
       </DragDropProvider>
@@ -1300,33 +1390,22 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         />
       ) : null}
 
-      {pages.length > 1 ? (
-        <div className="vela-pages" role="group" aria-label={t("launcher.kind.page")}>
-          {pages.map((page) => (
-            <button
-              key={page.id}
-              type="button"
-              className="vela-pages__dot"
-              data-active={page.id === activePage.id ? "true" : undefined}
-              aria-label={page.name}
-              title={page.name}
-              disabled={dragging || handoffLock}
-              onClick={() => switchToPage(page.id)}
-            />
-          ))}
-        </div>
-      ) : null}
+      <SectionNavigation
+        pages={pages}
+        activePageId={activePageId}
+        onSelectSection={scrollToSection}
+        onSectionContextMenu={(pageId, x, y) => openContextMenu({ kind: "section", pageId, x, y })}
+        onOpenCommandMenu={(x, y) => openContextMenu({ kind: "desktop", x, y })}
+        footer={<SectionSyncStatus workspace={workspace} lastRemoteResult={lastRemoteResult} />}
+      />
 
       <Dock
         workspace={snapshot}
-        arrange={arrange}
-        dragging={dragging}
-        onToggleMode={() => switchMode(arrange ? "view" : "arrange")}
-        onCreateMenu={(x, y) => openContextMenu({ kind: "desktop", x, y })}
         onOpenFolder={(folderId) => openFolderOverlay(folderId)}
         onEntityContextMenu={(entityId, x, y) =>
           openContextMenu({ kind: "entity", entityId, source: "dock", x, y })
         }
+        onDesktopContextMenu={(x, y) => openContextMenu({ kind: "desktop", x, y })}
       />
 
       {overlayFolder !== undefined ? (
@@ -1335,12 +1414,6 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           workspace={snapshot}
           error={folderActionError ?? undefined}
           onClose={closeFolderOverlay}
-          onAddApp={() =>
-            openDialog({
-              kind: "add-app",
-              destination: { kind: "folder", folderId: overlayFolder.id },
-            })
-          }
           onLaunchApp={launchApp}
           onChildContextMenu={(entityId, x, y) =>
             openContextMenu({ kind: "entity", entityId, source: "folder", x, y })
@@ -1351,7 +1424,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       {dialog !== null && dialog.kind === "add-app" ? (
         <AddAppDialog
           workspace={snapshot}
-          destination={dialog.destination}
+          destination={{ kind: "page", pageId: dialog.pageId }}
           onClose={closeDialog}
         />
       ) : null}
@@ -1371,26 +1444,44 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           onCancel={closeDialog}
         />
       ) : null}
-      {dialog !== null && dialog.kind === "new-folder" ? (
-        <FolderDialog
+      {dialog !== null && (dialog.kind === "new-section" || dialog.kind === "rename-section") ? (
+        <SectionDialog
           workspace={snapshot}
-          pageId={activePage.id}
+          gridSourcePage={activePage ?? pages[0]!}
+          section={
+            dialog.kind === "rename-section"
+              ? findDesktopPage(snapshot, dialog.pageId)
+              : undefined
+          }
+          onCreated={(pageId) => {
+            pendingRevealRef.current = pageId;
+          }}
+          onClose={closeDialog}
+        />
+      ) : null}
+      {dialog !== null && dialog.kind === "delete-section" ? (
+        <ConfirmDialog
+          title={t("dialog.deleteSection.title")}
+          message={t("dialog.deleteSection.message")}
+          confirmLabel={t("dialog.deleteSection.confirm")}
+          error={dialogError}
+          onConfirm={() => void handleDeleteSection(dialog.pageId)}
+          onCancel={closeDialog}
+        />
+      ) : null}
+      {dialog !== null && dialog.kind === "move-to-section" ? (
+        <MoveToSectionDialog
+          workspace={snapshot}
+          appId={dialog.appId}
+          currentPageId={containerPageId(snapshot, dialog.appId)}
           onClose={closeDialog}
         />
       ) : null}
       {dialog !== null && dialog.kind === "rename-folder" ? (
         <FolderDialog
           workspace={snapshot}
-          pageId={activePage.id}
+          pageId={activePageId ?? pages[0]!.id}
           folder={findFolderEntity(snapshot, dialog.folderId)}
-          onClose={closeDialog}
-        />
-      ) : null}
-      {dialog !== null && dialog.kind === "move-to-folder" ? (
-        <MoveToFolderDialog
-          workspace={snapshot}
-          appId={dialog.appId}
-          currentFolderId={dialog.currentFolderId}
           onClose={closeDialog}
         />
       ) : null}
@@ -1400,7 +1491,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           message={t("dialog.deleteFolder.message")}
           confirmLabel={t("dialog.deleteFolder.confirm")}
           error={dialogError}
-          onConfirm={() => void handleDeleteFolder(dialog.folderId)}
+          onConfirm={() => void handleDissolveFolder(dialog.folderId)}
           onCancel={closeDialog}
         />
       ) : null}
@@ -1453,6 +1544,17 @@ function findFolderEntity(
   return entity !== undefined && entity.kind === "folder" ? entity : undefined;
 }
 
+/** The page whose layout currently holds this entity, when any. */
+function containerPageId(
+  workspace: WorkspaceSnapshot,
+  entityId: EntityId
+): DesktopPageId | null {
+  const page = workspace.pages.find((candidate) =>
+    candidate.layout.items.some((item) => item.id === entityId)
+  );
+  return page?.id ?? null;
+}
+
 function DeleteAppConfirm({
   workspace,
   appId,
@@ -1479,122 +1581,5 @@ function DeleteAppConfirm({
       onConfirm={onConfirm}
       onCancel={onCancel}
     />
-  );
-}
-
-interface EntityMenuCallbacks {
-  readonly t: TranslateFn;
-  readonly snapshot: WorkspaceSnapshot;
-  readonly activePageId: DesktopPageId | null;
-  readonly onOpenApp: (app: AppShortcut) => void;
-  readonly onOpenFolder: (folderId: EntityId) => void;
-  readonly onEditApp: (appId: EntityId) => void;
-  readonly onDeleteApp: (appId: EntityId) => void;
-  readonly onMoveToFolder: (appId: EntityId, currentFolderId: EntityId | null) => void;
-  readonly onMoveToDesktop: (appId: EntityId) => void;
-  readonly onPin: (entityId: EntityId) => void;
-  readonly onUnpin: (entityId: EntityId) => void;
-  readonly onRenameFolder: (folderId: EntityId) => void;
-  readonly onDeleteFolder: (folderId: EntityId) => void;
-}
-
-/**
- * Builds the context-menu actions for one entity.
- *
- * Apps: Open / Edit / Move to Folder… / pin toggle / Delete (+ Move to
- * Desktop inside folders). Folders: Open / Rename / pin toggle / Delete.
- * Open always works in both modes; Move to Folder lists reachable folders
- * only (placed or dock-pinned, excluding the current one). With several
- * items selected the menu still targets only the right-clicked entity.
- */
-function buildEntityMenuActions(
-  entity: WorkspaceEntity,
-  source: "desktop" | "dock" | "folder",
-  callbacks: EntityMenuCallbacks
-): readonly ContextMenuAction[] {
-  const { t, snapshot } = callbacks;
-  const pinned = snapshot.dock.items.includes(entity.id);
-  const pinAction: ContextMenuAction = pinned
-    ? { id: "unpin", label: t("menu.removeFromDock"), onSelect: () => callbacks.onUnpin(entity.id) }
-    : { id: "pin", label: t("menu.pinToDock"), onSelect: () => callbacks.onPin(entity.id) };
-
-  if (entity.kind === "app") {
-    const eligible = eligibleFoldersForMove(
-      snapshot,
-      source === "folder" ? containerFolderId(snapshot, entity.id) : null
-    );
-    const actions: ContextMenuAction[] = [
-      { id: "open", label: t("menu.open"), onSelect: () => callbacks.onOpenApp(entity) },
-      { id: "edit", label: t("menu.edit"), onSelect: () => callbacks.onEditApp(entity.id) },
-    ];
-    if (source === "folder") {
-      actions.push({
-        id: "move-to-desktop",
-        label: t("menu.moveToDesktop"),
-        disabled: callbacks.activePageId === null,
-        onSelect: () => callbacks.onMoveToDesktop(entity.id),
-      });
-    }
-    actions.push({
-      id: "move-to-folder",
-      label: t("menu.moveToFolder"),
-      disabled: eligible.length === 0,
-      onSelect: () =>
-        callbacks.onMoveToFolder(
-          entity.id,
-          source === "folder" ? containerFolderId(snapshot, entity.id) : null
-        ),
-    });
-    actions.push(pinAction);
-    actions.push({
-      id: "delete",
-      label: t("menu.delete"),
-      onSelect: () => callbacks.onDeleteApp(entity.id),
-    });
-    return actions;
-  }
-
-  if (entity.kind === "folder") {
-    return [
-      { id: "open", label: t("menu.open"), onSelect: () => callbacks.onOpenFolder(entity.id) },
-      { id: "rename", label: t("menu.rename"), onSelect: () => callbacks.onRenameFolder(entity.id) },
-      pinAction,
-      {
-        id: "delete-folder",
-        label: t("menu.deleteFolder"),
-        onSelect: () => callbacks.onDeleteFolder(entity.id),
-      },
-    ];
-  }
-
-  // Widgets are not editable in this stage — no menu actions.
-  return [
-    { id: "widget-later", label: t("menu.widgetLater"), disabled: true, onSelect: () => {} },
-  ];
-}
-
-function containerFolderId(workspace: WorkspaceSnapshot, appId: EntityId): EntityId | null {
-  const folder = workspace.entities.find(
-    (entity): entity is Folder => entity.kind === "folder" && entity.children.includes(appId)
-  );
-  return folder?.id ?? null;
-}
-
-/**
- * The session's active page. Session choice first; otherwise the workspace
- * default; otherwise the first page. `undefined` means the workspace holds
- * no pages at all (invariant violation — rendered as a calm recovery state).
- */
-function resolveActivePage(
-  workspace: WorkspaceSnapshot,
-  sessionPageId: DesktopPageId | null
-): DesktopPage | undefined {
-  const session =
-    sessionPageId !== null ? findDesktopPage(workspace, sessionPageId) : undefined;
-  if (session !== undefined) {
-    return session;
-  }
-  return (
-    findDesktopPage(workspace, workspace.preferences.defaultPageId) ?? workspace.pages[0]
   );
 }
