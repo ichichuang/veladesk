@@ -5,7 +5,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent
 import type { AppShortcut, EntityId, Folder, WorkspaceSnapshot } from "@veladesk/domain";
 
 import { useI18n } from "../i18n/use-i18n";
-import { generatedIconText } from "./generated-icon";
+import { AppIconTile } from "./app-icon-renderer";
 import {
   contextMenuAnchorFromElement,
   isContextMenuKeyEvent,
@@ -129,9 +129,7 @@ export function FolderOverlay({
                 onContextMenu={(event) => childContextMenu(event, childId)}
                 onKeyDown={(event) => childKeyDown(event, childId)}
               >
-                <span className="vela-item__icon" aria-hidden="true">
-                  {generatedIconText(entity.name)}
-                </span>
+                <AppIconTile app={entity} />
                 <span className="vela-item__label">{entity.name}</span>
               </button>
             );

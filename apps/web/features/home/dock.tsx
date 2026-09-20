@@ -10,6 +10,7 @@ import {
   contextMenuAnchorFromElement,
   isContextMenuKeyEvent,
 } from "./context-menu";
+import { appIconDecorationProps, AppIconGlyph } from "./app-icon-renderer";
 import { generatedIconText } from "./generated-icon";
 import { launchApp } from "./launch-app";
 import "./home-shell.css";
@@ -78,8 +79,9 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
             onClick={() => launchApp(entity)}
             onContextMenu={(event) => handleEntityContextMenu(event, entity.id)}
             onKeyDown={(event) => handleEntityKeyDown(event, entity.id)}
+            {...appIconDecorationProps(entity)}
           >
-            {generatedIconText(entity.name)}
+            <AppIconGlyph app={entity} />
           </button>
         ) : (
           <button
@@ -93,7 +95,7 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
             onContextMenu={(event) => handleEntityContextMenu(event, entity.id)}
             onKeyDown={(event) => handleEntityKeyDown(event, entity.id)}
           >
-            {generatedIconText(entity.name)}
+            <span className="vela-app-icon__text">{generatedIconText(entity.name)}</span>
           </button>
         )
       )}

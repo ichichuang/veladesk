@@ -955,6 +955,109 @@ button.vela-section-nav__sync:focus-visible {
   text-overflow: ellipsis;
 }
 
+/* --- App icon renderer (016-A) ------------------------------------------
+   One decoration model for every app icon: the desktop tile (.vela-app-icon
+   on .vela-item__icon) and the dock button (which IS the tile) both key off
+   the same data-decoration attribute and the same inline vars:
+   --vd-app-icon-scale (visual multiplier, never a layout size),
+   --vd-app-icon-bg (only set for a custom decoration color; the fallback
+   inside var() IS the "Auto" look), --vd-app-icon-fg (only set for a
+   custom foreground color). All var values are composed in app-icon.ts
+   from validated #RRGGBB — user strings never reach CSS raw. */
+
+.vela-app-icon {
+  /* Visual icon box = global base size × per-app scale. Overflowing the
+     1×1 slot at 160% is intended (visual size, not layout size). */
+  width: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1));
+  height: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1));
+  border-radius: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1) * 0.26);
+  font-size: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1) * 0.34);
+  color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
+}
+
+.vela-app-icon[data-decoration="gradient"] {
+  /* Auto = the pre-016 default tile, byte-for-byte. */
+  background: var(--vd-app-icon-bg, linear-gradient(150deg, oklch(0.52 0.09 250 / 0.9), oklch(0.38 0.07 300 / 0.9)));
+  box-shadow:
+    0 10px 26px oklch(0 0 0 / 0.35),
+    inset 0 1px 0 oklch(0.95 0.02 260 / 0.22);
+}
+
+.vela-app-icon[data-decoration="solid"] {
+  background: var(--vd-app-icon-bg, oklch(0.45 0.08 275 / 0.92));
+  box-shadow:
+    0 10px 26px oklch(0 0 0 / 0.35),
+    inset 0 1px 0 oklch(0.95 0.02 260 / 0.22);
+}
+
+.vela-app-icon[data-decoration="glass"] {
+  background: var(--vd-app-icon-bg, oklch(0.62 0.02 264 / 0.34));
+  border: 1px solid var(--vd-border);
+  backdrop-filter: blur(var(--vd-blur));
+  -webkit-backdrop-filter: blur(var(--vd-blur));
+  box-shadow: 0 8px 22px oklch(0 0 0 / 0.22);
+}
+
+.vela-app-icon[data-decoration="none"] {
+  background: transparent;
+  box-shadow: none;
+  color: var(--vd-app-icon-fg, var(--vd-text));
+}
+
+/* Library glyph: self-hosted SVG through a CSS mask, tinted via the
+   background color (= currentColor → follows --vd-app-icon-fg). */
+.vela-app-icon__glyph {
+  display: block;
+  width: 62%;
+  height: 62%;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.vela-app-icon__text {
+  line-height: 1;
+}
+
+/* Dock: the button itself is the tile — same decoration contract, dock-
+   tuned Auto fallbacks that reproduce the pre-016 dock look. */
+.vela-dock__item[data-decoration="gradient"] {
+  background: var(--vd-app-icon-bg, linear-gradient(150deg, oklch(0.5 0.08 250 / 0.85), oklch(0.36 0.06 300 / 0.85)));
+  color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
+  font-size: calc(15px * var(--vd-app-icon-scale, 1));
+}
+
+.vela-dock__item[data-decoration="solid"] {
+  background: var(--vd-app-icon-bg, oklch(0.43 0.07 275 / 0.88));
+  color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
+  font-size: calc(15px * var(--vd-app-icon-scale, 1));
+}
+
+.vela-dock__item[data-decoration="glass"] {
+  background: var(--vd-app-icon-bg, oklch(0.62 0.02 264 / 0.3));
+  backdrop-filter: blur(var(--vd-blur));
+  -webkit-backdrop-filter: blur(var(--vd-blur));
+  color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
+  font-size: calc(15px * var(--vd-app-icon-scale, 1));
+}
+
+.vela-dock__item[data-decoration="none"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--vd-app-icon-fg, var(--vd-text));
+  font-size: calc(15px * var(--vd-app-icon-scale, 1));
+}
+
+.vela-dock__item .vela-app-icon__glyph {
+  width: 24px;
+  height: 24px;
+}
+
 /* The widget is the one entity rendered as a surface. */
 .vela-item--widget {
   justify-content: flex-start;
@@ -1803,4 +1906,229 @@ button.vela-section-nav__sync:focus-visible {
     left: 16px;
     width: 104px;
   }
+}
+
+/* --- Icon catalog picker + visual editor (016-A) --------------------------- */
+
+.vela-visual-editor {
+  width: min(560px, 94vw);
+  max-height: min(84vh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.vela-visual-editor__preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 0 14px;
+  /* A larger preview slot: AppIconTile scales off --vd-slot-icon-size. */
+  --vd-slot-icon-size: 84px;
+}
+
+.vela-visual-editor__preview-name {
+  max-width: 220px;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--vd-text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vela-visual-editor__tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.vela-visual-editor__tab {
+  padding: 6px 12px;
+  border: 1px solid var(--vd-border);
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--vd-font);
+  font-size: 12.5px;
+  color: var(--vd-text-muted);
+  cursor: pointer;
+}
+
+.vela-visual-editor__tab[aria-selected="true"] {
+  background: var(--vd-accent-wash);
+  border-color: var(--vd-accent);
+  color: var(--vd-text);
+}
+
+.vela-visual-editor__tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vela-visual-editor__text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.vela-visual-editor__hint {
+  font-size: 12px;
+  color: var(--vd-text-muted);
+}
+
+.vela-visual-editor__decorations {
+  display: flex;
+  gap: 10px;
+  margin: 6px 0 12px;
+}
+
+.vela-visual-editor__decoration {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--vd-border);
+  border-radius: 12px;
+  background: transparent;
+  font-family: var(--vd-font);
+  font-size: 11.5px;
+  color: var(--vd-text-muted);
+  cursor: pointer;
+}
+
+.vela-visual-editor__decoration[data-selected="true"] {
+  border-color: var(--vd-accent);
+  background: var(--vd-accent-wash);
+  color: var(--vd-text);
+}
+
+.vela-visual-editor__decoration-tile {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: linear-gradient(150deg, oklch(0.52 0.09 250 / 0.9), oklch(0.38 0.07 300 / 0.9));
+  box-shadow: 0 6px 14px oklch(0 0 0 / 0.3);
+}
+
+.vela-visual-editor__decoration-tile[data-style="solid"] {
+  background: oklch(0.45 0.08 275 / 0.92);
+}
+
+.vela-visual-editor__decoration-tile[data-style="glass"] {
+  background: oklch(0.62 0.02 264 / 0.34);
+  border: 1px solid var(--vd-border);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 6px 14px oklch(0 0 0 / 0.2);
+}
+
+.vela-visual-editor__decoration-tile[data-style="none"] {
+  background: transparent;
+  border: 1px dashed var(--vd-border);
+  box-shadow: none;
+}
+
+.vela-visual-editor__color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.vela-visual-editor__auto[data-active="true"] {
+  border-color: var(--vd-accent);
+  background: var(--vd-accent-wash);
+}
+
+.vela-visual-editor__color {
+  width: 44px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--vd-border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Picker -------------------------------------------------------------- */
+
+.vela-icon-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.vela-icon-picker__search {
+  width: 100%;
+}
+
+.vela-icon-picker__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vela-icon-picker__tab {
+  padding: 5px 10px;
+  border: 1px solid var(--vd-border);
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--vd-font);
+  font-size: 12px;
+  color: var(--vd-text-muted);
+  cursor: pointer;
+}
+
+.vela-icon-picker__tab[aria-selected="true"] {
+  background: var(--vd-accent-wash);
+  border-color: var(--vd-accent);
+  color: var(--vd-text);
+}
+
+.vela-icon-picker__note {
+  font-size: 11.5px;
+  color: var(--vd-text-muted);
+}
+
+.vela-icon-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 6px;
+  max-height: 240px;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--vd-border);
+  border-radius: 12px;
+}
+
+.vela-icon-picker__cell {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--vd-text);
+  cursor: pointer;
+}
+
+.vela-icon-picker__cell:hover {
+  background: var(--vd-accent-wash);
+}
+
+.vela-icon-picker__cell[data-selected="true"] {
+  border-color: var(--vd-accent);
+  background: var(--vd-accent-wash);
+}
+
+.vela-icon-picker__preview {
+  display: block;
+  width: 26px;
+  height: 26px;
+  background-color: currentColor;
 }

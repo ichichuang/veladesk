@@ -2,11 +2,11 @@
 
 import { useDraggable } from "@dnd-kit/react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
-import type { AppShortcut, EntityId, WorkspaceEntity, WorkspaceSnapshot } from "@veladesk/domain";
+import type { EntityId, WorkspaceEntity, WorkspaceSnapshot } from "@veladesk/domain";
 import type { LayoutItem } from "@veladesk/desktop-engine";
 
 import { contextMenuAnchorFromElement, isContextMenuKeyEvent } from "./context-menu";
-import { generatedIconText } from "./generated-icon";
+import { AppIconTile } from "./app-icon-renderer";
 import { launchApp } from "./launch-app";
 import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
@@ -171,9 +171,7 @@ function DesktopEntity({
         onKeyDown={handleKeyDown}
         onClick={handleClick}
       >
-        <span className="vela-item__icon" aria-hidden="true">
-          {appIconText(entity)}
-        </span>
+        <AppIconTile app={entity} />
         <span className="vela-item__label">{entity.name}</span>
       </button>
     );
@@ -227,15 +225,6 @@ function placementStyle(item: LayoutItem): React.CSSProperties {
     gridColumn: `${item.position.column + 1} / span ${item.span.columns}`,
     gridRow: `${item.position.row + 1} / span ${item.span.rows}`,
   };
-}
-
-function appIconText(app: AppShortcut): string {
-  // Favicon/iconify/asset icons intentionally render the generated fallback
-  // in v1 — no icon fetching or runtimes in this task.
-  if (app.icon.kind === "generated") {
-    return app.icon.text.trim().length > 0 ? app.icon.text : generatedIconText(app.name);
-  }
-  return generatedIconText(app.name);
 }
 
 function FolderGlyph() {
