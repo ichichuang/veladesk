@@ -15,27 +15,26 @@ import "./home-shell.css";
 interface FolderOverlayProps {
   readonly folder: Folder;
   readonly workspace: WorkspaceSnapshot;
-  /** Presentation-only action error (e.g. no-space on Move to Desktop). */
+  /** Presentation-only action error (e.g. no-space on dissolve). */
   readonly error?: string | undefined;
   readonly onClose: () => void;
-  readonly onAddApp: () => void;
   readonly onLaunchApp: (app: AppShortcut) => void;
   readonly onChildContextMenu: (entityId: EntityId, x: number, y: number) => void;
 }
 
 /**
- * Spatial glass overlay for an open folder.
+ * Spatial glass overlay for a legacy folder (task 015).
  *
- * Children render strictly in `folder.children` order as icon + label
- * buttons (launch on click and Enter/Space). The overlay itself may scroll
- * locally; the body never does. Escape or a backdrop click closes.
+ * Folders are compatibility-only in the primary UI now: children render in
+ * `folder.children` order (launch on click), the overlay scrolls locally,
+ * and there is NO "Add App" entry anymore — apps move into sections via
+ * their context menu. Escape or a backdrop click closes.
  */
 export function FolderOverlay({
   folder,
   workspace,
   error,
   onClose,
-  onAddApp,
   onLaunchApp,
   onChildContextMenu,
 }: FolderOverlayProps) {
@@ -88,9 +87,6 @@ export function FolderOverlay({
         <header className="vela-folder-overlay__header">
           <h2 className="vela-folder-overlay__title">{folder.name}</h2>
           <span className="vela-folder-overlay__spacer" />
-          <button type="button" className="vela-button" onClick={onAddApp}>
-            {t("overlay.addApp")}
-          </button>
           <button
             type="button"
             className="vela-button vela-folder-overlay__close"
@@ -105,7 +101,7 @@ export function FolderOverlay({
             {error}
           </p>
         ) : null}
-        <div className="vela-folder-overlay__grid">
+        <div className="vela-folder-overlay__grid" data-vd-wheel-scope="local">
           {children.map(({ childId, entity }) => {
             if (entity === undefined) {
               return (
@@ -144,6 +140,7 @@ export function FolderOverlay({
             <p className="vela-folder-overlay__empty">{t("overlay.empty")}</p>
           ) : null}
         </div>
+        <p className="vela-folder-overlay__hint">{t("overlay.dissolveHint")}</p>
       </section>
     </div>
   );

@@ -190,7 +190,7 @@ export function Launcher({ entries, onActivate, onClose }: LauncherProps) {
           }}
           onKeyDown={handleKeyDown}
         />
-        <div id={LISTBOX_ID} className="vela-launcher__results" role="listbox" ref={listRef}>
+        <div id={LISTBOX_ID} className="vela-launcher__results" role="listbox" ref={listRef} data-vd-wheel-scope="local">
           {results.map((entry, index) => (
             <button
               key={entry.key}

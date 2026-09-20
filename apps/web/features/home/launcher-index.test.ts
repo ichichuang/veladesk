@@ -144,7 +144,7 @@ describe("buildLauncherEntries — entity scope", () => {
     });
     expect(keys).toEqual([
       "command:add-app",
-      "command:new-folder",
+      "command:new-section",
       "command:open-settings",
       "command:toggle-mode",
       "command:pull-current",
@@ -207,7 +207,7 @@ describe("buildLauncherEntries — empty-query ordering", () => {
     const keys = keysOf(richInput({ syncState: "conflict" }));
     expect(keys).toEqual([
       "command:add-app",
-      "command:new-folder",
+      "command:new-section",
       "command:open-settings",
       "command:toggle-mode",
       "app:app-openai",
@@ -307,11 +307,11 @@ describe("buildLauncherEntries — commands", () => {
     expect(arrangeToggle?.label).toBe("Switch to View");
   });
 
-  it("always leads with add-app, new-folder, open-settings, toggle-mode in that order", () => {
+  it("always leads with add-app, new-section, open-settings, toggle-mode in that order", () => {
     const keys = keysOf(richInput({ syncState: "dirty" }));
     expect(keys.slice(0, 5)).toEqual([
       "command:add-app",
-      "command:new-folder",
+      "command:new-section",
       "command:open-settings",
       "command:toggle-mode",
       "command:sync-current",
@@ -339,14 +339,14 @@ describe("buildLauncherEntries — localization", () => {
     const commands = entries.filter((entry) => entry.kind === "command");
     expect(commands.map((entry) => entry.label)).toEqual([
       "添加应用",
-      "新建文件夹",
+      "新建分区",
       "设置",
       "切换到整理模式",
       "立即同步",
     ]);
     expect(commands.map((entry) => entry.key)).toEqual([
       "command:add-app",
-      "command:new-folder",
+      "command:new-section",
       "command:open-settings",
       "command:toggle-mode",
       "command:sync-current",
@@ -358,7 +358,7 @@ describe("buildLauncherEntries — localization", () => {
     const commands = entries.filter((entry) => entry.kind === "command");
     expect(commands.map((entry) => entry.label)).toEqual([
       "Add App",
-      "New Folder",
+      "New Section",
       "Settings",
       "Switch to Arrange",
       "Sync Now",

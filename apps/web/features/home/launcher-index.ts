@@ -153,11 +153,13 @@ export function buildLauncherEntries(
     "添加应用",
     "新建快捷方式",
   ]);
-  pushCommand("new-folder", translate(locale, "launcher.command.newFolder"), [
-    "new folder",
-    "create folder",
-    "新建文件夹",
-    "创建文件夹",
+  pushCommand("new-section", translate(locale, "launcher.command.newSection"), [
+    "new section",
+    "create section",
+    "new page",
+    "新建分区",
+    "创建分区",
+    "新建页面",
   ]);
   pushCommand("open-settings", translate(locale, "launcher.command.openSettings"), [
     "settings",
@@ -242,7 +244,9 @@ export function buildLauncherEntries(
     }
   }
 
-  // 5. Pages, strictly in page order.
+  // 5. Pages (= user-facing Sections), strictly in page order. Search
+  // metadata keeps the legacy page/页面 words and adds section/分区 so
+  // both habits find the same entries.
   for (const page of workspace.pages) {
     push({
       key: `page:${page.id}`,
@@ -251,7 +255,7 @@ export function buildLauncherEntries(
         key: `page:${page.id}`,
         pageId: page.id,
         label: page.name,
-        secondary: ["page", "页面", page.id],
+        secondary: ["page", "页面", "section", "分区", page.id],
         baseOrder: 0,
       },
     });

@@ -237,7 +237,7 @@ export function SettingsCenter({
             ))}
           </nav>
 
-          <div className="vela-settings__content">
+          <div className="vela-settings__content" data-vd-wheel-scope="local">
             {activeSection === "appearance" ? (
               <div className="vela-settings__section">
                 <div
