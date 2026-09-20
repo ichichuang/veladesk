@@ -1,10 +1,11 @@
-import { findNearestFreePosition } from "@veladesk/desktop-engine";
+import { findNearestFreePosition, validatePageLayout } from "@veladesk/desktop-engine";
 import type { GridPosition, LayoutItem, PageLayout } from "@veladesk/desktop-engine";
 
 import { findDesktopPage } from "./lookup";
 import { validateWorkspaceAppearance } from "./appearance";
 import type {
   AppShortcut,
+  DesktopPage,
   DesktopPageId,
   Dock,
   EntityId,
@@ -34,7 +35,15 @@ export type WorkspaceEditFailureReason =
   | "invalid-name"
   | "invalid-url"
   | "default-page-not-found"
-  | "invalid-appearance";
+  | "invalid-appearance"
+  | "duplicate-page-id"
+  | "invalid-page-name"
+  | "page-layout-id-mismatch"
+  | "page-must-be-empty"
+  | "invalid-page-layout"
+  | "page-not-empty"
+  | "cannot-delete-last-page"
+  | "page-order-boundary";
 
 /** Result of an immutable workspace editing operation. Failures keep the input. */
 export type WorkspaceEditResult =
@@ -575,4 +584,196 @@ export function dissolveFolderToPage(
     working = withLayoutItem(working, targetPageId, item);
   }
   return { ok: true, workspace: working };
+}
+
+// ---------------------------------------------------------------------------
+// Sections (DesktopPage CRUD) — task 015
+// ---------------------------------------------------------------------------
+
+/** The page layout carrying at least one item. */
+function isNonEmptyLayout(page: DesktopPage): boolean {
+  return page.layout.items.length > 0;
+}
+
+/**
+ * Appends an empty page (a user-facing Section) to the workspace, immutably.
+ *
+ * The id must be unique, the name non-blank after trimming, the layout id
+ * must equal the page id, the layout must hold no items, and the grid must
+ * pass the desktop engine's semantic validation. On success ONLY
+ * `workspace.pages` grows — entities, categories, dock and preferences keep
+ * their exact references.
+ */
+export function addPage(
+  workspace: WorkspaceSnapshot,
+  page: DesktopPage
+): WorkspaceEditResult {
+  if (workspace.pages.some((existing) => existing.id === page.id)) {
+    return { ok: false, reason: "duplicate-page-id" };
+  }
+  if (isBlank(page.name)) {
+    return { ok: false, reason: "invalid-page-name" };
+  }
+  if (page.layout.id !== page.id) {
+    return { ok: false, reason: "page-layout-id-mismatch" };
+  }
+  if (isNonEmptyLayout(page)) {
+    return { ok: false, reason: "page-must-be-empty" };
+  }
+  if (validatePageLayout(page.layout).length > 0) {
+    return { ok: false, reason: "invalid-page-layout" };
+  }
+  return { ok: true, workspace: { ...workspace, pages: [...workspace.pages, page] } };
+}
+
+/**
+ * Renames a page, storing the next name verbatim, immutably.
+ * Layout, array position and every other field stay untouched.
+ */
+export function renamePage(
+  workspace: WorkspaceSnapshot,
+  pageId: DesktopPageId,
+  nextName: string
+): WorkspaceEditResult {
+  const page = findDesktopPage(workspace, pageId);
+  if (page === undefined) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  if (isBlank(nextName)) {
+    return { ok: false, reason: "invalid-page-name" };
+  }
+  return {
+    ok: true,
+    workspace: {
+      ...workspace,
+      pages: workspace.pages.map((candidate) =>
+        candidate === page ? { ...page, name: nextName } : candidate
+      ),
+    },
+  };
+}
+
+/**
+ * Moves a page one slot up or down in the `pages` array, immutably.
+ * Only array order changes — contents and the default page are untouched.
+ * Moving past either end is a `page-order-boundary` failure.
+ */
+export function movePage(
+  workspace: WorkspaceSnapshot,
+  pageId: DesktopPageId,
+  direction: "up" | "down"
+): WorkspaceEditResult {
+  const index = workspace.pages.findIndex((page) => page.id === pageId);
+  if (index < 0) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= workspace.pages.length) {
+    return { ok: false, reason: "page-order-boundary" };
+  }
+  const pages = workspace.pages.slice();
+  const [moved] = pages.splice(index, 1);
+  pages.splice(targetIndex, 0, moved!);
+  return { ok: true, workspace: { ...workspace, pages } };
+}
+
+/**
+ * Points `preferences.defaultPageId` at an existing page, immutably.
+ * Appearance, layoutLocked and every other preference field survive —
+ * only the default changes.
+ */
+export function setDefaultPage(
+  workspace: WorkspaceSnapshot,
+  pageId: DesktopPageId
+): WorkspaceEditResult {
+  if (findDesktopPage(workspace, pageId) === undefined) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  return {
+    ok: true,
+    workspace: {
+      ...workspace,
+      preferences: { ...workspace.preferences, defaultPageId: pageId },
+    },
+  };
+}
+
+/**
+ * Deletes an EMPTY page, immutably.
+ *
+ * Only a page whose layout holds no items can be deleted, and at least one
+ * page must survive (`page-not-empty` / `cannot-delete-last-page`). When the
+ * deleted page was the default, the default moves to the NEXT page — the
+ * one at the deleted position — or, at the end of the array, to the previous
+ * page; that matches where the user is looking better than always falling
+ * back to `pages[0]`.
+ */
+export function deleteEmptyPage(
+  workspace: WorkspaceSnapshot,
+  pageId: DesktopPageId
+): WorkspaceEditResult {
+  const page = findDesktopPage(workspace, pageId);
+  if (page === undefined) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  if (isNonEmptyLayout(page)) {
+    return { ok: false, reason: "page-not-empty" };
+  }
+  if (workspace.pages.length <= 1) {
+    return { ok: false, reason: "cannot-delete-last-page" };
+  }
+  const index = workspace.pages.findIndex((candidate) => candidate.id === pageId);
+  const pages = workspace.pages.filter((candidate) => candidate.id !== pageId);
+  let preferences = workspace.preferences;
+  if (preferences.defaultPageId === pageId) {
+    const neighbor = workspace.pages[index + 1] ?? workspace.pages[index - 1];
+    preferences = { ...preferences, defaultPageId: neighbor!.id };
+  }
+  return { ok: true, workspace: { ...workspace, pages, preferences } };
+}
+
+/**
+ * Relocates an app to a page — the one true "move to section" op.
+ *
+ * Unlike `moveAppToPage` (folder→desktop direction, `already-on-page` for
+ * any placed app), this op moves an app from ANYWHERE onto a page: the app
+ * id is removed from every page layout and every folder's children on a
+ * working copy, then placed 1x1 nearest-free on the target page. The dock is
+ * completely untouched, so a pinned app stays pinned; the entity array keeps
+ * every reference too — only layout/folder references change. An app that
+ * already sits on the target page is `already-on-page`; a full target page
+ * fails atomically with `no-space` (the input is returned untouched, never
+ * half-moved).
+ */
+export function relocateAppToPage(
+  workspace: WorkspaceSnapshot,
+  appId: EntityId,
+  targetPageId: DesktopPageId,
+  desiredPosition?: GridPosition
+): WorkspaceEditResult {
+  const app = findApp(workspace, appId);
+  if (app === undefined) {
+    return { ok: false, reason: "app-not-found" };
+  }
+  if (findDesktopPage(workspace, targetPageId) === undefined) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  const alreadyOnTarget = workspace.pages.some(
+    (page) => page.id === targetPageId && page.layout.items.some((item) => item.id === appId)
+  );
+  if (alreadyOnTarget) {
+    return { ok: false, reason: "already-on-page" };
+  }
+  // Strip every layout/folder reference first, then place against the
+  // stripped working copy. A `no-space` below abandons the copy entirely.
+  const stripped = withoutFolderChild(withoutLayoutItem(workspace, appId), appId);
+  const targetPage = findDesktopPage(stripped, targetPageId);
+  if (targetPage === undefined) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  const item = placeItem(targetPage.layout, appId, desiredPosition ?? DEFAULT_POSITION);
+  if (item === undefined) {
+    return { ok: false, reason: "no-space" };
+  }
+  return { ok: true, workspace: withLayoutItem(stripped, targetPageId, item) };
 }

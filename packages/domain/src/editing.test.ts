@@ -915,3 +915,459 @@ describe("replaceWorkspacePreferences", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 015 — Sections (DesktopPage CRUD) + app relocation
+// ---------------------------------------------------------------------------
+
+import {
+  addPage,
+  deleteEmptyPage,
+  movePage,
+  relocateAppToPage,
+  renamePage,
+  setDefaultPage,
+} from "./editing";
+import type { DesktopPage } from "@veladesk/domain";
+
+function emptyPage(id: string, name: string, grid = { columns: 3, rows: 3 }): DesktopPage {
+  return { id, name, layout: { id, grid, items: [] } };
+}
+
+/** page-1 (Home) with one placed app, page-2 (Work) empty, page-3 (Lab) empty. */
+function sectionedWorkspace(): WorkspaceSnapshot {
+  const base = baseWorkspace();
+  const withApp = addAppToPage(
+    {
+      ...base,
+      pages: [base.pages[0]!, emptyPage("page-2", "Work"), emptyPage("page-3", "Lab")],
+    },
+    "page-1",
+    app("app-a")
+  );
+  if (!withApp.ok) throw new Error("fixture failed");
+  return withApp.workspace;
+}
+
+describe("relocateAppToPage", () => {
+  it("moves an app from page A to page B: source ref removed, target 1x1 item added", () => {
+    const workspace = sectionedWorkspace();
+
+    const result = relocateAppToPage(workspace, "app-a", "page-2");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(itemsOf(result.workspace, "page-1")).toEqual([]);
+    expect(itemsOf(result.workspace, "page-2")).toEqual([
+      { id: "app-a", position: { column: 0, row: 0 }, span: { columns: 1, rows: 1 } },
+    ]);
+    expect(result.workspace.entities.map((entity) => entity.id)).toEqual(["app-a"]);
+    expectValid(result.workspace);
+  });
+
+  it("keeps the dock pin and never touches the dock", () => {
+    const pinned = pinEntityToDock(sectionedWorkspace(), "app-a");
+    if (!pinned.ok) throw new Error("fixture failed");
+
+    const result = relocateAppToPage(pinned.workspace, "app-a", "page-3");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspace.dock.items).toEqual(["app-a"]);
+    expectValid(result.workspace);
+  });
+
+  it("moves an app out of a folder: folder survives without the child", () => {
+    const base = sectionedWorkspace();
+    const withFolder = addFolderToPage(base, "page-2", folder("folder-1", "Stuff"));
+    if (!withFolder.ok) throw new Error("fixture failed");
+    const moved = moveAppToFolder(withFolder.workspace, "app-a", "folder-1");
+    if (!moved.ok) throw new Error("fixture failed");
+
+    const result = relocateAppToPage(moved.workspace, "app-a", "page-2");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const survivingFolder = result.workspace.entities.find(
+      (entity) => entity.kind === "folder"
+    );
+    expect(survivingFolder).toMatchObject({ id: "folder-1", children: [] });
+    // Nearest-free scans row-major: {0,0} is taken by the folder, so the
+    // app lands at {1,0}.
+    expect(itemsOf(result.workspace, "page-2")).toEqual([
+      { id: "folder-1", position: { column: 0, row: 0 }, span: { columns: 1, rows: 1 } },
+      { id: "app-a", position: { column: 1, row: 0 }, span: { columns: 1, rows: 1 } },
+    ]);
+    expectValid(result.workspace);
+  });
+
+  it("places a previously unplaced app", () => {
+    const workspace = {
+      ...sectionedWorkspace(),
+      entities: [...sectionedWorkspace().entities, app("app-lost")],
+    };
+
+    const result = relocateAppToPage(workspace, "app-lost", "page-2");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(itemsOf(result.workspace, "page-2").map((item) => item.id)).toEqual(["app-lost"]);
+    expectValid(result.workspace);
+  });
+
+  it("respects a desired free position", () => {
+    const workspace = sectionedWorkspace();
+
+    const result = relocateAppToPage(workspace, "app-a", "page-2", { column: 2, row: 1 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(itemsOf(result.workspace, "page-2")[0]?.position).toEqual({ column: 2, row: 1 });
+  });
+
+  it("refuses an app that already sits on the target page", () => {
+    const workspace = sectionedWorkspace();
+
+    expect(relocateAppToPage(workspace, "app-a", "page-1")).toEqual({
+      ok: false,
+      reason: "already-on-page",
+    });
+  });
+
+  it("refuses a missing app and a missing target page", () => {
+    const workspace = sectionedWorkspace();
+
+    expect(relocateAppToPage(workspace, "app-x", "page-2")).toEqual({
+      ok: false,
+      reason: "app-not-found",
+    });
+    expect(relocateAppToPage(workspace, "app-a", "page-x")).toEqual({
+      ok: false,
+      reason: "page-not-found",
+    });
+  });
+
+  it("fails atomically on a full target page: input completely unchanged", () => {
+    const workspace = sectionedWorkspace();
+    // Fill page-2 completely (3x3 = 9 items).
+    let full = workspace;
+    for (let row = 0; row < 3; row += 1) {
+      for (let column = 0; column < 3; column += 1) {
+        const filled = addAppToPage(full, "page-2", app(`fill-${row}${column}`), { column, row });
+        if (!filled.ok) throw new Error("fixture failed");
+        full = filled.workspace;
+      }
+    }
+
+    // app-a already lives on page-1, so use a fresh app for the no-space case.
+    const result = relocateAppToPage(full, "app-a", "page-1");
+    const mover = addAppToPage(full, "page-1", app("app-b"));
+    if (!mover.ok) throw new Error("fixture failed");
+    const noSpace = relocateAppToPage(mover.workspace, "app-b", "page-2");
+
+    expect(result).toEqual({ ok: false, reason: "already-on-page" });
+    expect(noSpace).toEqual({ ok: false, reason: "no-space" });
+    expectUnchanged(mover.workspace, () => relocateAppToPage(mover.workspace, "app-b", "page-2"));
+    expect(itemsOf(mover.workspace, "page-1").map((item) => item.id)).toContain("app-b");
+    expect(itemsOf(mover.workspace, "page-2").map((item) => item.id)).not.toContain("app-b");
+  });
+
+  it("never mutates the input workspace", () => {
+    const workspace = sectionedWorkspace();
+
+    expectUnchanged(workspace, () => relocateAppToPage(workspace, "app-a", "page-2"));
+  });
+});
+
+describe("addPage", () => {
+  it("appends an empty page and keeps every other workspace field", () => {
+    const workspace = sectionedWorkspace();
+
+    const result = addPage(workspace, emptyPage("page-9", "Play"));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspace.pages.map((page) => page.id)).toEqual([
+      "page-1",
+      "page-2",
+      "page-3",
+      "page-9",
+    ]);
+    expect(result.workspace.entities).toBe(workspace.entities);
+    expect(result.workspace.dock).toBe(workspace.dock);
+    expect(result.workspace.preferences).toBe(workspace.preferences);
+    expectValid(result.workspace);
+  });
+
+  it("refuses a duplicate page id", () => {
+    expect(addPage(sectionedWorkspace(), emptyPage("page-2", "Dup"))).toEqual({
+      ok: false,
+      reason: "duplicate-page-id",
+    });
+  });
+
+  it("refuses a blank name", () => {
+    expect(addPage(sectionedWorkspace(), emptyPage("page-9", "   "))).toEqual({
+      ok: false,
+      reason: "invalid-page-name",
+    });
+  });
+
+  it("refuses a layout whose id differs from the page id", () => {
+    const page: DesktopPage = {
+      id: "page-9",
+      name: "Play",
+      layout: { id: "layout-other", grid: { columns: 3, rows: 3 }, items: [] },
+    };
+    expect(addPage(sectionedWorkspace(), page)).toEqual({
+      ok: false,
+      reason: "page-layout-id-mismatch",
+    });
+  });
+
+  it("refuses a non-empty layout", () => {
+    const page: DesktopPage = {
+      id: "page-9",
+      name: "Play",
+      layout: {
+        id: "page-9",
+        grid: { columns: 3, rows: 3 },
+        items: [{ id: "app-a", position: { column: 0, row: 0 }, span: { columns: 1, rows: 1 } }],
+      },
+    };
+    expect(addPage(sectionedWorkspace(), page)).toEqual({
+      ok: false,
+      reason: "page-must-be-empty",
+    });
+  });
+
+  it("refuses a semantically invalid grid through the engine validation", () => {
+    expect(addPage(sectionedWorkspace(), emptyPage("page-9", "Play", { columns: 0, rows: 3 }))).toEqual(
+      {
+        ok: false,
+        reason: "invalid-page-layout",
+      }
+    );
+  });
+
+  it("never mutates the input workspace", () => {
+    const workspace = sectionedWorkspace();
+
+    expectUnchanged(workspace, () => addPage(workspace, emptyPage("page-9", "Play")));
+  });
+});
+
+describe("renamePage", () => {
+  it("stores the next name verbatim and keeps layout and array position", () => {
+    const workspace = sectionedWorkspace();
+
+    const result = renamePage(workspace, "page-2", "  Deep Work  ");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspace.pages[1]?.name).toBe("  Deep Work  ");
+    expect(result.workspace.pages[1]?.layout).toBe(workspace.pages[1]?.layout);
+    expect(result.workspace.pages.map((page) => page.id)).toEqual(
+      workspace.pages.map((page) => page.id)
+    );
+    expectValid(result.workspace);
+  });
+
+  it("refuses a missing page and a blank name", () => {
+    expect(renamePage(sectionedWorkspace(), "page-x", "Nope")).toEqual({
+      ok: false,
+      reason: "page-not-found",
+    });
+    expect(renamePage(sectionedWorkspace(), "page-2", " ")).toEqual({
+      ok: false,
+      reason: "invalid-page-name",
+    });
+  });
+
+  it("never mutates the input workspace", () => {
+    const workspace = sectionedWorkspace();
+
+    expectUnchanged(workspace, () => renamePage(workspace, "page-2", "Renamed"));
+  });
+});
+
+describe("movePage", () => {
+  it("moves a page up and down within the pages array", () => {
+    const workspace = sectionedWorkspace();
+
+    const down = movePage(workspace, "page-1", "down");
+    expect(down.ok).toBe(true);
+    if (down.ok) {
+      expect(down.workspace.pages.map((page) => page.id)).toEqual([
+        "page-2",
+        "page-1",
+        "page-3",
+      ]);
+      expectValid(down.workspace);
+    }
+
+    const up = movePage(workspace, "page-2", "up");
+    expect(up.ok).toBe(true);
+    if (up.ok) {
+      expect(up.workspace.pages.map((page) => page.id)).toEqual([
+        "page-2",
+        "page-1",
+        "page-3",
+      ]);
+    }
+  });
+
+  it("refuses the first-up and last-down boundaries", () => {
+    const workspace = sectionedWorkspace();
+
+    expect(movePage(workspace, "page-1", "up")).toEqual({
+      ok: false,
+      reason: "page-order-boundary",
+    });
+    expect(movePage(workspace, "page-3", "down")).toEqual({
+      ok: false,
+      reason: "page-order-boundary",
+    });
+  });
+
+  it("keeps the default page and page contents untouched", () => {
+    const workspace = sectionedWorkspace();
+
+    const result = movePage(workspace, "page-2", "up");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.workspace.preferences.defaultPageId).toBe(
+        workspace.preferences.defaultPageId
+      );
+      expect(result.workspace.pages.find((page) => page.id === "page-1")?.layout.items).toEqual(
+        workspace.pages.find((page) => page.id === "page-1")?.layout.items
+      );
+    }
+  });
+
+  it("refuses a missing page and never mutates the input", () => {
+    const workspace = sectionedWorkspace();
+
+    expect(movePage(workspace, "page-x", "up")).toEqual({
+      ok: false,
+      reason: "page-not-found",
+    });
+    expectUnchanged(workspace, () => movePage(workspace, "page-2", "up"));
+  });
+});
+
+describe("setDefaultPage", () => {
+  it("changes only preferences.defaultPageId and preserves appearance + layoutLocked", () => {
+    const workspace = sectionedWorkspace();
+
+    const result = setDefaultPage(workspace, "page-3");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspace.preferences.defaultPageId).toBe("page-3");
+    expect(result.workspace.preferences.layoutLocked).toBe(workspace.preferences.layoutLocked);
+    expect(result.workspace.preferences.appearance).toBe(workspace.preferences.appearance);
+    expectValid(result.workspace);
+  });
+
+  it("refuses a missing page", () => {
+    expect(setDefaultPage(sectionedWorkspace(), "page-x")).toEqual({
+      ok: false,
+      reason: "page-not-found",
+    });
+  });
+
+  it("never mutates the input workspace", () => {
+    const workspace = sectionedWorkspace();
+
+    expectUnchanged(workspace, () => setDefaultPage(workspace, "page-2"));
+  });
+});
+
+describe("deleteEmptyPage", () => {
+  it("deletes an empty page and validates cleanly", () => {
+    const workspace = sectionedWorkspace();
+
+    const result = deleteEmptyPage(workspace, "page-2");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspace.pages.map((page) => page.id)).toEqual(["page-1", "page-3"]);
+    expectValid(result.workspace);
+  });
+
+  it("refuses a non-empty page and the last remaining page", () => {
+    const workspace = sectionedWorkspace();
+    expect(deleteEmptyPage(workspace, "page-1")).toEqual({
+      ok: false,
+      reason: "page-not-empty",
+    });
+
+    // A workspace whose LAST surviving page is empty (page-1 starts empty
+    // here — no apps at all) refuses with cannot-delete-last-page.
+    const withTwo = addPage(baseWorkspace(), emptyPage("page-2", "Work"));
+    if (!withTwo.ok) throw new Error("fixture failed");
+    const extended = addPage(withTwo.workspace, emptyPage("page-3", "Lab"));
+    if (!extended.ok) throw new Error("fixture failed");
+    const oneLeft = deleteEmptyPage(extended.workspace, "page-3");
+    expect(oneLeft.ok).toBe(true);
+    if (oneLeft.ok) {
+      const twoLeft = deleteEmptyPage(oneLeft.workspace, "page-2");
+      expect(twoLeft.ok).toBe(true);
+      if (twoLeft.ok) {
+        expect(deleteEmptyPage(twoLeft.workspace, "page-1")).toEqual({
+          ok: false,
+          reason: "cannot-delete-last-page",
+        });
+      }
+    }
+  });
+
+  it("re-targets the default to the NEXT page when deleting a middle default", () => {
+    const workspace = sectionedWorkspace();
+    const defaulted = setDefaultPage(workspace, "page-2");
+    if (!defaulted.ok) throw new Error("fixture failed");
+
+    const result = deleteEmptyPage(defaulted.workspace, "page-2");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.workspace.preferences.defaultPageId).toBe("page-3");
+      expectValid(result.workspace);
+    }
+  });
+
+  it("re-targets the default to the PREVIOUS page when deleting the last default", () => {
+    const workspace = sectionedWorkspace();
+    const defaulted = setDefaultPage(workspace, "page-3");
+    if (!defaulted.ok) throw new Error("fixture failed");
+
+    const result = deleteEmptyPage(defaulted.workspace, "page-3");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.workspace.preferences.defaultPageId).toBe("page-2");
+    }
+  });
+
+  it("keeps the default untouched when deleting a non-default page and refuses missing pages", () => {
+    const workspace = sectionedWorkspace();
+
+    const result = deleteEmptyPage(workspace, "page-3");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.workspace.preferences.defaultPageId).toBe("page-1");
+    }
+
+    expect(deleteEmptyPage(workspace, "page-x")).toEqual({
+      ok: false,
+      reason: "page-not-found",
+    });
+  });
+
+  it("never mutates the input workspace", () => {
+    const workspace = sectionedWorkspace();
+
+    expectUnchanged(workspace, () => deleteEmptyPage(workspace, "page-2"));
+  });
+});
