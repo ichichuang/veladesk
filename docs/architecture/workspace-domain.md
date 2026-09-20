@@ -51,6 +51,24 @@ only when it is present, and readers resolve it to
 (`replaceWorkspacePreferences`, see
 [appearance-settings.md](./appearance-settings.md)).
 
+### AppShortcut visual style and icon source
+
+Since Task 016-A, an app shortcut carries two more optional fields, both
+following the same no-migration compatibility rule:
+
+- `visual?: AppVisualStyle` — `iconScale` (finite 0.5–1.6),
+  `decorationStyle` (`gradient | solid | glass | none`) and optional
+  exact-`#RRGGBB` `foregroundColor` / `decorationColor`. An absent
+  `visual` resolves to `DEFAULT_APP_VISUAL_STYLE` at render time;
+  `validateWorkspace` reports `invalid-app-visual` issues only for a
+  persisted style, delegating the ranges to `validateAppVisualStyle`
+  (never duplicated in `validation.ts`). `iconScale` is a visual
+  multiplier only — layout spans and grid geometry are never affected.
+  See [app-visual-system.md](./app-visual-system.md).
+- `icon.source` on `generated` icons — `"auto"` (or the legacy
+  `undefined`) initials follow renames; `"custom"` text is user-owned
+  and renames never overwrite it.
+
 ## Entity identity
 
 `EntityId` is globally unique across all entity kinds within one workspace:

@@ -192,11 +192,28 @@ flows. See [global-launcher.md](./global-launcher.md).
 
 One dialog, two fields (name, URL), stored verbatim: no protocol
 rewriting, no `new URL()` parsing — `https://`, `http://` and custom
-protocols (`obsidian://`, `steam://`, …) are all valid. Icons are
-generated from the name (first two code points, uppercased where
-applicable). The app is placed on the active page with nearest-free 1x1
-placement (`addAppToPage`), staged, and a follow-up sync is fired; a sync
-failure never removes the icon.
+protocols (`obsidian://`, `steam://`, …) are all valid. Icons default to
+an auto-generated text icon (`source: "auto"` — first two code points of
+the name, uppercased where applicable) that keeps following renames
+until the user picks a custom icon. The app is placed on the active page
+with nearest-free 1x1 placement (`addAppToPage`), staged, and a
+follow-up sync is fired; a sync failure never removes the icon. The
+visual identity (library icon, text, size, colors, decoration) is edited
+afterwards via the context menu — see
+[app-visual-system.md](./app-visual-system.md).
+
+## App visual editing (016-A)
+
+The app context menu gained 编辑外观… / Edit appearance… between Edit
+and the section/dock group. It opens the App Visual Editor: icon source
+( searchable self-hosted catalog, or auto/custom text; the upload tab is
+explicitly disabled until 016-B), a 50–160% per-app size slider, Auto-
+or-hex foreground/decoration colors and the four decoration styles,
+rendered live in a draft preview through the shared AppIconRenderer.
+Only Save stages anything (via `replaceApp`, which preserves page,
+folder and dock placement); Cancel never mutates. Edit App keeps its
+name/URL/open-mode scope and only recalculates initials for auto-sourced
+generated icons.
 
 ## Launch
 
