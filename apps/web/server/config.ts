@@ -8,6 +8,11 @@ export interface VelaDeskServerConfig {
   readonly dataDir: string;
   readonly databasePath: string;
   readonly migrationsDir: string;
+  /**
+   * Uploaded-asset binaries live next to the database, one
+   * `<assetId>.bin` per file — the whole data dir is the backup boundary.
+   */
+  readonly assetsDir: string;
 }
 
 /** Environment subset the config resolver reads; injectable for tests. */
@@ -69,5 +74,6 @@ export function resolveServerConfig(env: ServerEnv, cwd: string): VelaDeskServer
     dataDir,
     databasePath: path.join(dataDir, "veladesk.db"),
     migrationsDir,
+    assetsDir: path.join(dataDir, "assets"),
   };
 }

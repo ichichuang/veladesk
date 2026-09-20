@@ -7,6 +7,8 @@ import {
 } from "@veladesk/database";
 import type { VelaDeskDatabase, WorkspaceRepository } from "@veladesk/database";
 
+import { createFilesystemAssetRepository } from "./assets/repository";
+import type { AssetRepository } from "./assets/repository";
 import { resolveServerConfig } from "./config";
 
 /**
@@ -75,4 +77,27 @@ export function getWorkspaceServerRuntime(): WorkspaceServerRuntime {
 /** Repository accessor for route handlers. */
 export function getWorkspaceRepository(): WorkspaceRepository {
   return getWorkspaceServerRuntime().repository;
+}
+
+interface VelaDeskAssetsGlobalThis {
+  __veladeskAssetRepository?: AssetRepository;
+}
+
+/**
+ * Lazily created asset repository singleton: files land in
+ * `${VELADESK_DATA_DIR}/assets/`, created on first write. Like the
+ * workspace runtime above, configuration is resolved only when a request
+ * actually needs it — importing route modules never touches the
+ * filesystem or the environment.
+ */
+export function getAssetRepository(): AssetRepository {
+  const globalThisWithAssets = globalThis as VelaDeskAssetsGlobalThis;
+  const existing = globalThisWithAssets.__veladeskAssetRepository;
+  if (existing !== undefined) {
+    return existing;
+  }
+  const config = resolveServerConfig(process.env, process.cwd());
+  const repository = createFilesystemAssetRepository({ assetsDir: config.assetsDir });
+  globalThisWithAssets.__veladeskAssetRepository = repository;
+  return repository;
 }
