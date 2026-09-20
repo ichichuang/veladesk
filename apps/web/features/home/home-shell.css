@@ -32,8 +32,6 @@
   --vd-chip: oklch(0.2 0.02 264 / 0.45);
   --vd-radius: 14px;
   --vd-blur: 18px;
-  --vd-icon-size: 62px;
-  --vd-topbar-height: 52px;
   --vd-font:
     system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 }
@@ -516,135 +514,6 @@
   animation: vela-ambient 30s ease-in-out infinite alternate;
 }
 
-.vela-topbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: var(--vd-topbar-height);
-  padding: 0 18px;
-  border-bottom: 1px solid var(--vd-border);
-  background: var(--vd-surface);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
-}
-
-.vela-topbar__brand {
-  font-size: 14.5px;
-  font-weight: 650;
-  letter-spacing: 0.05em;
-}
-
-.vela-topbar__workspace {
-  padding: 3px 10px;
-  border: 1px solid var(--vd-border);
-  border-radius: 8px;
-  background: var(--vd-chip);
-  font-size: 12.5px;
-  color: var(--vd-text-muted);
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.vela-topbar__spacer {
-  flex: 1;
-}
-
-.vela-topbar__add {
-  padding: 5px 12px;
-}
-
-.vela-segment {
-  display: flex;
-  border: 1px solid var(--vd-border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.vela-segment__button {
-  padding: 5px 13px;
-  border: none;
-  background: transparent;
-  color: var(--vd-text-muted);
-  font-family: var(--vd-font);
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: background-color 160ms ease, color 160ms ease;
-}
-
-.vela-segment__button + .vela-segment__button {
-  border-left: 1px solid var(--vd-border);
-}
-
-.vela-segment__button:hover:not(:disabled) {
-  color: var(--vd-text);
-}
-
-.vela-segment__button[aria-pressed="true"] {
-  background: var(--vd-accent-strong);
-  color: var(--vd-accent-contrast);
-}
-
-.vela-segment__button:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: -2px;
-}
-
-.vela-segment__button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* Compact 中/EN locale switch (014-E): the always-visible language toggle
-   in the top bar. Quieter than the mode segment on purpose — mode is the
-   primary control, language is a preference. Shares the UiLocale store
-   with Settings → General (one source of truth, never workspace data). */
-.vela-locale-switch {
-  display: flex;
-  border: 1px solid var(--vd-border);
-  border-radius: 9px;
-  overflow: hidden;
-}
-
-.vela-locale-switch__button {
-  min-width: 32px;
-  padding: 5px 9px;
-  border: none;
-  background: transparent;
-  color: var(--vd-text-muted);
-  font-family: var(--vd-font);
-  font-size: 12px;
-  font-weight: 550;
-  line-height: 1.2;
-  cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
-}
-
-.vela-locale-switch__button + .vela-locale-switch__button {
-  border-left: 1px solid var(--vd-border);
-}
-
-.vela-locale-switch__button:hover:not([aria-pressed="true"]) {
-  color: var(--vd-text);
-}
-
-.vela-locale-switch__button[aria-pressed="true"] {
-  background: var(--vd-accent-wash);
-  color: var(--vd-text);
-  font-weight: 650;
-}
-
-.vela-locale-switch__button:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: -2px;
-}
-
 /* --- Desktop viewport grid ---------------------------------------------- */
 
 /*
@@ -653,23 +522,79 @@
  * never drift apart. CSS Grid tracks live in the content box (inside this
  * padding), which is exactly what useGridMetrics measures.
  */
+/*
+ * Section stack (task 015): the ONE real scroll container. Native CSS
+ * scroll-snap paging — overflow-y plus `y mandatory`, contained
+ * overscroll, no wheel listeners, no JS physics. The scrollbar is
+ * invisible but the box stays fully scrollable, and `[data-scroll-locked]`
+ * freezes paging while a modal or a drag is up without touching scrollTop.
+ */
+.vela-section-stack {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+}
+
+.vela-section-stack::-webkit-scrollbar {
+  display: none;
+}
+
+.vela-section-stack[data-scroll-locked="true"] {
+  overflow-y: hidden;
+}
+
+/*
+ * One section = exactly one snap viewport. snap-stop always keeps a fast
+ * trackpad fling or a high-wheel burst from skipping past intermediate
+ * sections — the browser itself enforces "one section per gesture".
+ */
+.vela-section {
+  position: relative;
+  display: block;
+  block-size: 100%;
+  min-block-size: 100%;
+  overflow: hidden;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+/*
+ * Grid geometry single source (asymmetric since task 015): the viewport
+ * and the arrange-mode guide overlay both consume these custom properties,
+ * so guides and tracks can never drift apart. The LEFT padding reserves
+ * the floating section-nav rail; the BOTTOM padding only grows when a dock
+ * actually exists (data-has-dock on the desktop root). CSS Grid tracks
+ * live in the content box (inside this padding), which is exactly what
+ * useGridMetrics measures — client box minus each computed padding.
+ */
 .vela-desktop__viewport {
   --vd-grid-column-gap: 16px;
   --vd-grid-row-gap: 16px;
-  --vd-grid-padding-x: 34px;
-  --vd-grid-padding-y: 30px;
+  --vd-grid-padding-left: 186px;
+  --vd-grid-padding-right: 34px;
+  --vd-grid-padding-top: 30px;
+  --vd-grid-padding-bottom: 30px;
 
   position: absolute;
-  top: var(--vd-topbar-height);
-  right: 0;
-  bottom: 108px;
-  left: 0;
+  inset: 0;
   z-index: 1;
   display: grid;
+  overflow: hidden;
   gap: var(--vd-grid-row-gap) var(--vd-grid-column-gap);
-  padding: var(--vd-grid-padding-y) var(--vd-grid-padding-x);
+  padding: var(--vd-grid-padding-top) var(--vd-grid-padding-right)
+    var(--vd-grid-padding-bottom) var(--vd-grid-padding-left);
   grid-template-columns: repeat(var(--vd-grid-columns), minmax(0, 1fr));
   grid-template-rows: repeat(var(--vd-grid-rows), minmax(0, 1fr));
+}
+
+/* With pins on screen the dock owns a strip at the bottom — reserve it. */
+.vela-desktop[data-has-dock="true"] .vela-desktop__viewport {
+  --vd-grid-padding-bottom: 108px;
 }
 
 /*
@@ -687,7 +612,8 @@
   pointer-events: none;
   display: grid;
   gap: var(--vd-grid-row-gap) var(--vd-grid-column-gap);
-  padding: var(--vd-grid-padding-y) var(--vd-grid-padding-x);
+  padding: var(--vd-grid-padding-top) var(--vd-grid-padding-right)
+    var(--vd-grid-padding-bottom) var(--vd-grid-padding-left);
   grid-template-columns: repeat(var(--vd-grid-columns), minmax(0, 1fr));
   grid-template-rows: repeat(var(--vd-grid-rows), minmax(0, 1fr));
   animation: vela-guides-in 140ms ease;
@@ -732,6 +658,210 @@
   margin: -2px 0 0 -2px;
   border-radius: 999px;
   background: var(--vd-grid-dot);
+}
+
+/* --- Left section navigation --------------------------------------------- */
+
+/*
+ * A lightweight rail floating on the wallpaper — deliberately NOT a
+ * sidebar panel: no card, no heavy background, no shadowed surface. The
+ * active item gets a 2px accent marker and brighter text. The list scrolls
+ * locally when sections overflow (contained); it is a SIBLING of the
+ * section stack, so wheel input here can never page the desktop.
+ */
+.vela-section-nav {
+  position: fixed;
+  left: 24px;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 138px;
+  max-height: min(64vh, 560px);
+  text-shadow: 0 1px 3px oklch(0 0 0 / 0.35);
+}
+
+.vela-section-nav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+  padding: 2px;
+}
+
+.vela-section-nav__list::-webkit-scrollbar {
+  display: none;
+}
+
+.vela-section-nav__item {
+  position: relative;
+  padding: 7px 10px 7px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: oklch(0.88 0.01 260 / 0.62);
+  font-family: var(--vd-font);
+  font-size: 13.5px;
+  text-align: left;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+/* The accent marker: a quiet 2px rail left of the active label. */
+.vela-section-nav__item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 2px;
+  height: 0;
+  border-radius: 1px;
+  background: var(--vd-accent);
+  transform: translateY(-50%);
+  transition: height 140ms ease;
+}
+
+.vela-section-nav__item:hover {
+  color: var(--vd-text);
+}
+
+.vela-section-nav__item[data-active="true"] {
+  color: var(--vd-text);
+}
+
+.vela-section-nav__item[data-active="true"]::before {
+  height: 60%;
+}
+
+.vela-section-nav__item:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: -1px;
+}
+
+.vela-section-nav__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.vela-section-nav__sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 999px;
+  background: oklch(0.25 0.02 264 / 0.4);
+  font-family: var(--vd-font);
+  font-size: 11px;
+  color: var(--vd-text-muted);
+}
+
+button.vela-section-nav__sync {
+  cursor: pointer;
+}
+
+button.vela-section-nav__sync:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: 1px;
+}
+
+.vela-section-nav__sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: oklch(0.8 0.13 80);
+}
+
+.vela-section-nav__sync[data-state="offline"] .vela-section-nav__sync-dot {
+  background: oklch(0.75 0.13 60);
+}
+
+.vela-section-nav__sync[data-state="conflict"] .vela-section-nav__sync-dot {
+  background: oklch(0.65 0.19 25);
+}
+
+.vela-section-nav__more {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: oklch(0.88 0.01 260 / 0.45);
+  font-family: var(--vd-font);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.vela-section-nav__more:hover {
+  color: var(--vd-text);
+}
+
+.vela-section-nav__more:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: -1px;
+}
+
+.vela-desktop[data-vd-color-mode="light"] .vela-section-nav__item {
+  color: oklch(0.3 0.02 264 / 0.6);
+}
+
+.vela-desktop[data-vd-color-mode="light"] .vela-section-nav__item[data-active="true"] {
+  color: var(--vd-text);
+}
+
+.vela-desktop[data-vd-color-mode="light"] .vela-section-nav,
+.vela-desktop[data-vd-color-mode="light"] .vela-section-nav__item {
+  text-shadow: none;
+}
+
+.vela-desktop[data-vd-color-mode="light"] .vela-section-nav__more {
+  color: oklch(0.3 0.02 264 / 0.45);
+}
+
+@media (prefers-color-scheme: light) {
+  .vela-desktop[data-vd-color-mode="system"] .vela-section-nav__item {
+    color: oklch(0.3 0.02 264 / 0.6);
+  }
+
+  .vela-desktop[data-vd-color-mode="system"] .vela-section-nav__item[data-active="true"] {
+    color: var(--vd-text);
+  }
+
+  .vela-desktop[data-vd-color-mode="system"] .vela-section-nav,
+  .vela-desktop[data-vd-color-mode="system"] .vela-section-nav__item {
+    text-shadow: none;
+  }
+
+  .vela-desktop[data-vd-color-mode="system"] .vela-section-nav__more {
+    color: oklch(0.3 0.02 264 / 0.45);
+  }
+}
+
+/* --- Move-to-section dialog list ------------------------------------------ */
+
+.vela-move-section__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40vh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.vela-move-section__option {
+  text-align: left;
 }
 
 /* --- Desktop items ------------------------------------------------------- */
@@ -857,47 +987,6 @@
   cursor: default;
 }
 
-/* --- Page dots ------------------------------------------------------------ */
-
-.vela-pages {
-  position: absolute;
-  bottom: 92px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-  display: flex;
-  gap: 8px;
-}
-
-.vela-pages__dot {
-  width: 8px;
-  height: 8px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: oklch(0.85 0.02 260 / 0.28);
-  cursor: pointer;
-  transition: background-color 160ms ease, transform 160ms ease;
-}
-
-.vela-pages__dot:hover:not(:disabled) {
-  background: oklch(0.85 0.02 260 / 0.5);
-}
-
-.vela-pages__dot[data-active="true"] {
-  background: var(--vd-accent);
-  transform: scale(1.2);
-}
-
-.vela-pages__dot:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: 2px;
-}
-
-.vela-pages__dot:disabled {
-  cursor: default;
-}
-
 /* --- Dock ------------------------------------------------------------------ */
 
 .vela-dock {
@@ -940,24 +1029,6 @@
   transition: transform 160ms ease, border-color 140ms ease;
 }
 
-/* Utilities are actions, not apps: flat surface, "+"-sized glyph. */
-.vela-dock__utility {
-  background: oklch(0.3 0.02 264 / 0.7);
-  color: var(--vd-text);
-  font-size: 20px;
-  font-weight: 500;
-}
-
-/* Text-bearing utility (mode toggle) sizes to its label instead of the
-   44px icon box. */
-.vela-dock__utility--text {
-  width: auto;
-  min-width: 44px;
-  padding: 0 14px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .vela-dock__item--folder {
   background: oklch(0.32 0.03 264 / 0.85);
   color: oklch(0.85 0.09 85);
@@ -965,11 +1036,6 @@
 
 .vela-dock__item:hover:not(:disabled) {
   transform: translateY(-3px);
-}
-
-.vela-dock__utility[aria-pressed="true"] {
-  background: var(--vd-accent-strong);
-  color: var(--vd-accent-contrast);
 }
 
 .vela-dock__item:focus-visible,
@@ -982,67 +1048,6 @@
 .vela-dock__utility:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-.vela-dock__separator {
-  flex: 0 0 auto;
-  width: 1px;
-  height: 34px;
-  margin: 0 2px;
-  background: var(--vd-border);
-}
-
-/* --- Sync indicator --------------------------------------------------------- */
-
-.vela-sync {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 11px;
-  border: 1px solid var(--vd-border);
-  border-radius: 999px;
-  background: var(--vd-chip);
-  font-family: var(--vd-font);
-  font-size: 12px;
-  color: var(--vd-text-muted);
-}
-
-button.vela-sync {
-  cursor: pointer;
-  transition: background-color 140ms ease;
-}
-
-button.vela-sync:hover:not(:disabled) {
-  background: oklch(0.26 0.02 264 / 0.6);
-}
-
-button.vela-sync:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: 2px;
-}
-
-button.vela-sync:disabled {
-  cursor: default;
-  opacity: 0.7;
-}
-
-.vela-sync__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: oklch(0.75 0.13 145);
-}
-
-.vela-sync[data-state="dirty"] .vela-sync__dot {
-  background: oklch(0.8 0.13 80);
-}
-
-.vela-sync[data-state="conflict"] {
-  color: oklch(0.83 0.13 25);
-}
-
-.vela-sync[data-state="conflict"] .vela-sync__dot {
-  background: oklch(0.65 0.19 25);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1074,29 +1079,12 @@ button.vela-sync:disabled {
   border-radius: 4px;
 }
 
-.vela-topbar__arrange-cluster {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.vela-topbar__history-button {
-  padding: 5px 10px;
-  font-size: 15px;
-  line-height: 1;
-}
-
-.vela-topbar__selection-count {
-  font-size: 12.5px;
-  color: var(--vd-text-muted);
-  white-space: nowrap;
-}
-
 .vela-context-menu {
   position: fixed;
   z-index: 60;
   min-width: 176px;
   max-width: 260px;
+  max-height: min(72vh, 560px);
   padding: 6px;
   border: 1px solid var(--vd-border);
   border-radius: 12px;
@@ -1107,7 +1095,21 @@ button.vela-sync:disabled {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
   animation: vela-menu-in 120ms ease;
+}
+
+.vela-context-menu::-webkit-scrollbar {
+  display: none;
+}
+
+.vela-context-menu__separator {
+  flex: 0 0 auto;
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--vd-border);
 }
 
 @keyframes vela-menu-in {
@@ -1229,6 +1231,12 @@ button.vela-sync:disabled {
   margin: 24px 0;
   text-align: center;
   font-size: 13px;
+  color: var(--vd-text-muted);
+}
+
+.vela-folder-overlay__hint {
+  margin: 0;
+  font-size: 12px;
   color: var(--vd-text-muted);
 }
 
@@ -1400,22 +1408,6 @@ button.vela-sync:disabled {
   padding-top: 10px;
   border-top: 1px solid var(--vd-border);
   font-size: 11.5px;
-  color: var(--vd-text-muted);
-}
-
-.vela-topbar__search {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 12px;
-}
-
-.vela-topbar__kbd {
-  padding: 1px 5px;
-  border: 1px solid var(--vd-border);
-  border-radius: 5px;
-  font-family: var(--vd-font);
-  font-size: 11px;
   color: var(--vd-text-muted);
 }
 
@@ -1735,13 +1727,13 @@ button.vela-sync:disabled {
   }
 
   .vela-desktop__grid-guides,
-  .vela-locale-switch__button,
+  .vela-section-nav__item,
+  .vela-section-nav__item::before,
+  .vela-section-nav__more,
   .vela-item,
   .vela-dock__item,
-  .vela-pages__dot,
   .vela-button,
   .vela-picker__item,
-  .vela-segment__button,
   .vela-dialog,
   .vela-dialog-backdrop,
   .vela-context-menu,
@@ -1797,12 +1789,18 @@ button.vela-sync:disabled {
   .vela-desktop__viewport {
     --vd-grid-column-gap: 12px;
     --vd-grid-row-gap: 12px;
-    --vd-grid-padding-x: 22px;
-    --vd-grid-padding-y: 22px;
-    bottom: 96px;
+    --vd-grid-padding-left: 136px;
+    --vd-grid-padding-right: 22px;
+    --vd-grid-padding-top: 22px;
+    --vd-grid-padding-bottom: 22px;
   }
 
-  .vela-topbar__workspace {
-    max-width: 150px;
+  .vela-desktop[data-has-dock="true"] .vela-desktop__viewport {
+    --vd-grid-padding-bottom: 96px;
+  }
+
+  .vela-section-nav {
+    left: 16px;
+    width: 104px;
   }
 }

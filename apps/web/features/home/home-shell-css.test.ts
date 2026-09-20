@@ -66,16 +66,29 @@ describe("home-shell.css transform ownership", () => {
 });
 
 describe("home-shell.css grid geometry contract", () => {
-  it("defines the grid gap and padding as single-source custom properties on the viewport", () => {
+  it("defines the grid gap and ASYMMETRIC padding as single-source custom properties on the viewport", () => {
     const viewport = ruleBlock(".vela-desktop__viewport");
     expect(viewport).toMatch(/--vd-grid-column-gap:\s*16px/);
     expect(viewport).toMatch(/--vd-grid-row-gap:\s*16px/);
-    expect(viewport).toMatch(/--vd-grid-padding-x:\s*34px/);
-    expect(viewport).toMatch(/--vd-grid-padding-y:\s*30px/);
+    // Task 015: the left padding reserves the section-nav rail, so the
+    // single symmetric --vd-grid-padding-x/y pair is replaced by four
+    // independent edge variables.
+    expect(viewport).toMatch(/--vd-grid-padding-left:\s*186px/);
+    expect(viewport).toMatch(/--vd-grid-padding-right:\s*34px/);
+    expect(viewport).toMatch(/--vd-grid-padding-top:\s*30px/);
+    expect(viewport).toMatch(/--vd-grid-padding-bottom:\s*30px/);
     expect(viewport).toMatch(/gap:\s*var\(--vd-grid-row-gap\)\s+var\(--vd-grid-column-gap\)/);
-    expect(viewport).toMatch(/padding:\s*var\(--vd-grid-padding-y\)\s+var\(--vd-grid-padding-x\)/);
-    expect(viewport).not.toMatch(/(?:^|[\s;])gap:\s*16px/);
-    expect(viewport).not.toMatch(/(?:^|[\s;])padding:\s*30px\s+34px/);
+    expect(viewport).toMatch(
+      /padding:\s*var\(--vd-grid-padding-top\)\s+var\(--vd-grid-padding-right\)\s+var\(--vd-grid-padding-bottom\)\s+var\(--vd-grid-padding-left\)/
+    );
+    expect(viewport).not.toMatch(/--vd-grid-padding-x/);
+    expect(viewport).not.toMatch(/--vd-grid-padding-y/);
+    expect(viewport).toMatch(/overflow:\s*hidden/);
+  });
+
+  it("reserves extra bottom space only when a dock actually exists", () => {
+    const docked = ruleBlock('.vela-desktop[data-has-dock="true"] .vela-desktop__viewport');
+    expect(docked).toMatch(/--vd-grid-padding-bottom:\s*108px/);
   });
 
   it("no longer fakes cell guides with a repeating background pitch", () => {
@@ -90,7 +103,9 @@ describe("home-shell.css grid geometry contract", () => {
     expect(guides).toMatch(/inset:\s*0/);
     expect(guides).toMatch(/pointer-events:\s*none/);
     expect(guides).toMatch(/gap:\s*var\(--vd-grid-row-gap\)\s+var\(--vd-grid-column-gap\)/);
-    expect(guides).toMatch(/padding:\s*var\(--vd-grid-padding-y\)\s+var\(--vd-grid-padding-x\)/);
+    expect(guides).toMatch(
+      /padding:\s*var\(--vd-grid-padding-top\)\s+var\(--vd-grid-padding-right\)\s+var\(--vd-grid-padding-bottom\)\s+var\(--vd-grid-padding-left\)/
+    );
     expect(guides).toMatch(
       /grid-template-columns:\s*repeat\(var\(--vd-grid-columns\),\s*minmax\(0,\s*1fr\)\)/
     );

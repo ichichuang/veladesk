@@ -1,9 +1,11 @@
 "use client";
 
+import { useMemo } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import type { EntityId, WorkspaceSnapshot } from "@veladesk/domain";
 
 import { useI18n } from "../i18n/use-i18n";
+import { resolveDockEntities } from "./dock-model";
 import {
   contextMenuAnchorFromElement,
   isContextMenuKeyEvent,
@@ -14,38 +16,29 @@ import "./home-shell.css";
 
 interface DockProps {
   readonly workspace: WorkspaceSnapshot;
-  /** Arrange mode relabels the mode utility; drag sessions lock it. */
-  readonly arrange: boolean;
-  readonly dragging: boolean;
-  readonly onToggleMode: () => void;
-  /** Opens the shared Create menu (Add App / New Folder) at the anchor. */
-  readonly onCreateMenu: (x: number, y: number) => void;
   readonly onOpenFolder: (folderId: EntityId) => void;
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
+  /** Empty-area command menu (native right-click is suppressed here). */
+  readonly onDesktopContextMenu: (x: number, y: number) => void;
 }
 
 /**
- * Floating bottom dock: the workspace's pinned items in stored order, then
- * the utility cluster. Dock apps launch on click in both modes; dock
- * folders open their overlay on click. Right-click / Shift+F10 opens the
- * entity context menu (pin/unpin lives there). Pin order itself is not
- * editable in this stage.
+ * Floating bottom dock — pinned entities ONLY (task 015).
+ *
+ * No utility cluster, no separator, no create/mode buttons: every desktop
+ * command moved into the context menu surface. With zero resolvable pins
+ * the dock does not exist in the DOM at all (`null` — never an empty
+ * shell). Dock apps launch on click; legacy dock folders open their
+ * overlay; right-click / Shift+F10 opens the entity context menu.
  */
-export function Dock({
-  workspace,
-  arrange,
-  dragging,
-  onToggleMode,
-  onCreateMenu,
-  onOpenFolder,
-  onEntityContextMenu,
-}: DockProps) {
+export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopContextMenu }: DockProps) {
   const { t } = useI18n();
 
-  const dockEntities = workspace.dock.items
-    .map((entityId) => workspace.entities.find((entity) => entity.id === entityId))
-    .filter((entity): entity is NonNullable<typeof entity> => entity !== undefined)
-    .filter((entity) => entity.kind !== "widget");
+  const dockEntities = useMemo(() => resolveDockEntities(workspace), [workspace]);
+
+  if (dockEntities.length === 0) {
+    return null;
+  }
 
   function handleEntityContextMenu(event: ReactMouseEvent, entityId: EntityId) {
     event.preventDefault();
@@ -63,23 +56,17 @@ export function Dock({
     onEntityContextMenu(entityId, anchor.x, anchor.y);
   }
 
-  function handleCreate(event: ReactMouseEvent<HTMLButtonElement>) {
-    const anchor = contextMenuAnchorFromElement(event.currentTarget);
-    onCreateMenu(anchor.x, anchor.y);
-  }
-
-  function handleCreateKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
-    if (!isContextMenuKeyEvent(event)) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    const anchor = contextMenuAnchorFromElement(event.currentTarget);
-    onCreateMenu(anchor.x, anchor.y);
-  }
-
   return (
-    <nav className="vela-dock" aria-label={t("dock.label")}>
+    <nav
+      className="vela-dock"
+      aria-label={t("dock.label")}
+      onContextMenu={(event) => {
+        // Dock surface: never the browser menu; empty dock chrome falls
+        // through to the desktop command menu.
+        event.preventDefault();
+        onDesktopContextMenu(event.clientX, event.clientY);
+      }}
+    >
       {dockEntities.map((entity) =>
         entity.kind === "app" ? (
           <button
@@ -110,30 +97,6 @@ export function Dock({
           </button>
         )
       )}
-
-      <span className="vela-dock__separator" aria-hidden="true" />
-      <button
-        type="button"
-        className="vela-dock__utility"
-        title={t("dock.create")}
-        aria-label={t("dock.create")}
-        aria-haspopup="menu"
-        disabled={dragging}
-        onClick={handleCreate}
-        onKeyDown={handleCreateKeyDown}
-      >
-        +
-      </button>
-      <button
-        type="button"
-        className="vela-dock__utility vela-dock__utility--text"
-        title={arrange ? t("dock.switchToViewTitle") : t("dock.switchToArrangeTitle")}
-        aria-pressed={arrange}
-        disabled={dragging}
-        onClick={onToggleMode}
-      >
-        {arrange ? t("mode.view") : t("mode.arrange")}
-      </button>
     </nav>
   );
 }

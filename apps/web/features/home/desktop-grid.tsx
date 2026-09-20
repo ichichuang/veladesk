@@ -11,34 +11,41 @@ import "./home-shell.css";
 interface DesktopGridViewProps {
   readonly layout: PageLayout;
   readonly workspace: WorkspaceSnapshot;
+  /**
+   * Whether THIS grid runs the arrange session (guides + marquee). In the
+   * scroll-snap workspace only the active section arranges (task 015) —
+   * passing `arrange` already implies the section is active.
+   */
   readonly arrange: boolean;
   /**
    * Whether items may start drag sessions at all. Independent of `arrange`:
    * a pending drop handoff briefly disables new drags without pretending
-   * the desktop left arrange mode.
+   * the desktop left arrange mode. Inactive sections always render with
+   * drags off.
    */
   readonly dragEnabled: boolean;
   readonly metrics: GridPixelMetrics | null;
-  readonly gridRef: (node: HTMLDivElement | null) => void;
+  /** Only the active section's grid is measured — null elsewhere. */
+  readonly gridRef?: ((node: HTMLDivElement | null) => void) | undefined;
   readonly selectedIds: ReadonlySet<EntityId>;
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
   readonly onOpenFolder: (folderId: EntityId) => void;
   /** Arrange-mode marquee: pointerdown on the empty grid background. */
-  readonly onViewportPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  readonly onViewportPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  readonly onViewportPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  readonly onViewportPointerDown?: ((event: ReactPointerEvent<HTMLDivElement>) => void) | undefined;
+  readonly onViewportPointerMove?: ((event: ReactPointerEvent<HTMLDivElement>) => void) | undefined;
+  readonly onViewportPointerUp?: ((event: ReactPointerEvent<HTMLDivElement>) => void) | undefined;
 }
 
 /**
- * The desktop viewport: a fixed CSS grid sized by the page layout.
+ * One section's desktop grid: a fixed CSS grid sized by the page layout.
  *
- * Occupies the space between top bar and dock so the body never scrolls.
- * In arrange mode, a guide overlay renders one real CSS-grid cell per
- * logical cell (same template/gap/padding as the viewport, so guide rects
- * are actual track rects) and the empty grid background starts a marquee
- * selection. Pure rendering — drag sessions, selection state and context
- * menus live in the shell.
+ * Fills its section (which is exactly one scroll-snap viewport), never
+ * scrolls internally. Arrange interaction — guide overlay, marquee,
+ * selection — belongs to the active section only; inactive sections render
+ * the same items read-only so scrolling shows the real next section.
+ * Pure rendering — drag sessions, selection state and context menus live
+ * in the shell.
  */
 export function DesktopGridView({
   layout,
@@ -60,13 +67,12 @@ export function DesktopGridView({
     "--vd-grid-rows": layout.grid.rows,
   } as CSSProperties;
 
-  const guides = Array.from(
-    { length: layout.grid.columns * layout.grid.rows },
-    (_, index) => ({
-      column: (index % layout.grid.columns) + 1,
-      row: Math.floor(index / layout.grid.columns) + 1,
-    }),
-  );
+  const guides = arrange
+    ? Array.from({ length: layout.grid.columns * layout.grid.rows }, (_, index) => ({
+        column: (index % layout.grid.columns) + 1,
+        row: Math.floor(index / layout.grid.columns) + 1,
+      }))
+    : [];
 
   return (
     <div
