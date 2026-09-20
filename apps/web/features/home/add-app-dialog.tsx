@@ -75,7 +75,9 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
         // Verbatim user input on purpose: no trimming, no protocol edits.
         name,
         url,
-        icon: { kind: "generated", text: generatedIconText(name) },
+        // Auto text icon: initials follow renames until the user picks a
+        // custom icon (library or text) in the visual editor.
+        icon: { kind: "generated", text: generatedIconText(name), source: "auto" },
         openMode: "new-tab",
         tags: [],
       };

@@ -142,18 +142,36 @@ describe("buildAppMenuEntries", () => {
     callbacks: {
       onOpen: noop,
       onEdit: noop,
+      onEditAppearance: noop,
       onMoveToSection: noop,
       onPinToggle: noop,
       onDelete: noop,
     },
   };
 
-  it("has open/edit, move-to-section and delete — and NO move-to-folder", () => {
+  it("has open/edit, edit-appearance, move-to-section and delete — and NO move-to-folder", () => {
     const entries = buildAppMenuEntries({ ...base, pinned: false });
     const ids = actionIds(entries);
-    expect(ids).toEqual(["open", "edit", "move-to-section", "pin-toggle", "delete"]);
+    expect(ids).toEqual([
+      "open",
+      "edit",
+      "edit-appearance",
+      "move-to-section",
+      "pin-toggle",
+      "delete",
+    ]);
     expect(ids).not.toContain("move-to-folder");
     expect(ids).not.toContain("move-to-desktop");
+  });
+
+  it("offers Edit appearance… right after Edit (task 016-A)", () => {
+    const entries = buildAppMenuEntries({ ...base, pinned: false });
+    const ids = actionIds(entries);
+    expect(ids.indexOf("edit-appearance")).toBe(ids.indexOf("edit") + 1);
+    const appearance = entries.find(
+      (entry) => entry.kind === "action" && entry.id === "edit-appearance"
+    );
+    expect(appearance?.kind === "action" && appearance.label).toBe("编辑外观…");
   });
 
   it("labels the pin toggle by pinned state", () => {

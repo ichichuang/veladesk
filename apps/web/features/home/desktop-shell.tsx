@@ -48,6 +48,7 @@ import {
 } from "./context-menu";
 import type { ContextMenuState } from "./context-menu";
 import { AddAppDialog } from "./add-app-dialog";
+import { AppVisualEditor } from "./app-visual-editor";
 import { canRedo, canUndo, reconcilePageHistory } from "./arrange-history";
 import type { ArrangeHistories } from "./arrange-history";
 import { resolveArrangeHistoryCommand } from "./arrange-shortcuts";
@@ -133,6 +134,7 @@ export type ContextMenuTarget =
 export type HomeDialog =
   | { readonly kind: "add-app"; readonly pageId: DesktopPageId }
   | { readonly kind: "edit-app"; readonly entityId: EntityId }
+  | { readonly kind: "edit-visual"; readonly entityId: EntityId }
   | { readonly kind: "delete-app"; readonly entityId: EntityId }
   | { readonly kind: "new-section" }
   | { readonly kind: "rename-section"; readonly pageId: DesktopPageId }
@@ -882,6 +884,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         callbacks: {
           onOpen: () => launchApp(entity),
           onEdit: () => openDialog({ kind: "edit-app", entityId: entity.id }),
+          onEditAppearance: () => openDialog({ kind: "edit-visual", entityId: entity.id }),
           onMoveToSection: () => openDialog({ kind: "move-to-section", appId: entity.id }),
           onPinToggle: () =>
             void runDockEdit((input) =>
@@ -1430,6 +1433,13 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       ) : null}
       {dialog !== null && dialog.kind === "edit-app" ? (
         <EditAppDialog
+          workspace={snapshot}
+          appId={dialog.entityId}
+          onClose={closeDialog}
+        />
+      ) : null}
+      {dialog !== null && dialog.kind === "edit-visual" ? (
+        <AppVisualEditor
           workspace={snapshot}
           appId={dialog.entityId}
           onClose={closeDialog}

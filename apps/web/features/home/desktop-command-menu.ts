@@ -114,6 +114,7 @@ export interface AppMenuInput {
   readonly callbacks: {
     readonly onOpen: () => void;
     readonly onEdit: () => void;
+    readonly onEditAppearance: () => void;
     readonly onMoveToSection: () => void;
     readonly onPinToggle: () => void;
     readonly onDelete: () => void;
@@ -121,15 +122,22 @@ export interface AppMenuInput {
 }
 
 /**
- * Builds the app context menu (task 015 model): open/edit, then the move
- * and dock group, then delete. The folder-first primary actions are gone —
- * no "Move to Folder", and "Move to Desktop" became "Move to Section…".
+ * Builds the app context menu (task 015 model + 016 visual entry): open/
+ * edit/edit-appearance, then the move and dock group, then delete. The
+ * folder-first primary actions are gone — no "Move to Folder", and "Move
+ * to Desktop" became "Move to Section…".
  */
 export function buildAppMenuEntries(input: AppMenuInput): readonly DesktopMenuEntry[] {
   const { t, pinned, callbacks } = input;
   return [
     { kind: "action", id: "open", label: t("menu.open"), onSelect: callbacks.onOpen },
     { kind: "action", id: "edit", label: t("menu.edit"), onSelect: callbacks.onEdit },
+    {
+      kind: "action",
+      id: "edit-appearance",
+      label: t("menu.editAppearance"),
+      onSelect: callbacks.onEditAppearance,
+    },
     { kind: "separator" },
     { kind: "action", id: "move-to-section", label: t("menu.moveToSection"), onSelect: callbacks.onMoveToSection },
     {

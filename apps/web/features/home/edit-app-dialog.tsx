@@ -9,6 +9,7 @@ import type { WorkspaceEditFailureReason } from "@veladesk/domain";
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
 import { useI18n } from "../i18n/use-i18n";
 import type { TranslateFn } from "../i18n/use-i18n";
+import { generatedIconFollowsName } from "./app-icon";
 import { generatedIconText } from "./generated-icon";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import "./home-shell.css";
@@ -77,10 +78,11 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
         name,
         url,
         openMode,
-        icon:
-          existing.icon.kind === "generated"
-            ? { kind: "generated", text: generatedIconText(name) }
-            : existing.icon,
+        // Only AUTO generated icons follow renames — custom text and every
+        // other icon kind are user-owned and stay untouched.
+        icon: generatedIconFollowsName(existing)
+          ? { kind: "generated", text: generatedIconText(name), source: "auto" }
+          : existing.icon,
       };
       const result = replaceApp(workspace, nextApp);
       if (!result.ok) {
