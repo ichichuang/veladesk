@@ -945,6 +945,10 @@ button.vela-section-nav__sync:focus-visible {
 }
 
 .vela-item__label {
+  /* The icon tile never shrinks (see .vela-app-icon), so the label must
+     not absorb the squeeze either — both keep natural size and may
+     overflow into the row gap instead of collapsing to zero. */
+  flex-shrink: 0;
   max-width: 110px;
   overflow: hidden;
   font-size: 12.5px;
@@ -967,7 +971,10 @@ button.vela-section-nav__sync:focus-visible {
 
 .vela-app-icon {
   /* Visual icon box = global base size × per-app scale. Overflowing the
-     1×1 slot at 160% is intended (visual size, not layout size). */
+     1×1 slot at 160% is intended (visual size, not layout size). The tile
+     never flex-shrinks: a scale is a promise, and a squashed tile would
+     break the label baseline contract. */
+  flex-shrink: 0;
   width: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1));
   height: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1));
   border-radius: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1) * 0.26);
