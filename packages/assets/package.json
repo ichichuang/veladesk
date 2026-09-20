@@ -1,0 +1,20 @@
+{
+  "name": "@veladesk/assets",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Content-addressed uploaded asset pipeline for VelaDesk: SHA-256 identity, magic-byte media detection, browser IndexedDB store with outbox, and a local-first asset runtime. The server imports only ./core.",
+  "exports": {
+    "./core": "./src/core/index.ts",
+    "./browser": "./src/browser/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dexie": "4.4.6"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "6.2.5",
+    "typescript": "^5.9.3"
+  }
+}
