@@ -118,3 +118,15 @@ rendering never touches IndexedDB or fetch.
 The production homepage consumes this runtime through the generic
 `WorkspaceRuntimeProvider`; its runtime states and surfaces are described
 in [production-desktop-shell.md](./production-desktop-shell.md).
+
+## Browser production transport (016-B)
+
+In the browser, `getBrowserWorkspaceRuntime` composes the transport stack
+MANUALLY: local store → HTTP workspace transport → asset-aware wrapper →
+client runtime. The wrapper (`createAssetAwareWorkspaceSyncTransport`)
+ensures every asset referenced by a snapshot is uploaded (or already
+remote) BEFORE any workspace POST/PUT and maps asset failures onto the
+shared transport failure contract — so the startup dirty sync is
+asset-first too. The workspace sync COORDINATOR itself still knows
+nothing about assets; package boundaries stay clean
+(see [assets.md](./assets.md)).

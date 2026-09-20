@@ -19,9 +19,12 @@ Icon identity is unchanged and stays a small closed union in the domain:
 
 - `{ kind: "iconify", icon: "<collection>:<name>" }` — a library icon;
 - `{ kind: "generated", text, source?: "auto" | "custom" }` — a text icon;
-- `{ kind: "favicon" }` / `{ kind: "asset", assetId }` — reserved kinds
-  that currently render their generated-text fallback (assets activate in
-  016-B).
+- `{ kind: "asset", assetId }` — an UPLOADED image (task 016-B): rendered
+  from a local-first, hash-verified asset store via object URL. The
+  workspace stores only the content-addressed id — never base64, never a
+  remote URL, never the bytes (see
+  [assets.md](./assets.md)). `favicon` remains a reserved kind rendering
+  its generated-text fallback; no favicon fetching exists.
 
 The four bundled collections are `simple-icons`, `lucide`, `tabler` and
 `ph`; there is exactly ONE `iconify` variant, not one per collection.
@@ -137,11 +140,18 @@ foreground color — this supports per-app tinting, which an `<img>` cannot
 do, and avoids `innerHTML` entirely. The URL is built only from a parsed,
 validated id (`parseIconifyIconId`), so quoting is safe.
 
-A 404 or load failure (probed with an `Image()` preload) degrades to the
-generated text initials — a broken library icon never renders as a broken
-image, and recovery is automatic on the next successful load. Text icons
-show `icon.text` (derived initials when blank); `favicon`/`asset` kinds
-show derived initials until their real renderers arrive.
+Uploaded assets (`kind: "asset"`) render through a local-first object URL
+(`useAssetImageUrl`: IndexedDB blob hit, hash-verified remote GET +
+hydrate on a miss) as a plain `<img>` (`object-fit: contain`) inside the
+decoration tile — they keep their OWN colors (`foregroundColor` is
+ignored for them), while decoration styles and `iconScale` still apply.
+
+A 404 or load failure (probed with an `Image()` preload for library
+icons, the asset runtime's failure result for uploads) degrades to the
+generated text initials — a broken icon never renders as a broken image,
+and recovery is automatic on the next successful load. Text icons show
+`icon.text` (derived initials when blank); `favicon` shows derived
+initials.
 
 ## Icon Picker and Visual Editor
 
@@ -153,14 +163,26 @@ show derived initials until their real renderers arrive.
   with `label · collection` aria-labels.
 - `app-visual-editor.tsx`: opened from the app context menu's
   编辑外观… / Edit appearance…. Icon source tabs are 图标库, 文字
-  (auto/custom), and 上传图片 — displayed DISABLED with an explicit
-  next-phase note; upload is NOT faked. A live preview renders the draft
-  through `AppIconRenderer`. Everything edits the draft only: Save runs
-  `replaceApp` → local stage → sync attempt (and is disabled while the
-  draft equals the persisted state); Cancel closes with zero mutation.
+  (auto/custom), and 上传图片 — REAL since 016-B: a dropzone supporting
+  click-to-choose, drag-and-drop and clipboard paste; files are validated
+  immediately (4 MiB budget, magic bytes, browser decode, 4096×4096
+  dimension budget) and kept in component state ONLY — the blob is
+  staged into the asset store at Save, BEFORE the workspace mutation
+  (ordering enforced by the asset-aware sync transport). Editing an app
+  that already has an uploaded icon opens the upload tab with the
+  current image and never re-stages unless a new file is chosen. A live
+  preview renders the draft through `AppIconRenderer`. Everything edits
+  the draft only: Save runs (asset stage →) `replaceApp` → local stage
+  → sync attempt (and is disabled while the draft equals the persisted
+  state); Cancel closes with zero mutation — a pending upload is
+  discarded without ever touching IndexedDB or the workspace.
 
-## What 016-A deliberately does not do
+## What 016-A deliberately did not do — and 016-B delivered
 
-No real image upload/persistence, no base64 in the workspace, no asset
-database, no favicon fetching, no remote Iconify API or CDN icons, no app
-tile span resize, no grid model changes, no new Section behavior.
+016-A shipped without real upload support. 016-B added it end to end
+(content-addressed assets, a dedicated IndexedDB store with outbox, the
+self-hosted `/api/v1/assets` binary API, server-side
+`VELADESK_DATA_DIR/assets` persistence, and asset-before-workspace sync
+ordering) — see [assets.md](./assets.md). Still out of scope: favicon
+fetching, remote image URLs, SVG/GIF uploads, image crop/resize pipelines,
+and any base64 in the workspace.
