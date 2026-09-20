@@ -89,6 +89,7 @@ import {
 } from "./layout-handoff";
 import type { PendingLayoutHandoff } from "./layout-handoff";
 import {
+  isResizableEntity,
   isResizeNoop,
   reconcileResizeHandoff,
   withIconScale,
@@ -1444,9 +1445,17 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     openDesktopCommandMenu(event.clientX, event.clientY);
   }
 
-  /** The resizable items of the active section: exactly one selected app. */
+  /**
+   * The resizable items of the active section: exactly one selected app.
+   *
+   * A LIVE session must never remove the handles — they hold the pointer
+   * capture, so unmounting them would drop the gesture mid-drag. Only a
+   * pending commit handoff suppresses them (and then the gesture is already
+   * over), which also stops a second session from starting on a scale the
+   * snapshot has not caught up with yet.
+   */
   const resizableIds = useMemo<ReadonlySet<EntityId>>(() => {
-    if (!arrange || activePage === undefined || handoffLock || resizeLock) {
+    if (!arrange || activePage === undefined || handoffLock || pendingResizeHandoff !== null) {
       return EMPTY_ID_SET;
     }
     if (selectedItemIds.size !== 1) {
@@ -1457,8 +1466,15 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       return EMPTY_ID_SET;
     }
     const entity = snapshot.entities.find((candidate) => candidate.id === id);
-    return entity !== undefined && entity.kind === "app" ? new Set([id]) : EMPTY_ID_SET;
-  }, [activePage, arrange, handoffLock, resizeLock, selectedItemIds, snapshot.entities]);
+    return isResizableEntity(entity) ? new Set([id]) : EMPTY_ID_SET;
+  }, [
+    activePage,
+    arrange,
+    handoffLock,
+    pendingResizeHandoff,
+    selectedItemIds,
+    snapshot.entities,
+  ]);
 
   /**
    * A live resize owns the desktop: switching sections mid-gesture would

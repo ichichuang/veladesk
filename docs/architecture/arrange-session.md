@@ -64,8 +64,11 @@ local edits and sync normally.
 
 Arrange history records page-layout MOVEMENTS only — single drag, group
 drag, keyboard nudge. It is not a workspace-wide command history: app
-add/edit/delete, folder operations, renames and dock pins are invisible
-to it, and the UI labels it "arrange" accordingly.
+add/edit/delete, folder operations, renames, dock pins and icon RESIZING
+(016-C) are invisible to it, and the UI labels it "arrange" accordingly.
+An icon resize writes `AppVisualStyle.iconScale` — a visual multiplier,
+never a `PageLayout` edit — so it must not and does not enter this
+history (see [app-resize.md](./app-resize.md)).
 
 ## Reconciliation
 

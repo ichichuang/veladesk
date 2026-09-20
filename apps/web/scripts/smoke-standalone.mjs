@@ -198,6 +198,70 @@ async function main() {
     assert(persistedBody.workspace.revision === 1, `expected revision 1 after restart, got ${persistedBody.workspace.revision}`);
     console.log("boot 2: workspace persisted across restart");
 
+    // --- Bundled icon catalog (tasks 016-A / 016-C) -----------------------
+    // The nine IconifyJSON collections must be TRACED into the standalone
+    // bundle: a missing one surfaces here as a 404 on its SVG route.
+    const iconBase = `http://127.0.0.1:${restartPort}`;
+
+    const recommended = await fetch(`${iconBase}/api/v1/icons/search`);
+    assert(recommended.status === 200, `recommended search expected 200, got ${recommended.status}`);
+    const recommendedBody = await recommended.json();
+    assert(recommendedBody.icons[0]?.id === "simple-icons:github", "recommended page must lead with a real brand icon");
+    assert(recommendedBody.nextOffset === null, "the curated page must fit in one page");
+    console.log(`icon search (recommended) -> ${recommendedBody.icons.length} curated icons`);
+
+    const all = await fetch(`${iconBase}/api/v1/icons/search?scope=all&limit=96`);
+    assert(all.status === 200, `scope=all expected 200, got ${all.status}`);
+    const allBody = await all.json();
+    assert(allBody.icons.length === 96, `expected 96 icons, got ${allBody.icons.length}`);
+    assert(allBody.total > 300, `expected the real catalog, total=${allBody.total}`);
+    assert(allBody.nextOffset === 96, `expected nextOffset 96, got ${allBody.nextOffset}`);
+    const page3 = await fetch(`${iconBase}/api/v1/icons/search?scope=all&limit=96&offset=192`);
+    const page3Body = await page3.json();
+    const page1Ids = new Set(allBody.icons.map((icon) => icon.id));
+    assert(
+      page3Body.icons.every((icon) => !page1Ids.has(icon.id)),
+      "paged results must not repeat an earlier page",
+    );
+    assert(page3Body.total === allBody.total, "total must be page-independent");
+    console.log(`icon search scope=all -> 3 pages of 96 out of ${allBody.total}`);
+
+    const color = await fetch(`${iconBase}/api/v1/icons/search?scope=color&limit=120`);
+    const colorBody = await color.json();
+    assert(
+      colorBody.icons.every((icon) => icon.palette === "multicolor"),
+      "scope=color must only return multicolor palettes",
+    );
+
+    const samples = [
+      ["simple-icons", "github", "monochrome"],
+      ["lucide", "terminal", "monochrome"],
+      ["tabler", "server", "monochrome"],
+      ["ph", "robot", "monochrome"],
+      ["fluent-color", "mail-24", "multicolor"],
+      ["devicon", "docker", "multicolor"],
+      ["vscode-icons", "file-type-reactjs", "multicolor"],
+      ["catppuccin", "typescript", "multicolor"],
+      ["noto", "robot", "multicolor"],
+    ];
+    for (const [collection, name, palette] of samples) {
+      const response = await fetch(`${iconBase}/api/v1/icons/${collection}/${name}.svg`);
+      assert(response.status === 200, `${collection}:${name} expected 200, got ${response.status}`);
+      assert(
+        response.headers.get("content-type") === "image/svg+xml; charset=utf-8",
+        `${collection}:${name} content-type mismatch`,
+      );
+      const svg = await response.text();
+      if (palette === "multicolor") {
+        assert(/(fill|stroke)="#[0-9a-fA-F]{3,6}"/.test(svg), `${collection} must keep its original colors`);
+        assert(!svg.includes("currentColor"), `${collection} must not be flattened to currentColor`);
+      } else {
+        assert(svg.includes("currentColor"), `${collection} must stay mask-renderable`);
+      }
+    }
+    console.log(`icon SVG routes -> all ${samples.length} collections 200 with the right palette`);
+    console.log("boot 2: icon catalog served from the standalone bundle");
+
     // --- Uploaded assets (task 016-B) -------------------------------------
     const png = makePngBytes();
     const assetId = `asset-sha256-${createHash("sha256").update(png).digest("hex")}`;

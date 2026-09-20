@@ -113,6 +113,15 @@ export function isResizeNoop(startScale: number, endScale: number): boolean {
 }
 
 /**
+ * Only apps resize. Folders and widgets have no visual icon scale, and a
+ * multi-selection is deliberately excluded too: group resize is not a
+ * product feature, while group drag stays available.
+ */
+export function isResizableEntity(entity: { readonly kind: string } | undefined): boolean {
+  return entity !== undefined && entity.kind === "app";
+}
+
+/**
  * The app with only its visual icon scale replaced. The decoration style,
  * colors, icon and — above all — the logical layout of the workspace stay
  * exactly as they were.

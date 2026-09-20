@@ -211,6 +211,13 @@ function DesktopEntity({
   function handleResizePointerDown(corner: ResizeCorner) {
     return (event: ReactPointerEvent<HTMLSpanElement>) => {
       // Never let a handle start a drag, a marquee, a launch or a menu.
+      //
+      // This MUST run in the CAPTURE phase: dnd-kit attaches its own native
+      // pointerdown listener to the draggable button, and a native listener on
+      // the button fires before React's root-level bubble handlers — stopping
+      // propagation from a bubble handler would be too late and the tile would
+      // start dragging instead of resizing. Stopping it at the root during
+      // capture keeps the event away from the button entirely.
       event.preventDefault();
       event.stopPropagation();
       if (resizeRef.current !== null) {
@@ -358,7 +365,7 @@ function DesktopEntity({
                   data-corner={corner}
                   role="button"
                   aria-label={t("arrange.resizeIcon")}
-                  onPointerDown={handleResizePointerDown(corner)}
+                  onPointerDownCapture={handleResizePointerDown(corner)}
                   onPointerMove={handleResizePointerMove}
                   onPointerUp={handleResizePointerUp}
                   onPointerCancel={handleLostPointerCapture}

@@ -202,18 +202,29 @@ visual identity (library icon, text, size, colors, decoration) is edited
 afterwards via the context menu — see
 [app-visual-system.md](./app-visual-system.md).
 
-## App visual editing (016-A)
+## App visual editing (016-A, revised in 016-C)
 
 The app context menu gained 编辑外观… / Edit appearance… between Edit
-and the section/dock group. It opens the App Visual Editor: icon source
-( searchable self-hosted catalog, or auto/custom text; the upload tab is
-explicitly disabled until 016-B), a 50–160% per-app size slider, Auto-
-or-hex foreground/decoration colors and the four decoration styles,
-rendered live in a draft preview through the shared AppIconRenderer.
-Only Save stages anything (via `replaceApp`, which preserves page,
-folder and dock placement); Cancel never mutates. Edit App keeps its
-name/URL/open-mode scope and only recalculates initials for auto-sourced
-generated icons.
+and the section/dock group. It opens the App Visual Editor, a FIXED SHELL
+whose preview header and Cancel/Save footer stay outside the one
+scrolling body: icon source (the paginated self-hosted catalog, or
+auto/custom text, or an uploaded image since 016-B), Auto- or-hex
+foreground/decoration colors and the four decoration styles, rendered
+live in a draft preview through the shared AppIconRenderer. The size
+slider is gone — size is edited by dragging the icon's corners in Arrange
+mode (see [app-resize.md](./app-resize.md)) and the header says so. Only
+Save stages anything (via `replaceApp`, which preserves page, folder,
+dock placement and the current icon scale); Cancel never mutates. Edit
+App keeps its name/URL/open-mode scope and only recalculates initials for
+auto-sourced generated icons.
+
+## Arrange icon resize (016-C)
+
+Selecting a single app in Arrange mode adds four corner handles that
+scale its icon uniformly around the tile's center. The gesture writes a
+transient CSS variable only, commits once at pointerup, and never touches
+the layout, the movement history or `GridDefinition`. Full design in
+[app-resize.md](./app-resize.md).
 
 ## Launch
 

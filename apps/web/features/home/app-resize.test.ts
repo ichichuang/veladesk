@@ -7,6 +7,7 @@ import {
   RESIZE_NOOP_EPSILON,
   beginResizeSession,
   clampIconScale,
+  isResizableEntity,
   isResizeHandoffCaughtUp,
   isResizeNoop,
   reconcileResizeHandoff,
@@ -192,6 +193,15 @@ describe("resizeScaleAt", () => {
     // A garbage pointer reading must never move the icon.
     expect(resizeScaleAt(session, Number.NaN, 400)).toBe(1.3);
     expect(resizeScaleAt(session, Number.POSITIVE_INFINITY, 400)).toBe(1.3);
+  });
+});
+
+describe("isResizableEntity", () => {
+  it("accepts apps only", () => {
+    expect(isResizableEntity({ kind: "app" })).toBe(true);
+    expect(isResizableEntity({ kind: "folder" })).toBe(false);
+    expect(isResizableEntity({ kind: "widget" })).toBe(false);
+    expect(isResizableEntity(undefined)).toBe(false);
   });
 });
 
