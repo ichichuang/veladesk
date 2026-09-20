@@ -58,7 +58,35 @@ export type AppIcon =
   | {
       readonly kind: "generated";
       readonly text: string;
+      /**
+       * Where the text comes from. `auto` (and legacy `undefined`) means the
+       * initials are derived from the app name and are recalculated on
+       * rename; `custom` means the user owns the text and renames must
+       * never overwrite it.
+       */
+      readonly source?: "auto" | "custom";
     };
+
+/**
+ * How an app's icon tile is painted. Ranges are semantic — see
+ * `validateAppVisualStyle`.
+ */
+export type AppDecorationStyle = "gradient" | "solid" | "glass" | "none";
+
+/**
+ * Per-app visual style, optional on `AppShortcut` so every legacy snapshot
+ * stays valid without a migration. Colors are exact `#RRGGBB` hex — never
+ * arbitrary CSS. `iconScale` is a visual multiplier only; grid cells, spans
+ * and drag metrics are never affected.
+ */
+export interface AppVisualStyle {
+  readonly iconScale: number;
+  readonly decorationStyle: AppDecorationStyle;
+
+  readonly foregroundColor?: string;
+
+  readonly decorationColor?: string;
+}
 
 /**
  * A launchable shortcut.
@@ -80,6 +108,12 @@ export interface AppShortcut {
   readonly icon: AppIcon;
 
   readonly openMode: AppOpenMode;
+
+  /**
+   * Optional per-app visual style. Legacy apps without one resolve to
+   * `DEFAULT_APP_VISUAL_STYLE` at render time — no migration, ever.
+   */
+  readonly visual?: AppVisualStyle;
 
   readonly categoryId?: CategoryId;
 

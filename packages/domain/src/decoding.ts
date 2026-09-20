@@ -48,6 +48,18 @@ function isOptionalString(value: unknown): boolean {
 
 const APP_OPEN_MODES: readonly string[] = ["new-tab", "same-tab", "new-window", "popup"];
 
+const GENERATED_ICON_SOURCES: readonly string[] = ["auto", "custom"];
+
+function isGeneratedIcon(value: Record<string, unknown>): boolean {
+  if (typeof value.text !== "string") {
+    return false;
+  }
+  // Optional since forever (legacy apps have no source); when present it
+  // must be a known source word. Semantic behavior (auto follows renames)
+  // lives with the renderer/editor, not here.
+  return value.source === undefined || GENERATED_ICON_SOURCES.includes(value.source as string);
+}
+
 function isAppIcon(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
@@ -60,10 +72,27 @@ function isAppIcon(value: unknown): boolean {
     case "asset":
       return typeof value.assetId === "string";
     case "generated":
-      return typeof value.text === "string";
+      return isGeneratedIcon(value);
     default:
       return false;
   }
+}
+
+const APP_DECORATION_STYLES: readonly string[] = ["gradient", "solid", "glass", "none"];
+
+/**
+ * Structural shape of `AppVisualStyle` only — the numeric scale range and
+ * hex color rules are semantic and belong to `validateAppVisualStyle`
+ * (iconScale 99 or `url(...)` decode fine and fail validation later).
+ */
+function isAppVisualStyle(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.iconScale === "number" &&
+    APP_DECORATION_STYLES.includes(value.decorationStyle as string) &&
+    (value.foregroundColor === undefined || typeof value.foregroundColor === "string") &&
+    (value.decorationColor === undefined || typeof value.decorationColor === "string")
+  );
 }
 
 function isWorkspaceEntity(value: unknown): boolean {
@@ -78,6 +107,9 @@ function isWorkspaceEntity(value: unknown): boolean {
         isOptionalString(value.description) &&
         isAppIcon(value.icon) &&
         APP_OPEN_MODES.includes(value.openMode as string) &&
+        // Optional since forever (legacy apps have no visual); only a
+        // structurally valid style is accepted. Ranges are semantic.
+        (value.visual === undefined || isAppVisualStyle(value.visual)) &&
         isOptionalString(value.categoryId) &&
         isStringArray(value.tags)
       );

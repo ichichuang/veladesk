@@ -15,6 +15,16 @@ export {
 } from "./appearance";
 export type { WorkspaceAppearanceValidationIssue } from "./appearance";
 
+export {
+  DEFAULT_APP_VISUAL_STYLE,
+  MAX_ICON_SCALE,
+  MIN_ICON_SCALE,
+  isValidAppHexColor,
+  resolveAppVisualStyle,
+  validateAppVisualStyle,
+} from "./app-visual";
+export type { AppVisualValidationIssue } from "./app-visual";
+
 export { findCategory, findDesktopPage, findWorkspaceEntity } from "./lookup";
 
 export { decodeWorkspaceSnapshot } from "./decoding";
@@ -45,9 +55,11 @@ export {
 export type { WorkspaceEditFailureReason, WorkspaceEditResult } from "./editing";
 
 export type {
+  AppDecorationStyle,
   AppIcon,
   AppOpenMode,
   AppShortcut,
+  AppVisualStyle,
   AssetId,
   Category,
   CategoryId,

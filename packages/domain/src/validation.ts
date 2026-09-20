@@ -1,6 +1,8 @@
 import { validatePageLayout } from "@veladesk/desktop-engine";
 import type { LayoutValidationIssue } from "@veladesk/desktop-engine";
 
+import { validateAppVisualStyle } from "./app-visual";
+import type { AppVisualValidationIssue } from "./app-visual";
 import { validateWorkspaceAppearance } from "./appearance";
 import type { WorkspaceAppearanceValidationIssue } from "./appearance";
 import type {
@@ -126,6 +128,11 @@ export type WorkspaceValidationIssue =
       readonly appId: EntityId;
     }
   | {
+      readonly type: "invalid-app-visual";
+      readonly entityId: EntityId;
+      readonly issue: AppVisualValidationIssue;
+    }
+  | {
       readonly type: "invalid-widget-type";
       readonly widgetId: EntityId;
     };
@@ -140,7 +147,7 @@ function isBlank(value: string): boolean {
  * Deterministic issue order:
  * 1. workspace-level identity/scalars
  * 2. page identity/name/layout
- * 3. entity identity/name/basic scalars
+ * 3. entity identity/name/basic scalars (incl. per-app visual semantics)
  * 4. category identity/name
  * 5. layout references
  * 6. folder references
@@ -219,6 +226,14 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
       }
       if (isBlank(entity.url)) {
         issues.push({ type: "invalid-app-url", appId: entity.id });
+      }
+      // Per-app visual semantics — only when a persisted style exists.
+      // Legacy apps without one are valid by definition; the shared range
+      // rules live in `validateAppVisualStyle` and are never duplicated.
+      if (entity.visual !== undefined) {
+        for (const issue of validateAppVisualStyle(entity.visual)) {
+          issues.push({ type: "invalid-app-visual", entityId: entity.id, issue });
+        }
       }
     } else if (entity.kind === "folder") {
       if (isBlank(entity.name)) {

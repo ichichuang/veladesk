@@ -34,6 +34,13 @@ function snapshotWithEntities(entities: unknown[]): Record<string, unknown> {
   return { ...minimalSnapshot(), entities };
 }
 
+/** The rich app fixture without the dangling categoryId, for visual tests. */
+function appWithVisual(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  const rest = { ...richApp() };
+  delete rest.categoryId;
+  return { ...rest, ...extra };
+}
+
 describe("decodeWorkspaceSnapshot — valid structures", () => {
   it("decodes a minimal valid snapshot", () => {
     const decoded = decodeWorkspaceSnapshot(minimalSnapshot());
@@ -399,3 +406,143 @@ function minimalSnapshotPageLayout(): unknown {
     items: [],
   };
 }
+
+describe("decodeWorkspaceSnapshot — app visual styles", () => {
+  it("decodes a legacy app icon without a source; the field stays undefined", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([richApp({ icon: { kind: "generated", text: "OB" } })])
+    );
+
+    expect(decoded).toBeDefined();
+    const app = decoded!.entities[0]!;
+    expect(app.kind === "app" ? app.icon : undefined).toEqual({ kind: "generated", text: "OB" });
+  });
+
+  it("decodes generated icons with auto and custom sources", () => {
+    for (const source of ["auto", "custom"] as const) {
+      const decoded = decodeWorkspaceSnapshot(
+        snapshotWithEntities([richApp({ icon: { kind: "generated", text: "OB", source } })])
+      );
+
+      expect(decoded).toBeDefined();
+      const app = decoded!.entities[0]!;
+      expect(app.kind === "app" ? app.icon : undefined).toEqual({
+        kind: "generated",
+        text: "OB",
+        source,
+      });
+    }
+  });
+
+  it("rejects a generated icon with an unknown source", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([
+        richApp({ icon: { kind: "generated", text: "OB", source: "random" } }),
+      ])
+    );
+
+    expect(decoded).toBeUndefined();
+  });
+
+  it("decodes a legacy app without a visual; the field stays undefined", () => {
+    const decoded = decodeWorkspaceSnapshot(snapshotWithEntities([richApp()]));
+
+    expect(decoded).toBeDefined();
+    const app = decoded!.entities[0]!;
+    expect(app.kind === "app" ? app.visual : undefined).toBeUndefined();
+  });
+
+  it("decodes a structurally valid visual style", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([
+        appWithVisual({
+          visual: {
+            iconScale: 1.15,
+            decorationStyle: "glass",
+            foregroundColor: "#AABBCC",
+            decorationColor: "#ddeeff",
+          },
+        }),
+      ])
+    );
+
+    expect(decoded).toBeDefined();
+    const app = decoded!.entities[0]!;
+    expect(app.kind === "app" ? app.visual : undefined).toEqual({
+      iconScale: 1.15,
+      decorationStyle: "glass",
+      foregroundColor: "#AABBCC",
+      decorationColor: "#ddeeff",
+    });
+  });
+
+  it("decodes every decoration style structurally", () => {
+    for (const decorationStyle of ["gradient", "solid", "glass", "none"]) {
+      const decoded = decodeWorkspaceSnapshot(
+        snapshotWithEntities([appWithVisual({ visual: { iconScale: 1, decorationStyle } })])
+      );
+
+      expect(decoded).toBeDefined();
+    }
+  });
+
+  it("rejects an unknown decoration style structurally", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([appWithVisual({ visual: { iconScale: 1, decorationStyle: "plasma" } })])
+    );
+
+    expect(decoded).toBeUndefined();
+  });
+
+  it("rejects a wrong numeric type for iconScale structurally", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([appWithVisual({ visual: { iconScale: "big", decorationStyle: "solid" } })])
+    );
+
+    expect(decoded).toBeUndefined();
+  });
+
+  it("rejects a non-string foreground color structurally", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([
+        richApp({ visual: { iconScale: 1, decorationStyle: "solid", foregroundColor: 12 } }),
+      ])
+    );
+
+    expect(decoded).toBeUndefined();
+  });
+
+  it("decodes a semantically out-of-range scale; validateWorkspace rejects it", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([appWithVisual({ visual: { iconScale: 99, decorationStyle: "solid" } })])
+    );
+
+    expect(decoded).toBeDefined();
+    expect(validateWorkspace(decoded!)).toEqual([
+      {
+        type: "invalid-app-visual",
+        entityId: "app-1",
+        issue: { type: "invalid-icon-scale" },
+      },
+    ]);
+  });
+
+  it("decodes a semantically invalid color; validateWorkspace rejects it", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([
+        appWithVisual({
+          visual: { iconScale: 1, decorationStyle: "solid", foregroundColor: "url(x)" },
+        }),
+      ])
+    );
+
+    expect(decoded).toBeDefined();
+    expect(validateWorkspace(decoded!)).toEqual([
+      {
+        type: "invalid-app-visual",
+        entityId: "app-1",
+        issue: { type: "invalid-foreground-color" },
+      },
+    ]);
+  });
+});
