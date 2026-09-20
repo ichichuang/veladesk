@@ -28,6 +28,16 @@ interface DesktopGridViewProps {
   /** Only the active section's grid is measured — null elsewhere. */
   readonly gridRef?: ((node: HTMLDivElement | null) => void) | undefined;
   readonly selectedIds: ReadonlySet<EntityId>;
+  /**
+   * The items that may show the four corner resize handles this frame. The
+   * shell owns the rule (arrange mode, single selection, an app) — the grid
+   * passes it straight through.
+   */
+  readonly resizableIds: ReadonlySet<EntityId>;
+  /** The app whose resize session or handoff is live, if any. */
+  readonly resizeActiveId: EntityId | null;
+  readonly onResizeCommit: (entityId: EntityId, scale: number) => void;
+  readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
   readonly onOpenFolder: (folderId: EntityId) => void;
@@ -55,6 +65,10 @@ export function DesktopGridView({
   metrics,
   gridRef,
   selectedIds,
+  resizableIds,
+  resizeActiveId,
+  onResizeCommit,
+  onResizeSessionChange,
   onItemSelect,
   onEntityContextMenu,
   onOpenFolder,
@@ -105,6 +119,10 @@ export function DesktopGridView({
           dragEnabled={dragEnabled}
           metricsAvailable={metrics !== null}
           selected={selectedIds.has(item.id)}
+          resizable={resizableIds.has(item.id)}
+          resizeActiveId={resizeActiveId}
+          onResizeCommit={onResizeCommit}
+          onResizeSessionChange={onResizeSessionChange}
           onItemSelect={onItemSelect}
           onEntityContextMenu={onEntityContextMenu}
           onOpenFolder={onOpenFolder}

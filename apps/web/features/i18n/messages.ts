@@ -106,6 +106,7 @@ const zhCNCatalog = {
   "menu.rename": "重命名",
   "menu.editAppearance": "编辑外观…",
   "menu.widgetLater": "小组件编辑将在后续版本提供",
+  "arrange.resizeIcon": "调整图标大小",
 
   // --- Icon catalog picker (016-A, v2 in 016-C) -----------------------------
   "iconPicker.searchLabel": "搜索图标",
@@ -423,6 +424,7 @@ export const enUS: MessageCatalog = {
   "menu.rename": "Rename",
   "menu.editAppearance": "Edit appearance…",
   "menu.widgetLater": "Widget editing later",
+  "arrange.resizeIcon": "Resize icon",
 
   "iconPicker.searchLabel": "Search icons",
   "iconPicker.searchPlaceholder": "Search icons…",

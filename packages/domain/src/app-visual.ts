@@ -19,9 +19,9 @@ export const DEFAULT_APP_VISUAL_STYLE: AppVisualStyle = {
   decorationStyle: "gradient",
 };
 
-/** Semantic range of `iconScale`: 50%–160% of the global base icon size. */
+/** Semantic range of `iconScale`: 50%–200% of the global base icon size. */
 export const MIN_ICON_SCALE = 0.5;
-export const MAX_ICON_SCALE = 1.6;
+export const MAX_ICON_SCALE = 2;
 
 /** Exact `#RRGGBB` hex (uppercase or lowercase digits, both fine). */
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;

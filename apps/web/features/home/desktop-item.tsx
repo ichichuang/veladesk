@@ -1,12 +1,24 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/react";
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import type { EntityId, WorkspaceEntity, WorkspaceSnapshot } from "@veladesk/domain";
+import { resolveAppVisualStyle } from "@veladesk/domain";
 import type { LayoutItem } from "@veladesk/desktop-engine";
 
 import { contextMenuAnchorFromElement, isContextMenuKeyEvent } from "./context-menu";
 import { AppIconTile } from "./app-icon-renderer";
+import {
+  RESIZE_CORNERS,
+  beginResizeSession,
+  resizeScaleAt,
+} from "./app-resize";
+import type { ResizeCorner, ResizeSession } from "./app-resize";
 import { launchApp } from "./launch-app";
 import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
@@ -17,14 +29,25 @@ interface DesktopItemProps {
   /** Arrange mode allows dragging; view mode launches/opens on activation. */
   readonly arrange: boolean;
   /**
-   * Whether drag sessions may start at all (a pending drop handoff briefly
-   * disables them). Kept separate from `arrange` so the mode stays a pure
-   * user-facing concept.
+   * Whether drag sessions may start at all (a pending drop handoff or a
+   * live icon resize briefly disables them). Kept separate from `arrange`
+   * so the mode stays a pure user-facing concept.
    */
   readonly dragEnabled: boolean;
   readonly metricsAvailable: boolean;
   /** Whether this item is in the session-only arrange selection. */
   readonly selected: boolean;
+  /**
+   * Whether this item shows the four corner resize handles. The shell
+   * decides (single-selection app in arrange mode); the item only adds the
+   * "not dragging" and "not resizing something else" conditions.
+   */
+  readonly resizable: boolean;
+  /** The app whose resize session or handoff is live, if any. */
+  readonly resizeActiveId: EntityId | null;
+  readonly onResizeCommit: (entityId: EntityId, scale: number) => void;
+  /** Reports a session start/end so the shell can lock competing gestures. */
+  readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
   /** Arrange-mode click: plain selects, Cmd/Ctrl toggles (shell decides). */
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (
@@ -52,6 +75,10 @@ export function DesktopItem({
   dragEnabled,
   metricsAvailable,
   selected,
+  resizable,
+  resizeActiveId,
+  onResizeCommit,
+  onResizeSessionChange,
   onItemSelect,
   onEntityContextMenu,
   onOpenFolder,
@@ -78,6 +105,10 @@ export function DesktopItem({
       dragEnabled={dragEnabled}
       metricsAvailable={metricsAvailable}
       selected={selected}
+      resizable={resizable}
+      resizeActiveId={resizeActiveId}
+      onResizeCommit={onResizeCommit}
+      onResizeSessionChange={onResizeSessionChange}
       onItemSelect={onItemSelect}
       onEntityContextMenu={onEntityContextMenu}
       onOpenFolder={onOpenFolder}
@@ -98,9 +129,19 @@ interface DesktopEntityProps {
   readonly dragEnabled: boolean;
   readonly metricsAvailable: boolean;
   readonly selected: boolean;
+  readonly resizable: boolean;
+  readonly resizeActiveId: EntityId | null;
+  readonly onResizeCommit: DesktopItemProps["onResizeCommit"];
+  readonly onResizeSessionChange: DesktopItemProps["onResizeSessionChange"];
   readonly onItemSelect: DesktopItemProps["onItemSelect"];
   readonly onEntityContextMenu: DesktopItemProps["onEntityContextMenu"];
   readonly onOpenFolder: DesktopItemProps["onOpenFolder"];
+}
+
+/** A live resize gesture, keyed by the pointer that owns it. */
+interface ActiveResize {
+  readonly session: ResizeSession;
+  readonly pointerId: number;
 }
 
 function DesktopEntity({
@@ -110,17 +151,153 @@ function DesktopEntity({
   dragEnabled,
   metricsAvailable,
   selected,
+  resizable,
+  resizeActiveId,
+  onResizeCommit,
+  onResizeSessionChange,
   onItemSelect,
   onEntityContextMenu,
   onOpenFolder,
 }: DesktopEntityProps) {
+  const { t } = useI18n();
   const { ref, isDragging } = useDraggable({
     id: item.id,
     disabled: !arrange || !dragEnabled || !metricsAvailable,
   });
+  /**
+   * The wrapper around the icon tile. During a resize the transient scale is
+   * written here as a CSS custom property — custom properties inherit, so
+   * the tile picks it up without React re-rendering the desktop on every
+   * pointer frame.
+   */
+  const tileWrapRef = useRef<HTMLSpanElement | null>(null);
+  const resizeRef = useRef<ActiveResize | null>(null);
+  const [resizing, setResizing] = useState(false);
 
   const commonStyle = { ...placementStyle(item), ...(isDragging ? { zIndex: 30 } : {}) };
   const draggingProps = { "data-dragging": isDragging ? "true" : undefined } as const;
+
+  /**
+   * The preview scale is only ever removed while no resize is live for this
+   * app: the shell keeps the handoff alive until the persisted snapshot
+   * carries the committed scale, so the tile never flashes back to the old
+   * size between pointerup and the durable write.
+   */
+  const resumePreviewHeld = resizeActiveId === entity.id;
+  useEffect(() => {
+    if (!resumePreviewHeld) {
+      tileWrapRef.current?.style.removeProperty("--vd-app-icon-scale-preview");
+    }
+  }, [resumePreviewHeld]);
+
+  function clearPreview() {
+    tileWrapRef.current?.style.removeProperty("--vd-app-icon-scale-preview");
+  }
+
+  function endResize() {
+    resizeRef.current = null;
+    setResizing(false);
+    onResizeSessionChange(entity.id, false);
+  }
+
+  function cancelResize() {
+    if (resizeRef.current === null) {
+      return;
+    }
+    clearPreview();
+    endResize();
+  }
+
+  function handleResizePointerDown(corner: ResizeCorner) {
+    return (event: ReactPointerEvent<HTMLSpanElement>) => {
+      // Never let a handle start a drag, a marquee, a launch or a menu.
+      event.preventDefault();
+      event.stopPropagation();
+      if (resizeRef.current !== null) {
+        return;
+      }
+      const tile = tileWrapRef.current?.querySelector<HTMLElement>(".vela-item__icon");
+      if (tile === null || tile === undefined) {
+        return;
+      }
+      const rect = tile.getBoundingClientRect();
+      const session = beginResizeSession({
+        corner,
+        startScale: appScale,
+        centerX: rect.left + rect.width / 2,
+        centerY: rect.top + rect.height / 2,
+        pointerX: event.clientX,
+        pointerY: event.clientY,
+      });
+      if (session === undefined) {
+        return;
+      }
+      resizeRef.current = { session, pointerId: event.pointerId };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setResizing(true);
+      onResizeSessionChange(entity.id, true);
+    };
+  }
+
+  function handleResizePointerMove(event: ReactPointerEvent<HTMLSpanElement>) {
+    const active = resizeRef.current;
+    if (active === null || active.pointerId !== event.pointerId) {
+      return;
+    }
+    const next = resizeScaleAt(active.session, event.clientX, event.clientY);
+    tileWrapRef.current?.style.setProperty("--vd-app-icon-scale-preview", String(next));
+  }
+
+  function handleResizePointerUp(event: ReactPointerEvent<HTMLSpanElement>) {
+    const active = resizeRef.current;
+    if (active === null || active.pointerId !== event.pointerId) {
+      return;
+    }
+    const finalScale = resizeScaleAt(active.session, event.clientX, event.clientY);
+    // Pointer capture stays until the browser releases it; the gesture is
+    // over for us either way.
+    endResize();
+    // The transient preview REMAINS at finalScale — the shell either hands it
+    // off to the durable snapshot or drops it (no-op / failure), and the
+    // effect above removes it exactly then.
+    onResizeCommit(entity.id, finalScale);
+  }
+
+  /** Capture lost without a pointerup (OS gesture, element detach): cancel. */
+  function handleLostPointerCapture(event: ReactPointerEvent<HTMLSpanElement>) {
+    if (resizeRef.current?.pointerId === event.pointerId) {
+      cancelResize();
+    }
+  }
+
+  // Escape cancels a live resize (spec: no stage, no sync, persisted scale
+  // untouched). Registered only while this item owns the gesture.
+  useEffect(() => {
+    if (!resizing) {
+      return;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelResize();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cancelResize only touches refs and stable setters
+  }, [resizing]);
+
+  const showResizeHandles =
+    entity.kind === "app" &&
+    resizable &&
+    !isDragging &&
+    (resizeActiveId === null || resizeActiveId === entity.id);
+  /**
+   * The gesture starts from the AUTHORITATIVE scale, never from whatever the
+   * preview happens to show — the shell hides the handles while a handoff is
+   * live, so a session can never begin on a pending value.
+   */
+  const appScale = entity.kind === "app" ? resolveAppVisualStyle(entity).iconScale : 1;
 
   function handleContextMenu(event: ReactMouseEvent) {
     event.preventDefault();
@@ -171,7 +348,31 @@ function DesktopEntity({
         onKeyDown={handleKeyDown}
         onClick={handleClick}
       >
-        <AppIconTile app={entity} />
+        <span className="vela-item__icon-wrap" ref={tileWrapRef}>
+          <AppIconTile app={entity} />
+          {showResizeHandles
+            ? RESIZE_CORNERS.map((corner) => (
+                <span
+                  key={corner}
+                  className="vela-item__resize-handle"
+                  data-corner={corner}
+                  role="button"
+                  aria-label={t("arrange.resizeIcon")}
+                  onPointerDown={handleResizePointerDown(corner)}
+                  onPointerMove={handleResizePointerMove}
+                  onPointerUp={handleResizePointerUp}
+                  onPointerCancel={handleLostPointerCapture}
+                  onLostPointerCapture={handleLostPointerCapture}
+                  onClick={(event) => {
+                    // The click a handle produces belongs to the resize.
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onContextMenu={swallowContextMenu}
+                />
+              ))
+            : null}
+        </span>
         <span className="vela-item__label">{entity.name}</span>
       </button>
     );

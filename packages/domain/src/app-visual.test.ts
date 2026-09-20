@@ -83,21 +83,23 @@ describe("resolveAppVisualStyle", () => {
 });
 
 describe("validateAppVisualStyle: iconScale", () => {
-  it("accepts the exact boundaries 0.5 and 1.6", () => {
+  it("accepts the exact boundaries 0.5 and 2.0", () => {
     expect(validateAppVisualStyle({ iconScale: MIN_ICON_SCALE, decorationStyle: "solid" })).toEqual([]);
     expect(validateAppVisualStyle({ iconScale: MAX_ICON_SCALE, decorationStyle: "solid" })).toEqual([]);
   });
 
-  it("accepts interior values", () => {
+  it("accepts interior values, including the pre-016-C ceiling of 1.6", () => {
     expect(validateAppVisualStyle({ iconScale: 1, decorationStyle: "gradient" })).toEqual([]);
     expect(validateAppVisualStyle({ iconScale: 1.15, decorationStyle: "glass" })).toEqual([]);
+    // Every snapshot persisted under the old 0.5–1.6 range stays legal.
+    expect(validateAppVisualStyle({ iconScale: 1.6, decorationStyle: "solid" })).toEqual([]);
   });
 
   it("reports below-minimum and above-maximum scales", () => {
     expect(validateAppVisualStyle({ iconScale: 0.49, decorationStyle: "solid" })).toEqual([
       { type: "invalid-icon-scale" },
     ]);
-    expect(validateAppVisualStyle({ iconScale: 1.61, decorationStyle: "solid" })).toEqual([
+    expect(validateAppVisualStyle({ iconScale: 2.01, decorationStyle: "solid" })).toEqual([
       { type: "invalid-icon-scale" },
     ]);
   });

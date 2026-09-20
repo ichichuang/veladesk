@@ -970,15 +970,24 @@ button.vela-section-nav__sync:focus-visible {
    from validated #RRGGBB — user strings never reach CSS raw. */
 
 .vela-app-icon {
+  /* ONE effective scale for every dimension of the tile. The persisted
+     value is the default; an Arrange resize writes
+     --vd-app-icon-scale-preview on the wrapper for the duration of the
+     gesture (and its commit handoff), so a pointermove updates the tile
+     without React re-rendering the desktop. */
+  --vd-app-icon-effective-scale: var(
+    --vd-app-icon-scale-preview,
+    var(--vd-app-icon-scale, 1)
+  );
   /* Visual icon box = global base size × per-app scale. Overflowing the
-     1×1 slot at 160% is intended (visual size, not layout size). The tile
+     1×1 slot at 200% is intended (visual size, not layout size). The tile
      never flex-shrinks: a scale is a promise, and a squashed tile would
      break the label baseline contract. */
   flex-shrink: 0;
-  width: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1));
-  height: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1));
-  border-radius: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1) * 0.26);
-  font-size: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-scale, 1) * 0.34);
+  width: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-effective-scale));
+  height: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-effective-scale));
+  border-radius: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-effective-scale) * 0.26);
+  font-size: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-effective-scale) * 0.34);
   color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
 }
 
@@ -1187,6 +1196,61 @@ button.vela-section-nav__sync:focus-visible {
   box-shadow:
     0 0 0 2px var(--vd-accent),
     0 10px 26px oklch(0 0 0 / 0.35);
+}
+
+/* --- Arrange icon resize (016-C) ----------------------------------------
+   The tile sits in a wrapper so the four corner handles can hug its actual
+   (scaled) box; the wrapper also carries the transient
+   --vd-app-icon-scale-preview that a pointermove writes directly to the DOM.
+   Handles exist only in arrange mode with a single app selected. */
+
+.vela-item__icon-wrap {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+
+.vela-item__resize-handle {
+  position: absolute;
+  /* 18px hit area around a ~10px visual dot: easy to grab, visually light. */
+  width: 18px;
+  height: 18px;
+  touch-action: none;
+  z-index: 2;
+}
+
+.vela-item__resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid oklch(0.98 0.01 260 / 0.85);
+  border-radius: 3px;
+  background: var(--vd-accent);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.45);
+}
+
+.vela-item__resize-handle[data-corner="nw"] {
+  top: -9px;
+  left: -9px;
+  cursor: nwse-resize;
+}
+
+.vela-item__resize-handle[data-corner="ne"] {
+  top: -9px;
+  right: -9px;
+  cursor: nesw-resize;
+}
+
+.vela-item__resize-handle[data-corner="sw"] {
+  bottom: -9px;
+  left: -9px;
+  cursor: nesw-resize;
+}
+
+.vela-item__resize-handle[data-corner="se"] {
+  bottom: -9px;
+  right: -9px;
+  cursor: nwse-resize;
 }
 
 .vela-marquee {

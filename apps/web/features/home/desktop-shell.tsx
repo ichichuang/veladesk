@@ -14,7 +14,9 @@ import {
   findDesktopPage,
   movePage,
   pinEntityToDock,
+  replaceApp,
   replaceWorkspacePreferences,
+  resolveAppVisualStyle,
   resolveWorkspaceAppearance,
   setDefaultPage,
   unpinEntityFromDock,
@@ -86,6 +88,12 @@ import {
   resolveDisplayLayout,
 } from "./layout-handoff";
 import type { PendingLayoutHandoff } from "./layout-handoff";
+import {
+  isResizeNoop,
+  reconcileResizeHandoff,
+  withIconScale,
+} from "./app-resize";
+import type { PendingResizeHandoff } from "./app-resize";
 import { launchApp } from "./launch-app";
 import { buildAppearanceTheme } from "./appearance-theme";
 import { disableDndDropAnimation } from "./dnd-static-drop";
@@ -162,6 +170,7 @@ type LayoutCommitOutcome =
   | { readonly status: "failed" };
 
 const EMPTY_SELECTION: ReadonlySet<LayoutItemId> = new Set();
+const EMPTY_ID_SET: ReadonlySet<EntityId> = new Set();
 
 interface DesktopShellProps {
   readonly workspace: LocalWorkspaceRecord;
@@ -225,6 +234,23 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     null
   );
   /**
+   * The app whose icon resize session is live right now. A live session
+   * locks every competing gesture (drag, marquee, nudge, undo/redo, mode and
+   * section switches) for as long as it lasts.
+   */
+  const [resizeSessionAppId, setResizeSessionAppId] = useState<EntityId | null>(null);
+  /**
+   * Session-only optimistic icon scale for a just-resized app, established
+   * synchronously at pointerup — before any IndexedDB promise is awaited —
+   * so the tile keeps the size the pointer released on. Like the layout
+   * handoff this is presentation state only; it never touches the
+   * WorkspaceSnapshot, IndexedDB, the server or localStorage, and it is
+   * dropped as soon as the authoritative snapshot carries the same scale.
+   */
+  const [pendingResizeHandoff, setPendingResizeHandoff] = useState<PendingResizeHandoff | null>(
+    null
+  );
+  /**
    * A section to reveal on the NEXT DOM commit (create section, reorder,
    * delete-active). A ref — handlers set it synchronously around a
    * structural change, and the post-commit effect consumes it exactly
@@ -235,6 +261,15 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const arrange = mode === "arrange";
   /** True only while a display layout outruns the durable snapshot. */
   const handoffLock = pendingLayoutHandoff !== null;
+  /**
+   * True while an icon resize owns the desktop: either the gesture is still
+   * running or its committed scale has not been durably staged yet. The lock
+   * is deliberately short — it ends the moment the local stage lands, never
+   * waiting for a server sync.
+   */
+  const resizeLock = resizeSessionAppId !== null || pendingResizeHandoff !== null;
+  /** The app whose resize is live — its tile holds the transient preview. */
+  const resizeActiveId = pendingResizeHandoff?.appId ?? resizeSessionAppId;
 
   const pageIds = useMemo(() => snapshot.pages.map((page) => page.id), [snapshot.pages]);
   const navigation = useSectionNavigation({
@@ -292,6 +327,17 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const pendingHandoffRef = useRef<PendingLayoutHandoff | null>(null);
   /** Handoffs whose stage attempt has settled (staged/noop/failed). */
   const settledHandoffTokensRef = useRef<ReadonlySet<number>>(new Set());
+  /** Generation counter for icon-resize handoffs — stale completions lose. */
+  const resizeTokenRef = useRef(0);
+  /** Resize handoffs whose stage attempt has settled (staged/noop/failed). */
+  const settledResizeTokensRef = useRef<ReadonlySet<number>>(new Set());
+  /** Imperative mirror of `pendingResizeHandoff` for event handlers. */
+  const pendingResizeHandoffRef = useRef<PendingResizeHandoff | null>(null);
+  /**
+   * Imperative mirror of the resize lock. Gesture handlers are created once
+   * and read this ref, so a session started mid-render still blocks them.
+   */
+  const resizeLockRef = useRef(false);
   useEffect(() => {
     workspaceRef.current = workspace;
   }, [workspace]);
@@ -301,6 +347,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   useEffect(() => {
     arrangeHistoriesRef.current = arrangeHistories;
   }, [arrangeHistories]);
+  useEffect(() => {
+    resizeLockRef.current = resizeLock;
+  }, [resizeLock]);
 
   function applySelection(next: ReadonlySet<LayoutItemId>) {
     selectionRef.current = next;
@@ -313,10 +362,17 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     setPendingLayoutHandoff(next);
   }
 
+  /** Establishes/clears the optimistic icon scale, mirror ref included. */
+  function stagePendingResizeHandoff(next: PendingResizeHandoff | null) {
+    pendingResizeHandoffRef.current = next;
+    setPendingResizeHandoff(next);
+  }
+
   function switchMode(next: DesktopMode) {
     // A pending handoff means the display layout outruns the durable
-    // snapshot — mode changes wait the few ms until the stage lands.
-    if (pendingHandoffRef.current !== null) {
+    // snapshot — mode changes wait the few ms until the stage lands. A live
+    // resize owns the desktop entirely.
+    if (pendingHandoffRef.current !== null || resizeLockRef.current) {
       return;
     }
     setMode(next);
@@ -452,6 +508,35 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   }, [snapshot, pendingLayoutHandoff]);
 
   /**
+   * Resize-handoff reconcile after every workspace snapshot change: once the
+   * authoritative app carries the committed scale, the override is dropped
+   * with pixel-identical geometry. A settled attempt whose scale never
+   * matched (a refused stage) drops the override too — that is the only true
+   * revert, and the tile returns to the persisted size. Settled tokens are
+   * pruned as their handoffs resolve.
+   */
+  useEffect(() => {
+    const current = pendingResizeHandoff;
+    if (current === null) {
+      return;
+    }
+    const app = snapshot.entities.find(
+      (entity): entity is AppShortcut => entity.kind === "app" && entity.id === current.appId
+    );
+    const next = reconcileResizeHandoff(
+      current,
+      app === undefined ? undefined : resolveAppVisualStyle(app).iconScale,
+      settledResizeTokensRef.current.has(current.token)
+    );
+    if (next !== current) {
+      const remaining = new Set(settledResizeTokensRef.current);
+      remaining.delete(current.token);
+      settledResizeTokensRef.current = remaining;
+      stagePendingResizeHandoff(next);
+    }
+  }, [snapshot, pendingResizeHandoff]);
+
+  /**
    * Serialized local-first layout commits: compute the candidate history,
    * stage the new snapshot, and only accept the candidate history after a
    * successful stage — a stage failure rolls the candidate back by never
@@ -567,6 +652,73 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     [enqueueLayoutCommit]
   );
 
+  /**
+   * Marks a resize handoff's stage attempt as settled (staged/noop/failed).
+   * The reconcile effect is what drops the override — a settled token whose
+   * authoritative scale never matched is the failed-write revert.
+   */
+  const settleResizeHandoff = useCallback((token: number) => {
+    settledResizeTokensRef.current = new Set([...settledResizeTokensRef.current, token]);
+  }, []);
+
+  /**
+   * Commits one finished icon-resize gesture: exactly one replaceApp, one
+   * workspace stage and one sync attempt, no matter how many pointermoves
+   * preceded it. A sub-epsilon change is a no-op — zero stage, zero sync.
+   *
+   * The optimistic display scale is established FIRST, synchronously, so the
+   * tile never falls back to the old size while IndexedDB is being written.
+   */
+  const commitResize = useCallback(
+    (entityId: EntityId, finalScale: number) => {
+      const current = workspaceRef.current;
+      const app = current.snapshot.entities.find(
+        (entity): entity is AppShortcut => entity.kind === "app" && entity.id === entityId
+      );
+      if (app === undefined) {
+        return;
+      }
+      if (isResizeNoop(resolveAppVisualStyle(app).iconScale, finalScale)) {
+        return;
+      }
+      const token = resizeTokenRef.current + 1;
+      resizeTokenRef.current = token;
+      stagePendingResizeHandoff({ token, appId: entityId, scale: finalScale });
+      const run = async () => {
+        try {
+          const live = workspaceRef.current;
+          const target = live.snapshot.entities.find(
+            (entity): entity is AppShortcut => entity.kind === "app" && entity.id === entityId
+          );
+          if (target === undefined) {
+            settleResizeHandoff(token);
+            return;
+          }
+          const replaced = replaceApp(live.snapshot, withIconScale(target, finalScale));
+          if (!replaced.ok) {
+            settleResizeHandoff(token);
+            return;
+          }
+          const staged = await stageWorkspaceAndTrySync(runtime, replaced.workspace);
+          if (!staged.ok) {
+            console.error(`VelaDesk: icon resize was not staged (${staged.reason})`);
+          }
+          settleResizeHandoff(token);
+        } catch (error) {
+          console.error("VelaDesk: icon resize could not be committed", error);
+          settleResizeHandoff(token);
+        }
+      };
+      layoutQueueRef.current = layoutQueueRef.current.then(run, run);
+    },
+    [runtime, settleResizeHandoff]
+  );
+
+  /** A resize gesture started/ended — holds or releases the desktop lock. */
+  const handleResizeSessionChange = useCallback((entityId: EntityId, active: boolean) => {
+    setResizeSessionAppId(active ? entityId : null);
+  }, []);
+
   /** Undo/Redo: the resulting layout is a brand-new local edit. */
   const applyHistoryStep = useCallback(
     (pageId: DesktopPageId, direction: "undo" | "redo") => {
@@ -624,8 +776,10 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       if (
         pageId === null ||
         selectionRef.current.size === 0 ||
-        // Nudges compute against the durable snapshot — wait out any handoff.
-        pendingHandoffRef.current !== null
+        // Nudges compute against the durable snapshot — wait out any handoff,
+        // and never fight an in-flight icon resize.
+        pendingHandoffRef.current !== null ||
+        resizeLockRef.current
       ) {
         return;
       }
@@ -685,8 +839,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const wrappedHandleDragStart = useCallback(
     (event: Parameters<typeof handleDragStart>[0]) => {
       // A pending handoff means the durable snapshot is behind the display;
-      // a second geometry session must not start on that base.
-      if (pendingHandoffRef.current !== null) {
+      // a second geometry session must not start on that base. A live icon
+      // resize owns the pointer outright.
+      if (pendingHandoffRef.current !== null || resizeLockRef.current) {
         return;
       }
       // Drag-source selection semantics: grabbing an unselected item makes
@@ -722,7 +877,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   // --- Arrange marquee (rubber-band) selection, active section only -------
   const handleViewportPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!arrange || draggingRef.current || event.button !== 0) {
+      if (!arrange || draggingRef.current || resizeLockRef.current || event.button !== 0) {
         return;
       }
       // Only the empty grid background starts a marquee — never an item.
@@ -810,6 +965,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const scrollLocked =
     dragging ||
     handoffLock ||
+    resizeLock ||
     settingsOpen ||
     launcherOpen ||
     dialog !== null ||
@@ -1132,8 +1288,11 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         settingsOpen;
 
       if (event.key === "Escape") {
-        // Open surfaces consume Escape themselves; otherwise it clears the
-        // session selection.
+        // An in-flight icon resize consumes Escape itself (cancel, no write);
+        // open surfaces consume it next; otherwise it clears the selection.
+        if (resizeLockRef.current) {
+          return;
+        }
         if (!surfaceOpen && arrange && selectionRef.current.size > 0) {
           event.preventDefault();
           applySelection(EMPTY_SELECTION);
@@ -1171,6 +1330,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         arrange &&
         !surfaceOpen &&
         !draggingRef.current &&
+        !resizeLockRef.current &&
         (event.metaKey || event.ctrlKey) &&
         !event.altKey
       ) {
@@ -1215,6 +1375,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         arrange &&
         !surfaceOpen &&
         !draggingRef.current &&
+        !resizeLockRef.current &&
         pendingHandoffRef.current === null &&
         selectionRef.current.size > 0
       ) {
@@ -1232,10 +1393,10 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       }
 
       // Section keyboard navigation — the LOWEST priority: only when no
-      // input owns the event, no surface is open, nothing drags, and the
-      // arrange selection does not own the arrows. Scrolls the REAL stack;
-      // no wrap at either end.
-      if (dragging || surfaceOpen || pendingHandoffRef.current !== null) {
+      // input owns the event, no surface is open, nothing drags, no icon
+      // resize is live, and the arrange selection does not own the arrows.
+      // Scrolls the REAL stack; no wrap at either end.
+      if (dragging || surfaceOpen || resizeLockRef.current || pendingHandoffRef.current !== null) {
         return;
       }
       if (arrange && selectionRef.current.size > 0) {
@@ -1282,6 +1443,36 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     event.preventDefault();
     openDesktopCommandMenu(event.clientX, event.clientY);
   }
+
+  /** The resizable items of the active section: exactly one selected app. */
+  const resizableIds = useMemo<ReadonlySet<EntityId>>(() => {
+    if (!arrange || activePage === undefined || handoffLock || resizeLock) {
+      return EMPTY_ID_SET;
+    }
+    if (selectedItemIds.size !== 1) {
+      return EMPTY_ID_SET;
+    }
+    const [id] = selectedItemIds;
+    if (id === undefined) {
+      return EMPTY_ID_SET;
+    }
+    const entity = snapshot.entities.find((candidate) => candidate.id === id);
+    return entity !== undefined && entity.kind === "app" ? new Set([id]) : EMPTY_ID_SET;
+  }, [activePage, arrange, handoffLock, resizeLock, selectedItemIds, snapshot.entities]);
+
+  /**
+   * A live resize owns the desktop: switching sections mid-gesture would
+   * unmount the tile (and its pointer capture) out from under the user.
+   */
+  const handleSectionSelect = useCallback(
+    (pageId: DesktopPageId) => {
+      if (resizeLockRef.current) {
+        return;
+      }
+      scrollToSection(pageId);
+    },
+    [scrollToSection]
+  );
 
   if (activePage === undefined && pageIds.length === 0) {
     // Invariant violation (a workspace always has pages) — stay calm, stay
@@ -1356,10 +1547,14 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
                       layout={isActive && displayLayout !== null ? displayLayout : page.layout}
                       workspace={snapshot}
                       arrange={arrange && isActive}
-                      dragEnabled={arrange && isActive && !handoffLock}
+                      dragEnabled={arrange && isActive && !handoffLock && !resizeLock}
                       metrics={isActive ? metrics : null}
                       gridRef={isActive ? gridRef : undefined}
                       selectedIds={isActive ? selectedItemIds : EMPTY_SELECTION}
+                      resizableIds={isActive ? resizableIds : EMPTY_ID_SET}
+                      resizeActiveId={isActive ? resizeActiveId : null}
+                      onResizeCommit={commitResize}
+                      onResizeSessionChange={handleResizeSessionChange}
                       onItemSelect={handleItemSelect}
                       onEntityContextMenu={(entityId, x, y) =>
                         openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })
@@ -1396,7 +1591,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       <SectionNavigation
         pages={pages}
         activePageId={activePageId}
-        onSelectSection={scrollToSection}
+        onSelectSection={handleSectionSelect}
         onSectionContextMenu={(pageId, x, y) => openContextMenu({ kind: "section", pageId, x, y })}
         onOpenCommandMenu={(x, y) => openContextMenu({ kind: "desktop", x, y })}
         footer={<SectionSyncStatus workspace={workspace} lastRemoteResult={lastRemoteResult} />}
