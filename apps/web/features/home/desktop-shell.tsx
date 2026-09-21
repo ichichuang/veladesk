@@ -8,15 +8,27 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
+  areCanvasLayoutsEqual,
+  canvasCellSize,
+  canvasRectToSnappedRect,
+  canvasRectsEqual,
+  findCanvasItem,
+  replaceCanvasItem,
+  translateCanvasItems,
+  withCanvasMode,
+} from "@veladesk/canvas-engine";
+import type { CanvasLayout, CanvasPlacementMode, CanvasRect } from "@veladesk/canvas-engine";
+import {
   deleteApp,
   deleteEmptyPage,
   dissolveFolderToPage,
   findDesktopPage,
   movePage,
+  pageItemIds,
   pinEntityToDock,
-  replaceApp,
+  replacePageCanvas,
   replaceWorkspacePreferences,
-  resolveAppVisualStyle,
+  resolvePageCanvas,
   resolveWorkspaceAppearance,
   setDefaultPage,
   unpinEntityFromDock,
@@ -29,33 +41,38 @@ import type {
   WorkspaceAppearancePreferences,
   WorkspaceSnapshot,
 } from "@veladesk/domain";
-import {
-  arePageLayoutsEqual,
-  commitLayout,
-  createLayoutHistory,
-  moveItems,
-  redoLayout,
-  undoLayout,
-} from "@veladesk/desktop-engine";
-import type { LayoutItemId, PageLayout } from "@veladesk/desktop-engine";
+import type { LayoutItemId } from "@veladesk/desktop-engine";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
-import { useAtomicGridDrag } from "../desktop-grid/use-atomic-grid-drag";
-import { useGridMetrics } from "../desktop-grid/use-grid-metrics";
 import { resolveDragItemIds } from "../desktop-grid/group-drag";
+import { useCanvasDrag } from "../canvas/use-canvas-drag";
+import { useCanvasMetrics } from "../canvas/use-canvas-metrics";
+import {
+  reconcileCanvasHandoff,
+  resolveDisplayCanvas,
+} from "../canvas/canvas-handoff";
+import type { PendingCanvasHandoff } from "../canvas/canvas-handoff";
+import {
+  canRedo,
+  canUndo,
+  commitPageCanvas,
+  reconcilePageCanvasHistory,
+  redoPageCanvas,
+  resetPageCanvasHistory,
+  undoPageCanvas,
+} from "../canvas/arrange-history";
+import type { ArrangeCanvasHistories } from "../canvas/arrange-history";
 import {
   ContextMenu,
 } from "./context-menu";
 import type { ContextMenuState } from "./context-menu";
 import { AddAppDialog } from "./add-app-dialog";
 import { AppVisualEditor } from "./app-visual-editor";
-import { canRedo, canUndo, reconcilePageHistory } from "./arrange-history";
-import type { ArrangeHistories } from "./arrange-history";
 import { resolveArrangeHistoryCommand } from "./arrange-shortcuts";
 import { ConfirmDialog } from "./confirm-dialog";
-import { DesktopGridView } from "./desktop-grid";
+import { DesktopCanvasView } from "./desktop-grid";
 import { Dock } from "./dock";
 import { resolveDockEntities } from "./dock-model";
 import { EditAppDialog } from "./edit-app-dialog";
@@ -81,20 +98,7 @@ import {
   sectionNavDirection,
 } from "./section-navigation-model";
 import { useSectionNavigation } from "./use-section-navigation";
-import { replacePageLayout } from "./workspace-layout";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
-import {
-  reconcileHandoff,
-  resolveDisplayLayout,
-} from "./layout-handoff";
-import type { PendingLayoutHandoff } from "./layout-handoff";
-import {
-  isResizableEntity,
-  isResizeNoop,
-  reconcileResizeHandoff,
-  withIconScale,
-} from "./app-resize";
-import type { PendingResizeHandoff } from "./app-resize";
 import { launchApp } from "./launch-app";
 import { buildAppearanceTheme } from "./appearance-theme";
 import { disableDndDropAnimation } from "./dnd-static-drop";
@@ -212,7 +216,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
 
   const [selectedItemIds, setSelectedItemIds] = useState<ReadonlySet<LayoutItemId>>(EMPTY_SELECTION);
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
-  const [arrangeHistories, setArrangeHistories] = useState<ArrangeHistories>({});
+  const [arrangeHistories, setArrangeHistories] = useState<ArrangeCanvasHistories>({});
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /**
@@ -222,35 +226,24 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    */
   const [appearancePreview, setAppearancePreview] = useState<WorkspaceAppearancePreferences | null>(null);
   /**
-   * Session-only optimistic display layout for a just-dropped arrange drag.
-   * It is established synchronously at drop time — before any IndexedDB
-   * promise is awaited — so the CSS grid shows the destination the moment
-   * the dnd-kit transform steps down, and the authoritative snapshot
-   * catches up invisibly a few frames later. Presentation state only: it
-   * never touches the WorkspaceSnapshot, IndexedDB, the server or
-   * localStorage, and dies with the session (a reload boots purely from
-   * the authoritative snapshot).
+   * Session-only optimistic display canvas for a just-committed geometry
+   * edit (drag drop, resize, mode switch). It is established synchronously
+   * at release time — before any IndexedDB promise is awaited — so the
+   * section shows the geometry the user produced the moment the pointer
+   * lets go, and the authoritative snapshot catches up invisibly a few
+   * frames later. Presentation state only: it never touches the
+   * WorkspaceSnapshot, IndexedDB, the server or localStorage, and dies with
+   * the session (a reload boots purely from the authoritative snapshot).
    */
-  const [pendingLayoutHandoff, setPendingLayoutHandoff] = useState<PendingLayoutHandoff | null>(
+  const [pendingCanvasHandoff, setPendingCanvasHandoff] = useState<PendingCanvasHandoff | null>(
     null
   );
   /**
-   * The app whose icon resize session is live right now. A live session
-   * locks every competing gesture (drag, marquee, nudge, undo/redo, mode and
+   * The app whose resize session is live right now. A live session locks
+   * every competing gesture (drag, marquee, nudge, undo/redo, mode and
    * section switches) for as long as it lasts.
    */
   const [resizeSessionAppId, setResizeSessionAppId] = useState<EntityId | null>(null);
-  /**
-   * Session-only optimistic icon scale for a just-resized app, established
-   * synchronously at pointerup — before any IndexedDB promise is awaited —
-   * so the tile keeps the size the pointer released on. Like the layout
-   * handoff this is presentation state only; it never touches the
-   * WorkspaceSnapshot, IndexedDB, the server or localStorage, and it is
-   * dropped as soon as the authoritative snapshot carries the same scale.
-   */
-  const [pendingResizeHandoff, setPendingResizeHandoff] = useState<PendingResizeHandoff | null>(
-    null
-  );
   /**
    * A section to reveal on the NEXT DOM commit (create section, reorder,
    * delete-active). A ref — handlers set it synchronously around a
@@ -260,17 +253,16 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const pendingRevealRef = useRef<DesktopPageId | null>(null);
 
   const arrange = mode === "arrange";
-  /** True only while a display layout outruns the durable snapshot. */
-  const handoffLock = pendingLayoutHandoff !== null;
+  /** True only while a display canvas outruns the durable snapshot. */
+  const handoffLock = pendingCanvasHandoff !== null;
   /**
-   * True while an icon resize owns the desktop: either the gesture is still
-   * running or its committed scale has not been durably staged yet. The lock
-   * is deliberately short — it ends the moment the local stage lands, never
-   * waiting for a server sync.
+   * True while a rect resize owns the desktop. The lock is deliberately
+   * short — it ends the moment the gesture finishes, never waiting for a
+   * server sync.
    */
-  const resizeLock = resizeSessionAppId !== null || pendingResizeHandoff !== null;
-  /** The app whose resize is live — its tile holds the transient preview. */
-  const resizeActiveId = pendingResizeHandoff?.appId ?? resizeSessionAppId;
+  const resizeLock = resizeSessionAppId !== null;
+  /** The app whose resize is live. */
+  const resizeActiveId = resizeSessionAppId;
 
   const pageIds = useMemo(() => snapshot.pages.map((page) => page.id), [snapshot.pages]);
   const navigation = useSectionNavigation({
@@ -322,18 +314,12 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const marqueeOriginRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const menuAreaRef = useRef<HTMLDivElement | null>(null);
   const layoutQueueRef = useRef<Promise<void>>(Promise.resolve());
-  /** Generation counter for drop handoffs — stale completions never win. */
+  /** Generation counter for canvas handoffs — stale completions never win. */
   const handoffTokenRef = useRef(0);
-  /** Imperative mirror of `pendingLayoutHandoff` for event handlers. */
-  const pendingHandoffRef = useRef<PendingLayoutHandoff | null>(null);
+  /** Imperative mirror of `pendingCanvasHandoff` for event handlers. */
+  const pendingHandoffRef = useRef<PendingCanvasHandoff | null>(null);
   /** Handoffs whose stage attempt has settled (staged/noop/failed). */
   const settledHandoffTokensRef = useRef<ReadonlySet<number>>(new Set());
-  /** Generation counter for icon-resize handoffs — stale completions lose. */
-  const resizeTokenRef = useRef(0);
-  /** Resize handoffs whose stage attempt has settled (staged/noop/failed). */
-  const settledResizeTokensRef = useRef<ReadonlySet<number>>(new Set());
-  /** Imperative mirror of `pendingResizeHandoff` for event handlers. */
-  const pendingResizeHandoffRef = useRef<PendingResizeHandoff | null>(null);
   /**
    * Imperative mirror of the resize lock. Gesture handlers are created once
    * and read this ref, so a session started mid-render still blocks them.
@@ -357,20 +343,14 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     setSelectedItemIds(next);
   }
 
-  /** Establishes/clears the optimistic display layout, mirror ref included. */
-  function stagePendingHandoff(next: PendingLayoutHandoff | null) {
+  /** Establishes/clears the optimistic display canvas, mirror ref included. */
+  function stagePendingHandoff(next: PendingCanvasHandoff | null) {
     pendingHandoffRef.current = next;
-    setPendingLayoutHandoff(next);
-  }
-
-  /** Establishes/clears the optimistic icon scale, mirror ref included. */
-  function stagePendingResizeHandoff(next: PendingResizeHandoff | null) {
-    pendingResizeHandoffRef.current = next;
-    setPendingResizeHandoff(next);
+    setPendingCanvasHandoff(next);
   }
 
   function switchMode(next: DesktopMode) {
-    // A pending handoff means the display layout outruns the durable
+    // A pending handoff means the display canvas outruns the durable
     // snapshot — mode changes wait the few ms until the stage lands. A live
     // resize owns the desktop entirely.
     if (pendingHandoffRef.current !== null || resizeLockRef.current) {
@@ -471,33 +451,33 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     if (activePage === undefined) {
       return;
     }
-    const validIds = new Set(activePage.layout.items.map((item) => item.id));
+    const validIds = new Set(pageItemIds(activePage));
     const normalized = normalizeSelection(selectionRef.current, validIds);
     if (normalized !== selectionRef.current) {
       applySelection(normalized);
     }
     setArrangeHistories((current) =>
-      reconcilePageHistory(current, activePage.id, activePage.layout),
+      reconcilePageCanvasHistory(current, activePage.id, resolvePageCanvas(activePage)),
     );
   }, [activePage]);
 
   /**
-   * Drop-handoff reconcile after every workspace snapshot change: once the
-   * authoritative layout for the handoff's page is semantically equal to the
+   * Handoff reconcile after every workspace snapshot change: once the
+   * authoritative canvas for the handoff's page is semantically equal to the
    * pending one, the override is dropped (pixel-identical hand-off). A
    * handoff whose stage attempt settled but whose page moved somewhere else
-   * yields to the authoritative state; a page that vanished drops the
+   * yields to the authoritative state, and a page that vanished drops the
    * override outright. Settled tokens are pruned as their handoffs resolve.
    */
   useEffect(() => {
-    const current = pendingLayoutHandoff;
+    const current = pendingCanvasHandoff;
     if (current === null) {
       return;
     }
     const page = findDesktopPage(snapshot, current.pageId);
-    const next = reconcileHandoff(
+    const next = reconcileCanvasHandoff(
       current,
-      page,
+      page === undefined ? undefined : resolvePageCanvas(page),
       settledHandoffTokensRef.current.has(current.token)
     );
     if (next !== current) {
@@ -506,51 +486,26 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       settledHandoffTokensRef.current = remaining;
       stagePendingHandoff(next);
     }
-  }, [snapshot, pendingLayoutHandoff]);
+  }, [snapshot, pendingCanvasHandoff]);
 
   /**
-   * Resize-handoff reconcile after every workspace snapshot change: once the
-   * authoritative app carries the committed scale, the override is dropped
-   * with pixel-identical geometry. A settled attempt whose scale never
-   * matched (a refused stage) drops the override too — that is the only true
-   * revert, and the tile returns to the persisted size. Settled tokens are
-   * pruned as their handoffs resolve.
-   */
-  useEffect(() => {
-    const current = pendingResizeHandoff;
-    if (current === null) {
-      return;
-    }
-    const app = snapshot.entities.find(
-      (entity): entity is AppShortcut => entity.kind === "app" && entity.id === current.appId
-    );
-    const next = reconcileResizeHandoff(
-      current,
-      app === undefined ? undefined : resolveAppVisualStyle(app).iconScale,
-      settledResizeTokensRef.current.has(current.token)
-    );
-    if (next !== current) {
-      const remaining = new Set(settledResizeTokensRef.current);
-      remaining.delete(current.token);
-      settledResizeTokensRef.current = remaining;
-      stagePendingResizeHandoff(next);
-    }
-  }, [snapshot, pendingResizeHandoff]);
-
-  /**
-   * Serialized local-first layout commits: compute the candidate history,
-   * stage the new snapshot, and only accept the candidate history after a
-   * successful stage — a stage failure rolls the candidate back by never
-   * accepting it into state.
+   * Serialized local-first canvas commits: stage the new snapshot, and only
+   * accept the history step after a successful stage — a stage failure rolls
+   * the step back by never accepting it into state.
    *
    * The optional `onSettled` callback reports the attempt's outcome exactly
-   * once (staged / noop / failed) so the drag handoff can reconcile; the
-   * callback never runs after a newer handoff replaced this one's token.
+   * once (staged / noop / failed) so a handoff can reconcile; the callback
+   * never runs after a newer handoff replaced this one's token.
+   *
+   * `resetHistory` marks the structural edits that are deliberately NOT
+   * undoable (placement-mode switch): the page branch restarts at the new
+   * canvas so undo can never walk back into a model the user left.
    */
-  const enqueueLayoutCommit = useCallback(
+  const enqueueCanvasCommit = useCallback(
     (
       pageId: DesktopPageId,
-      movedLayout: PageLayout,
+      nextCanvas: CanvasLayout,
+      options: { readonly resetHistory?: boolean } = {},
       onSettled?: (outcome: LayoutCommitOutcome) => void
     ) => {
       let settled = false;
@@ -568,34 +523,32 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             settle({ status: "noop" });
             return;
           }
-          const base = arrangeHistoriesRef.current[pageId] ?? createLayoutHistory(page.layout);
-          const candidate = commitLayout(base, movedLayout);
-          if (candidate === base) {
-            // Resolved back to the same layout: no semantic change, no
-            // history entry, no staging.
+          if (areCanvasLayoutsEqual(resolvePageCanvas(page), nextCanvas)) {
+            // Resolved back to the same geometry: no stage, no history
+            // entry, no sync.
             settle({ status: "noop" });
             return;
           }
-          const replaced = replacePageLayout(current.snapshot, pageId, candidate.present);
+          const replaced = replacePageCanvas(current.snapshot, pageId, nextCanvas);
           if (!replaced.ok) {
             settle({ status: "noop" });
             return;
           }
           const staged = await stageWorkspaceAndTrySync(runtime, replaced.workspace);
           if (!staged.ok) {
-            console.error(`VelaDesk: layout change was not staged (${staged.reason})`);
+            console.error(`VelaDesk: canvas change was not staged (${staged.reason})`);
             settle({ status: "failed" });
             return;
           }
-          const nextMap: ArrangeHistories = {
-            ...arrangeHistoriesRef.current,
-            [pageId]: candidate,
-          };
+          const nextMap: ArrangeCanvasHistories =
+            options.resetHistory === true
+              ? resetPageCanvasHistory(arrangeHistoriesRef.current, pageId, nextCanvas)
+              : commitPageCanvas(arrangeHistoriesRef.current, pageId, nextCanvas);
           arrangeHistoriesRef.current = nextMap;
           setArrangeHistories(nextMap);
           settle({ status: "staged" });
         } catch (error) {
-          console.error("VelaDesk: layout change could not be committed", error);
+          console.error("VelaDesk: canvas change could not be committed", error);
           settle({ status: "failed" });
         }
       };
@@ -604,36 +557,21 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     [runtime]
   );
 
-  const commitDraggedLayout = useCallback(
-    (movedLayout: PageLayout, layoutAtStart: PageLayout) => {
-      const current = workspaceRef.current;
-      const pageId = pageIdRef.current;
-      if (pageId === null) {
-        return;
-      }
-      const page = findDesktopPage(current.snapshot, pageId);
-      // The drag session already rejected stale layouts; this re-check pins
-      // the commit to the exact workspace state the drag started from.
-      if (page === undefined || page.layout !== layoutAtStart) {
-        return;
-      }
-      // No-op drop (dragged back to its own cell): no handoff, no stage, no
-      // history, no sync — the drag simply ends where it began.
-      if (arePageLayoutsEqual(movedLayout, layoutAtStart)) {
-        return;
-      }
-      // Visual target first: the display grid shows the destination before
-      // any IndexedDB promise is awaited, so the drop render paints straight
-      // into the destination cell — the old authoritative layout never
-      // becomes visible, and there is no origin rebound.
+  /**
+   * Commits one canvas geometry edit with the optimistic handoff: the
+   * display canvas shows the result before any IndexedDB promise is awaited,
+   * so the release render paints into the new geometry and the authoritative
+   * snapshot never becomes visible in between.
+   */
+  const commitCanvasEdit = useCallback(
+    (pageId: DesktopPageId, nextCanvas: CanvasLayout, options: { readonly resetHistory?: boolean } = {}) => {
       const token = handoffTokenRef.current + 1;
       handoffTokenRef.current = token;
-      stagePendingHandoff({ token, pageId, layout: movedLayout });
-      // Durable local stage second; the outcome reconciles the handoff.
-      enqueueLayoutCommit(pageId, movedLayout, (outcome) => {
+      stagePendingHandoff({ token, pageId, canvas: nextCanvas });
+      enqueueCanvasCommit(pageId, nextCanvas, options, (outcome) => {
         if (outcome.status === "failed") {
           // The only true revert: the stage refused, so the optimistic
-          // display layout falls back to the authoritative (pre-drag) layout.
+          // display canvas falls back to the authoritative (pre-edit) one.
           if (pendingHandoffRef.current?.token === token) {
             settledHandoffTokensRef.current = new Set([
               ...settledHandoffTokensRef.current,
@@ -645,82 +583,70 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         }
         // staged/noop: not cleared here — the external-store snapshot may not
         // have caught up in the current render yet. The reconcile effect
-        // drops the handoff once the authoritative layout is semantically
-        // equal, making the pending → authoritative switch invisible.
+        // drops the handoff once the authoritative canvas is equal, making
+        // the pending → authoritative switch invisible.
         settledHandoffTokensRef.current = new Set([...settledHandoffTokensRef.current, token]);
       });
     },
-    [enqueueLayoutCommit]
+    [enqueueCanvasCommit]
   );
 
-  /**
-   * Marks a resize handoff's stage attempt as settled (staged/noop/failed).
-   * The reconcile effect is what drops the override — a settled token whose
-   * authoritative scale never matched is the failed-write revert.
-   */
-  const settleResizeHandoff = useCallback((token: number) => {
-    settledResizeTokensRef.current = new Set([...settledResizeTokensRef.current, token]);
-  }, []);
-
-  /**
-   * Commits one finished icon-resize gesture: exactly one replaceApp, one
-   * workspace stage and one sync attempt, no matter how many pointermoves
-   * preceded it. A sub-epsilon change is a no-op — zero stage, zero sync.
-   *
-   * The optimistic display scale is established FIRST, synchronously, so the
-   * tile never falls back to the old size while IndexedDB is being written.
-   */
-  const commitResize = useCallback(
-    (entityId: EntityId, finalScale: number) => {
+  const commitDraggedCanvas = useCallback(
+    (movedCanvas: CanvasLayout, canvasAtStart: CanvasLayout) => {
       const current = workspaceRef.current;
-      const app = current.snapshot.entities.find(
-        (entity): entity is AppShortcut => entity.kind === "app" && entity.id === entityId
-      );
-      if (app === undefined) {
+      const pageId = pageIdRef.current;
+      if (pageId === null) {
         return;
       }
-      if (isResizeNoop(resolveAppVisualStyle(app).iconScale, finalScale)) {
+      const page = findDesktopPage(current.snapshot, pageId);
+      // The drag session already rejected stale canvases; this re-check pins
+      // the commit to the exact workspace state the drag started from.
+      if (page === undefined || resolvePageCanvas(page) !== canvasAtStart) {
         return;
       }
-      const token = resizeTokenRef.current + 1;
-      resizeTokenRef.current = token;
-      stagePendingResizeHandoff({ token, appId: entityId, scale: finalScale });
-      const run = async () => {
-        try {
-          const live = workspaceRef.current;
-          const target = live.snapshot.entities.find(
-            (entity): entity is AppShortcut => entity.kind === "app" && entity.id === entityId
-          );
-          if (target === undefined) {
-            settleResizeHandoff(token);
-            return;
-          }
-          const replaced = replaceApp(live.snapshot, withIconScale(target, finalScale));
-          if (!replaced.ok) {
-            settleResizeHandoff(token);
-            return;
-          }
-          const staged = await stageWorkspaceAndTrySync(runtime, replaced.workspace);
-          if (!staged.ok) {
-            console.error(`VelaDesk: icon resize was not staged (${staged.reason})`);
-          }
-          settleResizeHandoff(token);
-        } catch (error) {
-          console.error("VelaDesk: icon resize could not be committed", error);
-          settleResizeHandoff(token);
-        }
-      };
-      layoutQueueRef.current = layoutQueueRef.current.then(run, run);
+      if (areCanvasLayoutsEqual(movedCanvas, canvasAtStart)) {
+        return;
+      }
+      commitCanvasEdit(pageId, movedCanvas);
     },
-    [runtime, settleResizeHandoff]
+    [commitCanvasEdit]
   );
 
-  /** A resize gesture started/ended — holds or releases the desktop lock. */
+  /**
+   * Commits one finished resize gesture: exactly one workspace edit, one
+   * stage and one sync attempt, no matter how many pointermoves preceded it
+   * (the preview never stages anything).
+   */
+  const commitResizedRect = useCallback(
+    (entityId: EntityId, rect: CanvasRect) => {
+      const pageId = pageIdRef.current;
+      if (pageId === null) {
+        return;
+      }
+      const current = workspaceRef.current;
+      const page = findDesktopPage(current.snapshot, pageId);
+      if (page === undefined) {
+        return;
+      }
+      const canvas = resolvePageCanvas(page);
+      const item = findCanvasItem(canvas, entityId);
+      if (item === undefined || canvasRectsEqual(item.rect, rect)) {
+        return;
+      }
+      commitCanvasEdit(pageId, replaceCanvasItem(canvas, { id: entityId, rect }));
+    },
+    [commitCanvasEdit]
+  );
+
+  /**
+   * A resize gesture started/ended — holds or releases the desktop lock.
+   * Geometry commits flow through the same canvas handoff as drags.
+   */
   const handleResizeSessionChange = useCallback((entityId: EntityId, active: boolean) => {
     setResizeSessionAppId(active ? entityId : null);
   }, []);
 
-  /** Undo/Redo: the resulting layout is a brand-new local edit. */
+  /** Undo/Redo: the resulting canvas is a brand-new local edit. */
   const applyHistoryStep = useCallback(
     (pageId: DesktopPageId, direction: "undo" | "redo") => {
       // History rewrites geometry against the durable snapshot — never while
@@ -733,23 +659,24 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         if (base === undefined) {
           return;
         }
-        const candidate = direction === "undo" ? undoLayout(base) : redoLayout(base);
-        if (candidate === base) {
+        const candidate =
+          direction === "undo" ? undoPageCanvas(arrangeHistoriesRef.current, pageId)[pageId] : redoPageCanvas(arrangeHistoriesRef.current, pageId)[pageId];
+        if (candidate === undefined || candidate === base) {
           return;
         }
         const current = workspaceRef.current;
         const page = findDesktopPage(current.snapshot, pageId);
-        if (page === undefined || page.layout !== base.present) {
-          // The layout moved on since reconciliation — reset this page's
+        if (page === undefined || resolvePageCanvas(page) !== base.present) {
+          // The canvas moved on since reconciliation — reset this page's
           // history instead of writing a stale snapshot.
           if (page !== undefined) {
             setArrangeHistories((current2) =>
-              reconcilePageHistory(current2, pageId, page.layout),
+              reconcilePageCanvasHistory(current2, pageId, resolvePageCanvas(page)),
             );
           }
           return;
         }
-        const replaced = replacePageLayout(current.snapshot, pageId, candidate.present);
+        const replaced = replacePageCanvas(current.snapshot, pageId, candidate.present);
         if (!replaced.ok) {
           return;
         }
@@ -758,7 +685,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           console.error(`VelaDesk: ${direction} was not staged (${staged.reason})`);
           return;
         }
-        const nextMap: ArrangeHistories = {
+        const nextMap: ArrangeCanvasHistories = {
           ...arrangeHistoriesRef.current,
           [pageId]: candidate,
         };
@@ -770,15 +697,19 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     [runtime]
   );
 
-  /** Keyboard nudge: exact one-cell rigid translation of the selection. */
+  /**
+   * Keyboard nudge: one rigid step for the whole selection. A snap section
+   * steps by a lattice cell, a freeform section by an eighth of one (about
+   * 16 CSS px), so the keys stay useful in both models.
+   */
   const nudgeSelection = useCallback(
-    (columnDelta: number, rowDelta: number) => {
+    (columnStep: number, rowStep: number) => {
       const pageId = pageIdRef.current;
       if (
         pageId === null ||
         selectionRef.current.size === 0 ||
         // Nudges compute against the durable snapshot — wait out any handoff,
-        // and never fight an in-flight icon resize.
+        // and never fight a live resize.
         pendingHandoffRef.current !== null ||
         resizeLockRef.current
       ) {
@@ -789,39 +720,95 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       if (page === undefined) {
         return;
       }
-      const result = moveItems(
-        page.layout,
+      const canvas = resolvePageCanvas(page);
+      const cell = canvasCellSize(page.layout.grid);
+      const step =
+        canvas.mode === "snap"
+          ? cell
+          : {
+              width: Math.max(1, Math.round(cell.width / 8)),
+              height: Math.max(1, Math.round(cell.height / 8)),
+            };
+      const moved = translateCanvasItems(
+        canvas,
         [...selectionRef.current],
-        { columnDelta, rowDelta },
-        { placement: "exact" }
+        columnStep * step.width,
+        rowStep * step.height
       );
-      if (!result.ok || result.layout === page.layout) {
+      if (moved === canvas) {
         // Failed nudge: no change, no history entry, no sync.
         return;
       }
-      enqueueLayoutCommit(pageId, result.layout);
+      commitCanvasEdit(pageId, moved);
     },
-    [enqueueLayoutCommit]
+    [commitCanvasEdit]
   );
 
   /**
-   * The layout the ACTIVE section renders this frame: the pending drop
-   * handoff while it targets the active page, otherwise the authoritative
-   * layout. Only the active section consumes it — persistence still flows
+   * Switches a section between aligned and free placement.
+   *
+   * The mode is persisted per section, so the home section can stay aligned
+   * while another is free. Only the mode changes on the way to free (the
+   * geometry must not move at all); on the way to snap every rect is snapped
+   * in ONE atomic edit, and overlap stays legal — the lattice is an
+   * alignment reference, never a capacity model. The switch is structural
+   * and therefore not undoable: the page's history restarts at the new
+   * canvas.
+   */
+  const setPlacementMode = useCallback(
+    (next: CanvasPlacementMode) => {
+      const pageId = pageIdRef.current;
+      if (
+        pageId === null ||
+        pendingHandoffRef.current !== null ||
+        resizeLockRef.current
+      ) {
+        return;
+      }
+      const current = workspaceRef.current;
+      const page = findDesktopPage(current.snapshot, pageId);
+      if (page === undefined) {
+        return;
+      }
+      const canvas = resolvePageCanvas(page);
+      if (canvas.mode === next) {
+        return;
+      }
+      const nextCanvas =
+        next === "snap"
+          ? {
+              ...canvas,
+              mode: "snap" as const,
+              items: canvas.items.map((item) => ({
+                id: item.id,
+                rect: canvasRectToSnappedRect(item.rect, page.layout.grid),
+              })),
+            }
+          : withCanvasMode(canvas, "freeform");
+      commitCanvasEdit(pageId, nextCanvas, { resetHistory: true });
+    },
+    [commitCanvasEdit]
+  );
+
+  /**
+   * The canvas the ACTIVE section renders this frame: the pending handoff
+   * while it targets the active page, otherwise the authoritative canvas
+   * (a stored one, or the virtual canvas derived from legacy grid geometry).
+   * Only the active section consumes it — persistence still flows
    * exclusively through the domain/runtime path.
    */
-  const displayLayout =
+  const displayCanvas =
     activePage !== undefined
-      ? resolveDisplayLayout(pendingLayoutHandoff, activePage.id, activePage.layout)
+      ? resolveDisplayCanvas(pendingCanvasHandoff, activePage.id, resolvePageCanvas(activePage))
       : null;
+  const activeGrid = activePage?.layout.grid ?? { columns: 1, rows: 1 };
 
-  const { gridRef, metrics } = useGridMetrics(
-    displayLayout !== null ? displayLayout.grid : { columns: 1, rows: 1 }
-  );
-  const { dragging, handleDragStart, handleDragMove, handleDragEnd } = useAtomicGridDrag({
-    layout: displayLayout,
+  const { canvasRef, metrics } = useCanvasMetrics();
+  const { dragging, handleDragStart, handleDragMove, handleDragEnd } = useCanvasDrag({
+    canvas: displayCanvas,
+    grid: activeGrid,
     metrics,
-    onCommit: commitDraggedLayout,
+    onCommit: commitDraggedCanvas,
     getDragItemIds: useCallback(
       (sourceId: LayoutItemId) => resolveDragItemIds(sourceId, selectionRef.current),
       []
@@ -928,7 +915,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         return;
       }
       const viewport = menuAreaRef.current?.querySelector(
-        '[data-active-section="true"] .vela-desktop__viewport'
+        '[data-active-section="true"] .vela-canvas'
       );
       if (viewport === null) {
         return;
@@ -997,6 +984,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       entries: buildDesktopCommandEntries({
         t,
         arrange,
+        placementMode: activePage === undefined ? "snap" : resolvePageCanvas(activePage).mode,
         canUndo:
           historyUsable && currentPageId !== null && canUndo(arrangeHistoriesRef.current, currentPageId),
         canRedo:
@@ -1007,6 +995,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           onNewSection: () => openDialog({ kind: "new-section" }),
           onSearch: () => setLauncherOpen(true),
           onToggleMode: () => switchMode(arrange ? "view" : "arrange"),
+          onSetPlacementMode: setPlacementMode,
           onUndo: () => {
             if (pageIdRef.current !== null) {
               applyHistoryStep(pageIdRef.current, "undo");
@@ -1087,7 +1076,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         isDefault: pageId === snapshot.preferences.defaultPageId,
         isFirst: index === 0,
         isLast: index === snapshot.pages.length - 1,
-        isEmpty: page.layout.items.length === 0,
+        isEmpty: pageItemIds(page).length === 0,
         callbacks: {
           onRename: () => openDialog({ kind: "rename-section", pageId }),
           onSetDefault: () =>
@@ -1361,7 +1350,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         }
         if (event.key.toLowerCase() === "a" && activePage !== undefined) {
           event.preventDefault();
-          applySelection(selectAllIds(new Set(activePage.layout.items.map((item) => item.id))));
+          applySelection(selectAllIds(new Set(pageItemIds(activePage))));
           return;
         }
       }
@@ -1450,12 +1439,12 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    *
    * A LIVE session must never remove the handles — they hold the pointer
    * capture, so unmounting them would drop the gesture mid-drag. Only a
-   * pending commit handoff suppresses them (and then the gesture is already
-   * over), which also stops a second session from starting on a scale the
-   * snapshot has not caught up with yet.
+   * pending geometry handoff suppresses them (and then the gesture is
+   * already over), which also stops a second session from starting on a
+   * rect the snapshot has not caught up with yet.
    */
   const resizableIds = useMemo<ReadonlySet<EntityId>>(() => {
-    if (!arrange || activePage === undefined || handoffLock || pendingResizeHandoff !== null) {
+    if (!arrange || activePage === undefined || handoffLock) {
       return EMPTY_ID_SET;
     }
     if (selectedItemIds.size !== 1) {
@@ -1466,12 +1455,13 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       return EMPTY_ID_SET;
     }
     const entity = snapshot.entities.find((candidate) => candidate.id === id);
-    return isResizableEntity(entity) ? new Set([id]) : EMPTY_ID_SET;
+    // Folders and widgets keep their default size: the product resizes app
+    // tiles, and a group selection has no handles at all.
+    return entity !== undefined && entity.kind === "app" ? new Set([id]) : EMPTY_ID_SET;
   }, [
     activePage,
     arrange,
     handoffLock,
-    pendingResizeHandoff,
     selectedItemIds,
     snapshot.entities,
   ]);
@@ -1559,30 +1549,35 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
                     data-active-section={isActive ? "true" : undefined}
                     className="vela-section"
                   >
-                    <DesktopGridView
-                      layout={isActive && displayLayout !== null ? displayLayout : page.layout}
+                    <DesktopCanvasView
+                      canvas={
+                        isActive && displayCanvas !== null
+                          ? displayCanvas
+                          : resolvePageCanvas(page)
+                      }
+                      grid={page.layout.grid}
                       workspace={snapshot}
                       arrange={arrange && isActive}
                       dragEnabled={arrange && isActive && !handoffLock && !resizeLock}
                       metrics={isActive ? metrics : null}
-                      gridRef={isActive ? gridRef : undefined}
+                      canvasRef={isActive ? canvasRef : undefined}
                       selectedIds={isActive ? selectedItemIds : EMPTY_SELECTION}
                       resizableIds={isActive ? resizableIds : EMPTY_ID_SET}
                       resizeActiveId={isActive ? resizeActiveId : null}
-                      onResizeCommit={commitResize}
+                      onResizeCommit={commitResizedRect}
                       onResizeSessionChange={handleResizeSessionChange}
                       onItemSelect={handleItemSelect}
                       onEntityContextMenu={(entityId, x, y) =>
                         openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })
                       }
                       onOpenFolder={(folderId) => openFolderOverlay(folderId)}
-                      onViewportPointerDown={
+                      onCanvasPointerDown={
                         isActive ? handleViewportPointerDown : undefined
                       }
-                      onViewportPointerMove={
+                      onCanvasPointerMove={
                         isActive ? handleViewportPointerMove : undefined
                       }
-                      onViewportPointerUp={isActive ? handleViewportPointerUp : undefined}
+                      onCanvasPointerUp={isActive ? handleViewportPointerUp : undefined}
                     />
                   </section>
                 );
@@ -1765,13 +1760,13 @@ function findFolderEntity(
   return entity !== undefined && entity.kind === "folder" ? entity : undefined;
 }
 
-/** The page whose layout currently holds this entity, when any. */
+/** The page whose canvas currently holds this entity, when any. */
 function containerPageId(
   workspace: WorkspaceSnapshot,
   entityId: EntityId
 ): DesktopPageId | null {
   const page = workspace.pages.find((candidate) =>
-    candidate.layout.items.some((item) => item.id === entityId)
+    pageItemIds(candidate).includes(entityId)
   );
   return page?.id ?? null;
 }

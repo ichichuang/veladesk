@@ -7,6 +7,9 @@ import type { DesktopMenuEntry } from "./desktop-command-menu";
 import { clampContextMenuPosition } from "./context-menu-position";
 import "./home-shell.css";
 
+/** A menu row that can be walked with the keyboard. */
+const ITEM_SELECTOR = '[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:disabled)';
+
 /** Back-compat alias: an action row of the unified menu entry model. */
 export interface ContextMenuAction {
   readonly id: string;
@@ -89,7 +92,7 @@ export function ContextMenu({ state, onClose }: ContextMenuProps) {
       return;
     }
     menuRef.current
-      ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+      ?.querySelector<HTMLButtonElement>(ITEM_SELECTOR)
       ?.focus();
   }, [position]);
 
@@ -120,7 +123,7 @@ export function ContextMenu({ state, onClose }: ContextMenuProps) {
       return;
     }
     const items = Array.from(
-      menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+      menu.querySelectorAll<HTMLButtonElement>(ITEM_SELECTOR)
     );
     const currentIndex = items.findIndex((item) => item === document.activeElement);
     switch (event.key) {
@@ -180,7 +183,8 @@ export function ContextMenu({ state, onClose }: ContextMenuProps) {
           <button
             key={entry.id}
             type="button"
-            role="menuitem"
+            role={entry.checked === undefined ? "menuitem" : "menuitemradio"}
+            aria-checked={entry.checked === undefined ? undefined : entry.checked}
             className="vela-context-menu__item"
             disabled={entry.disabled === true}
             onClick={() => {
@@ -188,6 +192,11 @@ export function ContextMenu({ state, onClose }: ContextMenuProps) {
               entry.onSelect();
             }}
           >
+            {entry.checked === undefined ? null : (
+              <span className="vela-context-menu__check" aria-hidden="true">
+                {entry.checked ? "✓" : ""}
+              </span>
+            )}
             {entry.label}
           </button>
         )

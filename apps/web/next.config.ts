@@ -27,6 +27,7 @@ const nextConfig: NextConfig = {
     "/api/v1/**": ["../../packages/database/drizzle/**/*"],
   },
   transpilePackages: [
+    "@veladesk/canvas-engine",
     "@veladesk/client-runtime",
     "@veladesk/database",
     "@veladesk/desktop-engine",

@@ -389,14 +389,13 @@
   --vd-blur: 18px;
   --vd-radius: 14px;
   --vd-icon-size: 62px;
-  /* Snap-lattice hint color (014-E): a tiny 4px dot can afford a higher
-     alpha than the old 1px tile borders did — presence stays whisper-low. */
+  /* Snap-lattice hint color: a tiny 4px dot can afford a higher alpha than
+     tile borders would — presence stays whisper-low. */
   --vd-grid-dot: oklch(0.92 0.03 260 / 0.38);
-  /* Slot anchor geometry (014-E): items pin their icon at the top of the
-     cell (flex-start + --vd-item-pad-top), horizontally centered. The
-     lattice dot marks that origin. --vd-slot-icon-size single-sources the
-     icon box size (the responsive shrink redefines the same variable). */
-  --vd-item-pad-top: 6px;
+  /* Base slot size of the shared icon tile: the dock, the folder overlay and
+     the visual editor preview size themselves from this; desktop canvas
+     tiles size themselves from their rect instead (see .vela-canvas rules).
+     The responsive shrink redefines the same variable. */
   --vd-slot-icon-size: var(--vd-icon-size);
   --vd-label-shadow: 0 1px 3px oklch(0 0 0 / 0.55);
 
@@ -564,17 +563,16 @@
 }
 
 /*
- * Grid geometry single source (asymmetric since task 015): the viewport
- * and the arrange-mode guide overlay both consume these custom properties,
- * so guides and tracks can never drift apart. The LEFT padding reserves
- * the floating section-nav rail; the BOTTOM padding only grows when a dock
- * actually exists (data-has-dock on the desktop root). CSS Grid tracks
- * live in the content box (inside this padding), which is exactly what
- * useGridMetrics measures — client box minus each computed padding.
+ * Canvas geometry single source (016-C): the desktop's usable content box
+ * lives ONCE, as custom properties on the viewport, and `.vela-canvas`
+ * consumes them as its inset. The LEFT padding reserves the floating
+ * section-nav rail; the BOTTOM padding only grows when a dock actually
+ * exists (data-has-dock on the desktop root). `.vela-canvas` is therefore
+ * exactly the box the logical 0..10000 canvas maps onto — the element the
+ * canvas metrics hook measures and the containing block every item is
+ * positioned inside.
  */
 .vela-desktop__viewport {
-  --vd-grid-column-gap: 16px;
-  --vd-grid-row-gap: 16px;
   --vd-grid-padding-left: 186px;
   --vd-grid-padding-right: 34px;
   --vd-grid-padding-top: 30px;
@@ -583,13 +581,13 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-  display: grid;
   overflow: hidden;
-  gap: var(--vd-grid-row-gap) var(--vd-grid-column-gap);
-  padding: var(--vd-grid-padding-top) var(--vd-grid-padding-right)
+}
+
+.vela-canvas {
+  position: absolute;
+  inset: var(--vd-grid-padding-top) var(--vd-grid-padding-right)
     var(--vd-grid-padding-bottom) var(--vd-grid-padding-left);
-  grid-template-columns: repeat(var(--vd-grid-columns), minmax(0, 1fr));
-  grid-template-rows: repeat(var(--vd-grid-rows), minmax(0, 1fr));
 }
 
 /* With pins on screen the dock owns a strip at the bottom — reserve it. */
@@ -598,24 +596,19 @@
 }
 
 /*
- * Arrange-mode guide overlay: real CSS-grid cells, not a painted pitch.
- * Absolutely positioned over the padding box and reusing the viewport's
- * exact template/gap/padding, so every guide rect equals the actual track
- * rect. Never a pointer target, never part of layout measurement.
- * Entering arrange fades the hint layer in gently (opacity only — the
- * dots themselves never move); leaving arrange unmounts it entirely.
+ * Arrange-mode snap lattice. Markers sit at the real lattice cell CENTERS
+ * computed from the same edge rounding the snap engine uses, so a marker can
+ * never disagree with where an item snaps. Snap sections only: a freeform
+ * canvas has no lattice, and dots there would misdescribe the model. The
+ * layer is a pointer-transparent overlay (it is not a pointer target, and it
+ * never becomes a marquee source). Entering arrange fades it in gently
+ * (opacity only); leaving arrange unmounts it entirely.
  */
-.vela-desktop__grid-guides {
+.vela-desktop__lattice {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  display: grid;
-  gap: var(--vd-grid-row-gap) var(--vd-grid-column-gap);
-  padding: var(--vd-grid-padding-top) var(--vd-grid-padding-right)
-    var(--vd-grid-padding-bottom) var(--vd-grid-padding-left);
-  grid-template-columns: repeat(var(--vd-grid-columns), minmax(0, 1fr));
-  grid-template-rows: repeat(var(--vd-grid-rows), minmax(0, 1fr));
   animation: vela-guides-in 140ms ease;
 }
 
@@ -629,30 +622,22 @@
 }
 
 /*
- * Snap lattice (014-E): the grid is a logical snap lattice, never a
- * visible tile board. Guide cells keep their DOM geometry (guide rect =
- * track rect) but carry zero box chrome — no border, no fill, no radius.
- * The only visual is one 4px dot at the slot's icon anchor, marking
- * exactly where a dropped item's icon begins (its top-center origin).
+ * One lattice marker: a zero-size anchor carrying a single 4px dot, placed
+ * by the percentage inline style the marker list provides.
  */
 .vela-desktop__grid-guide {
-  position: relative;
+  position: absolute;
+  width: 0;
+  height: 0;
   border: none;
   background: none;
 }
 
-/*
- * The dot marks the icon's placement ORIGIN, not the box center: the item
- * column is flex-start, so the icon's top edge always sits exactly at
- * --vd-item-pad-top — even when tight row heights flex-shrink the icon
- * box and the label (the icon top never moves, its center would). X is
- * the cell center, where align-items: center pins the icon.
- */
 .vela-desktop__grid-guide::after {
   content: "";
   position: absolute;
-  top: var(--vd-item-pad-top);
-  left: 50%;
+  top: 0;
+  left: 0;
   width: 4px;
   height: 4px;
   margin: -2px 0 0 -2px;
@@ -866,21 +851,20 @@ button.vela-section-nav__sync:focus-visible {
 
 /* --- Desktop items ------------------------------------------------------- */
 
+/*
+ * An item IS a canvas rect: absolutely positioned in percent space by
+ * `canvasRectStyle`, with no CSS grid anywhere in the production renderer.
+ * The box stays visually empty — the looks live in `.vela-item__body`, which
+ * is what a drag preview or a snap correction transforms. Geometry and
+ * appearance therefore never fight each other, and the rect the user resizes
+ * is the rect the pointer hit-tests against.
+ */
 .vela-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
+  position: absolute;
+  display: block;
   min-width: 0;
   min-height: 0;
-  /* Slot anchor contract (014-E): every item fills its cell(s) exactly and
-     anchors its icon at the top, horizontally centered — label length,
-     icon size and locale can never shift the visual anchor. The arrange
-     lattice dot marks this same anchor (see --vd-item-pad-top). */
-  align-self: stretch;
-  justify-self: stretch;
-  padding: var(--vd-item-pad-top) 4px;
+  padding: 0;
   border: none;
   background: transparent;
   color: var(--vd-text);
@@ -889,23 +873,34 @@ button.vela-section-nav__sync:focus-visible {
   user-select: none;
   cursor: pointer;
   /* Transform ownership: arrange drags move items via the drag source's
-     dnd-kit transform and the peers' transient preview. No transition here —
-     a transform easing would animate the drag itself and the drop handoff
-     (the icon visibly gliding back to its old cell). View-mode app hover
-     re-introduces its own scoped easing below. */
+     dnd-kit transform plus the resolved preview on the body. No transition
+     here — a transform easing would animate the drag itself and the drop
+     handoff. View-mode app hover re-introduces its own scoped easing. */
   transition: none;
+}
+
+.vela-item__body {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform: var(--vd-canvas-drag-preview, none);
+}
+
+/* The decoration surface fills the WHOLE rect: a landscape rect paints a
+   landscape tile, never a square scaled up inside a transparent wrapper. */
+.vela-item__icon-wrap {
+  position: absolute;
+  inset: 0;
+  display: block;
 }
 
 /* View mode only: the hover lift is decorative, so it may ease. Arrange mode
    never eases item transforms — drag and hover transforms must not compete. */
-.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"] {
+.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"] .vela-item__body {
   transition: transform 160ms ease;
 }
 
-/* The hover lift itself is View-scoped too: in Arrange the pointer rests on
-   the just-dropped item, and this translate would visibly lift it 2px off
-   its snapped cell after the drop. */
-.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"]:hover:not([data-dragging="true"]) {
+.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"]:hover:not([data-dragging="true"]) .vela-item__body {
   transform: translateY(-2px);
 }
 
@@ -923,9 +918,9 @@ button.vela-section-nav__sync:focus-visible {
 .vela-item__icon {
   display: grid;
   place-items: center;
-  /* The shared slot variable (not --vd-icon-size directly) so the lattice
-     dot's anchor calc and the icon stay in lockstep, including the
-     responsive shrink. */
+  /* The shared slot variable (not --vd-icon-size directly) so the editor
+     preview and the dock stay in lockstep with the responsive shrink. The
+     desktop canvas overrides this box to fill the rect instead (below). */
   width: var(--vd-slot-icon-size);
   height: var(--vd-slot-icon-size);
   border-radius: calc(var(--vd-slot-icon-size) * 0.26);
@@ -944,12 +939,32 @@ button.vela-section-nav__sync:focus-visible {
   color: oklch(0.85 0.09 85);
 }
 
+/* On the canvas a folder tile is a surface too: it fills the rect and keeps
+   its glyph centered and proportional. */
+.vela-canvas .vela-item__icon--folder {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+}
+
+.vela-canvas .vela-item__icon--folder svg {
+  width: 58%;
+  height: 58%;
+}
+
+/*
+ * The label follows the tile's bottom center and never influences the rect:
+ * a wide tile centers it, a narrow one ellipsizes it, a short one lets it
+ * overlap the glyph's baseline rather than shrinking the geometry.
+ */
 .vela-item__label {
-  /* The icon tile never shrinks (see .vela-app-icon), so the label must
-     not absorb the squeeze either — both keep natural size and may
-     overflow into the row gap instead of collapsing to zero. */
-  flex-shrink: 0;
-  max-width: 110px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  max-width: 100%;
+  padding: 0 6px;
   overflow: hidden;
   font-size: 12.5px;
   line-height: 1.25;
@@ -970,19 +985,10 @@ button.vela-section-nav__sync:focus-visible {
    from validated #RRGGBB — user strings never reach CSS raw. */
 
 .vela-app-icon {
-  /* ONE effective scale for every dimension of the tile. The persisted
-     value is the default; an Arrange resize writes
-     --vd-app-icon-scale-preview on the wrapper for the duration of the
-     gesture (and its commit handoff), so a pointermove updates the tile
-     without React re-rendering the desktop. */
-  --vd-app-icon-effective-scale: var(
-    --vd-app-icon-scale-preview,
-    var(--vd-app-icon-scale, 1)
-  );
-  /* Visual icon box = global base size × per-app scale. Overflowing the
-     1×1 slot at 200% is intended (visual size, not layout size). The tile
-     never flex-shrinks: a scale is a promise, and a squashed tile would
-     break the label baseline contract. */
+  --vd-app-icon-effective-scale: var(--vd-app-icon-scale, 1);
+  /* Shared tile geometry (dock, folder overlay, visual editor preview): the
+     icon box = base slot size × per-app scale. On the desktop canvas the
+     rect owns the tile box instead, so this rule only sizes the glyph. */
   flex-shrink: 0;
   width: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-effective-scale));
   height: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-effective-scale));
@@ -1018,6 +1024,36 @@ button.vela-section-nav__sync:focus-visible {
   background: transparent;
   box-shadow: none;
   color: var(--vd-app-icon-fg, var(--vd-text));
+}
+
+/*
+ * On the desktop canvas the tile IS the rect: it fills the item box, and
+ * every internal dimension is measured against the SMALLER side (cqmin), so
+ * a wide or tall rect keeps a centered, proportional glyph instead of a
+ * stretched one. `iconScale` stays exactly what it always was for legacy
+ * data — a multiplier for the glyph INSIDE the tile, never tile geometry.
+ */
+.vela-canvas .vela-app-icon {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  container-type: size;
+  border-radius: max(8px, 22cqmin);
+  font-size: max(11px, calc(34cqmin * var(--vd-app-icon-scale, 1)));
+}
+
+.vela-canvas .vela-app-icon__glyph {
+  width: calc(62cqmin * var(--vd-app-icon-scale, 1));
+  height: calc(62cqmin * var(--vd-app-icon-scale, 1));
+}
+
+/* An uploaded image keeps its own aspect ratio inside the rect: contain,
+   never cropped, never stretched. */
+.vela-canvas .vela-app-icon__image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 /* Library glyph: self-hosted SVG through a CSS mask, tinted via the
@@ -1083,9 +1119,8 @@ button.vela-section-nav__sync:focus-visible {
   height: 24px;
 }
 
-/* The widget is the one entity rendered as a surface. */
+/* The widget is the one entity rendered as a surface, filling its rect. */
 .vela-item--widget {
-  justify-content: flex-start;
   padding: 14px 16px;
   border: 1px solid var(--vd-border);
   border-radius: var(--vd-radius);
@@ -1109,7 +1144,7 @@ button.vela-section-nav__sync:focus-visible {
 }
 
 .vela-item--missing {
-  justify-content: center;
+  padding: 14px 16px;
   border: 1px dashed oklch(0.75 0.1 60 / 0.5);
   border-radius: 12px;
   cursor: default;
@@ -1191,6 +1226,8 @@ button.vela-section-nav__sync:focus-visible {
 
 /* --- Arrange session: selection, marquee, history controls -------------- */
 
+/* The frame follows the REAL rect — the item box, never just the glyph — so
+   a landscape app gets a landscape frame. */
 .vela-item[data-selected="true"] .vela-item__icon,
 .vela-item--widget[data-selected="true"] {
   box-shadow:
@@ -1198,59 +1235,89 @@ button.vela-section-nav__sync:focus-visible {
     0 10px 26px oklch(0 0 0 / 0.35);
 }
 
-/* --- Arrange icon resize (016-C) ----------------------------------------
-   The tile sits in a wrapper so the four corner handles can hug its actual
-   (scaled) box; the wrapper also carries the transient
-   --vd-app-icon-scale-preview that a pointermove writes directly to the DOM.
-   Handles exist only in arrange mode with a single app selected. */
+/* --- Arrange rect resize (016-C) ----------------------------------------
+   Eight handles hug the real rect: four corners change both axes and four
+   edges change one axis each, because a real rectangle must be reachable
+   without corner dragging. The layer is a pointer-transparent overlay over
+   the item box; only the handles take pointers, and they exist only in
+   arrange mode with a single app selected. Each handle is an 18px hit area
+   around a ~8px visual dot — small on screen, easy to grab. */
 
-.vela-item__icon-wrap {
-  position: relative;
-  display: flex;
-  flex-shrink: 0;
+.vela-item__resize-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .vela-item__resize-handle {
   position: absolute;
-  /* 18px hit area around a ~10px visual dot: easy to grab, visually light. */
   width: 18px;
   height: 18px;
   touch-action: none;
-  z-index: 2;
+  pointer-events: auto;
 }
 
 .vela-item__resize-handle::after {
   content: "";
   position: absolute;
-  inset: 4px;
+  inset: 5px;
   border: 1px solid oklch(0.98 0.01 260 / 0.85);
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--vd-accent);
   box-shadow: 0 1px 3px oklch(0 0 0 / 0.45);
 }
 
-.vela-item__resize-handle[data-corner="nw"] {
+.vela-item__resize-handle[data-handle="nw"] {
   top: -9px;
   left: -9px;
   cursor: nwse-resize;
 }
 
-.vela-item__resize-handle[data-corner="ne"] {
+.vela-item__resize-handle[data-handle="n"] {
+  top: -9px;
+  left: 50%;
+  margin-left: -9px;
+  cursor: ns-resize;
+}
+
+.vela-item__resize-handle[data-handle="ne"] {
   top: -9px;
   right: -9px;
   cursor: nesw-resize;
 }
 
-.vela-item__resize-handle[data-corner="sw"] {
+.vela-item__resize-handle[data-handle="e"] {
+  top: 50%;
+  right: -9px;
+  margin-top: -9px;
+  cursor: ew-resize;
+}
+
+.vela-item__resize-handle[data-handle="se"] {
+  bottom: -9px;
+  right: -9px;
+  cursor: nwse-resize;
+}
+
+.vela-item__resize-handle[data-handle="s"] {
+  bottom: -9px;
+  left: 50%;
+  margin-left: -9px;
+  cursor: ns-resize;
+}
+
+.vela-item__resize-handle[data-handle="sw"] {
   bottom: -9px;
   left: -9px;
   cursor: nesw-resize;
 }
 
-.vela-item__resize-handle[data-corner="se"] {
-  bottom: -9px;
-  right: -9px;
-  cursor: nwse-resize;
+.vela-item__resize-handle[data-handle="w"] {
+  top: 50%;
+  left: -9px;
+  margin-top: -9px;
+  cursor: ew-resize;
 }
 
 .vela-marquee {
@@ -1307,6 +1374,9 @@ button.vela-section-nav__sync:focus-visible {
 }
 
 .vela-context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 12px;
   border: none;
   border-radius: 8px;
@@ -1317,6 +1387,15 @@ button.vela-section-nav__sync:focus-visible {
   text-align: left;
   cursor: pointer;
   transition: background-color 100ms ease;
+}
+
+/* Check gutter of a mutually exclusive choice (placement mode). */
+.vela-context-menu__check {
+  flex: 0 0 auto;
+  width: 12px;
+  color: var(--vd-accent);
+  font-size: 12px;
+  line-height: 1;
 }
 
 .vela-context-menu__item:hover:not(:disabled) {
@@ -1909,7 +1988,7 @@ button.vela-section-nav__sync:focus-visible {
     transform: translateX(0);
   }
 
-  .vela-desktop__grid-guides,
+  .vela-desktop__lattice,
   .vela-section-nav__item,
   .vela-section-nav__item::before,
   .vela-section-nav__more,
@@ -1970,8 +2049,6 @@ button.vela-section-nav__sync:focus-visible {
   }
 
   .vela-desktop__viewport {
-    --vd-grid-column-gap: 12px;
-    --vd-grid-row-gap: 12px;
     --vd-grid-padding-left: 136px;
     --vd-grid-padding-right: 22px;
     --vd-grid-padding-top: 22px;

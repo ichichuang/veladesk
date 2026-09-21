@@ -1,3 +1,4 @@
+import { pageItemIds } from "@veladesk/domain";
 import type {
   AppShortcut,
   DesktopPageId,
@@ -216,14 +217,14 @@ export function buildLauncherEntries(
     }
   }
 
-  // 3. Active-page entities, strictly in layout item order.
+  // 3. Active-page entities, strictly in page membership order.
   const activePage =
     activePageId !== null
       ? workspace.pages.find((page) => page.id === activePageId)
       : undefined;
   if (activePage !== undefined) {
-    for (const item of activePage.layout.items) {
-      const entity = workspace.entities.find((candidate) => candidate.id === item.id);
+    for (const itemId of pageItemIds(activePage)) {
+      const entity = workspace.entities.find((candidate) => candidate.id === itemId);
       if (entity === undefined) {
         continue;
       }

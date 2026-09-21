@@ -1,3 +1,5 @@
+import type { CanvasPlacementMode } from "@veladesk/canvas-engine";
+
 import type { TranslateFn } from "../i18n/use-i18n";
 import type { LocalWorkspaceSyncState } from "@veladesk/local-store";
 
@@ -12,6 +14,11 @@ export type DesktopMenuEntry =
       readonly id: string;
       readonly label: string;
       readonly disabled?: boolean;
+      /**
+       * Present only on a mutually exclusive choice: renders a check gutter
+       * and exposes the row as a radio item.
+       */
+      readonly checked?: boolean;
       readonly onSelect: () => void;
     }
   | {
@@ -24,6 +31,7 @@ export interface DesktopCommandCallbacks {
   readonly onNewSection: () => void;
   readonly onSearch: () => void;
   readonly onToggleMode: () => void;
+  readonly onSetPlacementMode: (mode: CanvasPlacementMode) => void;
   readonly onUndo: () => void;
   readonly onRedo: () => void;
   readonly onSync: () => void;
@@ -36,6 +44,8 @@ export interface DesktopCommandInput {
   readonly t: TranslateFn;
   /** True while the arrange session is active. */
   readonly arrange: boolean;
+  /** Placement mode of the ACTIVE section (persisted per section). */
+  readonly placementMode: CanvasPlacementMode;
   /** Arrange-history availability — false hides undo/redo entirely. */
   readonly canUndo: boolean;
   readonly canRedo: boolean;
@@ -48,19 +58,20 @@ export interface DesktopCommandInput {
  * verbatim by empty-area right-click and the left-nav ⋯ fallback (task 015,
  * one builder for both entry points).
  *
- * At most three groups:
+ * At most four groups:
  *   1. add app / new section / search
  *   2. arrange toggle (+ undo/redo only while arranging AND available)
- *   3. the one meaningful remote action, settings, language toggle
+ *   3. placement mode of the active section (arrange only)
+ *   4. the one meaningful remote action, settings, language toggle
  *
  * Unavailable actions are HIDDEN, never stacked up disabled: view mode has
- * no undo/redo, missing history hides the corresponding entry, and a
- * conflict offers no remote action at all.
+ * no undo/redo and no placement controls, missing history hides the
+ * corresponding entry, and a conflict offers no remote action at all.
  */
 export function buildDesktopCommandEntries(
   input: DesktopCommandInput
 ): readonly DesktopMenuEntry[] {
-  const { t, arrange, canUndo, canRedo, syncState, callbacks } = input;
+  const { t, arrange, placementMode, canUndo, canRedo, syncState, callbacks } = input;
 
   const entries: DesktopMenuEntry[] = [
     { kind: "action", id: "add-app", label: t("menu.addApp"), onSelect: callbacks.onAddApp },
@@ -80,6 +91,28 @@ export function buildDesktopCommandEntries(
   }
   if (arrange && canRedo) {
     entries.push({ kind: "action", id: "redo", label: t("menu.redoArrange"), onSelect: callbacks.onRedo });
+  }
+
+  // Placement mode belongs to editing, so it is arrange-only: View renders
+  // the persisted geometry and offers no way to change how it is edited.
+  if (arrange) {
+    entries.push(
+      { kind: "separator" },
+      {
+        kind: "action",
+        id: "placement-snap",
+        label: t("menu.placementSnap"),
+        checked: placementMode === "snap",
+        onSelect: () => callbacks.onSetPlacementMode("snap"),
+      },
+      {
+        kind: "action",
+        id: "placement-freeform",
+        label: t("menu.placementFreeform"),
+        checked: placementMode === "freeform",
+        onSelect: () => callbacks.onSetPlacementMode("freeform"),
+      }
+    );
   }
 
   entries.push({ kind: "separator" });

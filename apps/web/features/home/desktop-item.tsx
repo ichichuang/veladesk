@@ -1,79 +1,84 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  RefObject,
 } from "react";
 import type { EntityId, WorkspaceEntity, WorkspaceSnapshot } from "@veladesk/domain";
-import { resolveAppVisualStyle } from "@veladesk/domain";
-import type { LayoutItem } from "@veladesk/desktop-engine";
+import type { CanvasLayoutItem, CanvasPlacementMode, CanvasRect, CanvasResizeHandle } from "@veladesk/canvas-engine";
+import type { GridDefinition } from "@veladesk/desktop-engine";
 
 import { contextMenuAnchorFromElement, isContextMenuKeyEvent } from "./context-menu";
 import { AppIconTile } from "./app-icon-renderer";
-import {
-  RESIZE_CORNERS,
-  beginResizeSession,
-  resizeScaleAt,
-} from "./app-resize";
-import type { ResizeCorner, ResizeSession } from "./app-resize";
+import { CANVAS_RESIZE_HANDLES, canvasResizeRectAt, isCanvasResizeNoop } from "../canvas/canvas-resize";
+import type { CanvasResizeSession } from "../canvas/canvas-resize";
+import { canvasRectStyle } from "../canvas/canvas-style";
+import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
 import { launchApp } from "./launch-app";
 import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
 
 interface DesktopItemProps {
-  readonly item: LayoutItem;
+  readonly item: CanvasLayoutItem;
   readonly workspace: WorkspaceSnapshot;
-  /** Arrange mode allows dragging; view mode launches/opens on activation. */
+  /** Arrange mode allows dragging and resizing; view mode launches. */
   readonly arrange: boolean;
   /**
-   * Whether drag sessions may start at all (a pending drop handoff or a
-   * live icon resize briefly disables them). Kept separate from `arrange`
-   * so the mode stays a pure user-facing concept.
+   * Whether geometry gestures may start at all (a pending drop handoff or a
+   * live resize briefly disables them). Kept separate from `arrange` so the
+   * mode stays a pure user-facing concept.
    */
   readonly dragEnabled: boolean;
-  readonly metricsAvailable: boolean;
+  /** Canvas pixel metrics; geometry gestures need them to convert pointers. */
+  readonly metrics: CanvasPixelMetrics | null;
+  readonly grid: GridDefinition;
+  readonly placementMode: CanvasPlacementMode;
   /** Whether this item is in the session-only arrange selection. */
   readonly selected: boolean;
   /**
-   * Whether this item shows the four corner resize handles. The shell
-   * decides (single-selection app in arrange mode); the item only adds the
-   * "not dragging" and "not resizing something else" conditions.
+   * Whether this item shows the eight resize handles. The shell decides
+   * (single-selection app in arrange mode); the item only adds the "not
+   * dragging" and "not resizing something else" conditions.
    */
   readonly resizable: boolean;
   /** The app whose resize session or handoff is live, if any. */
   readonly resizeActiveId: EntityId | null;
-  readonly onResizeCommit: (entityId: EntityId, scale: number) => void;
+  readonly onResizeCommit: (entityId: EntityId, rect: CanvasRect) => void;
   /** Reports a session start/end so the shell can lock competing gestures. */
   readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
   /** Arrange-mode click: plain selects, Cmd/Ctrl toggles (shell decides). */
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
-  readonly onEntityContextMenu: (
-    entityId: EntityId,
-    x: number,
-    y: number
-  ) => void;
+  readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
   readonly onOpenFolder: (folderId: EntityId) => void;
 }
 
 /**
- * One desktop entity (app, folder or widget) placed on the page grid.
+ * One desktop entity (app, folder or widget) placed on a page canvas.
+ *
+ * The item box IS the canvas rect: absolutely positioned in percent space,
+ * with the decoration, glyph, label and (in arrange) the resize handles
+ * laid out inside it. A rect that is wider than it is tall therefore paints
+ * a genuinely rectangular tile — the same code renders a square, a
+ * landscape and a portrait app.
  *
  * Apps are buttons: native focus and Enter/Space keep launch accessible in
  * view mode, while dnd-kit's keyboard sensor owns drag gestures in arrange
  * mode. View-mode clicks launch apps / open folders; arrange-mode clicks
- * drive the session selection. Right-click and Shift+F10 / ContextMenu open
- * the shared entity context menu for apps and folders; a missing entity
- * renders a restrained placeholder instead of crashing the desktop.
+ * drive the session selection.
  */
 export function DesktopItem({
   item,
   workspace,
   arrange,
   dragEnabled,
-  metricsAvailable,
+  metrics,
+  grid,
+  placementMode,
   selected,
   resizable,
   resizeActiveId,
@@ -85,25 +90,31 @@ export function DesktopItem({
 }: DesktopItemProps) {
   const { t } = useI18n();
   const entity = workspace.entities.find((candidate) => candidate.id === item.id);
+
   if (entity === undefined) {
     return (
       <div
         className="vela-item vela-item--missing"
-        style={placementStyle(item)}
+        style={canvasRectStyle(item.rect)}
         title={t("item.missingTitle")}
         onContextMenu={swallowContextMenu}
       >
-        <span className="vela-item__label">{t("item.missing")}</span>
+        <span className="vela-item__body">
+          <span className="vela-item__label">{t("item.missing")}</span>
+        </span>
       </div>
     );
   }
+
   return (
     <DesktopEntity
       item={item}
       entity={entity}
       arrange={arrange}
       dragEnabled={dragEnabled}
-      metricsAvailable={metricsAvailable}
+      metrics={metrics}
+      grid={grid}
+      placementMode={placementMode}
       selected={selected}
       resizable={resizable}
       resizeActiveId={resizeActiveId}
@@ -122,25 +133,13 @@ function swallowContextMenu(event: ReactMouseEvent) {
   event.stopPropagation();
 }
 
-interface DesktopEntityProps {
-  readonly item: LayoutItem;
+interface DesktopEntityProps extends Omit<DesktopItemProps, "workspace"> {
   readonly entity: WorkspaceEntity;
-  readonly arrange: boolean;
-  readonly dragEnabled: boolean;
-  readonly metricsAvailable: boolean;
-  readonly selected: boolean;
-  readonly resizable: boolean;
-  readonly resizeActiveId: EntityId | null;
-  readonly onResizeCommit: DesktopItemProps["onResizeCommit"];
-  readonly onResizeSessionChange: DesktopItemProps["onResizeSessionChange"];
-  readonly onItemSelect: DesktopItemProps["onItemSelect"];
-  readonly onEntityContextMenu: DesktopItemProps["onEntityContextMenu"];
-  readonly onOpenFolder: DesktopItemProps["onOpenFolder"];
 }
 
 /** A live resize gesture, keyed by the pointer that owns it. */
 interface ActiveResize {
-  readonly session: ResizeSession;
+  readonly session: CanvasResizeSession;
   readonly pointerId: number;
 }
 
@@ -149,7 +148,9 @@ function DesktopEntity({
   entity,
   arrange,
   dragEnabled,
-  metricsAvailable,
+  metrics,
+  grid,
+  placementMode,
   selected,
   resizable,
   resizeActiveId,
@@ -162,37 +163,30 @@ function DesktopEntity({
   const { t } = useI18n();
   const { ref, isDragging } = useDraggable({
     id: item.id,
-    disabled: !arrange || !dragEnabled || !metricsAvailable,
+    disabled: !arrange || !dragEnabled || metrics === null,
   });
-  /**
-   * The wrapper around the icon tile. During a resize the transient scale is
-   * written here as a CSS custom property — custom properties inherit, so
-   * the tile picks it up without React re-rendering the desktop on every
-   * pointer frame.
-   */
-  const tileWrapRef = useRef<HTMLSpanElement | null>(null);
+  const itemRef = useRef<HTMLElement | null>(null);
   const resizeRef = useRef<ActiveResize | null>(null);
   const [resizing, setResizing] = useState(false);
 
-  const commonStyle = { ...placementStyle(item), ...(isDragging ? { zIndex: 30 } : {}) };
-  const draggingProps = { "data-dragging": isDragging ? "true" : undefined } as const;
-
   /**
-   * The preview scale is only ever removed while no resize is live for this
-   * app: the shell keeps the handoff alive until the persisted snapshot
-   * carries the committed scale, so the tile never flashes back to the old
-   * size between pointerup and the durable write.
+   * The rect the element shows right now, as an inline style. During a
+   * resize gesture the preview writes here directly — never through React
+   * state — so a pointermove costs no render. Cancel and no-op commits put
+   * the authoritative start rect back, because React will not re-apply a
+   * style prop that never changed.
    */
-  const resumePreviewHeld = resizeActiveId === entity.id;
-  useEffect(() => {
-    if (!resumePreviewHeld) {
-      tileWrapRef.current?.style.removeProperty("--vd-app-icon-scale-preview");
+  const applyRect = useCallback((rect: CanvasRect) => {
+    const element = itemRef.current;
+    if (element === null) {
+      return;
     }
-  }, [resumePreviewHeld]);
-
-  function clearPreview() {
-    tileWrapRef.current?.style.removeProperty("--vd-app-icon-scale-preview");
-  }
+    const style = canvasRectStyle(rect) as Record<string, string | number>;
+    element.style.left = String(style.left);
+    element.style.top = String(style.top);
+    element.style.width = String(style.width);
+    element.style.height = String(style.height);
+  }, []);
 
   function endResize() {
     resizeRef.current = null;
@@ -201,84 +195,88 @@ function DesktopEntity({
   }
 
   function cancelResize() {
-    if (resizeRef.current === null) {
+    const active = resizeRef.current;
+    if (active === null) {
       return;
     }
-    clearPreview();
+    applyRect(active.session.startRect);
     endResize();
   }
 
-  function handleResizePointerDown(corner: ResizeCorner) {
-    return (event: ReactPointerEvent<HTMLSpanElement>) => {
+  function handleResizePointerDown(handle: CanvasResizeHandle) {
+    return (event: ReactPointerEvent<HTMLElement>) => {
       // Never let a handle start a drag, a marquee, a launch or a menu.
       //
       // This MUST run in the CAPTURE phase: dnd-kit attaches its own native
-      // pointerdown listener to the draggable button, and a native listener on
-      // the button fires before React's root-level bubble handlers — stopping
-      // propagation from a bubble handler would be too late and the tile would
-      // start dragging instead of resizing. Stopping it at the root during
-      // capture keeps the event away from the button entirely.
+      // pointerdown listener to the draggable button, and a native listener
+      // on the button fires before React's root-level bubble handlers —
+      // stopping propagation from a bubble handler would be too late and the
+      // tile would start dragging instead of resizing.
       event.preventDefault();
       event.stopPropagation();
-      if (resizeRef.current !== null) {
+      if (resizeRef.current !== null || metrics === null) {
         return;
       }
-      const tile = tileWrapRef.current?.querySelector<HTMLElement>(".vela-item__icon");
-      if (tile === null || tile === undefined) {
-        return;
-      }
-      const rect = tile.getBoundingClientRect();
-      const session = beginResizeSession({
-        corner,
-        startScale: appScale,
-        centerX: rect.left + rect.width / 2,
-        centerY: rect.top + rect.height / 2,
-        pointerX: event.clientX,
-        pointerY: event.clientY,
-      });
-      if (session === undefined) {
-        return;
-      }
-      resizeRef.current = { session, pointerId: event.pointerId };
       event.currentTarget.setPointerCapture(event.pointerId);
+      resizeRef.current = {
+        session: {
+          handle,
+          startRect: item.rect,
+          startPointerX: event.clientX,
+          startPointerY: event.clientY,
+          metrics,
+          grid,
+          mode: placementMode,
+        },
+        pointerId: event.pointerId,
+      };
       setResizing(true);
       onResizeSessionChange(entity.id, true);
     };
   }
 
-  function handleResizePointerMove(event: ReactPointerEvent<HTMLSpanElement>) {
+  function handleResizePointerMove(event: ReactPointerEvent<HTMLElement>) {
     const active = resizeRef.current;
     if (active === null || active.pointerId !== event.pointerId) {
       return;
     }
-    const next = resizeScaleAt(active.session, event.clientX, event.clientY);
-    tileWrapRef.current?.style.setProperty("--vd-app-icon-scale-preview", String(next));
+    applyRect(
+      canvasResizeRectAt(active.session, event.clientX, event.clientY, event.shiftKey),
+    );
   }
 
-  function handleResizePointerUp(event: ReactPointerEvent<HTMLSpanElement>) {
+  function handleResizePointerUp(event: ReactPointerEvent<HTMLElement>) {
     const active = resizeRef.current;
     if (active === null || active.pointerId !== event.pointerId) {
       return;
     }
-    const finalScale = resizeScaleAt(active.session, event.clientX, event.clientY);
-    // Pointer capture stays until the browser releases it; the gesture is
-    // over for us either way.
+    const finalRect = canvasResizeRectAt(
+      active.session,
+      event.clientX,
+      event.clientY,
+      event.shiftKey,
+    );
     endResize();
-    // The transient preview REMAINS at finalScale — the shell either hands it
-    // off to the durable snapshot or drops it (no-op / failure), and the
-    // effect above removes it exactly then.
-    onResizeCommit(entity.id, finalScale);
+    if (isCanvasResizeNoop(active.session.startRect, finalRect)) {
+      // No effective change: no commit, no history entry, no sync — and the
+      // preview goes back to the authoritative rect.
+      applyRect(active.session.startRect);
+      return;
+    }
+    // The preview STAYS at finalRect: the shell hands it off to the durable
+    // snapshot, or drops it (failed stage) — it never flashes back to the
+    // old rect in between.
+    onResizeCommit(entity.id, finalRect);
   }
 
   /** Capture lost without a pointerup (OS gesture, element detach): cancel. */
-  function handleLostPointerCapture(event: ReactPointerEvent<HTMLSpanElement>) {
+  function handleLostPointerCapture(event: ReactPointerEvent<HTMLElement>) {
     if (resizeRef.current?.pointerId === event.pointerId) {
       cancelResize();
     }
   }
 
-  // Escape cancels a live resize (spec: no stage, no sync, persisted scale
-  // untouched). Registered only while this item owns the gesture.
+  // Escape cancels a live resize: no stage, no sync, geometry untouched.
   useEffect(() => {
     if (!resizing) {
       return;
@@ -286,25 +284,28 @@ function DesktopEntity({
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         cancelResize();
       }
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- cancelResize only touches refs and stable setters
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cancelResize only reads refs and stable setters
   }, [resizing]);
 
   const showResizeHandles =
     entity.kind === "app" &&
     resizable &&
     !isDragging &&
+    metrics !== null &&
     (resizeActiveId === null || resizeActiveId === entity.id);
-  /**
-   * The gesture starts from the AUTHORITATIVE scale, never from whatever the
-   * preview happens to show — the shell hides the handles while a handoff is
-   * live, so a session can never begin on a pending value.
-   */
-  const appScale = entity.kind === "app" ? resolveAppVisualStyle(entity).iconScale : 1;
+
+  const commonStyle: CSSProperties = {
+    ...canvasRectStyle(item.rect),
+    ...(isDragging ? { zIndex: 30 } : {}),
+  };
+  const draggingProps = { "data-dragging": isDragging ? "true" : undefined } as const;
+  const selectionProps = { "data-selected": selected ? "true" : undefined } as const;
 
   function handleContextMenu(event: ReactMouseEvent) {
     event.preventDefault();
@@ -337,13 +338,38 @@ function DesktopEntity({
     onItemSelect(entity.id, event.metaKey || event.ctrlKey);
   }
 
-  const selectionProps = { "data-selected": selected ? "true" : undefined } as const;
+  const resizeHandles =
+    showResizeHandles && entity.kind === "app" ? (
+      <span className="vela-item__resize-layer" aria-hidden="false">
+        {CANVAS_RESIZE_HANDLES.map((handle) => (
+          <span
+            key={handle}
+            className="vela-item__resize-handle"
+            data-handle={handle}
+            role="button"
+            tabIndex={-1}
+            aria-label={t("arrange.resizeIcon")}
+            onPointerDownCapture={handleResizePointerDown(handle)}
+            onPointerMove={handleResizePointerMove}
+            onPointerUp={handleResizePointerUp}
+            onPointerCancel={handleLostPointerCapture}
+            onLostPointerCapture={handleLostPointerCapture}
+            onClick={(event) => {
+              // The click a handle produces belongs to the resize.
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onContextMenu={swallowContextMenu}
+          />
+        ))}
+      </span>
+    ) : null;
 
   if (entity.kind === "app") {
     return (
       <button
         type="button"
-        ref={ref}
+        ref={mergeRefs(ref, itemRef)}
         data-item-id={item.id}
         className="vela-item"
         data-kind="app"
@@ -355,32 +381,13 @@ function DesktopEntity({
         onKeyDown={handleKeyDown}
         onClick={handleClick}
       >
-        <span className="vela-item__icon-wrap" ref={tileWrapRef}>
-          <AppIconTile app={entity} />
-          {showResizeHandles
-            ? RESIZE_CORNERS.map((corner) => (
-                <span
-                  key={corner}
-                  className="vela-item__resize-handle"
-                  data-corner={corner}
-                  role="button"
-                  aria-label={t("arrange.resizeIcon")}
-                  onPointerDownCapture={handleResizePointerDown(corner)}
-                  onPointerMove={handleResizePointerMove}
-                  onPointerUp={handleResizePointerUp}
-                  onPointerCancel={handleLostPointerCapture}
-                  onLostPointerCapture={handleLostPointerCapture}
-                  onClick={(event) => {
-                    // The click a handle produces belongs to the resize.
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                  onContextMenu={swallowContextMenu}
-                />
-              ))
-            : null}
+        <span className="vela-item__body">
+          <span className="vela-item__icon-wrap">
+            <AppIconTile app={entity} />
+          </span>
+          <span className="vela-item__label">{entity.name}</span>
         </span>
-        <span className="vela-item__label">{entity.name}</span>
+        {resizeHandles}
       </button>
     );
   }
@@ -389,7 +396,7 @@ function DesktopEntity({
     return (
       <button
         type="button"
-        ref={ref}
+        ref={mergeRefs(ref, itemRef)}
         data-item-id={item.id}
         className="vela-item"
         data-kind="folder"
@@ -402,17 +409,19 @@ function DesktopEntity({
         onKeyDown={handleKeyDown}
         onClick={handleClick}
       >
-        <span className="vela-item__icon vela-item__icon--folder" aria-hidden="true">
-          <FolderGlyph />
+        <span className="vela-item__body">
+          <span className="vela-item__icon vela-item__icon--folder" aria-hidden="true">
+            <FolderGlyph />
+          </span>
+          <span className="vela-item__label">{entity.name}</span>
         </span>
-        <span className="vela-item__label">{entity.name}</span>
       </button>
     );
   }
 
   return (
     <div
-      ref={ref}
+      ref={mergeRefs(ref, itemRef)}
       data-item-id={item.id}
       className="vela-item vela-item--widget"
       data-kind="widget"
@@ -423,21 +432,30 @@ function DesktopEntity({
       onContextMenu={swallowContextMenu}
       onClick={handleClick}
     >
-      <span className="vela-item__widget-title">{entity.title ?? entity.widgetType}</span>
+      <span className="vela-item__body">
+        <span className="vela-item__widget-title">{entity.title ?? entity.widgetType}</span>
+      </span>
     </div>
   );
 }
 
-function placementStyle(item: LayoutItem): React.CSSProperties {
-  return {
-    gridColumn: `${item.position.column + 1} / span ${item.span.columns}`,
-    gridRow: `${item.position.row + 1} / span ${item.span.rows}`,
+/**
+ * dnd-kit and the resize preview both need the item element — one ref
+ * callback feeds both without either owning the other.
+ */
+function mergeRefs<T>(
+  first: (node: T | null) => void,
+  second: RefObject<T | null>,
+): (node: T | null) => void {
+  return (node) => {
+    first(node);
+    second.current = node;
   };
 }
 
 function FolderGlyph() {
   return (
-    <svg viewBox="0 0 32 32" width="30" height="30" role="presentation" focusable="false">
+    <svg viewBox="0 0 32 32" role="presentation" focusable="false">
       <path
         d="M4 9.5C4 8.1 5.1 7 6.5 7h6l3 3h10c1.4 0 2.5 1.1 2.5 2.5v11c0 1.4-1.1 2.5-2.5 2.5h-19C5.1 26 4 24.9 4 23.5v-14Z"
         fill="currentColor"

@@ -26,10 +26,10 @@ interface SectionDialogProps {
 /**
  * Section name dialog (task 015): create and rename share one surface.
  *
- * A new section copies the CURRENT section's grid (never a hardcoded
- * default), starts with an empty layout whose id equals the new page id,
- * and — once staged — is revealed by scrolling the real section stack.
- * The stored name is the user's verbatim string.
+ * A new section copies the CURRENT section's grid as its snap lattice,
+ * starts as a canvas-native page (empty canvas, empty legacy item list) in
+ * `snap` mode, and — once staged — is revealed by scrolling the real
+ * section stack. The stored name is the user's verbatim string.
  */
 export function SectionDialog({ workspace, gridSourcePage, section, onClose, onCreated }: SectionDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
@@ -77,6 +77,7 @@ export function SectionDialog({ workspace, gridSourcePage, section, onClose, onC
             grid: { columns: gridSourcePage.layout.grid.columns, rows: gridSourcePage.layout.grid.rows },
             items: [],
           },
+          canvas: { version: 1, mode: "snap", items: [] },
         });
       }
       if (!result.ok) {

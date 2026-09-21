@@ -16,6 +16,7 @@ function commandEntries(overrides: Partial<Parameters<typeof buildDesktopCommand
   return buildDesktopCommandEntries({
     t: (key: TranslationKey) => translate("zh-CN", key),
     arrange: false,
+    placementMode: "snap",
     canUndo: false,
     canRedo: false,
     syncState: "clean",
@@ -24,6 +25,7 @@ function commandEntries(overrides: Partial<Parameters<typeof buildDesktopCommand
       onNewSection: noop,
       onSearch: noop,
       onToggleMode: noop,
+      onSetPlacementMode: noop,
       onUndo: noop,
       onRedo: noop,
       onSync: noop,
@@ -63,6 +65,63 @@ describe("buildDesktopCommandEntries", () => {
     const ids = actionIds(entries);
     expect(ids).not.toContain("undo");
     expect(ids).not.toContain("redo");
+  });
+
+  it("offers the placement mode choice only while arranging", () => {
+    expect(actionIds(commandEntries({ arrange: false }))).not.toContain("placement-snap");
+    expect(actionIds(commandEntries({ arrange: false }))).not.toContain("placement-freeform");
+
+    const arranging = actionIds(commandEntries({ arrange: true }));
+    expect(arranging).toContain("placement-snap");
+    expect(arranging).toContain("placement-freeform");
+  });
+
+  it("marks the section's current placement mode as checked", () => {
+    const snap = commandEntries({ arrange: true, placementMode: "snap" });
+    expect(snap.find((entry) => entry.kind === "action" && entry.id === "placement-snap")).toMatchObject({
+      checked: true,
+      label: "自动对齐",
+    });
+    expect(
+      snap.find((entry) => entry.kind === "action" && entry.id === "placement-freeform"),
+    ).toMatchObject({ checked: false, label: "自由排列" });
+
+    const freeform = commandEntries({ arrange: true, placementMode: "freeform" });
+    expect(
+      freeform.find((entry) => entry.kind === "action" && entry.id === "placement-freeform"),
+    ).toMatchObject({ checked: true });
+    expect(
+      freeform.find((entry) => entry.kind === "action" && entry.id === "placement-snap"),
+    ).toMatchObject({ checked: false });
+  });
+
+  it("reports the chosen placement mode to the caller", () => {
+    const chosen: string[] = [];
+    const entries = commandEntries({
+      arrange: true,
+      callbacks: {
+        onAddApp: noop,
+        onNewSection: noop,
+        onSearch: noop,
+        onToggleMode: noop,
+        onSetPlacementMode: (mode) => chosen.push(mode),
+        onUndo: noop,
+        onRedo: noop,
+        onSync: noop,
+        onRefresh: noop,
+        onOpenSettings: noop,
+        onToggleLocale: noop,
+      },
+    });
+
+    const freeform = entries.find(
+      (entry) => entry.kind === "action" && entry.id === "placement-freeform",
+    );
+    const snap = entries.find((entry) => entry.kind === "action" && entry.id === "placement-snap");
+    if (freeform?.kind === "action") freeform.onSelect();
+    if (snap?.kind === "action") snap.onSelect();
+
+    expect(chosen).toEqual(["freeform", "snap"]);
   });
 
   it("shows undo/redo only while arranging with available history", () => {
@@ -110,17 +169,25 @@ describe("buildDesktopCommandEntries", () => {
     expect(enToggle?.kind === "action" && enToggle.label).toBe("中文");
   });
 
-  it("groups the menu with separators (at most three groups)", () => {
-    const entries = commandEntries({ arrange: true, canUndo: true, canRedo: true, syncState: "dirty" });
-    const separators = entries.filter((entry) => entry.kind === "separator");
-    expect(separators).toHaveLength(2);
+  it("groups the menu with separators (one per group, never adjacent)", () => {
+    const arrange = commandEntries({ arrange: true, canUndo: true, canRedo: true, syncState: "dirty" });
+    const separators = arrange.filter((entry) => entry.kind === "separator");
+    // add-app/search, arrange controls, placement mode, remote/settings.
+    expect(separators).toHaveLength(3);
+
+    // View mode has no placement group and no undo/redo.
+    const view = commandEntries({ arrange: false, syncState: "clean" });
+    expect(view.filter((entry) => entry.kind === "separator")).toHaveLength(2);
+
     // Separators never appear adjacent and never first/last.
-    expect(entries[0]!.kind).toBe("action");
-    expect(entries[entries.length - 1]!.kind).toBe("action");
-    for (let index = 1; index < entries.length; index += 1) {
-      const previous = entries[index - 1]!;
-      const current = entries[index]!;
-      expect(previous.kind === "separator" && current.kind === "separator").toBe(false);
+    for (const entries of [arrange, view]) {
+      expect(entries[0]!.kind).toBe("action");
+      expect(entries[entries.length - 1]!.kind).toBe("action");
+      for (let index = 1; index < entries.length; index += 1) {
+        const previous = entries[index - 1]!;
+        const current = entries[index]!;
+        expect(previous.kind === "separator" && current.kind === "separator").toBe(false);
+      }
     }
   });
 
