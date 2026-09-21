@@ -89,10 +89,28 @@ export function SectionView({
     if (scroller === null || !active) {
       return;
     }
-    const max = scroller.scrollHeight - scroller.clientHeight;
-    scroller.scrollTop = Math.min(initialScrollTop ?? 0, Number.isFinite(max) ? Math.max(0, max) : 0);
+    // Restore the remembered position, clamped into the CURRENT range. The
+    // Grid rows only reach their square size after the metrics observer
+    // reports the stage width (a layout later), so re-apply until the
+    // content can satisfy the saved position — bounded, then silent.
+    const desired = initialScrollTop ?? 0;
+    let retry = 0;
+    let timer = 0;
+    const apply = () => {
+      const max = scroller.scrollHeight - scroller.clientHeight;
+      scroller.scrollTop = Math.min(desired, Number.isFinite(max) ? Math.max(0, max) : 0);
+    };
+    apply();
+    timer = window.setInterval(() => {
+      retry += 1;
+      apply();
+      if (scroller.scrollTop >= desired - 1 || retry > 20) {
+        window.clearInterval(timer);
+      }
+    }, 40);
     onScrollerMount?.(scroller);
     return () => {
+      window.clearInterval(timer);
       onScrollerMount?.(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restore runs exactly once per mount

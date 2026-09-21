@@ -93,6 +93,7 @@ import { SectionDialog } from "./section-dialog";
 import { SectionRail } from "./section-rail";
 import { SectionSyncStatus } from "./section-sync-status";
 import { SectionView } from "./section-view";
+import type { SectionViewPhase } from "./section-view";
 import { SectionScrollMemory } from "./section-scroll-memory";
 import { normalizeSelection, selectAllIds, toggleSelection } from "./selection-state";
 import { normalizeSelectionRect, selectIntersectingItemIds } from "./selection-geometry";
@@ -263,6 +264,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   );
   /** The section currently animating out, unmounted when it settles. */
   const [sectionExit, setSectionExit] = useState<SectionExit | null>(null);
+  /** The phase the ACTIVE view mounted with (its enter animation). */
+  const [enterPhase, setEnterPhase] = useState<SectionViewPhase>("active");
   /**
    * Session-only preview of a just-clicked toolbar gap change — applies to
    * the visual grid immediately while the durable preference stage lands.
@@ -470,20 +473,24 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       const animate = options.animate !== false;
       const rapid = Date.now() - previousSwitchAt < SECTION_TRANSITION_MS + 40;
       if (!animate || rapid) {
-        // Instant swap: drop any exit immediately.
+        // Instant swap: drop any exit immediately, no enter animation.
         sectionExitTokenRef.current += 1;
         setSectionExit(null);
+        setEnterPhase("active");
         return;
       }
 
       const token = sectionExitTokenRef.current + 1;
       sectionExitTokenRef.current = token;
+      setEnterPhase(towards === "next" ? "enter-next" : "enter-prev");
       setSectionExit({ pageId: currentId, token, towards });
       window.setTimeout(() => {
         if (sectionExitTokenRef.current === token) {
           setSectionExit((current) =>
             current !== null && current.token === token ? null : current
           );
+          // The transition is over: the surviving view is simply active.
+          setEnterPhase("active");
         }
       }, SECTION_TRANSITION_MS);
     },
@@ -1782,7 +1789,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
                   placement={displayPlacement}
                   workspace={snapshot}
                   active
-                  phase="active"
+                  phase={enterPhase}
                   arrange={arrange}
                   dragEnabled={arrange && !handoffLock && !resizeLock}
                   scrollLocked={scrollLocked}
