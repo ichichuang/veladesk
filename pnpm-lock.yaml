@@ -98,6 +98,16 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/canvas-engine:
+    dependencies:
+      '@veladesk/desktop-engine':
+        specifier: workspace:*
+        version: link:../desktop-engine
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/client-runtime:
     dependencies:
       '@veladesk/domain':

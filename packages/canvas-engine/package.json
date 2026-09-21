@@ -1,0 +1,21 @@
+{
+  "name": "@veladesk/canvas-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure-logic continuous canvas geometry for VelaDesk desktop pages.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./history": "./src/history.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@veladesk/desktop-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
