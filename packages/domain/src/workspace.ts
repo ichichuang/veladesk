@@ -30,9 +30,9 @@ function assertNonEmptyTrimmed(value: string, name: string): void {
  * The grid is validated with the same semantics as the engine's
  * `createGridDefinition` and stays the page's snap lattice.
  *
- * New workspaces are canvas-native: the page carries an empty `snap` canvas
- * whose items are added as free rects, so no section ever starts as a
- * capacity-limited grid.
+ * New workspaces are placement-native v2: the page carries an empty Grid
+ * canvas whose columns come from the given grid, so no section ever starts
+ * as a capacity-limited grid (rows grow without bound).
  */
 export function createEmptyWorkspace(args: CreateEmptyWorkspaceArgs): WorkspaceSnapshot {
   assertNonEmptyTrimmed(args.workspaceId, "workspaceId");
@@ -55,8 +55,9 @@ export function createEmptyWorkspace(args: CreateEmptyWorkspaceArgs): WorkspaceS
           items: [],
         },
         canvas: {
-          version: 1,
-          mode: "snap",
+          version: 2,
+          mode: "grid",
+          columns: args.grid.columns,
           items: [],
         },
       },

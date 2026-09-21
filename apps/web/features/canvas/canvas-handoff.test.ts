@@ -8,7 +8,7 @@ import {
 } from "./canvas-handoff";
 import type { PendingCanvasHandoff } from "./canvas-handoff";
 
-function canvas(x: number, mode: CanvasLayout["mode"] = "freeform"): CanvasLayout {
+function canvas(x: number, mode: "snap" | "freeform" = "freeform"): CanvasLayout {
   return { version: 1, mode, items: [{ id: "a", rect: { x, y: 0, width: 1000, height: 1000 } }] };
 }
 

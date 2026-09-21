@@ -4,17 +4,19 @@ import {
   removeCanvasItem,
   validateCanvasLayout,
 } from "@veladesk/canvas-engine";
-import type { CanvasLayout } from "@veladesk/canvas-engine";
+import type { CanvasLayout, CanvasRect } from "@veladesk/canvas-engine";
 import { validatePageLayout } from "@veladesk/desktop-engine";
 
 import { findDesktopPage } from "./lookup";
 import { validateWorkspaceAppearance } from "./appearance";
+import { isValidGridGapPx } from "./preferences";
 import {
-  isCanvasPage,
-  materializePageCanvas,
+  materializePagePlacement,
   pageItemIds,
   placePageItem,
-  resolvePageCanvas,
+  placementSizeOf,
+  resolvePagePlacement,
+  spanFromFreeformRect,
   withPageCanvas,
 } from "./canvas";
 import type {
@@ -54,6 +56,7 @@ export type WorkspaceEditFailureReason =
   | "invalid-url"
   | "default-page-not-found"
   | "invalid-appearance"
+  | "invalid-grid-gap"
   | "duplicate-page-id"
   | "invalid-page-name"
   | "page-layout-id-mismatch"
@@ -177,25 +180,7 @@ function hasPageItems(page: DesktopPage): boolean {
   return pageItemIds(page).length > 0;
 }
 
-/**
- * The rect an app currently occupies, but only when it lives on a canvas
- * page: legacy grid geometry is not a size the user chose.
- */
-function canvasRectSizeOf(
-  workspace: WorkspaceSnapshot,
-  itemId: EntityId
-): { readonly width: number; readonly height: number } | undefined {
-  for (const page of workspace.pages) {
-    if (!isCanvasPage(page)) {
-      continue;
-    }
-    const item = findCanvasItem(page.canvas, itemId);
-    if (item !== undefined) {
-      return { width: item.rect.width, height: item.rect.height };
-    }
-  }
-  return undefined;
-}
+
 
 /** Two id lists with the same members (order and duplicates aside). */
 function hasSameItemIds(left: readonly EntityId[], right: readonly EntityId[]): boolean {
@@ -546,6 +531,12 @@ export function replaceWorkspacePreferences(
       return { ok: false, reason: "invalid-appearance" };
     }
   }
+  if (
+    nextPreferences.gridGapPx !== undefined &&
+    !isValidGridGapPx(nextPreferences.gridGapPx)
+  ) {
+    return { ok: false, reason: "invalid-grid-gap" };
+  }
   return { ok: true, workspace: { ...workspace, preferences: nextPreferences } };
 }
 
@@ -577,10 +568,21 @@ export function dissolveFolderToPage(
   const currentPage = workspace.pages.find((page) =>
     pageItemIds(page).includes(folderId)
   );
-  const anchor =
-    currentPage !== undefined && currentPage.id === targetPageId
-      ? findCanvasItem(resolvePageCanvas(currentPage), folderId)?.rect
-      : undefined;
+  // Dissolve anchor on the TARGET page only: the folder shell's rect
+  // (freeform) or its column/row cell (Grid), from the resolved placement.
+  let anchor: CanvasRect | undefined;
+  let anchorCell: { column: number; row: number } | undefined;
+  if (currentPage !== undefined && currentPage.id === targetPageId) {
+    const placement = resolvePagePlacement(currentPage);
+    const shell = findCanvasItem(placement, folderId);
+    if (placement.mode === "grid") {
+      if (shell !== undefined && !("rect" in shell)) {
+        anchorCell = { column: shell.column, row: shell.row };
+      }
+    } else if (shell !== undefined && "rect" in shell) {
+      anchor = shell.rect;
+    }
+  }
 
   // Working copy: strip the folder shell first, then place children one by
   // one against the accumulating page canvas.
@@ -612,6 +614,7 @@ export function dissolveFolderToPage(
     const placed = placePageItem(target, childId, {
       index: baseIndex + childIndex,
       ...(anchor === undefined ? {} : { anchor }),
+      ...(anchorCell === undefined ? {} : { anchorCell }),
     });
     working = withPage(working, targetPageId, placed);
   }
@@ -801,7 +804,7 @@ export function relocateAppToPage(
     return { ok: false, reason: "already-on-page" };
   }
 
-  const size = canvasRectSizeOf(workspace, appId);
+  const size = placementSizeOf(workspace.pages, appId);
   // Strip every geometry/folder reference first, then place against the
   // stripped working copy.
   const stripped = withoutFolderChild(withoutPageItem(workspace, appId), appId);
@@ -810,9 +813,32 @@ export function relocateAppToPage(
     return { ok: false, reason: "page-not-found" };
   }
 
+  // Preserve geometry across the move: a span travels between Grid pages
+  // (clamped into the target columns); a rect travels into freeform pages;
+  // a freeform rect moving into a Grid page derives its span through the
+  // target lattice. Either way the entity is never lost — worst case it
+  // lands at the default 1x1.
+  const targetPlacement = resolvePagePlacement(targetPage);
+  const span =
+    targetPlacement.mode === "grid"
+      ? size !== undefined && size.kind === "span"
+        ? size
+        : size !== undefined && size.kind === "rect"
+          ? spanFromFreeformRect(
+              { x: 0, y: 0, width: size.width, height: size.height },
+              targetPage.layout.grid,
+            )
+          : undefined
+      : undefined;
+  const rectSize =
+    targetPlacement.mode === "freeform" && size !== undefined && size.kind === "rect"
+      ? { width: size.width, height: size.height }
+      : undefined;
+
   const placed = placePageItem(targetPage, appId, {
     index: pageItemIds(targetPage).length,
-    ...(size === undefined ? {} : { size }),
+    ...(span === undefined ? {} : { span }),
+    ...(rectSize === undefined ? {} : { size: rectSize }),
   });
   return { ok: true, workspace: withPage(stripped, targetPageId, placed) };
 }
@@ -845,6 +871,6 @@ export function replacePageCanvas(
   }
   return {
     ok: true,
-    workspace: withPage(workspace, pageId, withPageCanvas(materializePageCanvas(page), canvas)),
+    workspace: withPage(workspace, pageId, withPageCanvas(materializePagePlacement(page), canvas)),
   };
 }

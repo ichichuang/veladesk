@@ -17,7 +17,7 @@ import {
   translateCanvasItems,
   withCanvasMode,
 } from "@veladesk/canvas-engine";
-import type { CanvasLayout, CanvasPlacementMode, CanvasRect } from "@veladesk/canvas-engine";
+import type { CanvasLayout, CanvasLayoutV1, CanvasPlacementMode, CanvasRect } from "@veladesk/canvas-engine";
 import {
   deleteApp,
   deleteEmptyPage,
@@ -629,9 +629,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       if (page === undefined) {
         return;
       }
-      const canvas = resolvePageCanvas(page);
+      const canvas = resolvePageCanvas(page) as CanvasLayoutV1;
       const item = findCanvasItem(canvas, entityId);
-      if (item === undefined || canvasRectsEqual(item.rect, rect)) {
+      if (item === undefined || !("rect" in item) || canvasRectsEqual(item.rect, rect)) {
         return;
       }
       commitCanvasEdit(pageId, replaceCanvasItem(canvas, { id: entityId, rect }));

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createEmptyWorkspace,
   pageItemIds,
-  resolvePageCanvas,
+  resolvePagePlacement,
   validateWorkspace,
 } from "@veladesk/domain";
 import type {
@@ -64,10 +64,6 @@ function widget(id: string): WidgetInstance {
 
 // Lattice cells of the 3x3 grid used across these tests. Edges are
 // [0, 3333, 6667, 10000] with per-edge rounding, so cells are gap-free.
-const CELL_0_0 = { x: 0, y: 0, width: 3333, height: 3333 };
-const CELL_1_1 = { x: 3333, y: 3333, width: 3334, height: 3334 };
-const CELL_2_2 = { x: 6667, y: 6667, width: 3333, height: 3333 };
-
 function pageOf(workspace: WorkspaceSnapshot, pageId = "page-1") {
   const page = workspace.pages.find((candidate) => candidate.id === pageId);
   if (page === undefined) {
@@ -84,18 +80,33 @@ function pageOf(workspace: WorkspaceSnapshot, pageId = "page-1") {
  */
 function itemsOf(workspace: WorkspaceSnapshot, pageId = "page-1") {
   const page = pageOf(workspace, pageId);
-  const canvas = resolvePageCanvas(page);
-  expect(canvas.items.map((item) => item.id)).toEqual([...pageItemIds(page)]);
-  return canvas.items;
+  const placement = resolvePagePlacement(page);
+  expect(placement.items.map((item: { id: string }) => item.id)).toEqual([...pageItemIds(page)]);
+  return placement.items;
 }
 
 function canvasOf(workspace: WorkspaceSnapshot, pageId = "page-1"): CanvasLayout | undefined {
   return pageOf(workspace, pageId).canvas;
 }
 
-function rectOf(workspace: WorkspaceSnapshot, id: string, pageId = "page-1") {
-  return itemsOf(workspace, pageId).find((item) => item.id === id)?.rect;
+function cellOf(
+  workspace: WorkspaceSnapshot,
+  id: string,
+  pageId = "page-1",
+): { column: number; row: number; columnSpan: number; rowSpan: number } | undefined {
+  const item = itemsOf(workspace, pageId).find((candidate) => candidate.id === id);
+  if (item === undefined || !("column" in item)) {
+    return undefined;
+  }
+  return {
+    column: item.column,
+    row: item.row,
+    columnSpan: item.columnSpan,
+    rowSpan: item.rowSpan,
+  };
 }
+
+const CELL_0_0_GRID = { column: 0, row: 0, columnSpan: 1, rowSpan: 1 };
 
 function expectValid(workspace: WorkspaceSnapshot): void {
   expect(validateWorkspace(workspace)).toEqual([]);
@@ -114,9 +125,9 @@ describe("addAppToPage", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.workspace.entities.map((entity) => entity.id)).toEqual(["app-a"]);
-    expect(itemsOf(result.workspace)).toEqual([{ id: "app-a", rect: CELL_0_0 }]);
+    expect(itemsOf(result.workspace)).toEqual([{ id: "app-a", ...CELL_0_0_GRID }]);
     // The canvas is authoritative now: the legacy grid item list stays empty.
-    expect(canvasOf(result.workspace)?.mode).toBe("snap");
+    expect(canvasOf(result.workspace)?.mode).toBe("grid");
     expect(pageOf(result.workspace).layout.items).toEqual([]);
     expectValid(result.workspace);
   });
@@ -132,7 +143,7 @@ describe("addAppToPage", () => {
     });
   });
 
-  it("reports page-not-found and keeps adding past one grid's worth because canvas pages overlap instead of rejecting", () => {
+  it("reports page-not-found and keeps adding past one grid's worth because grid rows are unbounded", () => {
     expect(addAppToPage(baseWorkspace(), "page-x", app("app-a"))).toEqual({
       ok: false,
       reason: "page-not-found",
@@ -150,8 +161,8 @@ describe("addAppToPage", () => {
     expect(extra.ok).toBe(true);
     if (!extra.ok) return;
     expect(itemsOf(extra.workspace)).toHaveLength(10);
-    // Item 10 (index 9) wraps back to the first lattice cell — overlap is legal.
-    expect(rectOf(extra.workspace, "app-extra")).toEqual(CELL_0_0);
+    // Item 10 lands on the first cell of the next row — rows are unbounded.
+    expect(cellOf(extra.workspace, "app-extra")).toEqual({ column: 0, row: 3, columnSpan: 1, rowSpan: 1 });
     expectValid(extra.workspace);
   });
 
@@ -293,7 +304,7 @@ describe("addFolderToPage", () => {
     const stored = result.workspace.entities[0];
     expect(stored?.kind).toBe("folder");
     expect(stored?.kind === "folder" && stored.children).toEqual([]);
-    expect(itemsOf(result.workspace)).toEqual([{ id: "folder-1", rect: CELL_0_0 }]);
+    expect(itemsOf(result.workspace)).toEqual([{ id: "folder-1", ...CELL_0_0_GRID }]);
     expect(canvasOf(result.workspace)?.items.map((item) => item.id)).toEqual(["folder-1"]);
     expect(pageOf(result.workspace).layout.items).toEqual([]);
     expectValid(result.workspace);
@@ -506,11 +517,11 @@ describe("moveAppToPage", () => {
     if (!result.ok) return;
     const folderEntity = result.workspace.entities.find((entity) => entity.id === "folder-1");
     expect(folderEntity?.kind === "folder" && folderEntity.children).toEqual([]);
-    // The folder keeps the first cell; the app cascades to the next lattice
-    // diagonal cell with the default cell size.
+    // The folder keeps the first cell; the app takes the next free cell in
+    // reading order with the default 1x1 span.
     expect(itemsOf(result.workspace)).toEqual([
-      { id: "folder-1", rect: CELL_0_0 },
-      { id: "app-a", rect: CELL_1_1 },
+      { id: "folder-1", ...CELL_0_0_GRID },
+      { id: "app-a", column: 1, row: 0, columnSpan: 1, rowSpan: 1 },
     ]);
     expectValid(result.workspace);
   });
@@ -529,12 +540,12 @@ describe("moveAppToPage", () => {
     }
     expect(itemsOf(almostFull)).toHaveLength(9);
 
-    // Overlap is legal, so the folder child still lands on the page.
+    // Rows are unbounded, so the folder child still lands on the page.
     const moved = moveAppToPage(almostFull, "app-a", "page-1");
     expect(moved.ok).toBe(true);
     if (!moved.ok) return;
     expect(itemsOf(moved.workspace)).toHaveLength(10);
-    expect(rectOf(moved.workspace, "app-a")).toEqual(CELL_0_0);
+    expect(cellOf(moved.workspace, "app-a")).toEqual({ column: 0, row: 3, columnSpan: 1, rowSpan: 1 });
     expectValid(moved.workspace);
 
     const placed = addAppToPage(baseWorkspace(), "page-1", app("app-a"));
@@ -726,11 +737,12 @@ describe("dissolveFolderToPage", () => {
     ]);
     const items = itemsOf(result.workspace);
     expect(items.find((item) => item.id === "folder-1")).toBeUndefined();
-    // The first child lands on the folder shell's cell and the rest cascade
-    // from that anchor; the pinned child keeps its dock reference.
-    expect(rectOf(result.workspace, "app-away")).toEqual(CELL_0_0);
-    expect(rectOf(result.workspace, "app-a")).toEqual(CELL_1_1);
-    expect(rectOf(result.workspace, "app-b")).toEqual(CELL_2_2);
+    // The first child lands on the folder shell's vacated cell and the rest
+    // scan row-major from that anchor; the pinned child keeps its dock
+    // reference.
+    expect(cellOf(result.workspace, "app-away")).toEqual({ column: 0, row: 0, columnSpan: 1, rowSpan: 1 });
+    expect(cellOf(result.workspace, "app-a")).toEqual({ column: 1, row: 0, columnSpan: 1, rowSpan: 1 });
+    expect(cellOf(result.workspace, "app-b")).toEqual({ column: 2, row: 0, columnSpan: 1, rowSpan: 1 });
     expect(result.workspace.dock.items).toEqual(["app-b"]);
     expectValid(result.workspace);
   });
@@ -757,8 +769,8 @@ describe("dissolveFolderToPage", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // No anchor on the target page, so the child cascades from the origin.
-    expect(itemsOf(result.workspace, "page-2")).toEqual([{ id: "app-a", rect: CELL_0_0 }]);
+    // No anchor on the target page, so the child scans from the top-left.
+    expect(itemsOf(result.workspace, "page-2")).toEqual([{ id: "app-a", ...CELL_0_0_GRID }]);
     expect(itemsOf(result.workspace, "page-1")).toEqual([]);
     expectValid(result.workspace);
   });
@@ -782,10 +794,10 @@ describe("dissolveFolderToPage", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // The folder shell is gone; both children overlap the existing nine items.
+    // The folder shell is gone; both children find free cells on new rows.
     expect(itemsOf(result.workspace)).toHaveLength(10);
-    expect(rectOf(result.workspace, "app-a")).toEqual(CELL_0_0);
-    expect(rectOf(result.workspace, "app-b")).toEqual(CELL_1_1);
+    expect(cellOf(result.workspace, "app-a")).toEqual({ column: 0, row: 0, columnSpan: 1, rowSpan: 1 });
+    expect(cellOf(result.workspace, "app-b")).toEqual({ column: 0, row: 3, columnSpan: 1, rowSpan: 1 });
     expectValid(result.workspace);
   });
 
@@ -976,8 +988,8 @@ describe("relocateAppToPage", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(itemsOf(result.workspace, "page-1")).toEqual([]);
-    // The app keeps its canvas size and cascades to the target's first cell.
-    expect(itemsOf(result.workspace, "page-2")).toEqual([{ id: "app-a", rect: CELL_0_0 }]);
+    // The app keeps its span and lands at the target's first free cell.
+    expect(itemsOf(result.workspace, "page-2")).toEqual([{ id: "app-a", ...CELL_0_0_GRID }]);
     expect(result.workspace.entities.map((entity) => entity.id)).toEqual(["app-a"]);
     expectValid(result.workspace);
   });
@@ -1009,11 +1021,11 @@ describe("relocateAppToPage", () => {
       (entity) => entity.kind === "folder"
     );
     expect(survivingFolder).toMatchObject({ id: "folder-1", children: [] });
-    // The folder keeps the first cell; the relocated app cascades to the next
-    // lattice diagonal cell (a folder child has no rect of its own to keep).
+    // The folder keeps the first cell; the relocated app takes the next free
+    // cell (a folder child has no geometry of its own to keep).
     expect(itemsOf(result.workspace, "page-2")).toEqual([
-      { id: "folder-1", rect: CELL_0_0 },
-      { id: "app-a", rect: CELL_1_1 },
+      { id: "folder-1", ...CELL_0_0_GRID },
+      { id: "app-a", column: 1, row: 0, columnSpan: 1, rowSpan: 1 },
     ]);
     expectValid(result.workspace);
   });
@@ -1029,15 +1041,17 @@ describe("relocateAppToPage", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(itemsOf(result.workspace, "page-2").map((item) => item.id)).toEqual(["app-lost"]);
-    expect(rectOf(result.workspace, "app-lost", "page-2")).toEqual(CELL_0_0);
+    expect(cellOf(result.workspace, "app-lost", "page-2")).toEqual(CELL_0_0_GRID);
     expectValid(result.workspace);
   });
 
-  it("preserves the source rect size when relocating from another canvas page", () => {
+  it("preserves the source span when relocating from another canvas page", () => {
     const workspace = sectionedWorkspace();
     const resized = replacePageCanvas(workspace, "page-1", {
       version: 1,
       mode: "snap",
+      // 5000 wide on a 3-column lattice ≈ columns 0..2 (span 2 after edge
+      // rounding); 4000 tall ≈ row 1..2 (span 1).
       items: [{ id: "app-a", rect: { x: 1000, y: 2000, width: 5000, height: 4000 } }],
     });
     if (!resized.ok) throw new Error("fixture failed");
@@ -1046,12 +1060,12 @@ describe("relocateAppToPage", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // The size is preserved; only the position comes from the cascade.
-    expect(rectOf(result.workspace, "app-a", "page-3")).toEqual({
-      x: 0,
-      y: 0,
-      width: 5000,
-      height: 4000,
+    // The span is preserved; only the position comes from the first-free scan.
+    expect(cellOf(result.workspace, "app-a", "page-3")).toEqual({
+      column: 0,
+      row: 0,
+      columnSpan: 2,
+      rowSpan: 1,
     });
     expectValid(result.workspace);
   });
@@ -1080,7 +1094,7 @@ describe("relocateAppToPage", () => {
     });
   });
 
-  it("relocates onto a page that already holds a full grid because canvas items overlap", () => {
+  it("relocates onto a page that already holds a full grid because grid rows are unbounded", () => {
     const workspace = sectionedWorkspace();
     // Fill page-2 completely (3x3 = 9 items).
     let full = workspace;
@@ -1097,8 +1111,8 @@ describe("relocateAppToPage", () => {
     if (!result.ok) return;
     expect(itemsOf(result.workspace, "page-2")).toHaveLength(10);
     expect(itemsOf(result.workspace, "page-1")).toEqual([]);
-    // Item 10 (index 9) wraps back to the first cell with the preserved size.
-    expect(rectOf(result.workspace, "app-a", "page-2")).toEqual(CELL_0_0);
+    // Item 10 opens the next row with the preserved span.
+    expect(cellOf(result.workspace, "app-a", "page-2")).toEqual({ column: 0, row: 3, columnSpan: 1, rowSpan: 1 });
     expect(itemsOf(result.workspace, "page-2").map((item) => item.id)).toContain("app-a");
     expectValid(result.workspace);
   });

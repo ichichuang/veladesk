@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { areCanvasLayoutsEqual } from "@veladesk/canvas-engine";
-import type { CanvasLayout } from "@veladesk/canvas-engine";
+import type { CanvasLayout, CanvasLayoutV1 } from "@veladesk/canvas-engine";
 
 import {
   canRedo,
@@ -16,20 +16,26 @@ import {
 } from "./arrange-history";
 import type { ArrangeCanvasHistories } from "./arrange-history";
 
-const canvas = (itemX: number): CanvasLayout => ({
+const canvas = (itemX: number): CanvasLayoutV1 => ({
   version: 1,
   mode: "freeform",
   items: [{ id: "a", rect: { x: itemX, y: 0, width: 1000, height: 1000 } }],
 });
 
-const otherCanvas = (itemX: number): CanvasLayout => ({
+const otherCanvas = (itemX: number): CanvasLayoutV1 => ({
   version: 1,
   mode: "snap",
   items: [{ id: "d", rect: { x: itemX, y: 0, width: 1000, height: 1000 } }],
 });
 
 function rectX(histories: ArrangeCanvasHistories, pageId: string): number | undefined {
-  return historyForPage(histories, pageId)?.present.items[0]?.rect.x;
+  const item = historyForPage(histories, pageId)?.present.items[0];
+  return item !== undefined && "rect" in item ? item.rect.x : undefined;
+}
+
+function rectWidth(histories: ArrangeCanvasHistories, pageId: string): number | undefined {
+  const item = historyForPage(histories, pageId)?.present.items[0];
+  return item !== undefined && "rect" in item ? item.rect.width : undefined;
 }
 
 describe("arrange canvas history", () => {
@@ -52,11 +58,11 @@ describe("arrange canvas history", () => {
     expect(canUndo(histories, "page-1")).toBe(true);
 
     histories = undoPageCanvas(histories, "page-1");
-    expect(historyForPage(histories, "page-1")?.present.items[0]?.rect.width).toBe(1000);
+    expect(rectWidth(histories, "page-1")).toBe(1000);
     expect(canRedo(histories, "page-1")).toBe(true);
 
     histories = redoPageCanvas(histories, "page-1");
-    expect(historyForPage(histories, "page-1")?.present.items[0]?.rect.width).toBe(4000);
+    expect(rectWidth(histories, "page-1")).toBe(4000);
   });
 
   it("ignores a commit identical to the present", () => {

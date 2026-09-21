@@ -242,6 +242,16 @@ export interface WorkspacePreferences {
   readonly layoutLocked: boolean;
 
   /**
+   * Grid gap in CSS pixels — a real geometry input for Grid sections.
+   *
+   * Optional for backward compatibility: snapshots persisted before the
+   * gap existed stay valid forever; readers resolve them to
+   * `DEFAULT_GRID_GAP_PX`. Deliberately NOT part of appearance, because it
+   * affects layout geometry, not looks. Integer 0..32.
+   */
+  readonly gridGapPx?: number;
+
+  /**
    * Visual preferences. Optional for backward compatibility: snapshots
    * persisted before appearance existed stay valid forever; readers resolve
    * them to `DEFAULT_WORKSPACE_APPEARANCE` without writing a migration.

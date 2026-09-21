@@ -8,6 +8,7 @@ import { validateAppVisualStyle } from "./app-visual";
 import type { AppVisualValidationIssue } from "./app-visual";
 import { validateWorkspaceAppearance } from "./appearance";
 import type { WorkspaceAppearanceValidationIssue } from "./appearance";
+import { isValidGridGapPx } from "./preferences";
 import type {
   CategoryId,
   DesktopPageId,
@@ -129,6 +130,9 @@ export type WorkspaceValidationIssue =
   | {
       readonly type: "invalid-appearance-preference";
       readonly issue: WorkspaceAppearanceValidationIssue;
+    }
+  | {
+      readonly type: "invalid-grid-gap";
     }
   | {
       readonly type: "app-category-missing";
@@ -380,7 +384,16 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
     });
   }
 
-  // 9b. Appearance semantics — only when a persisted appearance exists.
+  // 9b. Grid gap semantics — only when a persisted gap exists. Legacy
+  // snapshots without one are valid by definition.
+  if (
+    workspace.preferences.gridGapPx !== undefined &&
+    !isValidGridGapPx(workspace.preferences.gridGapPx)
+  ) {
+    issues.push({ type: "invalid-grid-gap" });
+  }
+
+  // 9c. Appearance semantics — only when a persisted appearance exists.
   // Legacy snapshots without one are valid by definition; the shared range
   // rules live in `validateWorkspaceAppearance` and are never duplicated.
   if (workspace.preferences.appearance !== undefined) {

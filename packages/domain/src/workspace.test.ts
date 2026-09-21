@@ -27,7 +27,7 @@ describe("createEmptyWorkspace", () => {
           id: "page-1",
           name: "Home",
           layout: { id: "page-1", grid, items: [] },
-          canvas: { version: 1, mode: "snap", items: [] },
+          canvas: { version: 2, mode: "grid", columns: grid.columns, items: [] },
         },
       ],
       entities: [],

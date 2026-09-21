@@ -31,7 +31,7 @@ describe("desktop item — canvas geometry only", () => {
     expect(grid).toContain('className="vela-canvas"');
     // The lattice overlay is arrange-only AND snap-only: a freeform canvas
     // has no lattice, so dots there would misdescribe the model.
-    expect(grid).toMatch(/arrange && canvas\.mode === "snap"/);
+    expect(grid).toMatch(/arrange && v1\.mode === "snap"/);
   });
 
   it("renders the lattice from real cell centers", () => {

@@ -42,8 +42,8 @@ export function previewCanvasDrag(args: CanvasDragArgs): CanvasDragPreview {
   const logicalY = pixelsToUnits(args.deltaY, args.metrics.height);
 
   const translation =
-    args.canvas.mode === "snap"
-      ? snapCanvasTranslation(args.canvas, args.itemIds, logicalX, logicalY, args.grid)
+    args.canvas.mode !== "freeform"
+      ? snapCanvasTranslation(args.canvas as Parameters<typeof snapCanvasTranslation>[0], args.itemIds, logicalX, logicalY, args.grid)
       : // Continuous: the clamp is resolved ONCE for the whole selection, so
         // a group stops at the canvas edge as a rigid body instead of
         // scattering item by item.
@@ -65,5 +65,10 @@ export function commitCanvasDrag(args: CanvasDragArgs): CanvasLayout | null {
   if (translation.x === 0 && translation.y === 0) {
     return null;
   }
-  return translateCanvasItems(args.canvas, args.itemIds, translation.x, translation.y);
+  return translateCanvasItems(
+    args.canvas as Parameters<typeof translateCanvasItems>[0],
+    args.itemIds,
+    translation.x,
+    translation.y,
+  ) as CanvasLayout;
 }

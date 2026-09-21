@@ -171,16 +171,37 @@ function isCanvasLayoutItem(value: unknown): boolean {
   return isRecord(value) && typeof value.id === "string" && isCanvasRect(value.rect);
 }
 
-/**
- * Structural shape of a `CanvasLayout` only — safe-integer fields, bounds,
- * version and id uniqueness are semantic and belong to the canvas engine's
- * `validateCanvasLayout` (a rect beyond the canvas decodes fine and fails
- * validation later).
- */
-function isCanvasLayout(value: unknown): boolean {
+function isGridCanvasItem(value: unknown): boolean {
   return (
     isRecord(value) &&
-    typeof value.version === "number" &&
+    typeof value.id === "string" &&
+    typeof value.column === "number" &&
+    typeof value.row === "number" &&
+    typeof value.columnSpan === "number" &&
+    typeof value.rowSpan === "number"
+  );
+}
+
+/**
+ * Structural shape of a `CanvasLayout` (any version) only — safe-integer
+ * fields, bounds, version agreement and id uniqueness are semantic and
+ * belong to the canvas engine's `validateCanvasLayout` (a rect beyond the
+ * canvas or a span past the columns decodes fine and fails validation
+ * later). v1 keeps both `snap` and `freeform`; v2 splits Grid (integer cell
+ * items plus a column count) from Freeform (rect items).
+ */
+function isCanvasLayout(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.version !== "number") {
+    return false;
+  }
+  if (value.version === 2 && value.mode === "grid") {
+    return typeof value.columns === "number" && Array.isArray(value.items) && value.items.every(isGridCanvasItem);
+  }
+  if (value.version === 2 && value.mode === "freeform") {
+    return Array.isArray(value.items) && value.items.every(isCanvasLayoutItem);
+  }
+  return (
+    value.version === 1 &&
     CANVAS_PLACEMENT_MODES.includes(value.mode as string) &&
     Array.isArray(value.items) &&
     value.items.every(isCanvasLayoutItem)
@@ -234,6 +255,9 @@ function isPreferences(value: unknown): boolean {
     isRecord(value) &&
     typeof value.defaultPageId === "string" &&
     typeof value.layoutLocked === "boolean" &&
+    // Optional for backward compatibility: pre-gap snapshots stay decodable
+    // forever; the integer range is semantic (validateWorkspace).
+    (value.gridGapPx === undefined || typeof value.gridGapPx === "number") &&
     // Optional for backward compatibility: pre-appearance snapshots stay
     // decodable forever; only a structurally valid appearance is accepted.
     (value.appearance === undefined || isAppearancePreferences(value.appearance))

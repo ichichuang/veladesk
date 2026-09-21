@@ -16,6 +16,15 @@ export {
 export type { WorkspaceAppearanceValidationIssue } from "./appearance";
 
 export {
+  DEFAULT_GRID_GAP_PX,
+  GRID_GAP_STEP_PX,
+  MAX_GRID_GAP_PX,
+  MIN_GRID_GAP_PX,
+  isValidGridGapPx,
+  resolveGridGapPx,
+} from "./preferences";
+
+export {
   DEFAULT_APP_VISUAL_STYLE,
   MAX_ICON_SCALE,
   MIN_ICON_SCALE,
@@ -28,19 +37,27 @@ export type { AppVisualValidationIssue } from "./app-visual";
 export { findCategory, findDesktopPage, findWorkspaceEntity } from "./lookup";
 
 export {
+  gridPlacementOf,
   isCanvasPage,
-  materializePageCanvas,
+  materializePagePlacement,
   newCanvasItemRect,
   pageItemIds,
   placePageItem,
-  resolvePageCanvas,
+  placementSizeOf,
+  resolvePagePlacement,
+  snappedRectForGrid,
+  spanFromFreeformRect,
   withPageCanvas,
 } from "./canvas";
 export type {
   CanvasPage,
   NewCanvasItemRectArgs,
   PageItemPlacement,
+  PagePlacement,
 } from "./canvas";
+// TEMPORARY pre-017 name of the v1 compatibility view — the web rebuild
+// removes it together with `resolvePageCanvasV1`.
+export { resolvePageCanvasV1 as resolvePageCanvas } from "./canvas";
 
 export { decodeWorkspaceSnapshot } from "./decoding";
 

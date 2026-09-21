@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CanvasLayout } from "@veladesk/canvas-engine";
+import type { CanvasLayout, CanvasLayoutItem, CanvasLayoutV1 } from "@veladesk/canvas-engine";
 import type { GridDefinition } from "@veladesk/desktop-engine";
 
 import { commitCanvasDrag, previewCanvasDrag } from "./canvas-drag";
@@ -9,7 +9,7 @@ import type { CanvasPixelMetrics } from "./canvas-metrics";
 const metrics: CanvasPixelMetrics = { width: 1000, height: 800 };
 const grid: GridDefinition = { columns: 10, rows: 8 };
 
-function canvas(mode: CanvasLayout["mode"], items: CanvasLayout["items"]): CanvasLayout {
+function canvas(mode: "snap" | "freeform", items: readonly CanvasLayoutItem[]): CanvasLayoutV1 {
   return { version: 1, mode, items };
 }
 
@@ -22,6 +22,11 @@ const snap = canvas("snap", [
   { id: "a", rect: { x: 0, y: 0, width: 1000, height: 1250 } },
   { id: "b", rect: { x: 3000, y: 0, width: 1000, height: 1250 } },
 ]);
+
+function rectOf(layout: CanvasLayout | null, index: number) {
+  const item = layout?.items[index];
+  return item !== undefined && "rect" in item ? item.rect : undefined;
+}
 
 describe("previewCanvasDrag — freeform", () => {
   it("translates continuously in logical units", () => {
@@ -61,7 +66,7 @@ describe("previewCanvasDrag — freeform", () => {
       metrics,
       grid,
     });
-    expect(moved?.items[0]?.rect).toEqual({ x: 130, y: 88, width: 1000, height: 1000 });
+    expect(rectOf(moved, 0)).toEqual({ x: 130, y: 88, width: 1000, height: 1000 });
   });
 
   it("clamps the whole selection once, at the canvas edge", () => {
@@ -91,7 +96,7 @@ describe("previewCanvasDrag — freeform", () => {
       metrics,
       grid,
     });
-    expect(moved?.items.map((item) => item.rect.x)).toEqual([1500, 2000]);
+    expect(moved === null ? null : [rectOf(moved, 0)?.x, rectOf(moved, 1)?.x]).toEqual([1500, 2000]);
   });
 });
 
@@ -126,9 +131,9 @@ describe("previewCanvasDrag — snap", () => {
       grid,
     });
 
-    expect(moved?.items[0]?.rect.x).toBe(1000);
-    expect(moved?.items[1]?.rect.x).toBe(5000);
-    expect((moved?.items[1]?.rect.y ?? 0) - (moved?.items[0]?.rect.y ?? 0)).toBe(2500);
+    expect(rectOf(moved, 0)?.x).toBe(1000);
+    expect(rectOf(moved, 1)?.x).toBe(5000);
+    expect((rectOf(moved, 1)?.y ?? 0) - (rectOf(moved, 0)?.y ?? 0)).toBe(2500);
   });
 
   it("stays put when the pointer has not crossed a lattice line", () => {
@@ -159,7 +164,7 @@ describe("previewCanvasDrag — snap", () => {
       metrics,
       grid,
     });
-    expect(moved?.items.map((item) => item.rect.x)).toEqual([1000, 1000]);
+    expect(moved === null ? null : [rectOf(moved, 0)?.x, rectOf(moved, 1)?.x]).toEqual([1000, 1000]);
   });
 });
 

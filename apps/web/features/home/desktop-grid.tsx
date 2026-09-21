@@ -3,7 +3,7 @@
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type {
   CanvasLayout,
-  CanvasPlacementMode,
+  CanvasLayoutV1,
   CanvasRect,
 } from "@veladesk/canvas-engine";
 import type { GridDefinition } from "@veladesk/desktop-engine";
@@ -88,14 +88,15 @@ export function DesktopCanvasView({
 }: DesktopCanvasViewProps) {
   // The lattice is an alignment hint of SNAP sections only: in freeform the
   // canvas has no lattice, so showing dots would lie about the model.
-  const markers = arrange && canvas.mode === "snap" ? canvasLatticeMarkers(grid) : [];
+  const v1 = canvas as CanvasLayoutV1;
+  const markers = arrange && v1.mode === "snap" ? canvasLatticeMarkers(grid) : [];
 
   return (
     <div className="vela-desktop__viewport" data-arrange={arrange ? "true" : "false"}>
       <div
         ref={canvasRef}
         className="vela-canvas"
-        data-placement-mode={canvas.mode satisfies CanvasPlacementMode}
+        data-placement-mode={v1.mode}
         onPointerDown={onCanvasPointerDown}
         onPointerMove={onCanvasPointerMove}
         onPointerUp={onCanvasPointerUp}
@@ -116,7 +117,7 @@ export function DesktopCanvasView({
             ))}
           </div>
         ) : null}
-        {canvas.items.map((item) => (
+        {v1.items.map((item) => (
           <DesktopItem
             key={item.id}
             item={item}
@@ -125,7 +126,7 @@ export function DesktopCanvasView({
             dragEnabled={dragEnabled}
             metrics={metrics}
             grid={grid}
-            placementMode={canvas.mode}
+            placementMode={v1.mode}
             selected={selectedIds.has(item.id)}
             resizable={resizableIds.has(item.id)}
             resizeActiveId={resizeActiveId}
