@@ -1,8 +1,22 @@
-import { findNearestFreePosition, validatePageLayout } from "@veladesk/desktop-engine";
-import type { GridPosition, LayoutItem, PageLayout } from "@veladesk/desktop-engine";
+import {
+  canvasItemIds,
+  findCanvasItem,
+  removeCanvasItem,
+  validateCanvasLayout,
+} from "@veladesk/canvas-engine";
+import type { CanvasLayout } from "@veladesk/canvas-engine";
+import { validatePageLayout } from "@veladesk/desktop-engine";
 
 import { findDesktopPage } from "./lookup";
 import { validateWorkspaceAppearance } from "./appearance";
+import {
+  isCanvasPage,
+  materializePageCanvas,
+  pageItemIds,
+  placePageItem,
+  resolvePageCanvas,
+  withPageCanvas,
+} from "./canvas";
 import type {
   AppShortcut,
   DesktopPage,
@@ -18,6 +32,10 @@ import type {
 /**
  * Why an immutable workspace editing operation refused to produce a new
  * snapshot. Ordinary edit failures are values, never throws.
+ *
+ * `no-space` belongs to the legacy grid vocabulary: a canvas page always
+ * accepts another item (overlap is legal), so no canvas-aware operation can
+ * report it.
  */
 export type WorkspaceEditFailureReason =
   | "page-not-found"
@@ -55,9 +73,6 @@ export type WorkspaceEditResult =
       readonly ok: false;
       readonly reason: WorkspaceEditFailureReason;
     };
-
-const APP_SPAN = { columns: 1, rows: 1 } as const;
-const DEFAULT_POSITION: GridPosition = { column: 0, row: 0 };
 
 function isBlank(value: string): boolean {
   return value.trim().length === 0;
@@ -110,26 +125,81 @@ function withFolder(
   );
 }
 
-/** Page layouts with `itemId` removed from every page's items. */
-function withoutLayoutItem(
+/**
+ * Pages with `itemId` removed from every geometry source — canvas items and
+ * legacy layout items alike, so a half-migrated page can never keep a stale
+ * reference either way.
+ */
+function withoutPageItem(
   workspace: WorkspaceSnapshot,
   itemId: EntityId
 ): WorkspaceSnapshot {
   return {
     ...workspace,
-    pages: workspace.pages.map((page) =>
-      page.layout.items.some((item) => item.id === itemId)
-        ? { ...page, layout: { ...page.layout, items: page.layout.items.filter((item) => item.id !== itemId) } }
-        : page
-    ),
+    pages: workspace.pages.map((page) => {
+      const stripped =
+        page.canvas !== undefined && page.canvas.items.some((item) => item.id === itemId)
+          ? { ...page, canvas: removeCanvasItem(page.canvas, itemId) }
+          : page;
+
+      return stripped.layout.items.some((item) => item.id === itemId)
+        ? {
+            ...stripped,
+            layout: {
+              ...stripped.layout,
+              items: stripped.layout.items.filter((item) => item.id !== itemId),
+            },
+          }
+        : stripped;
+    }),
   };
 }
 
-/** Whether any page layout carries an item with this id. */
+/** Replaces one page in place (index preserved). */
+function withPage(
+  workspace: WorkspaceSnapshot,
+  pageId: DesktopPageId,
+  nextPage: DesktopPage
+): WorkspaceSnapshot {
+  return {
+    ...workspace,
+    pages: workspace.pages.map((page) => (page.id === pageId ? nextPage : page)),
+  };
+}
+
+/** Whether any page — canvas or legacy — carries an item with this id. */
 function isOnAnyPage(workspace: WorkspaceSnapshot, itemId: EntityId): boolean {
-  return workspace.pages.some((page) =>
-    page.layout.items.some((item) => item.id === itemId)
-  );
+  return workspace.pages.some((page) => pageItemIds(page).includes(itemId));
+}
+
+/** Whether a page holds at least one item, from its authoritative source. */
+function hasPageItems(page: DesktopPage): boolean {
+  return pageItemIds(page).length > 0;
+}
+
+/**
+ * The rect an app currently occupies, but only when it lives on a canvas
+ * page: legacy grid geometry is not a size the user chose.
+ */
+function canvasRectSizeOf(
+  workspace: WorkspaceSnapshot,
+  itemId: EntityId
+): { readonly width: number; readonly height: number } | undefined {
+  for (const page of workspace.pages) {
+    if (!isCanvasPage(page)) {
+      continue;
+    }
+    const item = findCanvasItem(page.canvas, itemId);
+    if (item !== undefined) {
+      return { width: item.rect.width, height: item.rect.height };
+    }
+  }
+  return undefined;
+}
+
+/** Two id lists with the same members (order and duplicates aside). */
+function hasSameItemIds(left: readonly EntityId[], right: readonly EntityId[]): boolean {
+  return left.length === right.length && left.every((id) => right.includes(id));
 }
 
 /** Folders with `appId` removed from every children list. */
@@ -148,59 +218,22 @@ function withoutFolderChild(
 }
 
 /**
- * Places a 1x1 item on a page layout, immutably: nearest-free resolution
- * from the desired anchor. Returns undefined when the grid has no room.
- */
-function placeItem(
-  layout: PageLayout,
-  itemId: EntityId,
-  desired: GridPosition
-): LayoutItem | undefined {
-  const resolved = findNearestFreePosition({
-    grid: layout.grid,
-    items: layout.items,
-    desired,
-    span: APP_SPAN,
-  });
-  if (resolved === null) {
-    return undefined;
-  }
-  return { id: itemId, position: resolved, span: APP_SPAN };
-}
-
-function withLayoutItem(
-  workspace: WorkspaceSnapshot,
-  pageId: DesktopPageId,
-  item: LayoutItem
-): WorkspaceSnapshot {
-  return {
-    ...workspace,
-    pages: workspace.pages.map((page) =>
-      page.id === pageId
-        ? { ...page, layout: { ...page.layout, items: [...page.layout.items, item] } }
-        : page
-    ),
-  };
-}
-
-/**
- * Appends an app to a page as a 1x1 item, immutably.
+ * Appends an app to a page as a canvas item, immutably.
  *
  * The entity id must not exist yet anywhere in the workspace (entity ids
  * are unique across kinds and pages) and the target page must exist. The
  * app's name and url must be non-blank after trimming (custom protocols
- * stay valid — urls are stored verbatim, never rewritten). The desired
- * anchor (default top-left) is resolved with the desktop engine's
- * nearest-free placement against the page's CURRENT layout; with no free
- * cell the edit fails and the input stays untouched. On success the entity
- * is appended to `entities` and a matching `LayoutItem` is appended to the
- * page's layout items.
+ * stay valid — urls are stored verbatim, never rewritten).
+ *
+ * A legacy grid page is materialized into canvas geometry first, so the
+ * first production Add App upgrades that page. Placement never searches for
+ * a free cell and never fails for space: canvas pages accept overlap, and
+ * the default rect is one lattice cell at the next cascade position.
  */
 export function addAppToPage(
   workspace: WorkspaceSnapshot,
   pageId: DesktopPageId,
-  app: AppShortcut,
-  desiredPosition?: GridPosition
+  app: AppShortcut
 ): WorkspaceEditResult {
   if (workspace.entities.some((entity) => entity.id === app.id)) {
     return { ok: false, reason: "duplicate-entity-id" };
@@ -215,13 +248,14 @@ export function addAppToPage(
   if (isBlank(app.url)) {
     return { ok: false, reason: "invalid-url" };
   }
-  const item = placeItem(page.layout, app.id, desiredPosition ?? DEFAULT_POSITION);
-  if (item === undefined) {
-    return { ok: false, reason: "no-space" };
-  }
+  const placed = placePageItem(page, app.id, { index: pageItemIds(page).length });
   return {
     ok: true,
-    workspace: withLayoutItem(withEntities(workspace, [...workspace.entities, app]), pageId, item),
+    workspace: withPage(
+      withEntities(workspace, [...workspace.entities, app]),
+      pageId,
+      placed
+    ),
   };
 }
 
@@ -264,14 +298,13 @@ export function addAppToFolder(
  * Creates a folder on a page, immutably.
  *
  * V1 folders are created empty (`children.length === 0`) — anything else is
- * a `folder-must-be-empty` failure. The folder gets a 1x1 nearest-free
- * placement like an app.
+ * a `folder-must-be-empty` failure. The folder takes the next canvas
+ * cascade rect, exactly like an app.
  */
 export function addFolderToPage(
   workspace: WorkspaceSnapshot,
   pageId: DesktopPageId,
-  folder: Folder,
-  desiredPosition?: GridPosition
+  folder: Folder
 ): WorkspaceEditResult {
   if (workspace.entities.some((entity) => entity.id === folder.id)) {
     return { ok: false, reason: "duplicate-entity-id" };
@@ -286,16 +319,13 @@ export function addFolderToPage(
   if (page === undefined) {
     return { ok: false, reason: "page-not-found" };
   }
-  const item = placeItem(page.layout, folder.id, desiredPosition ?? DEFAULT_POSITION);
-  if (item === undefined) {
-    return { ok: false, reason: "no-space" };
-  }
+  const placed = placePageItem(page, folder.id, { index: pageItemIds(page).length });
   return {
     ok: true,
-    workspace: withLayoutItem(
+    workspace: withPage(
       withEntities(workspace, [...workspace.entities, folder]),
       pageId,
-      item
+      placed
     ),
   };
 }
@@ -352,11 +382,12 @@ export function renameFolder(
 /**
  * Moves an app into a folder: the true container move.
  *
- * The app id is removed from every PageLayout and every folder's children,
- * then appended to the target folder's children. The app entity keeps its
- * `entities` index and the dock is completely untouched — so a pinned app
- * stays pinned across page→folder and folder→folder moves. Moving an app
- * that is already in the target folder is an `already-in-folder` failure.
+ * The app id is removed from every page geometry source and every folder's
+ * children, then appended to the target folder's children. The app entity
+ * keeps its `entities` index and the dock is completely untouched — so a
+ * pinned app stays pinned across page→folder and folder→folder moves.
+ * Moving an app that is already in the target folder is an
+ * `already-in-folder` failure.
  */
 export function moveAppToFolder(
   workspace: WorkspaceSnapshot,
@@ -374,7 +405,7 @@ export function moveAppToFolder(
   if (folder.children.includes(appId)) {
     return { ok: false, reason: "already-in-folder" };
   }
-  const removedFromLayouts = withoutLayoutItem(workspace, appId);
+  const removedFromLayouts = withoutPageItem(workspace, appId);
   const removedFromFolders = withoutFolderChild(removedFromLayouts, appId);
   const target = findFolder(removedFromFolders, folderId);
   if (target === undefined) {
@@ -391,17 +422,15 @@ export function moveAppToFolder(
 
 /**
  * Moves an app onto a page, immutably — the folder→desktop direction (and
- * unplaced→desktop). Apps already on ANY page are `already-on-page`; the
- * desired anchor (default top-left) is resolved nearest-free on the target
- * page first, and `no-space` leaves the input completely unchanged. On
- * success the app id is removed from every folder's children; the dock is
- * untouched.
+ * unplaced→desktop). Apps already on ANY page are `already-on-page`. The
+ * app takes the target page's next canvas cascade rect (a folder child has
+ * no rect of its own to preserve); on success its id is removed from every
+ * folder's children and the dock is untouched.
  */
 export function moveAppToPage(
   workspace: WorkspaceSnapshot,
   appId: EntityId,
-  pageId: DesktopPageId,
-  desiredPosition?: GridPosition
+  pageId: DesktopPageId
 ): WorkspaceEditResult {
   const app = findApp(workspace, appId);
   if (app === undefined) {
@@ -414,19 +443,17 @@ export function moveAppToPage(
   if (isOnAnyPage(workspace, appId)) {
     return { ok: false, reason: "already-on-page" };
   }
-  const item = placeItem(page.layout, appId, desiredPosition ?? DEFAULT_POSITION);
-  if (item === undefined) {
-    return { ok: false, reason: "no-space" };
-  }
+  const placed = placePageItem(page, appId, { index: pageItemIds(page).length });
   const removedFromFolders = withoutFolderChild(workspace, appId);
-  return { ok: true, workspace: withLayoutItem(removedFromFolders, pageId, item) };
+  return { ok: true, workspace: withPage(removedFromFolders, pageId, placed) };
 }
 
 /**
  * Deletes an app and every reference to it, immutably: the entity itself,
- * all page layout items, all folder children and the dock pin. Categories
- * are untouched (an app's categoryId dying with the app never invalidates
- * the category list).
+ * all canvas items, all legacy layout items, all folder children and the
+ * dock pin — every container is cleared defensively, whichever geometry the
+ * page uses. Categories are untouched (an app's categoryId dying with the
+ * app never invalidates the category list).
  */
 export function deleteApp(
   workspace: WorkspaceSnapshot,
@@ -440,7 +467,7 @@ export function deleteApp(
     workspace,
     workspace.entities.filter((entity) => entity.id !== appId)
   );
-  const withoutLayouts = withoutLayoutItem(withoutEntity, appId);
+  const withoutLayouts = withoutPageItem(withoutEntity, appId);
   const withoutFolders = withoutFolderChild(withoutLayouts, appId);
   return {
     ok: true,
@@ -523,16 +550,16 @@ export function replaceWorkspacePreferences(
 }
 
 /**
- * Deletes a folder by dissolving it: the folder shell (entity, layout
- * item, dock pin) disappears and its child apps return to the target page
- * as visible 1x1 items — never as invisible unplaced data.
+ * Deletes a folder by dissolving it: the folder shell (entity, canvas item,
+ * legacy layout item, dock pin) disappears and its child apps return to the
+ * target page as visible canvas items — never as invisible unplaced data.
  *
- * The whole operation is atomic. Children keep their `children` order;
- * each child is placed nearest-free from the folder's original anchor when
- * the folder lived on the target page (else from the top-left), and every
- * placement sees the cells the previous children took. Child dock pins are
- * preserved. Any child that does not fit fails the whole dissolve with
- * `no-space` and leaves the input untouched.
+ * The whole operation is atomic. Children keep their `children` order. When
+ * the folder lived on the target page, its shell rect seeds the cascade, so
+ * the first child lands where the folder was and the rest follow; otherwise
+ * the children cascade after the items already on the page. Placement is
+ * canvas-based and overlap is legal, so a dissolve can never fail for lack
+ * of room. Child dock pins are preserved.
  */
 export function dissolveFolderToPage(
   workspace: WorkspaceSnapshot,
@@ -543,23 +570,21 @@ export function dissolveFolderToPage(
   if (folder === undefined) {
     return { ok: false, reason: "folder-not-found" };
   }
-  const currentPage = workspace.pages.find((page) =>
-    page.layout.items.some((item) => item.id === folderId)
-  );
-  const targetPage = findDesktopPage(workspace, targetPageId);
-  if (targetPage === undefined) {
+  if (findDesktopPage(workspace, targetPageId) === undefined) {
     return { ok: false, reason: "page-not-found" };
   }
 
-  const desired: GridPosition =
+  const currentPage = workspace.pages.find((page) =>
+    pageItemIds(page).includes(folderId)
+  );
+  const anchor =
     currentPage !== undefined && currentPage.id === targetPageId
-      ? (currentPage.layout.items.find((item) => item.id === folderId)?.position ??
-        DEFAULT_POSITION)
-      : DEFAULT_POSITION;
+      ? findCanvasItem(resolvePageCanvas(currentPage), folderId)?.rect
+      : undefined;
 
   // Working copy: strip the folder shell first, then place children one by
-  // one against the accumulating layout.
-  let working: WorkspaceSnapshot = withoutLayoutItem(workspace, folderId);
+  // one against the accumulating page canvas.
+  let working: WorkspaceSnapshot = withoutPageItem(workspace, folderId);
   working = withDock(working, {
     items: working.dock.items.filter((itemId) => itemId !== folderId),
   });
@@ -568,21 +593,29 @@ export function dissolveFolderToPage(
     working.entities.filter((entity) => entity.id !== folderId)
   );
 
-  const placedItems: LayoutItem[] = [];
-  for (const childId of folder.children) {
-    const child = findApp(working, childId);
-    if (child === undefined) {
+  const page = findDesktopPage(working, targetPageId);
+  if (page === undefined) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  const baseIndex = anchor === undefined ? pageItemIds(page).length : 0;
+
+  for (const [childIndex, childId] of folder.children.entries()) {
+    if (findApp(working, childId) === undefined) {
       // A dangling or non-app child reference (invalid input) disappears
       // together with the folder that referenced it.
       continue;
     }
-    const item = placeItem(working.pages.find((page) => page.id === targetPageId)!.layout, childId, desired);
-    if (item === undefined) {
-      return { ok: false, reason: "no-space" };
+    const target = findDesktopPage(working, targetPageId);
+    if (target === undefined) {
+      return { ok: false, reason: "page-not-found" };
     }
-    placedItems.push(item);
-    working = withLayoutItem(working, targetPageId, item);
+    const placed = placePageItem(target, childId, {
+      index: baseIndex + childIndex,
+      ...(anchor === undefined ? {} : { anchor }),
+    });
+    working = withPage(working, targetPageId, placed);
   }
+
   return { ok: true, workspace: working };
 }
 
@@ -590,19 +623,15 @@ export function dissolveFolderToPage(
 // Sections (DesktopPage CRUD) — task 015
 // ---------------------------------------------------------------------------
 
-/** The page layout carrying at least one item. */
-function isNonEmptyLayout(page: DesktopPage): boolean {
-  return page.layout.items.length > 0;
-}
-
 /**
  * Appends an empty page (a user-facing Section) to the workspace, immutably.
  *
  * The id must be unique, the name non-blank after trimming, the layout id
- * must equal the page id, the layout must hold no items, and the grid must
- * pass the desktop engine's semantic validation. On success ONLY
- * `workspace.pages` grows — entities, categories, dock and preferences keep
- * their exact references.
+ * must equal the page id, the canvas (when present) must hold no items,
+ * the layout must hold no items, and the grid must pass the desktop engine's
+ * semantic validation while the canvas — when present — passes the canvas
+ * engine's. On success ONLY `workspace.pages` grows — entities, categories,
+ * dock and preferences keep their exact references.
  */
 export function addPage(
   workspace: WorkspaceSnapshot,
@@ -617,10 +646,13 @@ export function addPage(
   if (page.layout.id !== page.id) {
     return { ok: false, reason: "page-layout-id-mismatch" };
   }
-  if (isNonEmptyLayout(page)) {
+  if (hasPageItems(page)) {
     return { ok: false, reason: "page-must-be-empty" };
   }
   if (validatePageLayout(page.layout).length > 0) {
+    return { ok: false, reason: "invalid-page-layout" };
+  }
+  if (page.canvas !== undefined && validateCanvasLayout(page.canvas).length > 0) {
     return { ok: false, reason: "invalid-page-layout" };
   }
   return { ok: true, workspace: { ...workspace, pages: [...workspace.pages, page] } };
@@ -701,12 +733,13 @@ export function setDefaultPage(
 /**
  * Deletes an EMPTY page, immutably.
  *
- * Only a page whose layout holds no items can be deleted, and at least one
- * page must survive (`page-not-empty` / `cannot-delete-last-page`). When the
- * deleted page was the default, the default moves to the NEXT page — the
- * one at the deleted position — or, at the end of the array, to the previous
- * page; that matches where the user is looking better than always falling
- * back to `pages[0]`.
+ * Only a page that holds no item — in its canvas when it has one, in its
+ * legacy layout otherwise — can be deleted, and at least one page must
+ * survive (`page-not-empty` / `cannot-delete-last-page`). When the deleted
+ * page was the default, the default moves to the NEXT page — the one at the
+ * deleted position — or, at the end of the array, to the previous page; that
+ * matches where the user is looking better than always falling back to
+ * `pages[0]`.
  */
 export function deleteEmptyPage(
   workspace: WorkspaceSnapshot,
@@ -716,7 +749,7 @@ export function deleteEmptyPage(
   if (page === undefined) {
     return { ok: false, reason: "page-not-found" };
   }
-  if (isNonEmptyLayout(page)) {
+  if (hasPageItems(page)) {
     return { ok: false, reason: "page-not-empty" };
   }
   if (workspace.pages.length <= 1) {
@@ -737,19 +770,22 @@ export function deleteEmptyPage(
  *
  * Unlike `moveAppToPage` (folder→desktop direction, `already-on-page` for
  * any placed app), this op moves an app from ANYWHERE onto a page: the app
- * id is removed from every page layout and every folder's children on a
- * working copy, then placed 1x1 nearest-free on the target page. The dock is
- * completely untouched, so a pinned app stays pinned; the entity array keeps
- * every reference too — only layout/folder references change. An app that
- * already sits on the target page is `already-on-page`; a full target page
- * fails atomically with `no-space` (the input is returned untouched, never
- * half-moved).
+ * id is removed from every page geometry source and every folder's children
+ * on a working copy, then appended as a canvas item on the target page. The
+ * dock is completely untouched, so a pinned app stays pinned; the entity
+ * array keeps every reference too — only geometry/folder references change.
+ *
+ * An app that already sits on the target page is `already-on-page`. Moving
+ * from another canvas page PRESERVES the app's rect size, so a wide tile
+ * moved from one section to another arrives wide; an app coming from a
+ * legacy page, a folder or nowhere starts at the default cascade rect. The
+ * target page is materialized when it was still a legacy grid page. Nothing
+ * can fail for space — overlap is legal on canvas pages.
  */
 export function relocateAppToPage(
   workspace: WorkspaceSnapshot,
   appId: EntityId,
-  targetPageId: DesktopPageId,
-  desiredPosition?: GridPosition
+  targetPageId: DesktopPageId
 ): WorkspaceEditResult {
   const app = findApp(workspace, appId);
   if (app === undefined) {
@@ -759,21 +795,56 @@ export function relocateAppToPage(
     return { ok: false, reason: "page-not-found" };
   }
   const alreadyOnTarget = workspace.pages.some(
-    (page) => page.id === targetPageId && page.layout.items.some((item) => item.id === appId)
+    (page) => page.id === targetPageId && pageItemIds(page).includes(appId)
   );
   if (alreadyOnTarget) {
     return { ok: false, reason: "already-on-page" };
   }
-  // Strip every layout/folder reference first, then place against the
-  // stripped working copy. A `no-space` below abandons the copy entirely.
-  const stripped = withoutFolderChild(withoutLayoutItem(workspace, appId), appId);
+
+  const size = canvasRectSizeOf(workspace, appId);
+  // Strip every geometry/folder reference first, then place against the
+  // stripped working copy.
+  const stripped = withoutFolderChild(withoutPageItem(workspace, appId), appId);
   const targetPage = findDesktopPage(stripped, targetPageId);
   if (targetPage === undefined) {
     return { ok: false, reason: "page-not-found" };
   }
-  const item = placeItem(targetPage.layout, appId, desiredPosition ?? DEFAULT_POSITION);
-  if (item === undefined) {
-    return { ok: false, reason: "no-space" };
+
+  const placed = placePageItem(targetPage, appId, {
+    index: pageItemIds(targetPage).length,
+    ...(size === undefined ? {} : { size }),
+  });
+  return { ok: true, workspace: withPage(stripped, targetPageId, placed) };
+}
+
+/**
+ * Replaces the canvas geometry of a page, immutably — the single write path
+ * for move/resize/mode-switch commits.
+ *
+ * A legacy grid page is materialized first, so committing a canvas also
+ * upgrades that page to canvas geometry. The incoming canvas must be valid
+ * AND describe exactly the items the page already holds: a canvas is
+ * geometry, not membership, so one that adds or drops an id is refused as
+ * `invalid-page-layout` instead of silently changing what the page
+ * contains (adding/removing lives in the dedicated ops).
+ */
+export function replacePageCanvas(
+  workspace: WorkspaceSnapshot,
+  pageId: DesktopPageId,
+  canvas: CanvasLayout
+): WorkspaceEditResult {
+  const page = findDesktopPage(workspace, pageId);
+  if (page === undefined) {
+    return { ok: false, reason: "page-not-found" };
   }
-  return { ok: true, workspace: withLayoutItem(stripped, targetPageId, item) };
+  if (validateCanvasLayout(canvas).length > 0) {
+    return { ok: false, reason: "invalid-page-layout" };
+  }
+  if (!hasSameItemIds(pageItemIds(page), canvasItemIds(canvas))) {
+    return { ok: false, reason: "invalid-page-layout" };
+  }
+  return {
+    ok: true,
+    workspace: withPage(workspace, pageId, withPageCanvas(materializePageCanvas(page), canvas)),
+  };
 }

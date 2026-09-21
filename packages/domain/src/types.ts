@@ -2,10 +2,11 @@
  * Business domain contracts of a VelaDesk workspace.
  *
  * This module is pure TypeScript: no React, no DOM, no persistence.
- * Spatial layout geometry is owned by @veladesk/desktop-engine and only
- * referenced here via `PageLayout`.
+ * Spatial layout geometry is owned by @veladesk/desktop-engine and
+ * @veladesk/canvas-engine and only referenced here.
  */
 
+import type { CanvasLayout } from "@veladesk/canvas-engine";
 import type { PageLayout } from "@veladesk/desktop-engine";
 
 /** Stable identifier of a workspace. */
@@ -163,12 +164,28 @@ export interface Category {
   readonly name: string;
 }
 
-/** One desktop page. `layout.id` must equal `page.id`. */
+/**
+ * One desktop page.
+ *
+ * `layout.id` must equal `page.id`, and the grid of `layout.grid` stays the
+ * snap lattice of the page even after a canvas exists.
+ */
 export interface DesktopPage {
   readonly id: DesktopPageId;
   readonly name: string;
 
   readonly layout: PageLayout;
+
+  /**
+   * Continuous canvas geometry and per-section placement mode.
+   *
+   * Optional for backward compatibility: snapshots persisted before canvas
+   * existed stay valid forever and resolve to a virtual canvas derived from
+   * `layout` (no migration, no write on render). When a canvas IS present it
+   * is the authoritative membership and geometry source, and `layout.items`
+   * must be empty.
+   */
+  readonly canvas?: CanvasLayout;
 }
 
 /**

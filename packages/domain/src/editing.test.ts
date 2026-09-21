@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { createEmptyWorkspace, validateWorkspace } from "@veladesk/domain";
+import {
+  createEmptyWorkspace,
+  pageItemIds,
+  resolvePageCanvas,
+  validateWorkspace,
+} from "@veladesk/domain";
 import type {
   AppShortcut,
   Folder,
@@ -9,6 +14,7 @@ import type {
   WorkspacePreferences,
   WorkspaceSnapshot,
 } from "@veladesk/domain";
+import type { CanvasLayout } from "@veladesk/canvas-engine";
 
 import {
   addAppToFolder,
@@ -21,6 +27,7 @@ import {
   pinEntityToDock,
   renameFolder,
   replaceApp,
+  replacePageCanvas,
   replaceWorkspacePreferences,
   unpinEntityFromDock,
 } from "./editing";
@@ -55,12 +62,39 @@ function widget(id: string): WidgetInstance {
   return { kind: "widget", id, widgetType: "builtin.clock", config: {} };
 }
 
-function itemsOf(workspace: WorkspaceSnapshot, pageId = "page-1") {
+// Lattice cells of the 3x3 grid used across these tests. Edges are
+// [0, 3333, 6667, 10000] with per-edge rounding, so cells are gap-free.
+const CELL_0_0 = { x: 0, y: 0, width: 3333, height: 3333 };
+const CELL_1_1 = { x: 3333, y: 3333, width: 3334, height: 3334 };
+const CELL_2_2 = { x: 6667, y: 6667, width: 3333, height: 3333 };
+
+function pageOf(workspace: WorkspaceSnapshot, pageId = "page-1") {
   const page = workspace.pages.find((candidate) => candidate.id === pageId);
   if (page === undefined) {
     throw new Error(`page ${pageId} missing`);
   }
-  return page.layout.items;
+  return page;
+}
+
+/**
+ * Items of a page from the AUTHORITATIVE source: membership from
+ * `pageItemIds` (canvas when present, legacy layout otherwise) and geometry
+ * from `resolvePageCanvas`. Reading `page.layout.items` directly would hide a
+ * canvas page's items now that a canvas empties that list.
+ */
+function itemsOf(workspace: WorkspaceSnapshot, pageId = "page-1") {
+  const page = pageOf(workspace, pageId);
+  const canvas = resolvePageCanvas(page);
+  expect(canvas.items.map((item) => item.id)).toEqual([...pageItemIds(page)]);
+  return canvas.items;
+}
+
+function canvasOf(workspace: WorkspaceSnapshot, pageId = "page-1"): CanvasLayout | undefined {
+  return pageOf(workspace, pageId).canvas;
+}
+
+function rectOf(workspace: WorkspaceSnapshot, id: string, pageId = "page-1") {
+  return itemsOf(workspace, pageId).find((item) => item.id === id)?.rect;
 }
 
 function expectValid(workspace: WorkspaceSnapshot): void {
@@ -74,15 +108,16 @@ function expectUnchanged(input: WorkspaceSnapshot, run: () => unknown): void {
 }
 
 describe("addAppToPage", () => {
-  it("keeps the task 010 contract: entity plus 1x1 item at the desired cell", () => {
-    const result = addAppToPage(baseWorkspace(), "page-1", app("app-a"), { column: 2, row: 1 });
+  it("keeps the task 010 contract: entity plus one default canvas cell at the page origin", () => {
+    const result = addAppToPage(baseWorkspace(), "page-1", app("app-a"));
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.workspace.entities.map((entity) => entity.id)).toEqual(["app-a"]);
-    expect(itemsOf(result.workspace)).toEqual([
-      { id: "app-a", position: { column: 2, row: 1 }, span: { columns: 1, rows: 1 } },
-    ]);
+    expect(itemsOf(result.workspace)).toEqual([{ id: "app-a", rect: CELL_0_0 }]);
+    // The canvas is authoritative now: the legacy grid item list stays empty.
+    expect(canvasOf(result.workspace)?.mode).toBe("snap");
+    expect(pageOf(result.workspace).layout.items).toEqual([]);
     expectValid(result.workspace);
   });
 
@@ -97,24 +132,27 @@ describe("addAppToPage", () => {
     });
   });
 
-  it("fails with page-not-found and no-space", () => {
+  it("reports page-not-found and keeps adding past one grid's worth because canvas pages overlap instead of rejecting", () => {
     expect(addAppToPage(baseWorkspace(), "page-x", app("app-a"))).toEqual({
       ok: false,
       reason: "page-not-found",
     });
 
     let workspace = baseWorkspace();
-    for (let row = 0; row < 3; row += 1) {
-      for (let column = 0; column < 3; column += 1) {
-        const filled = addAppToPage(workspace, "page-1", app(`app-${row}${column}`), { column, row });
-        if (!filled.ok) throw new Error("fixture failed");
-        workspace = filled.workspace;
-      }
+    for (let index = 0; index < 9; index += 1) {
+      const filled = addAppToPage(workspace, "page-1", app(`app-${index}`));
+      if (!filled.ok) throw new Error("fixture failed");
+      workspace = filled.workspace;
     }
-    expect(addAppToPage(workspace, "page-1", app("app-extra"))).toEqual({
-      ok: false,
-      reason: "no-space",
-    });
+    expect(itemsOf(workspace)).toHaveLength(9);
+
+    const extra = addAppToPage(workspace, "page-1", app("app-extra"));
+    expect(extra.ok).toBe(true);
+    if (!extra.ok) return;
+    expect(itemsOf(extra.workspace)).toHaveLength(10);
+    // Item 10 (index 9) wraps back to the first lattice cell — overlap is legal.
+    expect(rectOf(extra.workspace, "app-extra")).toEqual(CELL_0_0);
+    expectValid(extra.workspace);
   });
 
   it("rejects blank names and blank urls (011-B regression)", () => {
@@ -159,7 +197,7 @@ describe("addAppToPage", () => {
       url: "obsidian://open?vault=Notes",
     };
 
-    const result = addAppToPage(baseWorkspace(), "page-1", custom, { column: 0, row: 0 });
+    const result = addAppToPage(baseWorkspace(), "page-1", custom);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -247,20 +285,17 @@ describe("addAppToFolder", () => {
 });
 
 describe("addFolderToPage", () => {
-  it("appends an empty folder entity plus a 1x1 layout item", () => {
-    const result = addFolderToPage(baseWorkspace(), "page-1", folder("folder-1", "Docs"), {
-      column: 1,
-      row: 2,
-    });
+  it("appends an empty folder entity plus one default canvas cell", () => {
+    const result = addFolderToPage(baseWorkspace(), "page-1", folder("folder-1", "Docs"));
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const stored = result.workspace.entities[0];
     expect(stored?.kind).toBe("folder");
     expect(stored?.kind === "folder" && stored.children).toEqual([]);
-    expect(itemsOf(result.workspace)).toEqual([
-      { id: "folder-1", position: { column: 1, row: 2 }, span: { columns: 1, rows: 1 } },
-    ]);
+    expect(itemsOf(result.workspace)).toEqual([{ id: "folder-1", rect: CELL_0_0 }]);
+    expect(canvasOf(result.workspace)?.items.map((item) => item.id)).toEqual(["folder-1"]);
+    expect(pageOf(result.workspace).layout.items).toEqual([]);
     expectValid(result.workspace);
   });
 
@@ -277,7 +312,7 @@ describe("addFolderToPage", () => {
     ).toEqual({ ok: false, reason: "folder-must-be-empty" });
   });
 
-  it("rejects duplicate ids, unknown pages and full grids", () => {
+  it("rejects duplicate ids and unknown pages but keeps accepting items past a full grid", () => {
     const workspace = baseWorkspace();
     const seeded = addFolderToPage(workspace, "page-1", folder("folder-1", "Docs"));
     if (!seeded.ok) throw new Error("fixture failed");
@@ -291,23 +326,22 @@ describe("addFolderToPage", () => {
     });
 
     let full = baseWorkspace();
-    for (let row = 0; row < 3; row += 1) {
-      for (let column = 0; column < 3; column += 1) {
-        const filled = addAppToPage(full, "page-1", app(`app-${row}${column}`), { column, row });
-        if (!filled.ok) throw new Error("fixture failed");
-        full = filled.workspace;
-      }
+    for (let index = 0; index < 9; index += 1) {
+      const filled = addAppToPage(full, "page-1", app(`app-${index}`));
+      if (!filled.ok) throw new Error("fixture failed");
+      full = filled.workspace;
     }
-    expect(addFolderToPage(full, "page-1", folder("folder-2", "Docs"))).toEqual({
-      ok: false,
-      reason: "no-space",
-    });
+    const overfull = addFolderToPage(full, "page-1", folder("folder-2", "Docs"));
+    expect(overfull.ok).toBe(true);
+    if (!overfull.ok) return;
+    expect(itemsOf(overfull.workspace)).toHaveLength(10);
+    expectValid(overfull.workspace);
   });
 });
 
 describe("replaceApp", () => {
   function workspaceWithApp(): WorkspaceSnapshot {
-    const placed = addAppToPage(baseWorkspace(), "page-1", app("app-a", "Old"), { column: 1, row: 0 });
+    const placed = addAppToPage(baseWorkspace(), "page-1", app("app-a", "Old"));
     if (!placed.ok) throw new Error("fixture failed");
     const pinned = pinEntityToDock(placed.workspace, "app-a");
     if (!pinned.ok) throw new Error("fixture failed");
@@ -399,10 +433,7 @@ describe("moveAppToFolder", () => {
     if (!placed.ok) throw new Error("fixture failed");
     const pinned = pinEntityToDock(placed.workspace, "app-a");
     if (!pinned.ok) throw new Error("fixture failed");
-    const folderCreated = addFolderToPage(pinned.workspace, "page-1", folder("folder-1", "Docs"), {
-      column: 2,
-      row: 2,
-    });
+    const folderCreated = addFolderToPage(pinned.workspace, "page-1", folder("folder-1", "Docs"));
     if (!folderCreated.ok) throw new Error("fixture failed");
 
     const result = moveAppToFolder(folderCreated.workspace, "app-a", "folder-1");
@@ -420,10 +451,7 @@ describe("moveAppToFolder", () => {
   it("moves an app from folder A to folder B and accepts unplaced apps", () => {
     const folderA = addFolderToPage(baseWorkspace(), "page-1", folder("folder-a", "A"));
     if (!folderA.ok) throw new Error("fixture failed");
-    const folderB = addFolderToPage(folderA.workspace, "page-1", folder("folder-b", "B"), {
-      column: 1,
-      row: 0,
-    });
+    const folderB = addFolderToPage(folderA.workspace, "page-1", folder("folder-b", "B"));
     if (!folderB.ok) throw new Error("fixture failed");
     const child = addAppToFolder(folderB.workspace, "folder-a", app("app-a"));
     if (!child.ok) throw new Error("fixture failed");
@@ -439,10 +467,7 @@ describe("moveAppToFolder", () => {
     expectValid(moved.workspace);
 
     const unplaced: WorkspaceSnapshot = { ...baseWorkspace(), entities: [app("app-u")] };
-    const folderOnly = addFolderToPage(unplaced, "page-1", folder("folder-1", "Docs"), {
-      column: 1,
-      row: 1,
-    });
+    const folderOnly = addFolderToPage(unplaced, "page-1", folder("folder-1", "Docs"));
     if (!folderOnly.ok) throw new Error("fixture failed");
     expect(moveAppToFolder(folderOnly.workspace, "app-u", "folder-1").ok).toBe(true);
   });
@@ -475,49 +500,50 @@ describe("moveAppToPage", () => {
     const child = addAppToFolder(folderCreated.workspace, "folder-1", app("app-a"));
     if (!child.ok) throw new Error("fixture failed");
 
-    const result = moveAppToPage(child.workspace, "app-a", "page-1", { column: 2, row: 2 });
+    const result = moveAppToPage(child.workspace, "app-a", "page-1");
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const folderEntity = result.workspace.entities.find((entity) => entity.id === "folder-1");
     expect(folderEntity?.kind === "folder" && folderEntity.children).toEqual([]);
+    // The folder keeps the first cell; the app cascades to the next lattice
+    // diagonal cell with the default cell size.
     expect(itemsOf(result.workspace)).toEqual([
-      { id: "folder-1", position: { column: 0, row: 0 }, span: { columns: 1, rows: 1 } },
-      { id: "app-a", position: { column: 2, row: 2 }, span: { columns: 1, rows: 1 } },
+      { id: "folder-1", rect: CELL_0_0 },
+      { id: "app-a", rect: CELL_1_1 },
     ]);
     expectValid(result.workspace);
   });
 
-  it("fails atomically with no-space and rejects apps already on any page", () => {
+  it("places a folder child even on a full grid and rejects apps already on any page", () => {
     const folderCreated = addFolderToPage(baseWorkspace(), "page-1", folder("folder-1", "Docs"));
     if (!folderCreated.ok) throw new Error("fixture failed");
     const child = addAppToFolder(folderCreated.workspace, "folder-1", app("app-a"));
     if (!child.ok) throw new Error("fixture failed");
 
     let almostFull = child.workspace;
-    for (let row = 0; row < 3; row += 1) {
-      for (let column = 0; column < 3; column += 1) {
-        if (row === 0 && column === 0) continue; // folder occupies this cell
-        const filled = addAppToPage(almostFull, "page-1", app(`app-${row}${column}`), {
-          column,
-          row,
-        });
-        if (!filled.ok) throw new Error("fixture failed");
-        almostFull = filled.workspace;
-      }
+    for (let index = 0; index < 8; index += 1) {
+      const filled = addAppToPage(almostFull, "page-1", app(`app-${index}`));
+      if (!filled.ok) throw new Error("fixture failed");
+      almostFull = filled.workspace;
     }
-    expectUnchanged(almostFull, () => {
-      expect(moveAppToPage(almostFull, "app-a", "page-1")).toEqual({
-        ok: false,
-        reason: "no-space",
-      });
-    });
+    expect(itemsOf(almostFull)).toHaveLength(9);
+
+    // Overlap is legal, so the folder child still lands on the page.
+    const moved = moveAppToPage(almostFull, "app-a", "page-1");
+    expect(moved.ok).toBe(true);
+    if (!moved.ok) return;
+    expect(itemsOf(moved.workspace)).toHaveLength(10);
+    expect(rectOf(moved.workspace, "app-a")).toEqual(CELL_0_0);
+    expectValid(moved.workspace);
 
     const placed = addAppToPage(baseWorkspace(), "page-1", app("app-a"));
     if (!placed.ok) throw new Error("fixture failed");
-    expect(moveAppToPage(placed.workspace, "app-a", "page-1")).toEqual({
-      ok: false,
-      reason: "already-on-page",
+    expectUnchanged(placed.workspace, () => {
+      expect(moveAppToPage(placed.workspace, "app-a", "page-1")).toEqual({
+        ok: false,
+        reason: "already-on-page",
+      });
     });
     expect(moveAppToPage(baseWorkspace(), "app-x", "page-1")).toEqual({
       ok: false,
@@ -678,12 +704,9 @@ describe("dissolveFolderToPage", () => {
   });
 
   it("returns children to the page in children order, starting from the folder anchor", () => {
-    const placed = addAppToPage(baseWorkspace(), "page-1", app("app-away"), { column: 2, row: 2 });
+    const placed = addAppToPage(baseWorkspace(), "page-1", app("app-away"));
     if (!placed.ok) throw new Error("fixture failed");
-    const folderCreated = addFolderToPage(placed.workspace, "page-1", folder("folder-1", "Docs"), {
-      column: 1,
-      row: 1,
-    });
+    const folderCreated = addFolderToPage(placed.workspace, "page-1", folder("folder-1", "Docs"));
     if (!folderCreated.ok) throw new Error("fixture failed");
     const childA = addAppToFolder(folderCreated.workspace, "folder-1", app("app-a"));
     if (!childA.ok) throw new Error("fixture failed");
@@ -703,10 +726,11 @@ describe("dissolveFolderToPage", () => {
     ]);
     const items = itemsOf(result.workspace);
     expect(items.find((item) => item.id === "folder-1")).toBeUndefined();
-    // Children cascade outward from the folder anchor (1,1); the pinned child
-    // keeps its dock reference.
-    expect(items.filter((item) => item.id === "app-a" || item.id === "app-b")).toHaveLength(2);
-    expect(items.find((item) => item.id === "app-a")?.position).toEqual({ column: 1, row: 1 });
+    // The first child lands on the folder shell's cell and the rest cascade
+    // from that anchor; the pinned child keeps its dock reference.
+    expect(rectOf(result.workspace, "app-away")).toEqual(CELL_0_0);
+    expect(rectOf(result.workspace, "app-a")).toEqual(CELL_1_1);
+    expect(rectOf(result.workspace, "app-b")).toEqual(CELL_2_2);
     expect(result.workspace.dock.items).toEqual(["app-b"]);
     expectValid(result.workspace);
   });
@@ -724,10 +748,7 @@ describe("dissolveFolderToPage", () => {
       ],
       preferences: { ...baseWorkspace().preferences, defaultPageId: "page-1" },
     };
-    const folderCreated = addFolderToPage(secondPage, "page-1", folder("folder-1", "Docs"), {
-      column: 2,
-      row: 2,
-    });
+    const folderCreated = addFolderToPage(secondPage, "page-1", folder("folder-1", "Docs"));
     if (!folderCreated.ok) throw new Error("fixture failed");
     const child = addAppToFolder(folderCreated.workspace, "folder-1", app("app-a"));
     if (!child.ok) throw new Error("fixture failed");
@@ -736,39 +757,36 @@ describe("dissolveFolderToPage", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(itemsOf(result.workspace, "page-2")).toEqual([
-      { id: "app-a", position: { column: 0, row: 0 }, span: { columns: 1, rows: 1 } },
-    ]);
+    // No anchor on the target page, so the child cascades from the origin.
+    expect(itemsOf(result.workspace, "page-2")).toEqual([{ id: "app-a", rect: CELL_0_0 }]);
     expect(itemsOf(result.workspace, "page-1")).toEqual([]);
     expectValid(result.workspace);
   });
 
-  it("fails atomically with no-space when children do not fit", () => {
+  it("dissolves children even when the page already holds a full grid because canvas children overlap", () => {
     const folderCreated = addFolderToPage(baseWorkspace(), "page-1", folder("folder-1", "Docs"));
     if (!folderCreated.ok) throw new Error("fixture failed");
     let almostFull = folderCreated.workspace;
-    for (let row = 0; row < 3; row += 1) {
-      for (let column = 0; column < 3; column += 1) {
-        if (row === 0 && column === 1) continue; // one free cell left
-        const filled = addAppToPage(almostFull, "page-1", app(`app-${row}${column}`), {
-          column,
-          row,
-        });
-        if (!filled.ok) throw new Error("fixture failed");
-        almostFull = filled.workspace;
-      }
+    for (let index = 0; index < 8; index += 1) {
+      const filled = addAppToPage(almostFull, "page-1", app(`app-${index}`));
+      if (!filled.ok) throw new Error("fixture failed");
+      almostFull = filled.workspace;
     }
+    expect(itemsOf(almostFull)).toHaveLength(9);
     const childA = addAppToFolder(almostFull, "folder-1", app("app-a"));
     if (!childA.ok) throw new Error("fixture failed");
     const childB = addAppToFolder(childA.workspace, "folder-1", app("app-b"));
     if (!childB.ok) throw new Error("fixture failed");
 
-    expectUnchanged(childB.workspace, () => {
-      expect(dissolveFolderToPage(childB.workspace, "folder-1", "page-1")).toEqual({
-        ok: false,
-        reason: "no-space",
-      });
-    });
+    const result = dissolveFolderToPage(childB.workspace, "folder-1", "page-1");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The folder shell is gone; both children overlap the existing nine items.
+    expect(itemsOf(result.workspace)).toHaveLength(10);
+    expect(rectOf(result.workspace, "app-a")).toEqual(CELL_0_0);
+    expect(rectOf(result.workspace, "app-b")).toEqual(CELL_1_1);
+    expectValid(result.workspace);
   });
 
   it("reports missing folders and pages", () => {
@@ -950,7 +968,7 @@ function sectionedWorkspace(): WorkspaceSnapshot {
 }
 
 describe("relocateAppToPage", () => {
-  it("moves an app from page A to page B: source ref removed, target 1x1 item added", () => {
+  it("moves an app from page A to page B: source ref removed, target canvas item added", () => {
     const workspace = sectionedWorkspace();
 
     const result = relocateAppToPage(workspace, "app-a", "page-2");
@@ -958,9 +976,8 @@ describe("relocateAppToPage", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(itemsOf(result.workspace, "page-1")).toEqual([]);
-    expect(itemsOf(result.workspace, "page-2")).toEqual([
-      { id: "app-a", position: { column: 0, row: 0 }, span: { columns: 1, rows: 1 } },
-    ]);
+    // The app keeps its canvas size and cascades to the target's first cell.
+    expect(itemsOf(result.workspace, "page-2")).toEqual([{ id: "app-a", rect: CELL_0_0 }]);
     expect(result.workspace.entities.map((entity) => entity.id)).toEqual(["app-a"]);
     expectValid(result.workspace);
   });
@@ -992,11 +1009,11 @@ describe("relocateAppToPage", () => {
       (entity) => entity.kind === "folder"
     );
     expect(survivingFolder).toMatchObject({ id: "folder-1", children: [] });
-    // Nearest-free scans row-major: {0,0} is taken by the folder, so the
-    // app lands at {1,0}.
+    // The folder keeps the first cell; the relocated app cascades to the next
+    // lattice diagonal cell (a folder child has no rect of its own to keep).
     expect(itemsOf(result.workspace, "page-2")).toEqual([
-      { id: "folder-1", position: { column: 0, row: 0 }, span: { columns: 1, rows: 1 } },
-      { id: "app-a", position: { column: 1, row: 0 }, span: { columns: 1, rows: 1 } },
+      { id: "folder-1", rect: CELL_0_0 },
+      { id: "app-a", rect: CELL_1_1 },
     ]);
     expectValid(result.workspace);
   });
@@ -1012,25 +1029,41 @@ describe("relocateAppToPage", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(itemsOf(result.workspace, "page-2").map((item) => item.id)).toEqual(["app-lost"]);
+    expect(rectOf(result.workspace, "app-lost", "page-2")).toEqual(CELL_0_0);
     expectValid(result.workspace);
   });
 
-  it("respects a desired free position", () => {
+  it("preserves the source rect size when relocating from another canvas page", () => {
     const workspace = sectionedWorkspace();
+    const resized = replacePageCanvas(workspace, "page-1", {
+      version: 1,
+      mode: "snap",
+      items: [{ id: "app-a", rect: { x: 1000, y: 2000, width: 5000, height: 4000 } }],
+    });
+    if (!resized.ok) throw new Error("fixture failed");
 
-    const result = relocateAppToPage(workspace, "app-a", "page-2", { column: 2, row: 1 });
+    const result = relocateAppToPage(resized.workspace, "app-a", "page-3");
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(itemsOf(result.workspace, "page-2")[0]?.position).toEqual({ column: 2, row: 1 });
+    // The size is preserved; only the position comes from the cascade.
+    expect(rectOf(result.workspace, "app-a", "page-3")).toEqual({
+      x: 0,
+      y: 0,
+      width: 5000,
+      height: 4000,
+    });
+    expectValid(result.workspace);
   });
 
-  it("refuses an app that already sits on the target page", () => {
+  it("refuses an app that already sits on the target page and never mutates the input", () => {
     const workspace = sectionedWorkspace();
 
-    expect(relocateAppToPage(workspace, "app-a", "page-1")).toEqual({
-      ok: false,
-      reason: "already-on-page",
+    expectUnchanged(workspace, () => {
+      expect(relocateAppToPage(workspace, "app-a", "page-1")).toEqual({
+        ok: false,
+        reason: "already-on-page",
+      });
     });
   });
 
@@ -1047,29 +1080,27 @@ describe("relocateAppToPage", () => {
     });
   });
 
-  it("fails atomically on a full target page: input completely unchanged", () => {
+  it("relocates onto a page that already holds a full grid because canvas items overlap", () => {
     const workspace = sectionedWorkspace();
     // Fill page-2 completely (3x3 = 9 items).
     let full = workspace;
-    for (let row = 0; row < 3; row += 1) {
-      for (let column = 0; column < 3; column += 1) {
-        const filled = addAppToPage(full, "page-2", app(`fill-${row}${column}`), { column, row });
-        if (!filled.ok) throw new Error("fixture failed");
-        full = filled.workspace;
-      }
+    for (let index = 0; index < 9; index += 1) {
+      const filled = addAppToPage(full, "page-2", app(`fill-${index}`));
+      if (!filled.ok) throw new Error("fixture failed");
+      full = filled.workspace;
     }
+    expect(canvasOf(full, "page-2")?.items).toHaveLength(9);
 
-    // app-a already lives on page-1, so use a fresh app for the no-space case.
-    const result = relocateAppToPage(full, "app-a", "page-1");
-    const mover = addAppToPage(full, "page-1", app("app-b"));
-    if (!mover.ok) throw new Error("fixture failed");
-    const noSpace = relocateAppToPage(mover.workspace, "app-b", "page-2");
+    const result = relocateAppToPage(full, "app-a", "page-2");
 
-    expect(result).toEqual({ ok: false, reason: "already-on-page" });
-    expect(noSpace).toEqual({ ok: false, reason: "no-space" });
-    expectUnchanged(mover.workspace, () => relocateAppToPage(mover.workspace, "app-b", "page-2"));
-    expect(itemsOf(mover.workspace, "page-1").map((item) => item.id)).toContain("app-b");
-    expect(itemsOf(mover.workspace, "page-2").map((item) => item.id)).not.toContain("app-b");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(itemsOf(result.workspace, "page-2")).toHaveLength(10);
+    expect(itemsOf(result.workspace, "page-1")).toEqual([]);
+    // Item 10 (index 9) wraps back to the first cell with the preserved size.
+    expect(rectOf(result.workspace, "app-a", "page-2")).toEqual(CELL_0_0);
+    expect(itemsOf(result.workspace, "page-2").map((item) => item.id)).toContain("app-a");
+    expectValid(result.workspace);
   });
 
   it("never mutates the input workspace", () => {
@@ -1148,6 +1179,61 @@ describe("addPage", () => {
         reason: "invalid-page-layout",
       }
     );
+  });
+
+  it("accepts a canvas page whose canvas is empty and valid", () => {
+    const page: DesktopPage = {
+      id: "page-9",
+      name: "Play",
+      layout: { id: "page-9", grid: { columns: 3, rows: 3 }, items: [] },
+      canvas: { version: 1, mode: "freeform", items: [] },
+    };
+
+    const result = addPage(sectionedWorkspace(), page);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(canvasOf(result.workspace, "page-9")).toEqual({
+      version: 1,
+      mode: "freeform",
+      items: [],
+    });
+    expectValid(result.workspace);
+  });
+
+  it("refuses a canvas page whose canvas holds items as page-must-be-empty", () => {
+    const page: DesktopPage = {
+      id: "page-9",
+      name: "Play",
+      layout: { id: "page-9", grid: { columns: 3, rows: 3 }, items: [] },
+      canvas: {
+        version: 1,
+        mode: "snap",
+        items: [{ id: "app-a", rect: { x: 0, y: 0, width: 3333, height: 3333 } }],
+      },
+    };
+
+    expect(addPage(sectionedWorkspace(), page)).toEqual({
+      ok: false,
+      reason: "page-must-be-empty",
+    });
+  });
+
+  it("refuses a canvas page with an invalid canvas as invalid-page-layout", () => {
+    const page: DesktopPage = {
+      id: "page-9",
+      name: "Play",
+      layout: { id: "page-9", grid: { columns: 3, rows: 3 }, items: [] },
+      // An empty item list keeps hasPageItems false, so the canvas semantics
+      // are what rejects the page. A wrong version is unreachable from the
+      // public type, hence the cast.
+      canvas: { version: 2, mode: "snap", items: [] } as unknown as CanvasLayout,
+    };
+
+    expect(addPage(sectionedWorkspace(), page)).toEqual({
+      ok: false,
+      reason: "invalid-page-layout",
+    });
   });
 
   it("never mutates the input workspace", () => {
@@ -1239,9 +1325,7 @@ describe("movePage", () => {
       expect(result.workspace.preferences.defaultPageId).toBe(
         workspace.preferences.defaultPageId
       );
-      expect(result.workspace.pages.find((page) => page.id === "page-1")?.layout.items).toEqual(
-        workspace.pages.find((page) => page.id === "page-1")?.layout.items
-      );
+      expect(itemsOf(result.workspace, "page-1")).toEqual(itemsOf(workspace, "page-1"));
     }
   });
 

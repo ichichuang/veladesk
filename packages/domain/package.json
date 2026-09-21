@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@veladesk/canvas-engine": "workspace:*",
     "@veladesk/desktop-engine": "workspace:*"
   },
   "devDependencies": {

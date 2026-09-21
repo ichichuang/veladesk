@@ -16,7 +16,7 @@ const baseArgs = {
 };
 
 describe("createEmptyWorkspace", () => {
-  it("returns one workspace with one page and empty collections", () => {
+  it("returns one canvas-native workspace with one page and empty collections", () => {
     const workspace = createEmptyWorkspace(baseArgs);
 
     expect(workspace).toEqual({
@@ -27,6 +27,7 @@ describe("createEmptyWorkspace", () => {
           id: "page-1",
           name: "Home",
           layout: { id: "page-1", grid, items: [] },
+          canvas: { version: 1, mode: "snap", items: [] },
         },
       ],
       entities: [],

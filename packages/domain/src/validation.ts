@@ -1,6 +1,9 @@
+import { validateCanvasLayout } from "@veladesk/canvas-engine";
+import type { CanvasValidationIssue } from "@veladesk/canvas-engine";
 import { validatePageLayout } from "@veladesk/desktop-engine";
 import type { LayoutValidationIssue } from "@veladesk/desktop-engine";
 
+import { pageItemIds } from "./canvas";
 import { validateAppVisualStyle } from "./app-visual";
 import type { AppVisualValidationIssue } from "./app-visual";
 import { validateWorkspaceAppearance } from "./appearance";
@@ -75,6 +78,15 @@ export type WorkspaceValidationIssue =
       readonly issue: LayoutValidationIssue;
     }
   | {
+      readonly type: "page-canvas-invalid";
+      readonly pageId: DesktopPageId;
+      readonly issue: CanvasValidationIssue;
+    }
+  | {
+      readonly type: "canvas-page-has-legacy-items";
+      readonly pageId: DesktopPageId;
+    }
+  | {
       readonly type: "layout-entity-missing";
       readonly pageId: DesktopPageId;
       readonly entityId: EntityId;
@@ -146,10 +158,10 @@ function isBlank(value: string): boolean {
  *
  * Deterministic issue order:
  * 1. workspace-level identity/scalars
- * 2. page identity/name/layout
+ * 2. page identity/name/layout, then canvas-exclusivity + canvas semantics
  * 3. entity identity/name/basic scalars (incl. per-app visual semantics)
  * 4. category identity/name
- * 5. layout references
+ * 5. layout references (canvas items when a canvas exists, grid items else)
  * 6. folder references
  * 7. exclusive-container violations
  * 8. dock
@@ -168,7 +180,9 @@ function isBlank(value: string): boolean {
  * Spatial layout rules (overlap, bounds, spans, duplicate layout item ids)
  * are NOT reimplemented here: they are delegated to the desktop engine via
  * `validatePageLayout` and wrapped as `page-layout-invalid`, so engine rule
- * upgrades are reused automatically. Never mutates the snapshot.
+ * upgrades are reused automatically. Canvas rules are delegated the same way
+ * to the canvas engine's `validateCanvasLayout` and wrapped as
+ * `page-canvas-invalid`. Never mutates the snapshot.
  */
 export function validateWorkspace(workspace: WorkspaceSnapshot): readonly WorkspaceValidationIssue[] {
   const issues: WorkspaceValidationIssue[] = [];
@@ -204,6 +218,17 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
 
     for (const issue of validatePageLayout(page.layout)) {
       issues.push({ type: "page-layout-invalid", pageId: page.id, issue });
+    }
+
+    // Canvas pages carry exactly one authoritative item list: a canvas plus
+    // legacy items would give the same page two membership sources.
+    if (page.canvas !== undefined) {
+      if (page.layout.items.length > 0) {
+        issues.push({ type: "canvas-page-has-legacy-items", pageId: page.id });
+      }
+      for (const issue of validateCanvasLayout(page.canvas)) {
+        issues.push({ type: "page-canvas-invalid", pageId: page.id, issue });
+      }
     }
   }
 
@@ -264,11 +289,12 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
     }
   }
 
-  // 5. Layout references: every layout item must resolve to an entity.
+  // 5. Layout references: every placed item must resolve to an entity. The
+  // membership source is the canvas when one exists, the grid layout else.
   for (const page of workspace.pages) {
-    for (const item of page.layout.items) {
-      if (!entityById.has(item.id)) {
-        issues.push({ type: "layout-entity-missing", pageId: page.id, entityId: item.id });
+    for (const itemId of pageItemIds(page)) {
+      if (!entityById.has(itemId)) {
+        issues.push({ type: "layout-entity-missing", pageId: page.id, entityId: itemId });
       }
     }
   }
@@ -308,9 +334,9 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
   }
 
   for (const page of workspace.pages) {
-    for (const item of page.layout.items) {
-      if (entityById.has(item.id)) {
-        addContainer(item.id, `page:${page.id}`);
+    for (const itemId of pageItemIds(page)) {
+      if (entityById.has(itemId)) {
+        addContainer(itemId, `page:${page.id}`);
       }
     }
   }

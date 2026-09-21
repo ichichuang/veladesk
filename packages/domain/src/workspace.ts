@@ -22,13 +22,17 @@ function assertNonEmptyTrimmed(value: string, name: string): void {
 }
 
 /**
- * Deterministic factory for an empty workspace: one page, empty layout,
- * empty entities/categories/dock, locked layout, explicit default
+ * Deterministic factory for an empty workspace: one page, empty canvas
+ * geometry, empty entities/categories/dock, locked layout, explicit default
  * appearance, no generated ids.
  *
  * Names are validated (non-empty after trimming) but stored verbatim.
  * The grid is validated with the same semantics as the engine's
- * `createGridDefinition`.
+ * `createGridDefinition` and stays the page's snap lattice.
+ *
+ * New workspaces are canvas-native: the page carries an empty `snap` canvas
+ * whose items are added as free rects, so no section ever starts as a
+ * capacity-limited grid.
  */
 export function createEmptyWorkspace(args: CreateEmptyWorkspaceArgs): WorkspaceSnapshot {
   assertNonEmptyTrimmed(args.workspaceId, "workspaceId");
@@ -48,6 +52,11 @@ export function createEmptyWorkspace(args: CreateEmptyWorkspaceArgs): WorkspaceS
         layout: {
           id: args.pageId,
           grid,
+          items: [],
+        },
+        canvas: {
+          version: 1,
+          mode: "snap",
           items: [],
         },
       },

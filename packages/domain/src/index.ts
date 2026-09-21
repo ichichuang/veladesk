@@ -27,6 +27,21 @@ export type { AppVisualValidationIssue } from "./app-visual";
 
 export { findCategory, findDesktopPage, findWorkspaceEntity } from "./lookup";
 
+export {
+  isCanvasPage,
+  materializePageCanvas,
+  newCanvasItemRect,
+  pageItemIds,
+  placePageItem,
+  resolvePageCanvas,
+  withPageCanvas,
+} from "./canvas";
+export type {
+  CanvasPage,
+  NewCanvasItemRectArgs,
+  PageItemPlacement,
+} from "./canvas";
+
 export { decodeWorkspaceSnapshot } from "./decoding";
 
 export { validateWorkspace } from "./validation";
@@ -48,6 +63,7 @@ export {
   renameFolder,
   renamePage,
   replaceApp,
+  replacePageCanvas,
   replaceWorkspacePreferences,
   setDefaultPage,
   unpinEntityFromDock,

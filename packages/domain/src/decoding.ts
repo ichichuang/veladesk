@@ -5,8 +5,9 @@ import type { WorkspaceSnapshot } from "./types";
  *
  * These guards verify that an unknown value HAS the `WorkspaceSnapshot`
  * structure before it is handed to the domain. Semantic rules (blank names,
- * bounds, overlaps, references) stay in `validateWorkspace` +
- * `@veladesk/desktop-engine` — nothing is duplicated here. Unknown extra
+ * bounds, overlaps, references, canvas rect validity) stay in
+ * `validateWorkspace` + `@veladesk/desktop-engine` +
+ * `@veladesk/canvas-engine` — nothing is duplicated here. Unknown extra
  * properties are ignored, and widget configs are accepted as recursive
  * JSON objects.
  *
@@ -154,12 +155,47 @@ function isPageLayout(value: unknown): boolean {
   );
 }
 
+const CANVAS_PLACEMENT_MODES: readonly string[] = ["snap", "freeform"];
+
+function isCanvasRect(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.x === "number" &&
+    typeof value.y === "number" &&
+    typeof value.width === "number" &&
+    typeof value.height === "number"
+  );
+}
+
+function isCanvasLayoutItem(value: unknown): boolean {
+  return isRecord(value) && typeof value.id === "string" && isCanvasRect(value.rect);
+}
+
+/**
+ * Structural shape of a `CanvasLayout` only — safe-integer fields, bounds,
+ * version and id uniqueness are semantic and belong to the canvas engine's
+ * `validateCanvasLayout` (a rect beyond the canvas decodes fine and fails
+ * validation later).
+ */
+function isCanvasLayout(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.version === "number" &&
+    CANVAS_PLACEMENT_MODES.includes(value.mode as string) &&
+    Array.isArray(value.items) &&
+    value.items.every(isCanvasLayoutItem)
+  );
+}
+
 function isDesktopPage(value: unknown): boolean {
   return (
     isRecord(value) &&
     typeof value.id === "string" &&
     typeof value.name === "string" &&
-    isPageLayout(value.layout)
+    isPageLayout(value.layout) &&
+    // Optional for backward compatibility: grid-era pages stay decodable
+    // forever; only a structurally valid canvas is accepted.
+    (value.canvas === undefined || isCanvasLayout(value.canvas))
   );
 }
 

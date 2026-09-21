@@ -32,6 +32,9 @@ importers:
       '@veladesk/assets':
         specifier: workspace:*
         version: link:../../packages/assets
+      '@veladesk/canvas-engine':
+        specifier: workspace:*
+        version: link:../../packages/canvas-engine
       '@veladesk/client-runtime':
         specifier: workspace:*
         version: link:../../packages/client-runtime
@@ -167,6 +170,9 @@ importers:
 
   packages/domain:
     dependencies:
+      '@veladesk/canvas-engine':
+        specifier: workspace:*
+        version: link:../canvas-engine
       '@veladesk/desktop-engine':
         specifier: workspace:*
         version: link:../desktop-engine
