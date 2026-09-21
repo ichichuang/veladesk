@@ -16,6 +16,7 @@ export type {
   CanvasLattice,
   CanvasLayout,
   CanvasLayoutItem,
+  CanvasLayoutV1,
   CanvasPlacementMode,
   CanvasRect,
   CanvasRectProblem,
@@ -23,6 +24,12 @@ export type {
   CanvasResizeHandle,
   CanvasTranslation,
   CanvasValidationIssue,
+  FreeformCanvasLayoutV2,
+  GridCanvasItem,
+  GridCanvasLayoutV2,
+  GridItemProblem,
+  PagePlacementMode,
+  RectCanvasLayout,
 } from "./types";
 
 export {
@@ -58,6 +65,27 @@ export {
   withCanvasItems,
   withCanvasMode,
 } from "./layout";
+
+export {
+  appendGridItem,
+  canConvertGridToFreeform,
+  canvasRectToGridGeometry,
+  clampGridTranslation,
+  firstFreeGridPlacement,
+  findGridItem,
+  freeformLayoutFromV1,
+  gridItemToCanvasRect,
+  gridItemsEqual,
+  gridLayoutFromV1,
+  gridLayoutToFreeform,
+  isFreeformCanvasLayout,
+  isGridCanvasLayout,
+  maxOccupiedRow,
+  replaceGridItem,
+  resizeGridItem,
+  translateGridItems,
+  validateGridCanvasItems,
+} from "./grid";
 
 export {
   clampCanvasTranslation,

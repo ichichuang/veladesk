@@ -40,19 +40,68 @@ export interface CanvasLayoutItem {
 }
 
 /**
- * How canvas items are edited.
+ * How v1 canvas items are edited.
  *
  * `snap` means edges/positions align to the page's grid lattice — it does
  * NOT mean a cell is occupied or that overlap is rejected.
  */
 export type CanvasPlacementMode = "snap" | "freeform";
 
-/** Geometry and edit mode of one page/section. */
-export interface CanvasLayout {
+/** The v1 canvas shape, preserved verbatim so old snapshots stay valid. */
+export interface CanvasLayoutV1 {
   readonly version: 1;
   readonly mode: CanvasPlacementMode;
   readonly items: readonly CanvasLayoutItem[];
 }
+
+/**
+ * One placed entity in a v2 Grid canvas: integer cell geometry.
+ *
+ * `column`/`row` are 0-based cell origins; spans are whole cells >= 1.
+ * `row` has no maximum — Grid content grows downward without bound.
+ */
+export interface GridCanvasItem {
+  readonly id: string;
+  readonly column: number;
+  readonly row: number;
+  readonly columnSpan: number;
+  readonly rowSpan: number;
+}
+
+/**
+ * A true integer square-cell Grid canvas (Task 017).
+ *
+ * `columns` is persistent layout structure: the browser derives the physical
+ * square size from the available width, never the other way around.
+ */
+export interface GridCanvasLayoutV2 {
+  readonly version: 2;
+  readonly mode: "grid";
+  readonly columns: number;
+  readonly items: readonly GridCanvasItem[];
+}
+
+/** A v2 continuous canvas: exactly the v1 freeform model, re-versioned. */
+export interface FreeformCanvasLayoutV2 {
+  readonly version: 2;
+  readonly mode: "freeform";
+  readonly items: readonly CanvasLayoutItem[];
+}
+
+/**
+ * Geometry and edit mode of one page/section, versioned.
+ *
+ * v1 keeps both `snap` and `freeform`; v2 splits them into dedicated Grid
+ * and Freeform shapes. Readers resolve everything through one canonical
+ * resolver that lazily derives v2 placement from v1/legacy pages.
+ */
+export type CanvasLayout = CanvasLayoutV1 | GridCanvasLayoutV2 | FreeformCanvasLayoutV2;
+
+/** Any layout whose items are continuous rects (v1 both modes, v2 freeform). */
+export type RectCanvasLayout = CanvasLayoutV1 | FreeformCanvasLayoutV2;
+
+/** The production placement modes a resolved page can render/edit in. */
+export type PagePlacementMode = "grid" | "freeform";
 
 /** Why a rect is not a legal canvas rect. Order of reporting is stable. */
 export type CanvasRectProblem =
@@ -61,15 +110,28 @@ export type CanvasRectProblem =
   | "size-below-minimum"
   | "exceeds-canvas";
 
+/** Why a Grid item's integer geometry is not legal. Order is stable. */
+export type GridItemProblem =
+  | "not-safe-integer"
+  | "negative-position"
+  | "span-below-minimum"
+  | "exceeds-columns";
+
 /** Structural/semantic problems of a whole canvas layout. */
 export type CanvasValidationIssue =
   | { readonly type: "invalid-version"; readonly version: number }
   | { readonly type: "invalid-mode"; readonly mode: string }
+  | { readonly type: "invalid-columns"; readonly columns: number }
   | { readonly type: "duplicate-item-id"; readonly itemId: string }
   | {
       readonly type: "invalid-rect";
       readonly itemId: string;
       readonly problems: readonly CanvasRectProblem[];
+    }
+  | {
+      readonly type: "invalid-grid-item";
+      readonly itemId: string;
+      readonly problems: readonly GridItemProblem[];
     };
 
 /** The eight resize handles of a single selection. */

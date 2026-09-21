@@ -3,7 +3,15 @@ import type { GridDefinition } from "@veladesk/desktop-engine";
 import { canvasRectToSnappedRect } from "./lattice";
 import { clampNumber } from "./rect";
 import { CANVAS_UNITS } from "./types";
-import type { CanvasLayout, CanvasTranslation } from "./types";
+import type {
+  CanvasLayoutV1,
+  CanvasTranslation,
+  FreeformCanvasLayoutV2,
+} from "./types";
+
+
+/** Rect-item layouts: v1 (both modes) and v2 freeform. */
+type RectItemsLayout = CanvasLayoutV1 | FreeformCanvasLayoutV2;
 
 interface CanvasBounds {
   readonly minX: number;
@@ -12,7 +20,10 @@ interface CanvasBounds {
   readonly maxBottom: number;
 }
 
-function boundsOf(layout: CanvasLayout, itemIds: ReadonlySet<string>): CanvasBounds | undefined {
+function boundsOf(
+  layout: RectItemsLayout,
+  itemIds: ReadonlySet<string>,
+): CanvasBounds | undefined {
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxRight = Number.NEGATIVE_INFINITY;
@@ -41,7 +52,7 @@ function boundsOf(layout: CanvasLayout, itemIds: ReadonlySet<string>): CanvasBou
  * the same delta and the group can never scatter against the canvas edge.
  */
 export function clampCanvasTranslation(
-  layout: CanvasLayout,
+  layout: RectItemsLayout,
   itemIds: readonly string[],
   deltaX: number,
   deltaY: number,
@@ -70,11 +81,11 @@ export function clampCanvasTranslation(
  * selection and the untouched canvas fields keep their identity.
  */
 export function translateCanvasItems(
-  layout: CanvasLayout,
+  layout: RectItemsLayout,
   itemIds: readonly string[],
   deltaX: number,
   deltaY: number,
-): CanvasLayout {
+): RectItemsLayout {
   const { x, y } = clampCanvasTranslation(layout, itemIds, deltaX, deltaY);
 
   if (x === 0 && y === 0) {
@@ -102,7 +113,7 @@ export function translateCanvasItems(
  * group apart).
  */
 export function snapCanvasTranslation(
-  layout: CanvasLayout,
+  layout: CanvasLayoutV1,
   itemIds: readonly string[],
   deltaX: number,
   deltaY: number,

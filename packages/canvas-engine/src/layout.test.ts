@@ -12,7 +12,7 @@ import {
   withCanvasItems,
   withCanvasMode,
 } from "./layout";
-import type { CanvasLayout, CanvasLayoutItem } from "./types";
+import type { CanvasLayout, CanvasLayoutItem, CanvasLayoutV1 } from "./types";
 
 function item(id: string, x: number, y: number, width = 1000, height = 1000): CanvasLayoutItem {
   return { id, rect: { x, y, width, height } };
@@ -20,8 +20,8 @@ function item(id: string, x: number, y: number, width = 1000, height = 1000): Ca
 
 function layout(
   items: readonly CanvasLayoutItem[],
-  mode: CanvasLayout["mode"] = "snap",
-): CanvasLayout {
+  mode: CanvasLayoutV1["mode"] = "snap",
+): CanvasLayoutV1 {
   return { version: 1, mode, items };
 }
 
@@ -42,8 +42,8 @@ describe("validateCanvasLayout", () => {
   });
 
   it("reports an unsupported version", () => {
-    const broken = { ...sample, version: 2 } as unknown as CanvasLayout;
-    expect(validateCanvasLayout(broken)).toEqual([{ type: "invalid-version", version: 2 }]);
+    const broken = { ...sample, version: 3 } as unknown as CanvasLayout;
+    expect(validateCanvasLayout(broken)).toEqual([{ type: "invalid-version", version: 3 }]);
   });
 
   it("reports an unknown mode", () => {
@@ -128,7 +128,7 @@ describe("replaceCanvasItem", () => {
   it("replaces the matching item in place", () => {
     const next = replaceCanvasItem(sample, item("b", 4000, 1000, 500, 500));
     expect(canvasItemIds(next)).toEqual(["a", "b"]);
-    expect(findCanvasItem(next, "b")?.rect).toEqual({ x: 4000, y: 1000, width: 500, height: 500 });
+    expect((findCanvasItem(next, "b") as CanvasLayoutItem | undefined)?.rect).toEqual({ x: 4000, y: 1000, width: 500, height: 500 });
   });
 
   it("returns the input reference for an unknown id", () => {

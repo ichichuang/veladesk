@@ -4,7 +4,7 @@ import type { GridDefinition } from "@veladesk/desktop-engine";
 
 import { clampCanvasTranslation, snapCanvasTranslation, translateCanvasItems } from "./translate";
 import { findCanvasItem } from "./layout";
-import type { CanvasLayout, CanvasLayoutItem } from "./types";
+import type { CanvasLayoutItem, CanvasLayoutV1 } from "./types";
 
 const grid10x6: GridDefinition = { columns: 10, rows: 6 };
 
@@ -12,7 +12,7 @@ function item(id: string, x: number, y: number, width = 1000, height = 1000): Ca
   return { id, rect: { x, y, width, height } };
 }
 
-function layout(items: readonly CanvasLayoutItem[], mode: CanvasLayout["mode"] = "freeform"): CanvasLayout {
+function layout(items: readonly CanvasLayoutItem[], mode: "snap" | "freeform" = "freeform"): CanvasLayoutV1 {
   return { version: 1, mode, items };
 }
 
@@ -44,13 +44,13 @@ describe("clampCanvasTranslation", () => {
 describe("translateCanvasItems", () => {
   it("moves a single item by the rounded delta", () => {
     const next = translateCanvasItems(middle, ["a"], 500, 250);
-    expect(findCanvasItem(next, "a")?.rect).toEqual({ x: 2500, y: 2250, width: 1000, height: 1000 });
+    expect((findCanvasItem(next, "a") as CanvasLayoutItem | undefined)?.rect).toEqual({ x: 2500, y: 2250, width: 1000, height: 1000 });
   });
 
   it("keeps a group rigid", () => {
     const next = translateCanvasItems(middle, ["a", "b"], 500, -500);
-    const first = findCanvasItem(next, "a");
-    const second = findCanvasItem(next, "b");
+    const first = findCanvasItem(next, "a") as CanvasLayoutItem | undefined;
+    const second = findCanvasItem(next, "b") as CanvasLayoutItem | undefined;
 
     expect(first?.rect).toEqual({ x: 2500, y: 1500, width: 1000, height: 1000 });
     expect(second?.rect).toEqual({ x: 4500, y: 2500, width: 1000, height: 1000 });
@@ -61,19 +61,19 @@ describe("translateCanvasItems", () => {
     const ceiling = layout([item("a", 9000, 9000), item("b", 9500, 9500, 500, 500)]);
     const blocked = translateCanvasItems(ceiling, ["a", "b"], 800, 800);
 
-    expect(findCanvasItem(blocked, "a")?.rect).toEqual({ x: 9000, y: 9000, width: 1000, height: 1000 });
-    expect(findCanvasItem(blocked, "b")?.rect).toEqual({ x: 9500, y: 9500, width: 500, height: 500 });
+    expect((findCanvasItem(blocked, "a") as CanvasLayoutItem | undefined)?.rect).toEqual({ x: 9000, y: 9000, width: 1000, height: 1000 });
+    expect((findCanvasItem(blocked, "b") as CanvasLayoutItem | undefined)?.rect).toEqual({ x: 9500, y: 9500, width: 500, height: 500 });
 
     const pushed = translateCanvasItems(ceiling, ["a", "b"], -200, -200);
-    expect(findCanvasItem(pushed, "a")?.rect.x).toBe(8800);
-    expect(findCanvasItem(pushed, "b")?.rect.x).toBe(9300);
+    expect((findCanvasItem(pushed, "a") as CanvasLayoutItem | undefined)?.rect.x).toBe(8800);
+    expect((findCanvasItem(pushed, "b") as CanvasLayoutItem | undefined)?.rect.x).toBe(9300);
   });
 
   it("allows moving onto another item (overlap is legal)", () => {
     const overlapping = layout([item("a", 0, 0), item("b", 2000, 0)]);
     const next = translateCanvasItems(overlapping, ["a"], 1500, 0);
 
-    expect(findCanvasItem(next, "a")?.rect.x).toBe(1500);
+    expect((findCanvasItem(next, "a") as CanvasLayoutItem | undefined)?.rect.x).toBe(1500);
     expect(next.items).toHaveLength(2);
   });
 
@@ -110,16 +110,16 @@ describe("snapCanvasTranslation", () => {
     expect(delta).toEqual({ x: -90, y: -100 });
 
     const next = translateCanvasItems(drifting, ["a", "b"], delta.x, delta.y);
-    expect(findCanvasItem(next, "a")?.rect).toEqual({ x: 0, y: 0, width: 1000, height: 1000 });
-    expect(findCanvasItem(next, "b")?.rect).toEqual({ x: 2910, y: 900, width: 1000, height: 1000 });
+    expect((findCanvasItem(next, "a") as CanvasLayoutItem | undefined)?.rect).toEqual({ x: 0, y: 0, width: 1000, height: 1000 });
+    expect((findCanvasItem(next, "b") as CanvasLayoutItem | undefined)?.rect).toEqual({ x: 2910, y: 900, width: 1000, height: 1000 });
   });
 
   it("uses one delta for the whole group so relative geometry survives", () => {
     const group = layout([item("a", 120, 130), item("b", 4120, 2130)]);
     const delta = snapCanvasTranslation(group, ["a", "b"], 400, 400, grid10x6);
     const next = translateCanvasItems(group, ["a", "b"], delta.x, delta.y);
-    const first = findCanvasItem(next, "a");
-    const second = findCanvasItem(next, "b");
+    const first = findCanvasItem(next, "a") as CanvasLayoutItem | undefined;
+    const second = findCanvasItem(next, "b") as CanvasLayoutItem | undefined;
 
     expect((second?.rect.x ?? 0) - (first?.rect.x ?? 0)).toBe(4000);
     expect((second?.rect.y ?? 0) - (first?.rect.y ?? 0)).toBe(2000);
@@ -134,7 +134,7 @@ describe("snapCanvasTranslation", () => {
     expect(delta).toEqual({ x: 100, y: -567 });
 
     const next = translateCanvasItems(edge, ["a"], delta.x, delta.y);
-    expect(findCanvasItem(next, "a")?.rect).toEqual({ x: 9000, y: 8333, width: 1000, height: 1000 });
+    expect((findCanvasItem(next, "a") as CanvasLayoutItem | undefined)?.rect).toEqual({ x: 9000, y: 8333, width: 1000, height: 1000 });
   });
 
   it("returns a zero delta for an empty selection or non-finite delta", () => {

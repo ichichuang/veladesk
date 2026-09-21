@@ -10,9 +10,9 @@ import {
   undoCanvas,
 } from "./history";
 import { DEFAULT_CANVAS_HISTORY_LIMIT } from "./types";
-import type { CanvasHistory, CanvasLayout } from "./types";
+import type { CanvasHistory, CanvasLayoutV1 } from "./types";
 
-function layout(x: number, mode: CanvasLayout["mode"] = "freeform"): CanvasLayout {
+function layout(x: number, mode: "snap" | "freeform" = "freeform"): CanvasLayoutV1 {
   return { version: 1, mode, items: [{ id: "a", rect: { x, y: 0, width: 1000, height: 1000 } }] };
 }
 
