@@ -1,9 +1,11 @@
 # Appearance & Settings
 
 Task 014 introduces the workspace appearance model, the Settings Center and
-the workspace-scoped theme rendering pipeline. It is an appearance
-foundation: presets and ranges only — no Theme Studio, no custom CSS, no
-custom wallpaper URLs.
+the workspace-scoped theme rendering pipeline; task 017 redesigns the
+Settings Center into a compact product-facing V2 surface (Appearance /
+Layout / General) with coherent motion. It is an appearance foundation:
+presets and ranges only — no Theme Studio, no custom CSS, no custom
+wallpaper URLs.
 
 ## Responsibility
 
@@ -76,6 +78,30 @@ DEFAULT_WORKSPACE_APPEARANCE = {
 These double as the Task013 visual baseline: legacy workspaces render
 exactly like the pre-settings desktop. `createEmptyWorkspace` stores the
 defaults explicitly (fresh workspaces carry an appearance from birth).
+
+## Settings V2 structure (017)
+
+- **Appearance** leads with what people actually change: color mode as a
+  compact segmented control, one accent control, wallpaper cards. Surface
+  opacity / blur / corner radius fold into a collapsed **Advanced** group
+  (`aria-expanded` toggle, animated grid-rows expansion). The global Icon
+  Size control is removed from the UI; the persisted `iconSize` field stays
+  valid and is preserved verbatim when saving unrelated settings.
+- **Layout** owns the default section, the Start-in-View switch (backed by
+  `layoutLocked`) and the **grid gap** slider (`gridGapPx`, 0–32 step 4) —
+  the gap is layout geometry, not appearance, so it lives on
+  `WorkspacePreferences` and validates as `invalid-grid-gap`.
+- **General** owns the interface language (browser-local, immediate,
+  never part of the draft).
+- The dialog is ~740px wide with a lower maximum height, a ~152px left
+  nav, quieter borders, proper switch treatment for booleans and radio
+  semantics for segmented choices; the footer stays Cancel / Save with
+  Save disabled while the draft is clean.
+- Motion: backdrop fade, opacity + small translateY/scale dialog
+  entrance, an 8–12px directional cross-fade when switching sections
+  (content remounts keyed by section), the advanced expand/collapse
+  animation, 120–180ms control state transitions — all disabled under
+  `prefers-reduced-motion`, with no animation library.
 
 ## Preview
 

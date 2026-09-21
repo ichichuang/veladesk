@@ -14,7 +14,7 @@ The boundary with its neighbours:
 | --- | --- | --- |
 | `@veladesk/domain` | Business entities, identity, containment, references, business-level validation | Geometry, pixels, gestures, storage |
 | `@veladesk/desktop-engine` | Legacy grid geometry: grid, positions, spans, overlap, bounds, grid layout history | App metadata, folders, widgets, URLs, categories |
-| `@veladesk/canvas-engine` | Continuous geometry: logical units, rects, snap lattice, translation, resize math, canvas history | Domain entities, persistence, rendering |
+| `@veladesk/canvas-engine` | Versioned placement: logical units, integer Grid cell geometry, rects, conversion lattice, translation/resize math, canvas history | Domain entities, persistence, rendering |
 | `@veladesk/desktop-interaction` | Pixel-to-grid drag mapping (lab path) | Domain model |
 | database / API / UI (future) | Normalization, persistence, rendering | Domain invariants |
 
@@ -147,7 +147,8 @@ Since Task 016-C a page may carry a continuous canvas instead of a grid:
 - `pageItemIds(page)` is the single membership helper every container rule
   uses; `resolvePageCanvas(page)` returns the stored canvas or a virtual one
   derived from legacy grid items (pure, never written by rendering);
-- `materializePageCanvas(page)` is the one-way lazy upgrade, performed by the
+- `materializePagePlacement(page)` is the one-way lazy upgrade into stored v2
+  placement (legacy items emptied), performed by the
   first canvas-aware mutation (`addAppToPage`, `relocateAppToPage`,
   `dissolveFolderToPage`, `replacePageCanvas`, …) — there is no bulk database
   migration;

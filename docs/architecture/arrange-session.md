@@ -2,14 +2,16 @@
 
 Task 012 turned arrange mode into a small editing session: multi-select,
 rigid group movement, and undo/redo of geometry — all session-only, all
-local-first. Since task 016-C the session edits continuous canvas rects
+local-first. Since task 017 the session edits versioned placements (integer
+Grid cells or continuous freeform rects)
 instead of grid cells, and it also owns the per-section placement mode.
 
 ## Responsibility
 
 - `@veladesk/canvas-engine` owns the geometry: `translateCanvasItems` moves a
   whole selection as one rigid body with a single clamp,
-  `snapCanvasTranslation` resolves one snapped delta from a single anchor, and
+  a grid section rounds pointer pixels to whole cells and clamps the group
+  inside the columns, and
   `resizeCanvasRect` changes the edges a handle owns. See
   [canvas-layout.md](./canvas-layout.md).
 - The web arrange session (`apps/web/features/`) owns selection, transient
@@ -37,7 +39,7 @@ and leaving arrange clear it; ids removed from the page are normalized away.
 A drag moves the whole selection by ONE translation: freeform takes the raw
 logical delta (rounded) and clamps it once against the group's bounding box, so
 the group stops at a canvas edge as a rigid body instead of scattering;
-`snap` snaps the anchor's rect and reuses that single delta for every selected
+`grid` rounds the pointer delta to whole cells and reuses that single delta for every selected
 item, which keeps a mixed-size group's relative geometry intact. Unselected
 items keep their references, and a translation that resolves to zero is a
 no-op (no handoff, no history entry, no sync).
@@ -61,17 +63,22 @@ cleared.
 
 ## Placement mode
 
-Each section persists its own mode in `page.canvas.mode`, so one section can
-stay aligned while another is free. The arrange context menu offers the choice
-(自动对齐 / 自由排列) with the active entry checked, and View mode offers no
-placement controls at all — View renders the persisted geometry and lets it be
-edited later.
+Each section persists its own mode in its v2 placement (grid or freeform),
+so one section can stay structured while another is free. The arrange
+toolbar carries the primary switch (网格 / 自由) plus the gap stepper and
+undo/redo; the arrange context menu offers the same choice with the active
+entry checked, and View mode offers no placement controls at all — View
+renders the persisted geometry and lets it be edited later.
 
-Switching to `freeform` changes only the mode: the geometry must not move at
-all (verified: identical percent rects). Switching to `snap` snaps every rect
-in ONE atomic workspace edit (verified: a freeform-dragged tile returned to a
-lattice line in the same commit). The switch is structural and is therefore
-not undoable — the page's history restarts at the new canvas.
+Switching to `freeform` converts each grid item back through the lattice —
+and is REFUSED (toolbar disabled with a localized reason) when content
+extends beyond the freeform viewport, because that conversion would be
+lossy; geometry is never silently compressed. Switching to `grid` snaps
+every freeform rect onto the lattice in ONE atomic workspace edit (edge
+indexes → cells). Either switch is structural and is therefore not
+undoable — the page's history restarts at the new placement. A toolbar gap
+change is a preference edit, not page geometry history: one durable write
+per completed change, previewed immediately.
 
 ## History
 

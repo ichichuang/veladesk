@@ -5,13 +5,15 @@ production VelaDesk surface: a local-first desktop shell with boot,
 onboarding, workspace selection, ready desktop, drag & drop, Add App,
 launch and sync status.
 
-Task 015 restructured the ready desktop into a minimal section
-workspace: full-height scroll-snap section stack, floating left section
-navigation, an optional pinned-entity dock and the custom context menu as
-the primary command surface. The top bar, page dots and dock utilities
-are removed. See
-[section-navigation.md](./section-navigation.md) — this doc keeps the
-shell-level view.
+Task 015 restructured the ready desktop into a minimal section workspace;
+task 017 rebuilt it as a real two-column workspace: a fixed left section
+rail (titles only), a right workspace owning the active section's
+independent content scrolling, responsive square-grid / freeform placement
+modes, a compact Arrange toolbar and Settings V2. The scroll-snap section
+stack, the floating nav and the artificial canvas left padding are gone.
+See [section-navigation.md](./section-navigation.md) and
+[canvas-layout.md](./canvas-layout.md) — this doc keeps the shell-level
+view.
 
 ## Responsibility
 
@@ -71,40 +73,47 @@ technical-details section. A workspace whose `pages` array is empty (schema
 invariant violation) renders a calm invalid-workspace state instead of
 crashing.
 
-The active section is a reflection of the REAL scroll position
-(IntersectionObserver over the section stack); `preferences.defaultPageId`
-only chooses the boot position. It is never persisted beyond the
-preference — see [section-navigation.md](./section-navigation.md).
+The active section is EXPLICIT session state in the shell (task 017),
+initialized from `preferences.defaultPageId` and reconciled during render
+when the active page disappears; nothing is derived from scroll positions.
+It is never persisted beyond the preference — see
+[section-navigation.md](./section-navigation.md).
 
 ## Desktop rendering
 
-The ready shell is a fixed viewport (no body scroll): ambient wallpaper
-layer, a full-height section stack (one `DesktopPage` per snap viewport,
-native CSS scroll-snap paging), the floating left section navigation
-(page projection, ⋯ command fallback, quiet non-clean sync status), and a
-bottom dock that exists ONLY when entities are pinned. All desktop
-commands (Add App, New Section, Search, Arrange toggle, Undo/Redo,
-Sync/Refresh, Settings, language) live in the custom context menu — there
-is no top bar and there are no page dots.
+The ready shell is a fixed viewport (no body scroll) composed as a real
+two-column workspace (task 017): ambient wallpaper layer; a fixed left
+section rail (titles only, no footer); a right workspace holding the
+compact Arrange-only toolbar band, the one section viewport (exactly the
+active section's scroller, plus a brief read-only exiting twin during
+transitions) and the quiet global sync status; and a bottom dock that
+exists ONLY when entities are pinned. All desktop commands (Add App, New
+Section, Search, Arrange toggle, Undo/Redo, Grid/Freeform, Sync/Refresh,
+Settings, language) live in the custom context menu, with the primary
+Grid/Freeform switch and the gap stepper also in the Arrange toolbar —
+there is no top bar and there are no page dots.
 
-`DesktopCanvasView` renders a page's canvas: `.vela-canvas` is absolutely
-positioned on the desktop's usable content box (the four
-`--vd-grid-padding-*` variables reserve the section nav, the top/bottom
-padding and the dock strip when `data-has-dock` is set), every item is an
-absolutely positioned box in percent space via `canvasRectStyle`, and each
-`CanvasLayoutItem.id` resolves to its entity: apps render as a decorated tile
-that fills the rect with the glyph centered inside it, folders open their
-overlay on a view-mode click, widgets are the only glass-surface entities, and
-an item whose entity is missing renders a restrained "Missing item"
-placeholder. A legacy page renders through the same component using a virtual
-canvas derived from its grid (see [canvas-layout.md](./canvas-layout.md)), so
-production has exactly ONE renderer. The dock renders
+`DesktopCanvasView` renders a page's placement in one of two geometries.
+Grid pages are a real CSS Grid host: `repeat(columns, minmax(0, 1fr))`
+columns, `grid-auto-rows: var(--vd-grid-cell-size)`, `gap:
+var(--vd-grid-gap)`, one item per integer `gridColumn`/`gridRow` area,
+unbounded rows, `min-height: 100%` on the stage. Freeform pages keep
+`.vela-canvas` — one viewport-height stage whose box is the logical
+0..10000 canvas, every item absolutely positioned in percent space via
+`canvasRectStyle`. In both, each item id resolves to its entity: apps
+render as a decorated tile that fills the box with the glyph centered
+inside it, folders open their overlay on a view-mode click, widgets are
+the only glass-surface entities, and an item whose entity is missing
+renders a restrained "Missing item" placeholder. A legacy or v1 page
+renders through the same component using the placement derived by
+`resolvePagePlacement` (see [canvas-layout.md](./canvas-layout.md)), so
+production has exactly ONE renderer per geometry. The dock renders
 `workspace.dock.items` in stored order — apps launch, folders open the
-overlay, right-click opens the entity menu — and renders `null` (no DOM shell
-at all) when nothing is pinned. Section switching is real-scroll based:
-wheel/trackpad (native snap), left-nav clicks, ArrowUp/PageUp +
-ArrowDown/PageDown (no wrap, lowest keyboard priority) and launcher section
-results.
+overlay, right-click opens the entity menu — and renders `null` (no DOM
+shell at all) when nothing is pinned. Section switching is state-based:
+rail clicks (plus rail wheel — one section per gesture — and rail
+arrows/Home/End), launcher section results; the old global ArrowUp/
+ArrowDown paging is gone because the right side owns real scrolling.
 
 Since the workspace editing task, entity interaction is rounded out by
 context menus (right-click or Shift+F10 on desktop/dock/overlay items,
@@ -119,16 +128,19 @@ see [workspace-editing.md](./workspace-editing.md).
 preferences. View mode never drags and single-click launches apps;
 arrange mode disables launch and enables dragging and resizing.
 
-Drag sessions use `features/canvas/use-canvas-drag.ts`: the canvas, canvas
-pixel metrics and the moving ids captured at drag start are the only commit
-inputs; dnd-kit owns the free pointer transform while peers follow the
-resolved translation; the drop converts pixels to logical units, resolves ONE
-rigid translation (a snap section resolves a single snapped delta from the
-group anchor), and is dropped on cancel, a mid-drag canvas resize, or a
-changed canvas. Mode controls lock while a drag is live. Canvas metrics are
-measured from the `.vela-canvas` box itself
-(`features/canvas/use-canvas-metrics.ts`) — no padding arithmetic, because the
-element IS the usable content box.
+Drag sessions use `features/canvas/use-canvas-drag.ts`: the placement, the
+gesture metrics (freeform: the canvas pixel box; grid: the cell pitch) and
+the moving ids captured at drag start are the only commit inputs; dnd-kit
+owns the free pointer transform while peers follow the resolved
+translation; the drop converts pixels to logical units (freeform) or whole
+cells (grid), resolves ONE rigid translation — a grid section rounds the
+pointer to cell deltas and clamps the group inside the columns — and is
+dropped on cancel, a mid-drag metrics change, or a changed placement. Mode
+controls lock while a drag is live. Freeform metrics are measured from the
+`.vela-canvas` box (`use-canvas-metrics.ts`); grid metrics from the
+`.vela-grid-stage` width through `use-square-grid-metrics.ts` (the scroller
+keeps a stable scrollbar gutter, so the width — and therefore the square
+cell size — never jitters).
 
 Since the arrange-session task, arrange mode also carries a session-only
 selection (click, Cmd/Ctrl toggle, marquee, Cmd/Ctrl+A), rigid group
@@ -136,20 +148,19 @@ drags with a transient peer preview, keyboard nudges and a per-page
 geometry Undo/Redo (move AND resize) — see
 [arrange-session.md](./arrange-session.md).
 
-### Canvas geometry and the snap lattice (016-C)
+### Visible square grid (017)
 
-Placement is percent geometry inside `.vela-canvas`; there is no CSS grid
-anywhere in the production renderer. In arrange mode a **snap** section draws a
-lattice overlay (`.vela-desktop__lattice` / `.vela-desktop__grid-guide`):
-`pointer-events: none`, one zero-size marker per lattice cell at the cell
-CENTER, computed from the same edge rounding the snap engine uses — so a
-marker can never disagree with where an item actually snaps. A **freeform**
-section draws no markers at all: the canvas has no lattice, and dots there
-would misdescribe the model. Entering arrange fades the marker layer in with a
-140ms opacity-only animation (`vela-guides-in`, disabled under
-`prefers-reduced-motion`); the desktop stays the wallpaper, not a field of
-empty card slots. The visual contract — borderless/fill-less markers, dot ≤
-8px — is pinned by `home-shell-css.test.ts`.
+In Arrange + Grid the stage paints the real placement grid as a quiet ~1px
+background pattern (`.vela-grid-lines`): `pointer-events: none`,
+`background-size: calc(var(--vd-grid-cell-size) + var(--vd-grid-gap))`, so
+the lines land exactly on the cell edges the CSS Grid uses — never
+thousands of marker nodes, never a pointer target. View mode and freeform
+render no grid. Entering arrange fades the pattern in with a 140ms
+opacity-only animation (`vela-guides-in`, disabled under
+`prefers-reduced-motion`). The old center-dot snap lattice (016-C) is
+deleted. A lossy Grid→Freeform conversion (content beyond the freeform
+viewport) is refused with a localized reason — the toolbar disables the
+switch, the menu shows the reason, geometry is never silently dropped.
 
 ### Drop = snapped and still (014-D)
 
@@ -186,12 +197,12 @@ rewriting, no `new URL()` parsing — `https://`, `http://` and custom
 protocols (`obsidian://`, `steam://`, …) are all valid. Icons default to
 an auto-generated text icon (`source: "auto"` — first two code points of
 the name, uppercased where applicable) that keeps following renames
-until the user picks a custom icon. The app is placed on the active page at
-the next cascade position with one lattice cell as its default rect
-(`addAppToPage`), staged, and a follow-up sync is fired; a sync failure never
-removes the icon. Placement never fails for space — a canvas page accepts
-overlap — and a legacy page is materialized into canvas geometry by this very
-first edit. The visual identity (library icon, text, colors, decoration) is
+until the user picks a custom icon. The app is placed on the active page at the next first-free row-major
+cell with the default 1×1 span (`addAppToPage`), staged, and a follow-up
+sync is fired; a sync failure never removes the icon. Placement never
+fails for space — grid rows are unbounded and a freeform page accepts
+overlap — and a legacy or v1 page is materialized into v2 placement by
+this very first edit. The visual identity (library icon, text, colors, decoration) is
 edited afterwards via the context menu — see
 [app-visual-system.md](./app-visual-system.md).
 

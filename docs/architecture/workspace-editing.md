@@ -23,7 +23,8 @@ and entity/desktop context menus.
 ## Container model
 
 An entity has at most one **main container**: an item on a page (a canvas
-item, or a legacy grid item on a page that has no canvas yet), a folder child,
+item of any version, or a legacy grid item on a page that has no canvas
+yet), a folder child,
 or nothing (unplaced). The dock is an orthogonal reference
 list — pin/unpin never inspects or changes the main container, which is
 why a pinned app stays pinned across page→folder and folder→page moves.
@@ -32,7 +33,8 @@ why a pinned app stays pinned across page→folder and folder→page moves.
 
 Folders contain apps only (validated by the domain), never nested
 folders. V1 folders are created empty (`folder-must-be-empty` otherwise)
-and take the target page's next canvas cascade rect like an app.
+and take the target page's next default placement like an app (first-free
+row-major cell on Grid pages, cascade rect on freeform).
 
 ## Moving
 
@@ -40,7 +42,7 @@ and take the target page's next canvas cascade rect like an app.
 page geometry source and all folder children, then appended to the target
 folder; the entity keeps its `entities` index and the dock is untouched.
 `moveAppToPage` is the reverse for folder/unplaced apps: the app takes the
-target page's next canvas cascade rect and folder membership is cleared in the
+target page's next default placement and folder membership is cleared in the
 same edit. Moving into the current folder is `already-in-folder`; moving a
 page app is `already-on-page`.
 The Move-to-Folder chooser applies a UI-only usability filter: target
@@ -98,8 +100,10 @@ position or the previous one at the end). All failures are typed
 Apps move BETWEEN sections with `relocateAppToPage` — unlike the older
 folder→desktop `moveAppToPage` (kept, unchanged), it accepts apps from
 anywhere: every geometry and folder-child reference is stripped on a working
-copy, then the app is appended to the target canvas, preserving its rect SIZE
-when it came from another canvas page. The dock is untouched (pins survive),
+copy, then the app is appended to the target page, preserving its geometry
+(span between Grid pages — clamped into the target columns; rect size into
+freeform pages; a freeform rect moving into a Grid page derives its span
+through the lattice). The dock is untouched (pins survive),
 the entity array keeps every entry, and `already-on-page` returns the input
 completely unchanged — the move itself cannot fail for space. The web shell
 exposes this as the 移到分区… / Move to Section… dialog.

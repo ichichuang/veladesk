@@ -4,9 +4,12 @@
 
 Task 016-C replaces the icon-scale gesture with the one the product actually
 wanted: in Arrange mode, selecting a single app shows **eight** handles, and
-dragging any of them resizes the app's real rectangle — width, height, or
-both, in any ratio. See [canvas-layout.md](./canvas-layout.md) for the
-geometry model.
+dragging any of them resizes the app's real box. Task 017 splits the
+semantics per placement mode: **freeform** keeps the continuous rectangle
+(width, height, both, any ratio, Shift aspect lock); **grid** resolves
+whole-cell spans — E/W change `columnSpan` only, N/S change `rowSpan` only,
+corners change both, minimum 1×1, no Shift (aspect locking never applies to
+spans). See [canvas-layout.md](./canvas-layout.md) for the geometry model.
 
 | Owns | Never touches |
 | --- | --- |
@@ -23,8 +26,8 @@ multiplier for the glyph *inside* the tile (see
 
 | Layer | File | Owns |
 | --- | --- | --- |
-| Pure math | `features/canvas/canvas-resize.ts` | handle list, cursors, session shape, pointer→rect math, no-op detection |
-| Engine math | `packages/canvas-engine/src/resize.ts` | which edges a handle moves, bounds, minimum size, Shift aspect lock |
+| Pure math | `features/canvas/canvas-resize.ts` | handle list, cursors, session shapes (freeform rect / grid spans), pointer→geometry math, no-op detection |
+| Engine math | `packages/canvas-engine/src/resize.ts` + `grid.ts` | which edges a handle moves, bounds, minimum size, Shift aspect lock (freeform); span semantics and column bounds (grid) |
 | Gesture | `features/home/desktop-item.tsx` | handle markup, pointer capture, transient rect preview, Escape/cancel |
 | Commit | `features/home/desktop-shell.tsx` | one `replacePageCanvas`, one stage, one sync, the history entry |
 | CSS | `features/home/home-shell.css` | handle geometry, cursors, layer pointer rules |
@@ -91,7 +94,7 @@ pointers, so grabbing the tile still drags it.
 ```
 deltaUnits = pixelsToUnits(pointerDelta, canvasExtent)
 rect       = resizeCanvasRect({ start, handle, deltaX, deltaY, constrainAspect })
-rect       = snap mode ? canvasRectToSnappedRect(rect, grid) : rect
+rect       = freeform: continuous rect math (grid mode resolves cell spans instead)
 ```
 
 `resizeCanvasRect` moves only the edges the handle owns, clamps them to
@@ -105,7 +108,8 @@ moved more relative to the start rect drives the other, so dragging a corner
 up shrinks both dimensions and dragging it sideways widens both. Edge handles
 ignore Shift — they only ever change one axis.
 
-In `snap` mode the LATTICE wins: the resized rect is snapped per edge (so an
+In `grid` mode whole CELLS win: pointer pixels become cell deltas through the
+pitch and spans change in whole units (so an
 `e` drag lands on the next column line, an `s` drag on the next row line, and
 a corner on both), and the preview is snapped too, so what the user sees while
 dragging is exactly what commits. A rect that collapses is expanded to the
