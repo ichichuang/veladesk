@@ -13,14 +13,16 @@ The boundary with its neighbours:
 | Package | Owns | Does not own |
 | --- | --- | --- |
 | `@veladesk/domain` | Business entities, identity, containment, references, business-level validation | Geometry, pixels, gestures, storage |
-| `@veladesk/desktop-engine` | Layout geometry: grid, positions, spans, overlap, bounds, layout history | App metadata, folders, widgets, URLs, categories |
-| `@veladesk/desktop-interaction` | Pixel-to-grid drag mapping | Domain model |
+| `@veladesk/desktop-engine` | Legacy grid geometry: grid, positions, spans, overlap, bounds, grid layout history | App metadata, folders, widgets, URLs, categories |
+| `@veladesk/canvas-engine` | Continuous geometry: logical units, rects, snap lattice, translation, resize math, canvas history | Domain entities, persistence, rendering |
+| `@veladesk/desktop-interaction` | Pixel-to-grid drag mapping (lab path) | Domain model |
 | database / API / UI (future) | Normalization, persistence, rendering | Domain invariants |
 
 The domain is pure TypeScript: no React, no DOM, no dnd-kit, no runtime
-dependency besides `@veladesk/desktop-engine`. Its only engine dependency is
-the `PageLayout` type family plus `validatePageLayout` / `createGridDefinition`
-delegation described below.
+dependency besides `@veladesk/desktop-engine` and `@veladesk/canvas-engine`.
+Its engine dependencies are the `PageLayout` / `CanvasLayout` type families
+plus the validation (`validatePageLayout`, `validateCanvasLayout`) and
+`createGridDefinition` delegation described below.
 
 ## Aggregate model
 
@@ -63,7 +65,8 @@ following the same no-migration compatibility rule:
   `validateWorkspace` reports `invalid-app-visual` issues only for a
   persisted style, delegating the ranges to `validateAppVisualStyle`
   (never duplicated in `validation.ts`). `iconScale` is a visual
-  multiplier only — layout spans and grid geometry are never affected
+  multiplier only — it scales the glyph inside the tile and never the tile's
+  rect, so canvas geometry (016-C) is unaffected by it
   (the range widened from 0.5–1.6 in Task 016-C, which kept every
   existing snapshot legal).
   See [app-visual-system.md](./app-visual-system.md).
@@ -115,17 +118,46 @@ nesting arrives later.
 
 ## Layout delegation
 
-Spatial legality is entirely the desktop engine's job. The domain does not
-reimplement overlap, out-of-bounds, span or duplicate-layout-id checks; it
-calls `validatePageLayout` from `@veladesk/desktop-engine` and wraps each
-engine issue as `page-layout-invalid { pageId, issue }`. When engine rules
-upgrade, the domain validator automatically reuses them. DesktopPage layout
-grid validity is delegated to `@veladesk/desktop-engine` together with the
-rest of spatial validation.
+Spatial legality is entirely the engines' job. The domain does not reimplement
+overlap, out-of-bounds, span, duplicate-layout-id or rect checks; it calls
+`validatePageLayout` from `@veladesk/desktop-engine` and wraps each engine
+issue as `page-layout-invalid { pageId, issue }`, and — for pages that carry a
+canvas — `validateCanvasLayout` from `@veladesk/canvas-engine`, wrapped as
+`page-canvas-invalid { pageId, issue }`. When engine rules upgrade, the domain
+validator automatically reuses them.
 
-The domain additionally enforces the join between the two packages:
-`page.layout.id === page.id`, and every `page.layout.items[].id` must resolve
-to a `WorkspaceEntity`.
+The domain additionally enforces the joins between the packages:
+
+- `page.layout.id === page.id`;
+- every placed item id — `pageItemIds(page)`, i.e. the canvas items when a
+  canvas exists, the legacy layout items otherwise — must resolve to a
+  `WorkspaceEntity` (`layout-entity-missing`);
+- a page with a canvas must not also carry legacy items
+  (`canvas-page-has-legacy-items`), so membership always has one source.
+
+## Canvas pages (016-C)
+
+Since Task 016-C a page may carry a continuous canvas instead of a grid:
+
+- `DesktopPage.canvas?: CanvasLayout` — optional, so every snapshot persisted
+  before canvas existed stays valid forever: without it the page is *legacy*
+  and `layout.items` carries membership and geometry exactly as before;
+- with it, the canvas is authoritative, `layout.items` must be empty, and the
+  grid of `layout.grid` remains the section's snap lattice;
+- `pageItemIds(page)` is the single membership helper every container rule
+  uses; `resolvePageCanvas(page)` returns the stored canvas or a virtual one
+  derived from legacy grid items (pure, never written by rendering);
+- `materializePageCanvas(page)` is the one-way lazy upgrade, performed by the
+  first canvas-aware mutation (`addAppToPage`, `relocateAppToPage`,
+  `dissolveFolderToPage`, `replacePageCanvas`, …) — there is no bulk database
+  migration;
+- `replacePageCanvas(workspace, pageId, canvas)` is the geometry write path. It
+  refuses a canvas whose item id set differs from the page's current one: a
+  canvas is geometry, not membership, so adding and removing stay in their own
+  operations.
+
+See [canvas-layout.md](./canvas-layout.md) for the coordinate model and the
+placement rules.
 
 ## Validation semantics
 
@@ -134,10 +166,10 @@ to a `WorkspaceEntity`.
 data and never mutates the snapshot. Deterministic issue order:
 
 1. workspace-level scalars
-2. page identity/name/layout
+2. page identity/name/layout, then canvas exclusivity + canvas semantics
 3. entity identity/name/basic scalars
 4. category identity/name
-5. layout references
+5. layout references (canvas items when a canvas exists, legacy items else)
 6. folder references
 7. exclusive-container violations
 8. dock

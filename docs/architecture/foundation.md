@@ -10,6 +10,7 @@ veladesk/
 │   └── web/              # Next.js (App Router) application — the deployable unit
 ├── packages/
 │   ├── desktop-engine/   # Pure-logic desktop grid, layout, collision, selection (no UI)
+│   ├── canvas-engine/    # Pure-logic continuous canvas geometry: rects, snap, resize, history
 │   ├── ui/               # VelaDesk self-built UI adapter layer (future)
 │   └── shared/           # Shared types and pure utilities
 ├── docs/

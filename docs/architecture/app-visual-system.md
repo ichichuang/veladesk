@@ -86,14 +86,19 @@ additionally ignored defensively by the renderer's var composition.
 
 ### Scale is visual, never layout
 
-`iconScale` is a multiplier on the global base icon size
-(`baseIconSize × iconScale`, e.g. Medium 62px × 200% = 124px). It scales
-the icon BOX only: `LayoutItem.span` stays 1×1, grid cells, drag
-collision and snap logic never see it, and a 200% icon may visually
-overflow its slot. Tile spans are a different, future task.
+`iconScale` is a multiplier on the glyph INSIDE the tile: the glyph box is
+`62cqmin × iconScale` (a share of the rect's smaller side), capped so a
+full-canvas tile does not paint an oversized logo. The dock, the folder
+overlay and the visual editor preview size themselves from the global base
+slot instead (`--vd-slot-icon-size × iconScale`).
 
-Since 016-C the user edits that scale directly: see
-[app-resize.md](./app-resize.md).
+Either way a scale is a VISUAL property: it never moves, resizes or reorders
+anything. Since 016-C tile geometry is the canvas rect
+([canvas-layout.md](./canvas-layout.md)), which `iconScale` never touches —
+the user resizes the tile by dragging its handles
+([app-resize.md](./app-resize.md)), and `iconScale` survives as the
+per-app glyph multiplier it always was, so legacy snapshots keep rendering
+exactly as before.
 
 ### Colors
 
@@ -212,7 +217,9 @@ Uploaded assets (`kind: "asset"`) render through a local-first object URL
 (`useAssetImageUrl`: IndexedDB blob hit, hash-verified remote GET +
 hydrate on a miss) as a plain `<img>` inside the decoration tile — they
 keep their OWN colors too, while decoration styles and `iconScale` still
-apply.
+apply. On the canvas the image is taken out of flow and fills the tile with
+`object-fit: contain`, so it is never cropped or stretched and its own aspect
+ratio survives a landscape or portrait rect.
 
 A 404 or load failure (probed with an `Image()` preload for library
 icons, the asset runtime's failure result for uploads) degrades to the
@@ -266,10 +273,10 @@ is staged into the asset store at Save, BEFORE the workspace mutation
 that already has an uploaded icon opens the upload tab with the current
 image and never re-stages unless a new file is chosen.
 
-The editor carries NO size control. Size is edited by dragging the icon's
-corners in Arrange mode, and the header says so in one line of text.
-`foregroundColor` is hidden (replaced by a one-line note) for multicolor
-library icons and uploaded images, whose colors are their own.
+The editor carries NO size control. Tile size and shape are edited by
+dragging the rect's handles in Arrange mode, and the header says so in one
+line of text. `foregroundColor` is hidden (replaced by a one-line note) for
+multicolor library icons and uploaded images, whose colors are their own.
 
 Everything edits the draft only: Save runs (asset stage →) `replaceApp`
 → local stage → sync attempt (and is disabled while the draft equals the

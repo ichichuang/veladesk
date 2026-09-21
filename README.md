@@ -28,7 +28,8 @@ Planned internal packages:
 | Package | Purpose |
 | --- | --- |
 | `@veladesk/ui` | Shared UI components |
-| `@veladesk/desktop-engine` | Desktop canvas, layout, and drag-and-drop core |
+| `@veladesk/desktop-engine` | Desktop grid, layout, and drag-and-drop core (used by the interaction lab) |
+| `@veladesk/canvas-engine` | Continuous canvas geometry: rects, snap lattice, resize math, history |
 | `@veladesk/domain` | Workspace, entity, page, dock and folder domain contracts |
 | `@veladesk/animation-engine` | Motion and interaction effects |
 | `@veladesk/wallpaper-engine` | Static and animated wallpapers |

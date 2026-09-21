@@ -22,11 +22,14 @@ a presentation layer over them:
   active-workspace state, staging, explicit sync/pull. The shell only reads
   its external store (`useSyncExternalStore`) and calls its methods.
 - The desktop shell (`apps/web/features/home/`) owns presentation and user
-  gestures: runtime-state screens, grid rendering, mode toggle, dialogs,
+  gestures: runtime-state screens, canvas rendering, mode toggle, dialogs,
   launch.
-- `@veladesk/desktop-engine` owns spatial legality: placement, collision,
-  `moveItem` nearest-free resolution.
-- `@veladesk/desktop-interaction` owns pixel→grid conversion
+- `@veladesk/canvas-engine` owns continuous geometry: rect validation,
+  translation, resize math, canvas history (see
+  [canvas-layout.md](./canvas-layout.md)).
+- `@veladesk/desktop-engine` owns the legacy grid model, used by the desktop
+  interaction lab (`placement`, collision, `moveItem` nearest-free).
+- `@veladesk/desktop-interaction` owns pixel→grid conversion for that lab path
   (`dragDeltaToDesiredPosition`, `calculateGridPixelMetrics`).
 
 `apps/web/features/workspace-runtime/workspace-runtime-provider.tsx` is a
@@ -39,9 +42,8 @@ singleton cache so an explicit retry (reload) gets a fresh attempt.
 
 Every user gesture that changes the workspace stages immediately:
 
-1. gesture produces the next `WorkspaceSnapshot` (pure helpers in
-   `features/home/workspace-layout.ts`: `replacePageLayout`,
-   `addAppToPage` — both immutable, typed failures);
+1. gesture produces the next `WorkspaceSnapshot` (pure domain operations —
+   `replacePageCanvas`, `addAppToPage`, … — all immutable, typed failures);
 2. `runtime.stageWorkspaceUpdate(...)` updates the local working copy and
    the UI (never waits for the network);
 3. an explicit `runtime.syncCurrent()` follows, fire-and-forget.
@@ -85,18 +87,24 @@ commands (Add App, New Section, Search, Arrange toggle, Undo/Redo,
 Sync/Refresh, Settings, language) live in the custom context menu — there
 is no top bar and there are no page dots.
 
-`DesktopGridView` renders `PageLayout` as a CSS grid (`grid-column` /
-`grid-row` with spans); each `LayoutItem.id` resolves to its entity:
-apps render as OS-like icon + label buttons (generated icon text only in
-this stage — no favicon/iconify/asset fetching), folders open their
-overlay on a view-mode click, widgets are the only glass-surface
-entities, and a layout item whose entity is missing renders a restrained
-"Missing item" placeholder. The dock renders `workspace.dock.items` in
-stored order — apps launch, folders open the overlay, right-click opens
-the entity menu — and renders `null` (no DOM shell at all) when nothing
-is pinned. Section switching is real-scroll based: wheel/trackpad (native
-snap), left-nav clicks, ArrowUp/PageUp + ArrowDown/PageDown (no wrap,
-lowest keyboard priority) and launcher section results.
+`DesktopCanvasView` renders a page's canvas: `.vela-canvas` is absolutely
+positioned on the desktop's usable content box (the four
+`--vd-grid-padding-*` variables reserve the section nav, the top/bottom
+padding and the dock strip when `data-has-dock` is set), every item is an
+absolutely positioned box in percent space via `canvasRectStyle`, and each
+`CanvasLayoutItem.id` resolves to its entity: apps render as a decorated tile
+that fills the rect with the glyph centered inside it, folders open their
+overlay on a view-mode click, widgets are the only glass-surface entities, and
+an item whose entity is missing renders a restrained "Missing item"
+placeholder. A legacy page renders through the same component using a virtual
+canvas derived from its grid (see [canvas-layout.md](./canvas-layout.md)), so
+production has exactly ONE renderer. The dock renders
+`workspace.dock.items` in stored order — apps launch, folders open the
+overlay, right-click opens the entity menu — and renders `null` (no DOM shell
+at all) when nothing is pinned. Section switching is real-scroll based:
+wheel/trackpad (native snap), left-nav clicks, ArrowUp/PageUp +
+ArrowDown/PageDown (no wrap, lowest keyboard priority) and launcher section
+results.
 
 Since the workspace editing task, entity interaction is rounded out by
 context menus (right-click or Shift+F10 on desktop/dock/overlay items,
@@ -109,56 +117,39 @@ see [workspace-editing.md](./workspace-editing.md).
 `DesktopMode` is `"view" | "arrange"`, initialized from
 `preferences.layoutLocked` but session-only — this stage never writes
 preferences. View mode never drags and single-click launches apps;
-arrange mode disables launch and enables dragging.
+arrange mode disables launch and enables dragging and resizing.
 
-Drag sessions use the shared atomic contract in
-`apps/web/features/desktop-grid/use-atomic-grid-drag.ts` (the validated
-desktop-lab logic, now reused by both the lab and production): the layout
-and pixel metrics captured at drag start are the only commit inputs; dnd-kit
-owns the free transform while dragging; the drop converts the delta via
-`dragDeltaToDesiredPosition`, resolves nearest-free with engine
-`moveItem`, and is dropped on cancel, mid-drag resize, or a changed layout.
-Mode controls lock while a drag is live. Grid metrics measurement
-(`useGridMetrics`) moved to the same shared `features/desktop-grid/`
-module.
+Drag sessions use `features/canvas/use-canvas-drag.ts`: the canvas, canvas
+pixel metrics and the moving ids captured at drag start are the only commit
+inputs; dnd-kit owns the free pointer transform while peers follow the
+resolved translation; the drop converts pixels to logical units, resolves ONE
+rigid translation (a snap section resolves a single snapped delta from the
+group anchor), and is dropped on cancel, a mid-drag canvas resize, or a
+changed canvas. Mode controls lock while a drag is live. Canvas metrics are
+measured from the `.vela-canvas` box itself
+(`features/canvas/use-canvas-metrics.ts`) — no padding arithmetic, because the
+element IS the usable content box.
 
 Since the arrange-session task, arrange mode also carries a session-only
 selection (click, Cmd/Ctrl toggle, marquee, Cmd/Ctrl+A), rigid group
 drags with a transient peer preview, keyboard nudges and a per-page
-movement-only Undo/Redo — see
+geometry Undo/Redo (move AND resize) — see
 [arrange-session.md](./arrange-session.md).
 
-### Grid geometry and snap lattice (014-D / 014-E)
+### Canvas geometry and the snap lattice (016-C)
 
-Grid metrics are measured against the CSS Grid **content box** (client box
-minus paddings — see
-[desktop-interaction.md](./desktop-interaction.md)), so drag pitch equals
-the real track pitch. In arrange mode `DesktopGridView` renders a true
-guide overlay: one CSS-grid cell per logical cell (`.vela-desktop__grid-
-guides` / `-guide`), absolutely positioned, `pointer-events: none`, and
-sharing the viewport's exact `grid-template` / gap / padding through the
-`--vd-grid-column-gap`, `--vd-grid-row-gap`, `--vd-grid-padding-left/right/top/bottom`
-custom properties (single source; asymmetric since task 015 — the left
-padding reserves the section nav, the bottom padding only grows when a
-dock exists, `data-has-dock`; the responsive variant overrides the
-variables). Guide rects therefore equal actual
-track rects — the earlier repeating-background estimate is gone. View
-mode renders no guides.
-
-Visually the grid is a **logical snap lattice, never a tile board**
-(014-E): guide cells carry no border, no fill and no radius — the only
-visual is one 4px dot (`::after` on each guide, `--vd-grid-dot`) at the
-slot's icon placement origin. Items fill their cell
-(`align-self`/`justify-self: stretch`) and pin the icon at the top,
-horizontally centered (`align-items: center`). The dot marks the icon's
-top-center: the item column is flex-start, so the icon's top edge always
-sits exactly at `--vd-item-pad-top` — even when tight row heights
-flex-shrink the icon box and label vertically (the icon top never moves;
-its center would). Entering arrange fades the dot layer in with a 140ms
-opacity-only animation (`vela-guides-in`, disabled under
-`prefers-reduced-motion`); the desktop stays the wallpaper, not a field
-of empty card slots. The visual contract — borderless/fill-less guides,
-marker ≤ 8px — is pinned by `home-shell-css.test.ts`.
+Placement is percent geometry inside `.vela-canvas`; there is no CSS grid
+anywhere in the production renderer. In arrange mode a **snap** section draws a
+lattice overlay (`.vela-desktop__lattice` / `.vela-desktop__grid-guide`):
+`pointer-events: none`, one zero-size marker per lattice cell at the cell
+CENTER, computed from the same edge rounding the snap engine uses — so a
+marker can never disagree with where an item actually snaps. A **freeform**
+section draws no markers at all: the canvas has no lattice, and dots there
+would misdescribe the model. Entering arrange fades the marker layer in with a
+140ms opacity-only animation (`vela-guides-in`, disabled under
+`prefers-reduced-motion`); the desktop stays the wallpaper, not a field of
+empty card slots. The visual contract — borderless/fill-less markers, dot ≤
+8px — is pinned by `home-shell-css.test.ts`.
 
 ### Drop = snapped and still (014-D)
 
@@ -195,11 +186,13 @@ rewriting, no `new URL()` parsing — `https://`, `http://` and custom
 protocols (`obsidian://`, `steam://`, …) are all valid. Icons default to
 an auto-generated text icon (`source: "auto"` — first two code points of
 the name, uppercased where applicable) that keeps following renames
-until the user picks a custom icon. The app is placed on the active page
-with nearest-free 1x1 placement (`addAppToPage`), staged, and a
-follow-up sync is fired; a sync failure never removes the icon. The
-visual identity (library icon, text, size, colors, decoration) is edited
-afterwards via the context menu — see
+until the user picks a custom icon. The app is placed on the active page at
+the next cascade position with one lattice cell as its default rect
+(`addAppToPage`), staged, and a follow-up sync is fired; a sync failure never
+removes the icon. Placement never fails for space — a canvas page accepts
+overlap — and a legacy page is materialized into canvas geometry by this very
+first edit. The visual identity (library icon, text, colors, decoration) is
+edited afterwards via the context menu — see
 [app-visual-system.md](./app-visual-system.md).
 
 ## App visual editing (016-A, revised in 016-C)
@@ -211,19 +204,19 @@ scrolling body: icon source (the paginated self-hosted catalog, or
 auto/custom text, or an uploaded image since 016-B), Auto- or-hex
 foreground/decoration colors and the four decoration styles, rendered
 live in a draft preview through the shared AppIconRenderer. The size
-slider is gone — size is edited by dragging the icon's corners in Arrange
-mode (see [app-resize.md](./app-resize.md)) and the header says so. Only
-Save stages anything (via `replaceApp`, which preserves page, folder,
+slider is gone — tile size and shape are edited by dragging the rect's handles
+in Arrange mode (see [app-resize.md](./app-resize.md)) and the header says so.
+Only Save stages anything (via `replaceApp`, which preserves page, folder,
 dock placement and the current icon scale); Cancel never mutates. Edit
 App keeps its name/URL/open-mode scope and only recalculates initials for
 auto-sourced generated icons.
 
-## Arrange icon resize (016-C)
+## Arrange tile resize (016-C)
 
-Selecting a single app in Arrange mode adds four corner handles that
-scale its icon uniformly around the tile's center. The gesture writes a
-transient CSS variable only, commits once at pointerup, and never touches
-the layout, the movement history or `GridDefinition`. Full design in
+Selecting a single app in Arrange mode adds EIGHT handles to its rect: four
+corners that change both axes and four edges that change one axis each.
+Dragging writes a transient preview only, commits once at pointerup, and
+records one geometry entry in the arrange canvas history. Full design in
 [app-resize.md](./app-resize.md).
 
 ## Launch

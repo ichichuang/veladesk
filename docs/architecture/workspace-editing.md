@@ -22,8 +22,9 @@ and entity/desktop context menus.
 
 ## Container model
 
-An entity has at most one **main container**: a page layout item, a
-folder child, or nothing (unplaced). The dock is an orthogonal reference
+An entity has at most one **main container**: an item on a page (a canvas
+item, or a legacy grid item on a page that has no canvas yet), a folder child,
+or nothing (unplaced). The dock is an orthogonal reference
 list — pin/unpin never inspects or changes the main container, which is
 why a pinned app stays pinned across page→folder and folder→page moves.
 
@@ -31,31 +32,31 @@ why a pinned app stays pinned across page→folder and folder→page moves.
 
 Folders contain apps only (validated by the domain), never nested
 folders. V1 folders are created empty (`folder-must-be-empty` otherwise)
-and get a 1x1 nearest-free placement like an app.
+and take the target page's next canvas cascade rect like an app.
 
 ## Moving
 
-`moveAppToFolder` is the real container move: the id is stripped from all
-page layouts and all folder children, then appended to the target folder;
-the entity keeps its `entities` index and the dock is untouched.
-`moveAppToPage` is the reverse for folder/unplaced apps: nearest-free
-placement is computed first, `no-space` fails atomically, and success
-clears folder membership. Moving into the current folder is
-`already-in-folder`; moving a page app is `already-on-page`.
+`moveAppToFolder` is the real container move: the id is stripped from every
+page geometry source and all folder children, then appended to the target
+folder; the entity keeps its `entities` index and the dock is untouched.
+`moveAppToPage` is the reverse for folder/unplaced apps: the app takes the
+target page's next canvas cascade rect and folder membership is cleared in the
+same edit. Moving into the current folder is `already-in-folder`; moving a
+page app is `already-on-page`.
 The Move-to-Folder chooser applies a UI-only usability filter: target
 folders must be reachable (placed on any page or dock-pinned), so an app
 is never moved into an invisible unplaced folder.
 
 ## Safe deletion
 
-`deleteApp` removes the entity plus every reference — page items, folder
-children, dock pins — so no dangling id can survive. Deleting a folder is
-a **dissolve** (`dissolveFolderToPage`): the folder shell (entity, layout
-item, dock pin) disappears and its children return to the target page as
-visible 1x1 items, in children order, placed nearest-free starting from
-the folder's own anchor when it lived on that page. The operation is
-atomic — if any child does not fit, nothing changes. Children never
-become invisible unplaced data.
+`deleteApp` removes the entity plus every reference — canvas items, legacy
+layout items, folder children, dock pins — so no dangling id can survive.
+Deleting a folder is a **dissolve** (`dissolveFolderToPage`): the folder shell
+(entity, canvas item, legacy layout item, dock pin) disappears and its
+children return to the target page as visible rects, in children order,
+cascading from the folder's own rect when it lived on that page. The
+operation is atomic and overlap is legal, so a dissolve never fails for lack
+of room. Children never become invisible unplaced data.
 
 ## Dock
 
@@ -96,12 +97,12 @@ position or the previous one at the end). All failures are typed
 
 Apps move BETWEEN sections with `relocateAppToPage` — unlike the older
 folder→desktop `moveAppToPage` (kept, unchanged), it accepts apps from
-anywhere: every page-layout item and folder-child reference is stripped
-on a working copy, then a 1×1 nearest-free placement lands on the target
-page. The dock is untouched (pins survive), the entity array keeps every
-entry, `already-on-page` and atomic `no-space` failures return the input
-completely unchanged. The web shell exposes this as the 移到分区… /
-Move to Section… dialog.
+anywhere: every geometry and folder-child reference is stripped on a working
+copy, then the app is appended to the target canvas, preserving its rect SIZE
+when it came from another canvas page. The dock is untouched (pins survive),
+the entity array keeps every entry, and `already-on-page` returns the input
+completely unchanged — the move itself cannot fail for space. The web shell
+exposes this as the 移到分区… / Move to Section… dialog.
 
 ## Folder legacy policy
 

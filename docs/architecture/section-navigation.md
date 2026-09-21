@@ -10,8 +10,8 @@ A `DesktopPage` is user-facing: UI zh 分区, UI en Section.
   a `<section class="vela-section">` inside one real scroll container
   (`.vela-section-stack`). Each section is exactly one viewport tall
   (`block-size: 100%`, `min-block-size: 100%`) and never scrolls
-  internally (`overflow: hidden`) — a full section returns `no-space` and
-  the user creates another section or moves apps, instead of scrolling.
+  internally (`overflow: hidden`) — content that no longer fits is resized or
+  rearranged on the section's canvas (016-C), never scrolled.
 - **Real scroll position is the source of truth.** The shell no longer
   commands a session page and then tries to move the scroll position; the
   actual scroll position drives an IntersectionObserver, and

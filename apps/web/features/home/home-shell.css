@@ -887,11 +887,15 @@ button.vela-section-nav__sync:focus-visible {
 }
 
 /* The decoration surface fills the WHOLE rect: a landscape rect paints a
-   landscape tile, never a square scaled up inside a transparent wrapper. */
+   landscape tile, never a square scaled up inside a transparent wrapper.
+   The wrapper is the QUERY CONTAINER of the tile's internal sizes: container
+   units used by the tile itself would otherwise resolve against the viewport
+   (an element is never its own container). */
 .vela-item__icon-wrap {
   position: absolute;
   inset: 0;
   display: block;
+  container-type: size;
 }
 
 /* View mode only: the hover lift is decorative, so it may ease. Arrange mode
@@ -949,8 +953,8 @@ button.vela-section-nav__sync:focus-visible {
 }
 
 .vela-canvas .vela-item__icon--folder svg {
-  width: 58%;
-  height: 58%;
+  width: min(58cqmin, 180px);
+  height: min(58cqmin, 180px);
 }
 
 /*
@@ -1028,29 +1032,35 @@ button.vela-section-nav__sync:focus-visible {
 
 /*
  * On the desktop canvas the tile IS the rect: it fills the item box, and
- * every internal dimension is measured against the SMALLER side (cqmin), so
- * a wide or tall rect keeps a centered, proportional glyph instead of a
- * stretched one. `iconScale` stays exactly what it always was for legacy
- * data — a multiplier for the glyph INSIDE the tile, never tile geometry.
+ * every internal dimension is measured against the SMALLER side of that box
+ * (cqmin), so a wide or tall rect keeps a centered, proportional glyph
+ * instead of a stretched one. The glyph itself is capped — a full-canvas
+ * tile should not paint a 500px logo — but the TILE has no size cap: the
+ * rect is whatever the user resized it to. `iconScale` stays exactly what it
+ * always was for legacy data: a multiplier for the glyph inside the tile,
+ * never tile geometry.
  */
 .vela-canvas .vela-app-icon {
   position: absolute;
   inset: 0;
   width: auto;
   height: auto;
-  container-type: size;
-  border-radius: max(8px, 22cqmin);
-  font-size: max(11px, calc(34cqmin * var(--vd-app-icon-scale, 1)));
+  border-radius: clamp(8px, 22cqmin, 26px);
+  font-size: max(11px, min(calc(34cqmin * var(--vd-app-icon-scale, 1)), 96px));
 }
 
 .vela-canvas .vela-app-icon__glyph {
-  width: calc(62cqmin * var(--vd-app-icon-scale, 1));
-  height: calc(62cqmin * var(--vd-app-icon-scale, 1));
+  width: min(calc(62cqmin * var(--vd-app-icon-scale, 1)), 192px);
+  height: min(calc(62cqmin * var(--vd-app-icon-scale, 1)), 192px);
 }
 
 /* An uploaded image keeps its own aspect ratio inside the rect: contain,
-   never cropped, never stretched. */
+   never cropped, never stretched. It is taken OUT OF FLOW on purpose — an
+   in-flow image would size the tile's grid row from its own intrinsic ratio
+   and push the tile past the rect it is supposed to fill. */
 .vela-canvas .vela-app-icon__image {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;

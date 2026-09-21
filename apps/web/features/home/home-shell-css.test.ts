@@ -132,9 +132,12 @@ describe("home-shell.css canvas geometry contract (016-C)", () => {
     const tile = ruleBlock(".vela-canvas .vela-app-icon");
     expect(tile).toMatch(/position:\s*absolute/);
     expect(tile).toMatch(/inset:\s*0/);
-    // cqmin = the smaller of the rect's two axes, so a landscape tile keeps a
-    // centered, unstretched glyph.
-    expect(tile).toMatch(/container-type:\s*size/);
+    // An element is never its own query container, so the WRAP declares the
+    // container and the tile's cqmin resolves against the rect's smaller side
+    // (which is what keeps a landscape tile's glyph centered and unstretched).
+    expect(tile).not.toMatch(/container-type/);
+    expect(ruleBlock(".vela-item__icon-wrap")).toMatch(/container-type:\s*size/);
+    expect(tile).toMatch(/cqmin/);
 
     const glyph = ruleBlock(".vela-canvas .vela-app-icon__glyph");
     expect(glyph).toMatch(/62cqmin/);

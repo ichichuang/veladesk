@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from "@dnd-kit/react";
 import type { CanvasLayout } from "@veladesk/canvas-engine";
+import { areCanvasLayoutsEqual } from "@veladesk/canvas-engine";
 import type { GridDefinition, LayoutItemId } from "@veladesk/desktop-engine";
 
 import { areCanvasPixelMetricsEqual } from "./canvas-metrics";
@@ -216,7 +217,11 @@ export function useCanvasDrag({
     }
 
     // The canvas this drag started from is no longer current: stale session.
-    if (canvasRef.current !== session.canvasAtStart) {
+    // The comparison is STRUCTURAL on purpose — a legacy page renders from a
+    // freshly derived canvas object on every render, so identity would drop
+    // every commit on a page that has not been materialized yet.
+    const currentCanvas = canvasRef.current;
+    if (currentCanvas === null || !areCanvasLayoutsEqual(currentCanvas, session.canvasAtStart)) {
       setDragging(false);
       clearPreview(session);
       return;

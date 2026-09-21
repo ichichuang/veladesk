@@ -600,8 +600,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       }
       const page = findDesktopPage(current.snapshot, pageId);
       // The drag session already rejected stale canvases; this re-check pins
-      // the commit to the exact workspace state the drag started from.
-      if (page === undefined || resolvePageCanvas(page) !== canvasAtStart) {
+      // the commit to the exact workspace state the drag started from. It is
+      // structural because a legacy page derives its canvas per render.
+      if (page === undefined || !areCanvasLayoutsEqual(resolvePageCanvas(page), canvasAtStart)) {
         return;
       }
       if (areCanvasLayoutsEqual(movedCanvas, canvasAtStart)) {
@@ -666,7 +667,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         }
         const current = workspaceRef.current;
         const page = findDesktopPage(current.snapshot, pageId);
-        if (page === undefined || resolvePageCanvas(page) !== base.present) {
+        if (page === undefined || !areCanvasLayoutsEqual(resolvePageCanvas(page), base.present)) {
           // The canvas moved on since reconciliation — reset this page's
           // history instead of writing a stale snapshot.
           if (page !== undefined) {
