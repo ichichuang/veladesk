@@ -62,6 +62,7 @@ describe("locale isolation from workspace data", () => {
       expect(Object.keys(preferences).sort()).toEqual([
         "appearance",
         "defaultPageId",
+        "gridGapPx",
         "layoutLocked",
       ]);
       // Locale only affects UI strings, never the preference payload.

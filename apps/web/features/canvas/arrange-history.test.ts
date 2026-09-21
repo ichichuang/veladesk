@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { areCanvasLayoutsEqual } from "@veladesk/canvas-engine";
-import type { CanvasLayout, CanvasLayoutV1 } from "@veladesk/canvas-engine";
+import type { PagePlacement } from "@veladesk/domain";
 
 import {
   canRedo,
@@ -16,17 +16,23 @@ import {
 } from "./arrange-history";
 import type { ArrangeCanvasHistories } from "./arrange-history";
 
-const canvas = (itemX: number): CanvasLayoutV1 => ({
-  version: 1,
+const canvas = (itemX: number): PagePlacement => ({
+  version: 2,
   mode: "freeform",
   items: [{ id: "a", rect: { x: itemX, y: 0, width: 1000, height: 1000 } }],
 });
 
-const otherCanvas = (itemX: number): CanvasLayoutV1 => ({
-  version: 1,
-  mode: "snap",
+const otherCanvas = (itemX: number): PagePlacement => ({
+  version: 2,
+  mode: "freeform",
   items: [{ id: "d", rect: { x: itemX, y: 0, width: 1000, height: 1000 } }],
 });
+
+function freeformWith(
+  items: readonly { id: string; rect: { x: number; y: number; width: number; height: number } }[],
+): PagePlacement {
+  return { version: 2, mode: "freeform", items };
+}
 
 function rectX(histories: ArrangeCanvasHistories, pageId: string): number | undefined {
   const item = historyForPage(histories, pageId)?.present.items[0];
@@ -51,10 +57,11 @@ describe("arrange canvas history", () => {
   it("records moves and resizes and undoes/redoes them", () => {
     let histories = commitPageCanvas({}, "page-1", canvas(1000));
     // A resize is just another geometry edit for the history.
-    histories = commitPageCanvas(histories, "page-1", {
-      ...canvas(1000),
-      items: [{ id: "a", rect: { x: 1000, y: 0, width: 4000, height: 500 } }],
-    });
+    histories = commitPageCanvas(
+      histories,
+      "page-1",
+      freeformWith([{ id: "a", rect: { x: 1000, y: 0, width: 4000, height: 500 } }]),
+    );
     expect(canUndo(histories, "page-1")).toBe(true);
 
     histories = undoPageCanvas(histories, "page-1");
@@ -90,10 +97,9 @@ describe("arrange canvas history", () => {
 
     // A stage ack / IndexedDB round-trip produces a fresh object with the
     // same content: past/future survive, only the present is rebased.
-    const freshReference: CanvasLayout = {
-      ...canvas(2000),
-      items: [{ id: "a", rect: { x: 2000, y: 0, width: 1000, height: 1000 } }],
-    };
+    const freshReference: PagePlacement = freeformWith([
+      { id: "a", rect: { x: 2000, y: 0, width: 1000, height: 1000 } },
+    ]);
     expect(areCanvasLayoutsEqual(before!.present, freshReference)).toBe(true);
 
     const reconciled = reconcilePageCanvasHistory(histories, "page-1", freshReference);
@@ -118,13 +124,10 @@ describe("arrange canvas history", () => {
 
     // An added/removed entity changes the item set: undo must not be able to
     // bring back a canvas referencing items that are gone.
-    const external: CanvasLayout = {
-      ...canvas(3000),
-      items: [
-        { id: "a", rect: { x: 3000, y: 0, width: 1000, height: 1000 } },
-        { id: "b", rect: { x: 4000, y: 0, width: 1000, height: 1000 } },
-      ],
-    };
+    const external: PagePlacement = freeformWith([
+      { id: "a", rect: { x: 3000, y: 0, width: 1000, height: 1000 } },
+      { id: "b", rect: { x: 4000, y: 0, width: 1000, height: 1000 } },
+    ]);
     const reconciled = reconcilePageCanvasHistory(histories, "page-1", external);
     const history = historyForPage(reconciled, "page-1");
     expect(history?.past).toHaveLength(0);
@@ -136,7 +139,12 @@ describe("arrange canvas history", () => {
     histories = commitPageCanvas(histories, "page-1", canvas(2000));
     expect(canUndo(histories, "page-1")).toBe(true);
 
-    const switched: CanvasLayout = { ...canvas(2000), mode: "snap" };
+    const switched: PagePlacement = {
+      version: 2,
+      mode: "grid",
+      columns: 6,
+      items: [{ id: "a", column: 0, row: 0, columnSpan: 1, rowSpan: 1 }],
+    };
     const reset = resetPageCanvasHistory(histories, "page-1", switched);
 
     expect(canUndo(reset, "page-1")).toBe(false);

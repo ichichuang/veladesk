@@ -1,196 +1,182 @@
 import { describe, expect, it } from "vitest";
-import type { CanvasLayout, CanvasLayoutItem, CanvasLayoutV1 } from "@veladesk/canvas-engine";
-import type { GridDefinition } from "@veladesk/desktop-engine";
+import type { GridCanvasItem, CanvasLayoutItem } from "@veladesk/canvas-engine";
+import type { PagePlacement } from "@veladesk/domain";
 
-import { commitCanvasDrag, previewCanvasDrag } from "./canvas-drag";
+import { commitCanvasDrag, isCanvasDragNoop, previewCanvasDrag } from "./canvas-drag";
 import type { CanvasPixelMetrics } from "./canvas-metrics";
 
-/** 10 units per pixel horizontally, 12.5 vertically. */
+/** Freeform: 10 units per pixel horizontally, 12.5 vertically. */
 const metrics: CanvasPixelMetrics = { width: 1000, height: 800 };
-const grid: GridDefinition = { columns: 10, rows: 8 };
 
-function canvas(mode: "snap" | "freeform", items: readonly CanvasLayoutItem[]): CanvasLayoutV1 {
-  return { version: 1, mode, items };
+function freeform(items: readonly CanvasLayoutItem[]): PagePlacement {
+  return { version: 2, mode: "freeform", items };
 }
 
-const freeform = canvas("freeform", [
+function grid(items: readonly GridCanvasItem[], columns = 6): PagePlacement {
+  return { version: 2, mode: "grid", columns, items };
+}
+
+const freeformPair = freeform([
   { id: "a", rect: { x: 0, y: 0, width: 1000, height: 1000 } },
   { id: "b", rect: { x: 2000, y: 0, width: 1000, height: 1000 } },
 ]);
 
-const snap = canvas("snap", [
-  { id: "a", rect: { x: 0, y: 0, width: 1000, height: 1250 } },
-  { id: "b", rect: { x: 3000, y: 0, width: 1000, height: 1250 } },
+const gridPair = grid([
+  { id: "a", column: 1, row: 1, columnSpan: 2, rowSpan: 1 },
+  { id: "b", column: 4, row: 2, columnSpan: 1, rowSpan: 2 },
+  { id: "c", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
 ]);
 
-function rectOf(layout: CanvasLayout | null, index: number) {
-  const item = layout?.items[index];
-  return item !== undefined && "rect" in item ? item.rect : undefined;
-}
-
 describe("previewCanvasDrag — freeform", () => {
-  it("translates continuously in logical units", () => {
+  it("translates continuously — the preview returns the applied pixel delta", () => {
     const preview = previewCanvasDrag({
-      canvas: freeform,
-      itemIds: ["a"],
-      deltaX: 30,
-      deltaY: 40,
-      metrics,
-      grid,
-    });
-    expect(preview.translation).toEqual({ x: 300, y: 500 });
-    // The pixel form is what the preview transform uses, so the rendered
-    // translation matches the committed one exactly.
-    expect(preview.appliedX).toBeCloseTo(30, 6);
-    expect(preview.appliedY).toBeCloseTo(40, 6);
-  });
-
-  it("moves a group rigidly with one delta", () => {
-    const preview = previewCanvasDrag({
-      canvas: freeform,
-      itemIds: ["a", "b"],
-      deltaX: 30,
-      deltaY: 0,
-      metrics,
-      grid,
-    });
-    expect(preview.translation).toEqual({ x: 300, y: 0 });
-  });
-
-  it("lands on non-lattice coordinates", () => {
-    const moved = commitCanvasDrag({
-      canvas: freeform,
+      placement: freeformPair,
       itemIds: ["a"],
       deltaX: 13,
-      deltaY: 7,
+      deltaY: 11,
       metrics,
-      grid,
+      pitchPx: 1,
     });
-    expect(rectOf(moved, 0)).toEqual({ x: 130, y: 88, width: 1000, height: 1000 });
+    // 13px → 130 logical units → clamped unchanged → back to 13px; the
+    // y axis rounds to 138 units → 11.04px on the 800px-tall canvas.
+    expect(preview.appliedX).toBeCloseTo(13, 2);
+    expect(preview.appliedY).toBeCloseTo(11.04, 2);
   });
 
-  it("clamps the whole selection once, at the canvas edge", () => {
-    const atEdge = canvas("freeform", [
-      { id: "a", rect: { x: 9000, y: 0, width: 1000, height: 1000 } },
-    ]);
+  it("clamps the whole group once at the canvas edge", () => {
     const preview = previewCanvasDrag({
-      canvas: atEdge,
-      itemIds: ["a"],
-      deltaX: 50,
+      placement: freeformPair,
+      itemIds: ["a", "b"],
+      deltaX: 9000,
       deltaY: 0,
       metrics,
-      grid,
+      pitchPx: 1,
     });
-    expect(preview.translation).toEqual({ x: 0, y: 0 });
-    expect(
-      commitCanvasDrag({ canvas: atEdge, itemIds: ["a"], deltaX: 50, deltaY: 0, metrics, grid }),
-    ).toBeNull();
-  });
-
-  it("allows dragging an item onto another one", () => {
-    const moved = commitCanvasDrag({
-      canvas: freeform,
-      itemIds: ["a"],
-      deltaX: 150,
-      deltaY: 0,
-      metrics,
-      grid,
-    });
-    expect(moved === null ? null : [rectOf(moved, 0)?.x, rectOf(moved, 1)?.x]).toEqual([1500, 2000]);
+    // b's right edge (3000 + 1000) clamps the group to 7000 logical units
+    // → 700px on a 1000px-wide canvas.
+    expect(preview.appliedX).toBeCloseTo(700, 2);
+    expect(preview.appliedY).toBe(0);
   });
 });
 
-describe("previewCanvasDrag — snap", () => {
-  it("resolves one snapped delta from the group anchor", () => {
-    const preview = previewCanvasDrag({
-      canvas: snap,
-      itemIds: ["a", "b"],
-      deltaX: 60,
-      deltaY: 60,
-      metrics,
-      grid,
-    });
-    // 60px = 600 units → the anchor snaps to the next column line (1000) and
-    // to the next row line (1250); ONE delta moves the whole group.
-    expect(preview.translation).toEqual({ x: 1000, y: 1250 });
-    expect(preview.appliedX).toBeCloseTo(100, 6);
-    expect(preview.appliedY).toBeCloseTo(100, 6);
+describe("previewCanvasDrag — grid", () => {
+  it("rounds pointer pixels to whole cells through the pitch", () => {
+    // Pitch 88px: 100px → 1 cell; 150px → 2 cells; 40px → 0 cells. The item
+    // sits mid-grid so no bound clamps the delta.
+    const floating = grid([
+      { id: "solo", column: 3, row: 4, columnSpan: 1, rowSpan: 1 },
+    ]);
+    for (const [deltaPx, cells] of [
+      [100, 1],
+      [150, 2],
+      [40, 0],
+      [-100, -1],
+      [-140, -2],
+    ] as const) {
+      const preview = previewCanvasDrag({
+        placement: floating,
+        itemIds: ["solo"],
+        deltaX: deltaPx,
+        deltaY: 0,
+        metrics,
+        pitchPx: 88,
+      });
+      expect(preview.appliedX).toBe(cells * 88);
+    }
   });
 
-  it("keeps relative geometry of a mixed group", () => {
-    const mixed = canvas("snap", [
-      { id: "a", rect: { x: 0, y: 0, width: 1000, height: 1250 } },
-      { id: "b", rect: { x: 4000, y: 2500, width: 3000, height: 1250 } },
-    ]);
+  it("applies one rigid cell delta to the whole selection", () => {
     const moved = commitCanvasDrag({
-      canvas: mixed,
+      placement: gridPair,
       itemIds: ["a", "b"],
-      deltaX: 60,
+      deltaX: 88,
+      deltaY: 176,
+      metrics,
+      pitchPx: 88,
+    });
+    expect(moved).not.toBeNull();
+    const items = moved?.items ?? [];
+    expect(items[0]).toMatchObject({ id: "a", column: 2, row: 3 });
+    expect(items[1]).toMatchObject({ id: "b", column: 5, row: 4 });
+    expect(items[2]).toMatchObject({ id: "c", column: 0, row: 0 });
+  });
+
+  it("clamps horizontally inside the column count", () => {
+    const moved = commitCanvasDrag({
+      placement: gridPair,
+      itemIds: ["a"],
+      deltaX: 88 * 10,
       deltaY: 0,
       metrics,
-      grid,
+      pitchPx: 88,
     });
-
-    expect(rectOf(moved, 0)?.x).toBe(1000);
-    expect(rectOf(moved, 1)?.x).toBe(5000);
-    expect((rectOf(moved, 1)?.y ?? 0) - (rectOf(moved, 0)?.y ?? 0)).toBe(2500);
+    // a spans columns 1..3; rightmost legal start is 4 → delta clamps to 3.
+    expect(moved?.items[0]).toMatchObject({ column: 4 });
   });
 
-  it("stays put when the pointer has not crossed a lattice line", () => {
-    const preview = previewCanvasDrag({
-      canvas: snap,
+  it("clamps at row 0 and grows downward without bound", () => {
+    const up = commitCanvasDrag({
+      placement: gridPair,
       itemIds: ["a"],
-      deltaX: 30,
-      deltaY: 30,
+      deltaX: 0,
+      deltaY: -88 * 100,
       metrics,
-      grid,
+      pitchPx: 88,
     });
-    expect(preview.translation).toEqual({ x: 0, y: 0 });
-    expect(
-      commitCanvasDrag({ canvas: snap, itemIds: ["a"], deltaX: 30, deltaY: 30, metrics, grid }),
-    ).toBeNull();
-  });
+    expect(up?.items[0]).toMatchObject({ row: 0 });
 
-  it("never rejects a drop onto an occupied lattice cell", () => {
-    const overlapping = canvas("snap", [
-      { id: "a", rect: { x: 0, y: 0, width: 1000, height: 1250 } },
-      { id: "b", rect: { x: 1000, y: 0, width: 1000, height: 1250 } },
-    ]);
-    const moved = commitCanvasDrag({
-      canvas: overlapping,
+    const down = commitCanvasDrag({
+      placement: gridPair,
       itemIds: ["a"],
-      deltaX: 60,
-      deltaY: 0,
+      deltaX: 0,
+      deltaY: 88 * 500,
       metrics,
-      grid,
+      pitchPx: 88,
     });
-    expect(moved === null ? null : [rectOf(moved, 0)?.x, rectOf(moved, 1)?.x]).toEqual([1000, 1000]);
-  });
-});
-
-describe("commitCanvasDrag", () => {
-  it("returns null for a selection that resolves back to where it was", () => {
-    expect(
-      commitCanvasDrag({ canvas: freeform, itemIds: ["a"], deltaX: 0, deltaY: 0, metrics, grid }),
-    ).toBeNull();
+    expect(down?.items[0]).toMatchObject({ row: 501 });
   });
 
-  it("returns null for an unknown selection", () => {
-    expect(
-      commitCanvasDrag({ canvas: freeform, itemIds: ["ghost"], deltaX: 30, deltaY: 0, metrics, grid }),
-    ).toBeNull();
-  });
-
-  it("leaves unselected items and the mode untouched", () => {
-    const moved = commitCanvasDrag({
-      canvas: freeform,
+  it("returns null for a sub-threshold (no-op) drag", () => {
+    const args = {
+      placement: gridPair,
       itemIds: ["a"],
       deltaX: 30,
       deltaY: 0,
       metrics,
-      grid,
+      pitchPx: 88,
+    } as const;
+    expect(isCanvasDragNoop(args)).toBe(true);
+    expect(commitCanvasDrag(args)).toBeNull();
+  });
+});
+
+describe("commitCanvasDrag — freeform", () => {
+  it("moves items by the clamped logical delta and returns null on no-op", () => {
+    const moved = commitCanvasDrag({
+      placement: freeformPair,
+      itemIds: ["a", "b"],
+      deltaX: 100,
+      deltaY: -40,
+      metrics,
+      pitchPx: 1,
     });
-    expect(moved?.items[1]).toBe(freeform.items[1]);
-    expect(moved?.mode).toBe("freeform");
+    const items = moved?.items ?? [];
+    const a = items[0];
+    const b = items[1];
+    if (a !== undefined && "rect" in a && b !== undefined && "rect" in b) {
+      expect(a.rect.x).toBe(1000);
+      expect(b.rect.x).toBe(3000);
+      expect(a.rect.y).toBe(0);
+    }
+
+    const noop = commitCanvasDrag({
+      placement: freeformPair,
+      itemIds: ["a"],
+      deltaX: 0,
+      deltaY: 0,
+      metrics,
+      pitchPx: 1,
+    });
+    expect(noop).toBeNull();
   });
 });

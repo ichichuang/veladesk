@@ -1,76 +1,75 @@
 import { describe, expect, it } from "vitest";
-import type { CanvasLayout } from "@veladesk/canvas-engine";
+import type { CanvasRect, GridCanvasItem } from "@veladesk/canvas-engine";
+import type { PagePlacement } from "@veladesk/domain";
 
 import {
   isCanvasHandoffCaughtUp,
   reconcileCanvasHandoff,
-  resolveDisplayCanvas,
+  resolveDisplayPlacement,
 } from "./canvas-handoff";
 import type { PendingCanvasHandoff } from "./canvas-handoff";
 
-function canvas(x: number, mode: "snap" | "freeform" = "freeform"): CanvasLayout {
-  return { version: 1, mode, items: [{ id: "a", rect: { x, y: 0, width: 1000, height: 1000 } }] };
+function freeform(x: number): PagePlacement {
+  return {
+    version: 2,
+    mode: "freeform",
+    items: [{ id: "a", rect: rect(x) }],
+  };
 }
 
-function handoff(pageId: string, pendingCanvas: CanvasLayout, token = 1): PendingCanvasHandoff {
-  return { token, pageId, canvas: pendingCanvas };
+function grid(column: number): PagePlacement {
+  return {
+    version: 2,
+    mode: "grid",
+    columns: 6,
+    items: [gitem("a", column, 0)],
+  };
 }
 
-describe("resolveDisplayCanvas", () => {
+function rect(x: number): CanvasRect {
+  return { x, y: 0, width: 1000, height: 1000 };
+}
+
+function gitem(id: string, column: number, row: number): GridCanvasItem {
+  return { id, column, row, columnSpan: 1, rowSpan: 1 };
+}
+
+function handoff(pageId: string, placement: PagePlacement, token = 1): PendingCanvasHandoff {
+  return { token, pageId, placement };
+}
+
+describe("resolveDisplayPlacement", () => {
   it("prefers the handoff while it targets the active page", () => {
-    expect(resolveDisplayCanvas(handoff("page-1", canvas(2000)), "page-1", canvas(1000))).toEqual(
-      canvas(2000),
+    expect(resolveDisplayPlacement(handoff("page-1", freeform(500)), "page-1", freeform(0))).toEqual(
+      freeform(500),
     );
-  });
-
-  it("ignores a handoff for another page", () => {
-    expect(resolveDisplayCanvas(handoff("page-2", canvas(2000)), "page-1", canvas(1000))).toEqual(
-      canvas(1000),
+    expect(resolveDisplayPlacement(handoff("page-2", freeform(500)), "page-1", freeform(0))).toEqual(
+      freeform(0),
     );
-  });
-
-  it("renders the authoritative canvas without a handoff", () => {
-    const authoritative = canvas(1000);
-    expect(resolveDisplayCanvas(null, "page-1", authoritative)).toBe(authoritative);
+    expect(resolveDisplayPlacement(null, "page-1", grid(3))).toEqual(grid(3));
   });
 });
 
 describe("isCanvasHandoffCaughtUp", () => {
-  it("treats a missing handoff or page as caught up", () => {
-    expect(isCanvasHandoffCaughtUp(null, canvas(1000))).toBe(true);
-    expect(isCanvasHandoffCaughtUp(handoff("page-1", canvas(2000)), undefined)).toBe(true);
-  });
-
-  it("compares structure, not identity", () => {
-    expect(isCanvasHandoffCaughtUp(handoff("page-1", canvas(2000)), canvas(2000))).toBe(true);
-    expect(isCanvasHandoffCaughtUp(handoff("page-1", canvas(2000)), canvas(1000))).toBe(false);
+  it("is true once the authoritative placement is equal", () => {
+    expect(isCanvasHandoffCaughtUp(handoff("p", grid(2)), grid(2))).toBe(true);
+    expect(isCanvasHandoffCaughtUp(handoff("p", grid(2)), grid(3))).toBe(false);
+    expect(isCanvasHandoffCaughtUp(null, grid(3))).toBe(true);
+    expect(isCanvasHandoffCaughtUp(handoff("p", grid(2)), undefined)).toBe(true);
   });
 });
 
 describe("reconcileCanvasHandoff", () => {
-  it("drops the override once the authoritative canvas caught up", () => {
-    expect(reconcileCanvasHandoff(handoff("page-1", canvas(2000)), canvas(2000), false)).toBeNull();
+  it("keeps the override while the durable stage is in flight", () => {
+    const pending = handoff("p", grid(5));
+    expect(reconcileCanvasHandoff(pending, grid(1), false)).toBe(pending);
   });
 
-  it("keeps the override while the stage is still in flight", () => {
-    const pending = handoff("page-1", canvas(2000));
-    expect(reconcileCanvasHandoff(pending, canvas(1000), false)).toBe(pending);
-  });
-
-  it("yields to the authoritative canvas after a settled attempt", () => {
-    // A settled stage whose canvas never matched is the failed-write revert:
-    // the display falls back instead of shadowing the truth forever.
-    expect(reconcileCanvasHandoff(handoff("page-1", canvas(2000)), canvas(1000), true)).toBeNull();
-  });
-
-  it("drops the override when the page vanished", () => {
-    expect(reconcileCanvasHandoff(handoff("page-1", canvas(2000)), undefined, false)).toBeNull();
-    expect(reconcileCanvasHandoff(null, canvas(1000), false)).toBeNull();
-  });
-
-  it("never mutates the handoff it keeps", () => {
-    const pending = handoff("page-1", canvas(2000), 7);
-    const kept = reconcileCanvasHandoff(pending, canvas(1000), false);
-    expect(kept).toEqual({ token: 7, pageId: "page-1", canvas: canvas(2000) });
+  it("drops it once caught up, once the page vanished, or once settled elsewhere", () => {
+    const pending = handoff("p", grid(5));
+    expect(reconcileCanvasHandoff(pending, grid(5), false)).toBeNull();
+    expect(reconcileCanvasHandoff(pending, undefined, false)).toBeNull();
+    expect(reconcileCanvasHandoff(pending, grid(1), true)).toBeNull();
+    expect(reconcileCanvasHandoff(null, grid(1), false)).toBeNull();
   });
 });

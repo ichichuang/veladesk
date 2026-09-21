@@ -169,7 +169,8 @@ export function maxOccupiedRow(items: readonly GridCanvasItem[]): number {
   return max;
 }
 
-interface GridCellRect extends Omit<GridCanvasItem, "id"> {}
+/** Cell geometry without the id — placement candidates and overlap checks. */
+type GridCellRect = Omit<GridCanvasItem, "id">;
 
 function cellsOverlap(a: GridCellRect, b: GridCellRect): boolean {
   return (

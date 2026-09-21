@@ -1,4 +1,4 @@
-import type { CanvasPlacementMode } from "@veladesk/canvas-engine";
+import type { PagePlacementMode } from "@veladesk/canvas-engine";
 
 import type { TranslateFn } from "../i18n/use-i18n";
 import type { LocalWorkspaceSyncState } from "@veladesk/local-store";
@@ -19,6 +19,8 @@ export type DesktopMenuEntry =
        * and exposes the row as a radio item.
        */
       readonly checked?: boolean;
+      /** Tooltip text — the localized reason a disabled row is refused. */
+      readonly reason?: string;
       readonly onSelect: () => void;
     }
   | {
@@ -31,7 +33,7 @@ export interface DesktopCommandCallbacks {
   readonly onNewSection: () => void;
   readonly onSearch: () => void;
   readonly onToggleMode: () => void;
-  readonly onSetPlacementMode: (mode: CanvasPlacementMode) => void;
+  readonly onSetPlacementMode: (mode: PagePlacementMode) => void;
   readonly onUndo: () => void;
   readonly onRedo: () => void;
   readonly onSync: () => void;
@@ -45,7 +47,9 @@ export interface DesktopCommandInput {
   /** True while the arrange session is active. */
   readonly arrange: boolean;
   /** Placement mode of the ACTIVE section (persisted per section). */
-  readonly placementMode: CanvasPlacementMode;
+  readonly placementMode: PagePlacementMode;
+  /** Why the Freeform switch is refused (lossy conversion), if it is. */
+  readonly freeformBlockedReason: string | null;
   /** Arrange-history availability — false hides undo/redo entirely. */
   readonly canUndo: boolean;
   readonly canRedo: boolean;
@@ -71,7 +75,7 @@ export interface DesktopCommandInput {
 export function buildDesktopCommandEntries(
   input: DesktopCommandInput
 ): readonly DesktopMenuEntry[] {
-  const { t, arrange, placementMode, canUndo, canRedo, syncState, callbacks } = input;
+  const { t, arrange, placementMode, freeformBlockedReason, canUndo, canRedo, syncState, callbacks } = input;
 
   const entries: DesktopMenuEntry[] = [
     { kind: "action", id: "add-app", label: t("menu.addApp"), onSelect: callbacks.onAddApp },
@@ -95,21 +99,24 @@ export function buildDesktopCommandEntries(
 
   // Placement mode belongs to editing, so it is arrange-only: View renders
   // the persisted geometry and offers no way to change how it is edited.
+  // A lossy Grid→Freeform conversion is refused with its localized reason.
   if (arrange) {
     entries.push(
       { kind: "separator" },
       {
         kind: "action",
-        id: "placement-snap",
-        label: t("menu.placementSnap"),
-        checked: placementMode === "snap",
-        onSelect: () => callbacks.onSetPlacementMode("snap"),
+        id: "placement-grid",
+        label: t("menu.placementGrid"),
+        checked: placementMode === "grid",
+        onSelect: () => callbacks.onSetPlacementMode("grid"),
       },
       {
         kind: "action",
         id: "placement-freeform",
         label: t("menu.placementFreeform"),
         checked: placementMode === "freeform",
+        disabled: placementMode === "grid" && freeformBlockedReason !== null,
+        ...(freeformBlockedReason === null ? {} : { reason: freeformBlockedReason }),
         onSelect: () => callbacks.onSetPlacementMode("freeform"),
       }
     );

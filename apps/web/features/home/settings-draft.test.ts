@@ -52,6 +52,7 @@ describe("createWorkspaceSettingsDraft", () => {
       appearance: DEFAULT_WORKSPACE_APPEARANCE,
       defaultPageId: "page-1",
       layoutLocked: true,
+      gridGapPx: 16,
     });
   });
 
@@ -67,6 +68,7 @@ describe("createWorkspaceSettingsDraft", () => {
       appearance,
       defaultPageId: "page-1",
       layoutLocked: false,
+      gridGapPx: 16,
     });
   });
 });
@@ -77,6 +79,7 @@ describe("preferencesFromSettingsDraft", () => {
       appearance: { ...DEFAULT_WORKSPACE_APPEARANCE, wallpaperPreset: "dawn" },
       defaultPageId: "page-2",
       layoutLocked: false,
+      gridGapPx: 24,
     };
 
     const preferences = preferencesFromSettingsDraft(draft);
@@ -84,6 +87,7 @@ describe("preferencesFromSettingsDraft", () => {
     expect(preferences).toEqual({
       defaultPageId: "page-2",
       layoutLocked: false,
+      gridGapPx: 24,
       appearance: { ...DEFAULT_WORKSPACE_APPEARANCE, wallpaperPreset: "dawn" },
     });
     expect(preferences.appearance).not.toBe(draft.appearance);
@@ -109,6 +113,7 @@ describe("areWorkspaceSettingsDraftsEqual", () => {
     appearance: DEFAULT_WORKSPACE_APPEARANCE,
     defaultPageId: "page-1",
     layoutLocked: true,
+    gridGapPx: 16,
   };
 
   it("treats identical drafts as equal", () => {
@@ -133,5 +138,37 @@ describe("areWorkspaceSettingsDraftsEqual", () => {
 
   it("detects a layoutLocked change", () => {
     expect(areWorkspaceSettingsDraftsEqual(base, { ...base, layoutLocked: false })).toBe(false);
+  });
+
+  it("detects a grid gap change", () => {
+    expect(areWorkspaceSettingsDraftsEqual(base, { ...base, gridGapPx: 8 })).toBe(false);
+  });
+});
+
+describe("Settings V2 — hidden iconSize survives", () => {
+  it("preserves the persisted iconSize through the draft with no control for it", async () => {
+    const { replaceWorkspacePreferences, validateWorkspace } = await import("@veladesk/domain");
+    const snapshot = workspaceWith(false);
+    const withIconSize: WorkspaceSnapshot = {
+      ...snapshot,
+      preferences: {
+        ...snapshot.preferences,
+        appearance: { ...DEFAULT_WORKSPACE_APPEARANCE, iconSize: "large" },
+      },
+    };
+
+    // Change an unrelated setting (the gap) and save.
+    const draft = { ...createWorkspaceSettingsDraft(withIconSize), gridGapPx: 8 };
+    const result = replaceWorkspacePreferences(
+      withIconSize,
+      preferencesFromSettingsDraft(draft),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.workspace.preferences.appearance?.iconSize).toBe("large");
+      expect(result.workspace.preferences.gridGapPx).toBe(8);
+      expect(validateWorkspace(result.workspace)).toEqual([]);
+    }
   });
 });

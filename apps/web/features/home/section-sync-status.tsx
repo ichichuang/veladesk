@@ -14,7 +14,8 @@ interface SectionSyncStatusProps {
 }
 
 /**
- * The left-nav footer sync whisper (task 015).
+ * The quiet global sync whisper (task 017): bottom-left of the right
+ * workspace, no longer part of the section rail.
  *
  * A clean workspace renders NOTHING — sync state is not a permanent
  * fixture. dirty → 待同步 (click syncs), dirty + network/server failure →
@@ -59,8 +60,8 @@ export function SectionSyncStatus({ workspace, lastRemoteResult }: SectionSyncSt
 
   if (syncState === "conflict") {
     return (
-      <span className="vela-section-nav__sync" data-state="conflict" title={t("sync.conflictTitle")}>
-        <span className="vela-section-nav__sync-dot" aria-hidden="true" />
+      <span className="vela-sync-status" data-state="conflict" title={t("sync.conflictTitle")}>
+        <span className="vela-sync-status-dot" aria-hidden="true" />
         {label}
       </span>
     );
@@ -69,13 +70,13 @@ export function SectionSyncStatus({ workspace, lastRemoteResult }: SectionSyncSt
   return (
     <button
       type="button"
-      className="vela-section-nav__sync"
+      className="vela-sync-status"
       data-state={offline ? "offline" : "dirty"}
       disabled={busy}
       title={t("sync.syncNowTitle")}
       onClick={handleActivate}
     >
-      <span className="vela-section-nav__sync-dot" aria-hidden="true" />
+      <span className="vela-sync-status-dot" aria-hidden="true" />
       {label}
     </button>
   );

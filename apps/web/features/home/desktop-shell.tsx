@@ -10,14 +10,16 @@ import type { CSSProperties } from "react";
 import {
   areCanvasLayoutsEqual,
   canvasCellSize,
-  canvasRectToSnappedRect,
-  canvasRectsEqual,
-  findCanvasItem,
+  canConvertGridToFreeform,
+  canvasRectToGridGeometry,
+  gridLayoutToFreeform,
   replaceCanvasItem,
+  replaceGridItem,
   translateCanvasItems,
-  withCanvasMode,
+  translateGridItems,
 } from "@veladesk/canvas-engine";
-import type { CanvasLayout, CanvasLayoutV1, CanvasPlacementMode, CanvasRect } from "@veladesk/canvas-engine";
+import type { CanvasRect, PagePlacementMode } from "@veladesk/canvas-engine";
+import type { PagePlacement } from "@veladesk/domain";
 import {
   deleteApp,
   deleteEmptyPage,
@@ -28,7 +30,8 @@ import {
   pinEntityToDock,
   replacePageCanvas,
   replaceWorkspacePreferences,
-  resolvePageCanvas,
+  resolveGridGapPx,
+  resolvePagePlacement,
   resolveWorkspaceAppearance,
   setDefaultPage,
   unpinEntityFromDock,
@@ -49,9 +52,11 @@ import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-
 import { resolveDragItemIds } from "../desktop-grid/group-drag";
 import { useCanvasDrag } from "../canvas/use-canvas-drag";
 import { useCanvasMetrics } from "../canvas/use-canvas-metrics";
+import { useSquareGridMetrics } from "../canvas/use-square-grid-metrics";
+import type { ResizeCommitGeometry } from "../canvas/canvas-resize";
 import {
   reconcileCanvasHandoff,
-  resolveDisplayCanvas,
+  resolveDisplayPlacement,
 } from "../canvas/canvas-handoff";
 import type { PendingCanvasHandoff } from "../canvas/canvas-handoff";
 import {
@@ -64,15 +69,13 @@ import {
   undoPageCanvas,
 } from "../canvas/arrange-history";
 import type { ArrangeCanvasHistories } from "../canvas/arrange-history";
-import {
-  ContextMenu,
-} from "./context-menu";
+import { ContextMenu } from "./context-menu";
 import type { ContextMenuState } from "./context-menu";
 import { AddAppDialog } from "./add-app-dialog";
 import { AppVisualEditor } from "./app-visual-editor";
 import { resolveArrangeHistoryCommand } from "./arrange-shortcuts";
+import { ArrangeToolbar } from "./arrange-toolbar";
 import { ConfirmDialog } from "./confirm-dialog";
-import { DesktopCanvasView } from "./desktop-grid";
 import { Dock } from "./dock";
 import { resolveDockEntities } from "./dock-model";
 import { EditAppDialog } from "./edit-app-dialog";
@@ -87,17 +90,13 @@ import {
 import type { DesktopMenuEntry } from "./desktop-command-menu";
 import { MoveToSectionDialog } from "./move-to-section-dialog";
 import { SectionDialog } from "./section-dialog";
-import { SectionNavigation } from "./section-navigation";
+import { SectionRail } from "./section-rail";
 import { SectionSyncStatus } from "./section-sync-status";
+import { SectionView } from "./section-view";
+import { SectionScrollMemory } from "./section-scroll-memory";
 import { normalizeSelection, selectAllIds, toggleSelection } from "./selection-state";
 import { normalizeSelectionRect, selectIntersectingItemIds } from "./selection-geometry";
-import {
-  nextSectionId,
-  previousSectionId,
-  resolveSectionAfterDelete,
-  sectionNavDirection,
-} from "./section-navigation-model";
-import { useSectionNavigation } from "./use-section-navigation";
+import { resolveSectionAfterDelete } from "./section-navigation-model";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import { launchApp } from "./launch-app";
 import { buildAppearanceTheme } from "./appearance-theme";
@@ -108,9 +107,7 @@ import { buildLauncherEntries } from "./launcher-index";
 import type { LauncherCommandId, LauncherEntry } from "./launcher-types";
 import { SettingsCenter } from "./settings-center";
 import type { SettingsSaveResult } from "./settings-center";
-import {
-  preferencesFromSettingsDraft,
-} from "./settings-draft";
+import { preferencesFromSettingsDraft } from "./settings-draft";
 import type { WorkspaceSettingsDraft } from "./settings-draft";
 import "./home-shell.css";
 
@@ -119,7 +116,7 @@ export type DesktopMode = "view" | "arrange";
 
 /**
  * Which context-menu surface was opened. Presentation-only shell state.
- * The desktop command menu (empty area / nav ⋯ / dock chrome) is built by
+ * The desktop command menu (empty area / rail chrome) is built by
  * `buildDesktopCommandEntries`; entities and sections get their own
  * builders from the same module.
  */
@@ -174,6 +171,9 @@ type LayoutCommitOutcome =
   | { readonly status: "noop" }
   | { readonly status: "failed" };
 
+/** Section transition duration — must match the CSS keyframes. */
+const SECTION_TRANSITION_MS = 190;
+
 const EMPTY_SELECTION: ReadonlySet<LayoutItemId> = new Set();
 const EMPTY_ID_SET: ReadonlySet<EntityId> = new Set();
 
@@ -182,18 +182,27 @@ interface DesktopShellProps {
   readonly lastRemoteResult?: WorkspaceRuntimeRemoteResult | undefined;
 }
 
+/** One section currently animating out of the viewport. */
+interface SectionExit {
+  readonly pageId: DesktopPageId;
+  readonly token: number;
+  readonly towards: "next" | "prev";
+}
+
 /**
- * The ready-state production desktop (task 015 IA): a full-viewport
- * scroll-snap section stack, a floating left section navigation, an
- * optional pinned-entity dock, and the custom context menu as the primary
- * command surface. No top bar, no page dots, no utility dock.
+ * The ready-state production desktop (task 017): a real two-column
+ * workspace — a fixed left section rail (titles only) and a right workspace
+ * that owns the active section's independent content scrolling.
  *
- * The REAL scroll position is the source of truth for the active section
- * (IntersectionObserver); navigation only ever scrolls the container.
- * Local-first editing: every edit runs a pure operation, stages the
- * resulting snapshot immediately, then fires an explicit sync. Arrange
- * mode belongs to the ACTIVE section only — selection, drags, nudges and
- * the per-page history never cross sections.
+ * The ACTIVE SECTION is explicit session state (never scroll-position
+ * derived); switching sections plays a whole-page vertical transition and
+ * remembers each section's scrollTop in session state. Sections place
+ * their items in Grid (responsive square cells, unbounded rows) or Freeform
+ * (continuous rects) mode, resolved through the domain's canonical v2
+ * placement resolver. Local-first editing: every edit runs a pure
+ * operation, stages the resulting snapshot immediately, then fires an
+ * explicit sync. Arrange mode belongs to the ACTIVE section only —
+ * selection, drags, nudges and the per-page history never cross sections.
  */
 export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps) {
   const runtime = useWorkspaceRuntimeInstance();
@@ -235,9 +244,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    * WorkspaceSnapshot, IndexedDB, the server or localStorage, and dies with
    * the session (a reload boots purely from the authoritative snapshot).
    */
-  const [pendingCanvasHandoff, setPendingCanvasHandoff] = useState<PendingCanvasHandoff | null>(
-    null
-  );
+  const [pendingCanvasHandoff, setPendingCanvasHandoff] = useState<PendingCanvasHandoff | null>(null);
   /**
    * The app whose resize session is live right now. A live session locks
    * every competing gesture (drag, marquee, nudge, undo/redo, mode and
@@ -245,12 +252,22 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    */
   const [resizeSessionAppId, setResizeSessionAppId] = useState<EntityId | null>(null);
   /**
-   * A section to reveal on the NEXT DOM commit (create section, reorder,
-   * delete-active). A ref — handlers set it synchronously around a
-   * structural change, and the post-commit effect consumes it exactly
-   * once so the instant scroll lands on the right element.
+   * The ACTIVE section as explicit session state (task 017). The right
+   * workspace renders exactly this section's scroller; nothing is derived
+   * from scroll positions anymore.
    */
-  const pendingRevealRef = useRef<DesktopPageId | null>(null);
+  const [activePageId, setActivePageId] = useState<DesktopPageId | null>(() =>
+    snapshot.pages.some((page) => page.id === snapshot.preferences.defaultPageId)
+      ? snapshot.preferences.defaultPageId
+      : (snapshot.pages[0]?.id ?? null)
+  );
+  /** The section currently animating out, unmounted when it settles. */
+  const [sectionExit, setSectionExit] = useState<SectionExit | null>(null);
+  /**
+   * Session-only preview of a just-clicked toolbar gap change — applies to
+   * the visual grid immediately while the durable preference stage lands.
+   */
+  const [pendingGapPx, setPendingGapPx] = useState<number | null>(null);
 
   const arrange = mode === "arrange";
   /** True only while a display canvas outruns the durable snapshot. */
@@ -265,18 +282,26 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const resizeActiveId = resizeSessionAppId;
 
   const pageIds = useMemo(() => snapshot.pages.map((page) => page.id), [snapshot.pages]);
-  const navigation = useSectionNavigation({
-    pageIds,
-    defaultPageId: snapshot.preferences.defaultPageId,
-  });
-  const { activePageId, scrollToSection } = navigation;
 
   /**
-   * The active section as data. Derived FROM the scroll position — the
-   * session never pins a page against it (the old sessionPageId is gone).
+   * The effective active section: the explicit state while it still exists,
+   * otherwise the default section, otherwise the first — derived so
+   * structural changes (delete) reconcile within one render.
    */
+  const effectiveActivePageId = useMemo(() => {
+    if (activePageId !== null && pageIds.includes(activePageId)) {
+      return activePageId;
+    }
+    if (pageIds.includes(snapshot.preferences.defaultPageId)) {
+      return snapshot.preferences.defaultPageId;
+    }
+    return pageIds[0] ?? null;
+  }, [activePageId, pageIds, snapshot.preferences.defaultPageId]);
+
   const activePage =
-    activePageId !== null ? findDesktopPage(snapshot, activePageId) : undefined;
+    effectiveActivePageId !== null
+      ? findDesktopPage(snapshot, effectiveActivePageId)
+      : undefined;
 
   /**
    * The rendered theme: the Settings preview while open, otherwise the
@@ -287,18 +312,29 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const resolvedAppearance = appearancePreview ?? resolveWorkspaceAppearance(snapshot.preferences);
   const theme = useMemo(() => buildAppearanceTheme(resolvedAppearance), [resolvedAppearance]);
 
+  /** The persisted gap, resolved for legacy snapshots. */
+  const persistedGapPx = useMemo(() => resolveGridGapPx(snapshot.preferences), [snapshot.preferences]);
+  /**
+   * The effective grid gap: a just-clicked toolbar change previews until the
+   * durable snapshot carries the same value (derived in render, never an
+   * effect — a caught-up preview and the persisted value are identical, so
+   * the switch is invisible).
+   */
+  const displayGapPx =
+    pendingGapPx !== null && pendingGapPx !== persistedGapPx ? pendingGapPx : persistedGapPx;
+
   // The launcher index follows the live snapshot: a sync or edit landing
   // while the launcher is open recomputes the entries on the next render.
   const launcherEntries = useMemo(
     () =>
       buildLauncherEntries({
         workspace: snapshot,
-        activePageId,
+        activePageId: effectiveActivePageId,
         mode,
         syncState: workspace.syncState,
         locale,
       }),
-    [snapshot, activePageId, mode, workspace.syncState, locale],
+    [snapshot, effectiveActivePageId, mode, workspace.syncState, locale],
   );
 
   const hasDock = useMemo(() => resolveDockEntities(snapshot).length > 0, [snapshot]);
@@ -306,7 +342,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   // Latest-value mirrors for async/session callbacks (drag commit, keyboard
   // navigation) that must always see the current render's data.
   const workspaceRef = useRef(workspace);
-  const pageIdRef = useRef<DesktopPageId | null>(activePageId);
+  const pageIdRef = useRef<DesktopPageId | null>(effectiveActivePageId);
   const arrangeHistoriesRef = useRef(arrangeHistories);
   const selectionRef = useRef(selectedItemIds);
   const draggingRef = useRef(false);
@@ -325,12 +361,27 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    * and read this ref, so a session started mid-render still blocks them.
    */
   const resizeLockRef = useRef(false);
+  /** Per-section scroll memory (session only, never persisted). */
+  const scrollMemoryRef = useRef(new SectionScrollMemory());
+  /** The live scroller element of the ACTIVE section view. */
+  const activeScrollerRef = useRef<HTMLDivElement | null>(null);
+  /** Timestamp of the last section switch — rapid input skips exit animations. */
+  const lastSectionSwitchAtRef = useRef(0);
+  /** Generation counter for section exits — a stale timer never clears a newer one. */
+  const sectionExitTokenRef = useRef(0);
+  /**
+   * A section to reveal on the NEXT commit (create section, reorder,
+   * delete-active). A ref — handlers set it synchronously around a
+   * structural change, and the post-commit effect consumes it exactly
+   * once so the instant switch lands on the right section.
+   */
+  const pendingRevealRef = useRef<DesktopPageId | null>(null);
   useEffect(() => {
     workspaceRef.current = workspace;
   }, [workspace]);
   useEffect(() => {
-    pageIdRef.current = activePageId;
-  }, [activePageId]);
+    pageIdRef.current = effectiveActivePageId;
+  }, [effectiveActivePageId]);
   useEffect(() => {
     arrangeHistoriesRef.current = arrangeHistories;
   }, [arrangeHistories]);
@@ -365,28 +416,92 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   }
 
   /**
-   * The active section moved (real scroll): the arrange selection belongs
-   * to the section it was made on, so it never crosses sections.
+   * The active section moved: the arrange selection belongs to the section
+   * it was made on, so it never crosses sections.
    */
-  const previousActiveRef = useRef<DesktopPageId | null>(activePageId);
+  const previousActiveRef = useRef<DesktopPageId | null>(effectiveActivePageId);
   useEffect(() => {
-    if (previousActiveRef.current !== activePageId) {
-      previousActiveRef.current = activePageId;
+    if (previousActiveRef.current !== effectiveActivePageId) {
+      previousActiveRef.current = effectiveActivePageId;
       if (selectionRef.current.size > 0) {
         applySelection(EMPTY_SELECTION);
       }
     }
-  }, [activePageId]);
+  }, [effectiveActivePageId]);
 
-  /** Reveal a section right after the DOM reflects a structural change. */
+  /**
+   * Section switching with the whole-page vertical transition.
+   *
+   * Before leaving, the section's scrollTop is remembered; the entering
+   * view restores it on mount. A rapid second switch (before the first
+   * transition settled) unmounts the old view immediately instead of
+   * stacking exits — navigation stays deterministic under burst input.
+   */
+  const switchSection = useCallback(
+    (pageId: DesktopPageId, options: { readonly animate?: boolean } = {}) => {
+      const currentId = pageIdRef.current;
+      if (pageId === currentId || currentId === null) {
+        return;
+      }
+      if (resizeLockRef.current) {
+        // A live resize owns the desktop: switching would unmount the tile
+        // (and its pointer capture) out from under the user.
+        return;
+      }
+
+      const pages = workspaceRef.current.snapshot.pages;
+      const currentIndex = pages.findIndex((page) => page.id === currentId);
+      const nextIndex = pages.findIndex((page) => page.id === pageId);
+      if (nextIndex < 0) {
+        return;
+      }
+      const towards: "next" | "prev" = nextIndex > currentIndex ? "next" : "prev";
+
+      // Remember the outgoing section's scroll position (session only).
+      const scroller = activeScrollerRef.current;
+      if (scroller !== null) {
+        scrollMemoryRef.current.save(currentId, scroller.scrollTop);
+      }
+
+      const previousSwitchAt = lastSectionSwitchAtRef.current;
+      lastSectionSwitchAtRef.current = Date.now();
+      setActivePageId(pageId);
+
+      const animate = options.animate !== false;
+      const rapid = Date.now() - previousSwitchAt < SECTION_TRANSITION_MS + 40;
+      if (!animate || rapid) {
+        // Instant swap: drop any exit immediately.
+        sectionExitTokenRef.current += 1;
+        setSectionExit(null);
+        return;
+      }
+
+      const token = sectionExitTokenRef.current + 1;
+      sectionExitTokenRef.current = token;
+      setSectionExit({ pageId: currentId, token, towards });
+      window.setTimeout(() => {
+        if (sectionExitTokenRef.current === token) {
+          setSectionExit((current) =>
+            current !== null && current.token === token ? null : current
+          );
+        }
+      }, SECTION_TRANSITION_MS);
+    },
+    []
+  );
+
+  /**
+   * Reveal a section right after a structural change (create/reorder/
+   * delete-active) — instantly, so the viewport never glides past neighbors.
+   */
   useEffect(() => {
     const target = pendingRevealRef.current;
     if (target === null) {
       return;
     }
     pendingRevealRef.current = null;
-    scrollToSection(target);
-  }, [scrollToSection, snapshot.pages]);
+    switchSection(target, { animate: false });
+  }, [switchSection, snapshot.pages]);
 
   function openFolderOverlay(folderId: EntityId) {
     setFolderActionError(null);
@@ -421,7 +536,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    * the preview can be dropped without a theme flash-back. Staging
    * failures keep Settings open with the preview alive for correction.
    *
-   * The scroll position stays untouched: a changed default section only
+   * The active section stays untouched: a changed default section only
    * applies to the next session, never yanks the current view.
    */
   async function handleSettingsSave(draft: WorkspaceSettingsDraft): Promise<SettingsSaveResult> {
@@ -433,7 +548,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         message:
           result.reason === "default-page-not-found"
             ? t("settings.error.defaultPageGone")
-            : t("settings.error.invalidAppearance"),
+            : result.reason === "invalid-grid-gap"
+              ? t("settings.error.invalidGridGap")
+              : t("settings.error.invalidAppearance"),
       };
     }
     const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
@@ -446,6 +563,37 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     return { ok: true };
   }
 
+  /**
+   * One completed toolbar gap change: preview immediately, persist once.
+   * The preview clears once the authoritative snapshot carries the same
+   * gap; a failed stage drops it (the visual grid returns to the persisted
+   * value — an honest revert).
+   */
+  const handleGridGapChange = useCallback(
+    (gapPx: number) => {
+      setPendingGapPx(gapPx);
+      const run = async () => {
+        const current = workspaceRef.current;
+        const replaced = replaceWorkspacePreferences(current.snapshot, {
+          ...current.snapshot.preferences,
+          gridGapPx: gapPx,
+        });
+        if (!replaced.ok) {
+          console.error(`VelaDesk: grid gap change refused (${replaced.reason})`);
+          setPendingGapPx(null);
+          return;
+        }
+        const staged = await stageWorkspaceAndTrySync(runtime, replaced.workspace);
+        if (!staged.ok) {
+          console.error(`VelaDesk: grid gap change was not staged (${staged.reason})`);
+          setPendingGapPx(null);
+        }
+      };
+      layoutQueueRef.current = layoutQueueRef.current.then(run, run);
+    },
+    [runtime]
+  );
+
   /** Selection + history reconcile after every workspace/active-page change. */
   useEffect(() => {
     if (activePage === undefined) {
@@ -457,14 +605,14 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       applySelection(normalized);
     }
     setArrangeHistories((current) =>
-      reconcilePageCanvasHistory(current, activePage.id, resolvePageCanvas(activePage)),
+      reconcilePageCanvasHistory(current, activePage.id, resolvePagePlacement(activePage)),
     );
   }, [activePage]);
 
   /**
    * Handoff reconcile after every workspace snapshot change: once the
-   * authoritative canvas for the handoff's page is semantically equal to the
-   * pending one, the override is dropped (pixel-identical hand-off). A
+   * authoritative placement for the handoff's page is semantically equal to
+   * the pending one, the override is dropped (pixel-identical hand-off). A
    * handoff whose stage attempt settled but whose page moved somewhere else
    * yields to the authoritative state, and a page that vanished drops the
    * override outright. Settled tokens are pruned as their handoffs resolve.
@@ -477,7 +625,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     const page = findDesktopPage(snapshot, current.pageId);
     const next = reconcileCanvasHandoff(
       current,
-      page === undefined ? undefined : resolvePageCanvas(page),
+      page === undefined ? undefined : resolvePagePlacement(page),
       settledHandoffTokensRef.current.has(current.token)
     );
     if (next !== current) {
@@ -499,12 +647,12 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    *
    * `resetHistory` marks the structural edits that are deliberately NOT
    * undoable (placement-mode switch): the page branch restarts at the new
-   * canvas so undo can never walk back into a model the user left.
+   * placement so undo can never walk back into a model the user left.
    */
   const enqueueCanvasCommit = useCallback(
     (
       pageId: DesktopPageId,
-      nextCanvas: CanvasLayout,
+      nextPlacement: PagePlacement,
       options: { readonly resetHistory?: boolean } = {},
       onSettled?: (outcome: LayoutCommitOutcome) => void
     ) => {
@@ -523,13 +671,13 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             settle({ status: "noop" });
             return;
           }
-          if (areCanvasLayoutsEqual(resolvePageCanvas(page), nextCanvas)) {
+          if (areCanvasLayoutsEqual(resolvePagePlacement(page), nextPlacement)) {
             // Resolved back to the same geometry: no stage, no history
             // entry, no sync.
             settle({ status: "noop" });
             return;
           }
-          const replaced = replacePageCanvas(current.snapshot, pageId, nextCanvas);
+          const replaced = replacePageCanvas(current.snapshot, pageId, nextPlacement);
           if (!replaced.ok) {
             settle({ status: "noop" });
             return;
@@ -542,8 +690,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           }
           const nextMap: ArrangeCanvasHistories =
             options.resetHistory === true
-              ? resetPageCanvasHistory(arrangeHistoriesRef.current, pageId, nextCanvas)
-              : commitPageCanvas(arrangeHistoriesRef.current, pageId, nextCanvas);
+              ? resetPageCanvasHistory(arrangeHistoriesRef.current, pageId, nextPlacement)
+              : commitPageCanvas(arrangeHistoriesRef.current, pageId, nextPlacement);
           arrangeHistoriesRef.current = nextMap;
           setArrangeHistories(nextMap);
           settle({ status: "staged" });
@@ -564,11 +712,15 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    * snapshot never becomes visible in between.
    */
   const commitCanvasEdit = useCallback(
-    (pageId: DesktopPageId, nextCanvas: CanvasLayout, options: { readonly resetHistory?: boolean } = {}) => {
+    (
+      pageId: DesktopPageId,
+      nextPlacement: PagePlacement,
+      options: { readonly resetHistory?: boolean } = {}
+    ) => {
       const token = handoffTokenRef.current + 1;
       handoffTokenRef.current = token;
-      stagePendingHandoff({ token, pageId, canvas: nextCanvas });
-      enqueueCanvasCommit(pageId, nextCanvas, options, (outcome) => {
+      stagePendingHandoff({ token, pageId, placement: nextPlacement });
+      enqueueCanvasCommit(pageId, nextPlacement, options, (outcome) => {
         if (outcome.status === "failed") {
           // The only true revert: the stage refused, so the optimistic
           // display canvas falls back to the authoritative (pre-edit) one.
@@ -592,7 +744,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   );
 
   const commitDraggedCanvas = useCallback(
-    (movedCanvas: CanvasLayout, canvasAtStart: CanvasLayout) => {
+    (movedPlacement: PagePlacement, placementAtStart: PagePlacement) => {
       const current = workspaceRef.current;
       const pageId = pageIdRef.current;
       if (pageId === null) {
@@ -601,14 +753,17 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       const page = findDesktopPage(current.snapshot, pageId);
       // The drag session already rejected stale canvases; this re-check pins
       // the commit to the exact workspace state the drag started from. It is
-      // structural because a legacy page derives its canvas per render.
-      if (page === undefined || !areCanvasLayoutsEqual(resolvePageCanvas(page), canvasAtStart)) {
+      // structural because a legacy page derives its placement per render.
+      if (
+        page === undefined ||
+        !areCanvasLayoutsEqual(resolvePagePlacement(page), placementAtStart)
+      ) {
         return;
       }
-      if (areCanvasLayoutsEqual(movedCanvas, canvasAtStart)) {
+      if (areCanvasLayoutsEqual(movedPlacement, placementAtStart)) {
         return;
       }
-      commitCanvasEdit(pageId, movedCanvas);
+      commitCanvasEdit(pageId, movedPlacement);
     },
     [commitCanvasEdit]
   );
@@ -618,8 +773,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    * stage and one sync attempt, no matter how many pointermoves preceded it
    * (the preview never stages anything).
    */
-  const commitResizedRect = useCallback(
-    (entityId: EntityId, rect: CanvasRect) => {
+  const commitResizedGeometry = useCallback(
+    (entityId: EntityId, geometry: ResizeCommitGeometry) => {
       const pageId = pageIdRef.current;
       if (pageId === null) {
         return;
@@ -629,12 +784,32 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       if (page === undefined) {
         return;
       }
-      const canvas = resolvePageCanvas(page) as CanvasLayoutV1;
-      const item = findCanvasItem(canvas, entityId);
-      if (item === undefined || !("rect" in item) || canvasRectsEqual(item.rect, rect)) {
+      const placement = resolvePagePlacement(page);
+      if (placement.mode === "grid") {
+        if (geometry.kind !== "grid") {
+          return;
+        }
+        const item = placement.items.find((candidate) => candidate.id === entityId);
+        if (
+          item === undefined ||
+          (item.column === geometry.geometry.column &&
+            item.row === geometry.geometry.row &&
+            item.columnSpan === geometry.geometry.columnSpan &&
+            item.rowSpan === geometry.geometry.rowSpan)
+        ) {
+          return;
+        }
+        commitCanvasEdit(pageId, replaceGridItem(placement, { id: entityId, ...geometry.geometry }));
         return;
       }
-      commitCanvasEdit(pageId, replaceCanvasItem(canvas, { id: entityId, rect }));
+      if (geometry.kind !== "freeform") {
+        return;
+      }
+      const item = placement.items.find((candidate) => candidate.id === entityId);
+      if (item === undefined || !("rect" in item) || areRectsEqual(item.rect, geometry.rect)) {
+        return;
+      }
+      commitCanvasEdit(pageId, replaceCanvasItem(placement, { id: entityId, rect: geometry.rect }) as PagePlacement);
     },
     [commitCanvasEdit]
   );
@@ -661,18 +836,20 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           return;
         }
         const candidate =
-          direction === "undo" ? undoPageCanvas(arrangeHistoriesRef.current, pageId)[pageId] : redoPageCanvas(arrangeHistoriesRef.current, pageId)[pageId];
+          direction === "undo"
+            ? undoPageCanvas(arrangeHistoriesRef.current, pageId)[pageId]
+            : redoPageCanvas(arrangeHistoriesRef.current, pageId)[pageId];
         if (candidate === undefined || candidate === base) {
           return;
         }
         const current = workspaceRef.current;
         const page = findDesktopPage(current.snapshot, pageId);
-        if (page === undefined || !areCanvasLayoutsEqual(resolvePageCanvas(page), base.present)) {
+        if (page === undefined || !areCanvasLayoutsEqual(resolvePagePlacement(page), base.present)) {
           // The canvas moved on since reconciliation — reset this page's
           // history instead of writing a stale snapshot.
           if (page !== undefined) {
             setArrangeHistories((current2) =>
-              reconcilePageCanvasHistory(current2, pageId, resolvePageCanvas(page)),
+              reconcilePageCanvasHistory(current2, pageId, resolvePagePlacement(page)),
             );
           }
           return;
@@ -699,8 +876,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   );
 
   /**
-   * Keyboard nudge: one rigid step for the whole selection. A snap section
-   * steps by a lattice cell, a freeform section by an eighth of one (about
+   * Keyboard nudge: one rigid step for the whole selection. A grid section
+   * steps by a whole cell; a freeform section by an eighth of one (about
    * 16 CSS px), so the keys stay useful in both models.
    */
   const nudgeSelection = useCallback(
@@ -721,22 +898,25 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       if (page === undefined) {
         return;
       }
-      const canvas = resolvePageCanvas(page);
-      const cell = canvasCellSize(page.layout.grid);
-      const step =
-        canvas.mode === "snap"
-          ? cell
-          : {
-              width: Math.max(1, Math.round(cell.width / 8)),
-              height: Math.max(1, Math.round(cell.height / 8)),
-            };
-      const moved = translateCanvasItems(
-        canvas,
-        [...selectionRef.current],
-        columnStep * step.width,
-        rowStep * step.height
-      );
-      if (moved === canvas) {
+      const placement = resolvePagePlacement(page);
+      const ids = [...selectionRef.current];
+      const moved =
+        placement.mode === "grid"
+          ? translateGridItems(placement, ids, columnStep, rowStep)
+          : (() => {
+              const cell = canvasCellSize(page.layout.grid);
+              const step = {
+                width: Math.max(1, Math.round(cell.width / 8)),
+                height: Math.max(1, Math.round(cell.height / 8)),
+              };
+              return translateCanvasItems(
+                placement,
+                ids,
+                columnStep * step.width,
+                rowStep * step.height
+              ) as PagePlacement;
+            })();
+      if (moved === placement) {
         // Failed nudge: no change, no history entry, no sync.
         return;
       }
@@ -746,24 +926,37 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   );
 
   /**
-   * Switches a section between aligned and free placement.
+   * Whether a Grid→Freeform switch would lose geometry (content beyond the
+   * freeform viewport) — the switch is refused with a localized reason.
+   */
+  const freeformBlockedReason = useMemo(() => {
+    if (activePage === undefined) {
+      return null;
+    }
+    const placement = resolvePagePlacement(activePage);
+    if (placement.mode !== "grid") {
+      return null;
+    }
+    return canConvertGridToFreeform(placement.items, activePage.layout.grid)
+      ? null
+      : t("menu.placementFreeformBlocked");
+  }, [activePage, t]);
+
+  /**
+   * Switches a section between Grid and Freeform placement (task 017).
    *
-   * The mode is persisted per section, so the home section can stay aligned
-   * while another is free. Only the mode changes on the way to free (the
-   * geometry must not move at all); on the way to snap every rect is snapped
-   * in ONE atomic edit, and overlap stays legal — the lattice is an
-   * alignment reference, never a capacity model. The switch is structural
-   * and therefore not undoable: the page's history restarts at the new
-   * canvas.
+   * The mode is persisted per section. Switching TO Grid snaps every freeform
+   * rect onto the page lattice in ONE atomic edit (columns from the page
+   * grid); switching to Freeform converts each grid item back through the
+   * same lattice — and is REFUSED when the conversion would be lossy
+   * (content beyond the freeform viewport). Overlap stays legal; the switch
+   * is structural and therefore not undoable: the page's history restarts
+   * at the new placement.
    */
   const setPlacementMode = useCallback(
-    (next: CanvasPlacementMode) => {
+    (next: PagePlacementMode) => {
       const pageId = pageIdRef.current;
-      if (
-        pageId === null ||
-        pendingHandoffRef.current !== null ||
-        resizeLockRef.current
-      ) {
+      if (pageId === null || pendingHandoffRef.current !== null || resizeLockRef.current) {
         return;
       }
       const current = workspaceRef.current;
@@ -771,51 +964,76 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       if (page === undefined) {
         return;
       }
-      const canvas = resolvePageCanvas(page);
-      if (canvas.mode === next) {
+      const placement = resolvePagePlacement(page);
+      if (placement.mode === next) {
         return;
       }
-      const nextCanvas =
-        next === "snap"
-          ? {
-              ...canvas,
-              mode: "snap" as const,
-              items: canvas.items.map((item) => ({
-                id: item.id,
-                rect: canvasRectToSnappedRect(item.rect, page.layout.grid),
-              })),
-            }
-          : withCanvasMode(canvas, "freeform");
-      commitCanvasEdit(pageId, nextCanvas, { resetHistory: true });
+
+      let nextPlacement: PagePlacement;
+      if (next === "grid") {
+        if (placement.mode !== "freeform") {
+          return;
+        }
+        nextPlacement = {
+          version: 2,
+          mode: "grid",
+          columns: page.layout.grid.columns,
+          items: placement.items.map((item) => ({
+            id: item.id,
+            ...canvasRectToGridGeometry(item.rect, page.layout.grid),
+          })),
+        };
+      } else {
+        if (placement.mode !== "grid") {
+          return;
+        }
+        const converted = gridLayoutToFreeform(placement, page.layout.grid);
+        if (converted === null) {
+          // Lossy conversion: never silently compress or drop geometry.
+          return;
+        }
+        nextPlacement = converted;
+      }
+      commitCanvasEdit(pageId, nextPlacement, { resetHistory: true });
     },
     [commitCanvasEdit]
   );
 
   /**
-   * The canvas the ACTIVE section renders this frame: the pending handoff
-   * while it targets the active page, otherwise the authoritative canvas
-   * (a stored one, or the virtual canvas derived from legacy grid geometry).
+   * The placement the ACTIVE section renders this frame: the pending handoff
+   * while it targets the active page, otherwise the authoritative placement
+   * (a stored one, or the v2 placement derived from v1/legacy geometry).
    * Only the active section consumes it — persistence still flows
    * exclusively through the domain/runtime path.
    */
-  const displayCanvas =
+  const displayPlacement =
     activePage !== undefined
-      ? resolveDisplayCanvas(pendingCanvasHandoff, activePage.id, resolvePageCanvas(activePage))
+      ? resolveDisplayPlacement(pendingCanvasHandoff, activePage.id, resolvePagePlacement(activePage))
       : null;
-  const activeGrid = activePage?.layout.grid ?? { columns: 1, rows: 1 };
 
-  const { canvasRef, metrics } = useCanvasMetrics();
+  // --- Metrics ---------------------------------------------------------------
+  // Freeform measures the canvas box; Grid measures the stage width and
+  // derives the square cells. Both hooks run unconditionally; their refs
+  // only attach to whichever model the active section renders.
+  const { canvasRef, metrics: freeformMetrics } = useCanvasMetrics();
+  const activeColumns =
+    displayPlacement !== null && displayPlacement.mode === "grid" ? displayPlacement.columns : 0;
+  const { stageRef: gridStageRef, metrics: gridMetrics } = useSquareGridMetrics(
+    activeColumns,
+    displayGapPx,
+  );
+
   const { dragging, handleDragStart, handleDragMove, handleDragEnd } = useCanvasDrag({
-    canvas: displayCanvas,
-    grid: activeGrid,
-    metrics,
+    placement: displayPlacement,
+    metrics: freeformMetrics,
+    pitchPx: gridMetrics?.pitchPx ?? null,
     onCommit: commitDraggedCanvas,
     getDragItemIds: useCallback(
       (sourceId: LayoutItemId) => resolveDragItemIds(sourceId, selectionRef.current),
       []
     ),
     resolveItemElement: useCallback((itemId: LayoutItemId) => {
-      // The menu-area wrapper is display:contents; DOM queries still work.
+      // The section viewport is a normal block; DOM queries work.
       return (
         menuAreaRef.current?.querySelector(`[data-item-id="${CSS.escape(itemId)}"]`) ?? null
       );
@@ -858,18 +1076,16 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     if (Date.now() - lastDragEndedAtRef.current < 250) {
       return;
     }
-    applySelection(
-      toggle ? toggleSelection(selectionRef.current, entityId) : new Set([entityId])
-    );
+    applySelection(toggle ? toggleSelection(selectionRef.current, entityId) : new Set([entityId]));
   }, []);
 
-  // --- Arrange marquee (rubber-band) selection, active section only -------
+  // --- Arrange marquee (rubber-band) selection, active section only ---------
   const handleViewportPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!arrange || draggingRef.current || resizeLockRef.current || event.button !== 0) {
         return;
       }
-      // Only the empty grid background starts a marquee — never an item.
+      // Only the empty canvas background starts a marquee — never an item.
       if (event.target !== event.currentTarget) {
         return;
       }
@@ -916,7 +1132,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         return;
       }
       const viewport = menuAreaRef.current?.querySelector(
-        '[data-active-section="true"] .vela-canvas'
+        '[data-active-section="true"] .vela-grid-stage, [data-active-section="true"] .vela-canvas'
       );
       if (viewport === null) {
         return;
@@ -948,9 +1164,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     [marquee]
   );
 
-  // --- Context menu surface ----------------------------------------------
-  // While anything modal/drag-ish is up, the real section stack must not
-  // scroll (native CSS lock — no wheel parsing anywhere).
+  // --- Context menu surface ----------------------------------------------------
+  // While anything modal/drag-ish is up, the active section scroller must
+  // not scroll (native CSS lock — no wheel parsing on the content path).
   const scrollLocked =
     dragging ||
     handoffLock ||
@@ -960,6 +1176,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     dialog !== null ||
     contextMenu !== null ||
     overlayFolderId !== null;
+
+  /** Wheel navigation over the rail stands down while anything owns the desktop. */
+  const railNavigationLocked = scrollLocked;
 
   function openContextMenu(target: ContextMenuTarget) {
     if (target.kind === "desktop") {
@@ -976,16 +1195,15 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   function openDesktopCommandMenu(x: number, y: number) {
     const currentPageId = pageIdRef.current;
     const historyUsable =
-      currentPageId !== null &&
-      !draggingRef.current &&
-      pendingHandoffRef.current === null;
+      currentPageId !== null && !draggingRef.current && pendingHandoffRef.current === null;
     setContextMenu({
       x,
       y,
       entries: buildDesktopCommandEntries({
         t,
         arrange,
-        placementMode: activePage === undefined ? "snap" : resolvePageCanvas(activePage).mode,
+        placementMode: activePage === undefined ? "grid" : resolvePagePlacement(activePage).mode,
+        freeformBlockedReason,
         canUndo:
           historyUsable && currentPageId !== null && canUndo(arrangeHistoriesRef.current, currentPageId),
         canRedo:
@@ -1080,8 +1298,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         isEmpty: pageItemIds(page).length === 0,
         callbacks: {
           onRename: () => openDialog({ kind: "rename-section", pageId }),
-          onSetDefault: () =>
-            void runSectionEdit(setDefaultPage(snapshot, pageId), null),
+          onSetDefault: () => void runSectionEdit(setDefaultPage(snapshot, pageId), null),
           onMoveUp: () => void runSectionEdit(movePage(snapshot, pageId, "up"), pageId),
           onMoveDown: () => void runSectionEdit(movePage(snapshot, pageId, "down"), pageId),
           onDelete: () => openDialog({ kind: "delete-section", pageId }),
@@ -1091,7 +1308,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   }
 
   function pageDestination(): DesktopPageId {
-    return activePageId ?? snapshot.pages[0]?.id ?? "page";
+    return effectiveActivePageId ?? snapshot.pages[0]?.id ?? "page";
   }
 
   function openDialog(next: HomeDialog) {
@@ -1107,8 +1324,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   /**
    * Launcher activation orchestration: entries are pure data, the shell
    * resolves them against the live snapshot (a stale entry can no longer
-   * launch). Section results scroll the REAL stack — never a direct
-   * active-state write.
+   * launch). Section results switch the explicit active section.
    */
   function activateLauncherEntry(entry: LauncherEntry) {
     setLauncherOpen(false);
@@ -1127,7 +1343,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         openFolderOverlay(entry.entityId);
         return;
       case "page":
-        scrollToSection(entry.pageId);
+        switchSection(entry.pageId);
         return;
       case "command":
         activateLauncherCommand(entry.commandId);
@@ -1163,7 +1379,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    * surface of their own (menu actions) — failures are logged, never
    * silently swallowed into a fake success.
    */
-  async function runDockEdit(edit: (snapshot: WorkspaceSnapshot) => ReturnType<typeof pinEntityToDock>) {
+  async function runDockEdit(
+    edit: (snapshot: WorkspaceSnapshot) => ReturnType<typeof pinEntityToDock>
+  ) {
     const result = edit(snapshot);
     if (!result.ok) {
       console.error(`VelaDesk: dock edit refused (${result.reason})`);
@@ -1190,14 +1408,14 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       return;
     }
     if (revealPageId !== null) {
-      // The DOM order changed; the very next commit scrolls back to the
+      // The DOM order changed; the very next commit switches back to the
       // SAME section so the user never sees a neighbor flash by.
       pendingRevealRef.current = revealPageId;
     }
   }
 
   async function handleDeleteSection(pageId: DesktopPageId) {
-    // Decide the surviving neighbor BEFORE the deletion so the scroll can
+    // Decide the surviving neighbor BEFORE the deletion so the reveal can
     // never land on an index that no longer exists.
     const neighbor = resolveSectionAfterDelete(pageIds, pageId);
     const result = deleteEmptyPage(snapshot, pageId);
@@ -1235,7 +1453,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   }
 
   async function handleDissolveFolder(folderId: EntityId) {
-    const pageId = activePageId;
+    const pageId = effectiveActivePageId;
     if (pageId === null) {
       setDialogError(t("dialog.deleteFolder.error.noActivePage"));
       return;
@@ -1243,9 +1461,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     const result = dissolveFolderToPage(snapshot, folderId, pageId);
     if (!result.ok) {
       setDialogError(
-        result.reason === "no-space"
-          ? t("dialog.deleteFolder.error.noSpace")
-          : t("dialog.deleteFolder.error.folderGone")
+        result.reason === "folder-not-found"
+          ? t("dialog.deleteFolder.error.folderGone")
+          : t("dialog.deleteFolder.error.failed")
       );
       return;
     }
@@ -1260,8 +1478,9 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     closeDialog();
   }
 
-  // Keyboard: undo/redo, select all, launcher chord, Escape selection
-  // clear, arrow nudge, then — lowest priority — real-scroll section nav.
+  // Keyboard: undo/redo, select all, launcher chord, Escape selection clear,
+  // arrow nudge. Global section arrows are GONE — the rail owns section
+  // keyboard navigation and the right side owns real vertical scrolling.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target;
@@ -1382,38 +1601,10 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         if (event.key === "ArrowDown") nudgeSelection(0, 1);
         return;
       }
-
-      // Section keyboard navigation — the LOWEST priority: only when no
-      // input owns the event, no surface is open, nothing drags, no icon
-      // resize is live, and the arrange selection does not own the arrows.
-      // Scrolls the REAL stack; no wrap at either end.
-      if (dragging || surfaceOpen || resizeLockRef.current || pendingHandoffRef.current !== null) {
-        return;
-      }
-      if (arrange && selectionRef.current.size > 0) {
-        return;
-      }
-      const sectionKey = sectionNavDirection(event.key);
-      if (sectionKey === null) {
-        return;
-      }
-      const pages = workspaceRef.current.snapshot.pages;
-      const currentId = pageIdRef.current;
-      if (pages.length < 2 || currentId === null) {
-        return;
-      }
-      const neighborId =
-        sectionKey === "prev"
-          ? previousSectionId(pages.map((page) => page.id), currentId)
-          : nextSectionId(pages.map((page) => page.id), currentId);
-      if (neighborId !== null) {
-        event.preventDefault();
-        scrollToSection(neighborId);
-      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [arrange, contextMenu, dialog, overlayFolderId, launcherOpen, settingsOpen, dragging, activePage, nudgeSelection, applyHistoryStep, scrollToSection]);
+  }, [arrange, contextMenu, dialog, overlayFolderId, launcherOpen, settingsOpen, dragging, activePage, nudgeSelection, applyHistoryStep]);
 
   /**
    * Empty-desktop right-click → the VelaDesk command menu. Text fields and
@@ -1459,27 +1650,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     // Folders and widgets keep their default size: the product resizes app
     // tiles, and a group selection has no handles at all.
     return entity !== undefined && entity.kind === "app" ? new Set([id]) : EMPTY_ID_SET;
-  }, [
-    activePage,
-    arrange,
-    handoffLock,
-    selectedItemIds,
-    snapshot.entities,
-  ]);
-
-  /**
-   * A live resize owns the desktop: switching sections mid-gesture would
-   * unmount the tile (and its pointer capture) out from under the user.
-   */
-  const handleSectionSelect = useCallback(
-    (pageId: DesktopPageId) => {
-      if (resizeLockRef.current) {
-        return;
-      }
-      scrollToSection(pageId);
-    },
-    [scrollToSection]
-  );
+  }, [activePage, arrange, handoffLock, selectedItemIds, snapshot.entities]);
 
   if (activePage === undefined && pageIds.length === 0) {
     // Invariant violation (a workspace always has pages) — stay calm, stay
@@ -1490,11 +1661,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         <section className="vela-screen__panel">
           <h1 className="vela-wordmark">VelaDesk</h1>
           <p className="vela-screen__lead">{t("recovery.noPages")}</p>
-          <button
-            type="button"
-            className="vela-button"
-            onClick={() => window.location.reload()}
-          >
+          <button type="button" className="vela-button" onClick={() => window.location.reload()}>
             {t("common.retry")}
           </button>
         </section>
@@ -1509,6 +1676,22 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           (entity): entity is Folder => entity.kind === "folder" && entity.id === overlayFolderId
         )
       : undefined;
+
+  // The exiting view renders read-only from the authoritative placement.
+  const exitPage =
+    sectionExit !== null ? findDesktopPage(snapshot, sectionExit.pageId) : undefined;
+
+  // Arrange-toolbar availability (imperative history map, freshest value).
+  const toolbarHistoryUsable =
+    effectiveActivePageId !== null && !draggingRef.current && pendingHandoffRef.current === null;
+  const toolbarCanUndo =
+    toolbarHistoryUsable &&
+    effectiveActivePageId !== null &&
+    canUndo(arrangeHistoriesRef.current, effectiveActivePageId);
+  const toolbarCanRedo =
+    toolbarHistoryUsable &&
+    effectiveActivePageId !== null &&
+    canRedo(arrangeHistoriesRef.current, effectiveActivePageId);
 
   return (
     <div
@@ -1525,65 +1708,114 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         onDragEnd={wrappedHandleDragEnd}
       >
         <StaticDropFeedback />
-        <div className="vela-desktop__menu-area" ref={menuAreaRef}>
-          <div
-            className="vela-desktop__area-shell"
-            onContextMenu={handleAreaContextMenu}
-          >
+        <div className="vela-workbench">
+          <SectionRail
+            pages={pages}
+            activePageId={effectiveActivePageId}
+            onSelectSection={(pageId) => switchSection(pageId)}
+            onSectionContextMenu={(pageId, x, y) => openContextMenu({ kind: "section", pageId, x, y })}
+            onOpenCommandMenu={(x, y) => openContextMenu({ kind: "desktop", x, y })}
+            navigationLocked={railNavigationLocked}
+          />
+
+          <div className="vela-workspace">
+            {arrange && activePage !== undefined ? (
+              <ArrangeToolbar
+                placementMode={displayPlacement?.mode ?? "grid"}
+                freeformBlockedReason={freeformBlockedReason}
+                onSetPlacementMode={setPlacementMode}
+                gridGapPx={displayGapPx}
+                onGridGapChange={handleGridGapChange}
+                canUndo={toolbarCanUndo}
+                canRedo={toolbarCanRedo}
+                onUndo={() => {
+                  if (pageIdRef.current !== null) {
+                    applyHistoryStep(pageIdRef.current, "undo");
+                  }
+                }}
+                onRedo={() => {
+                  if (pageIdRef.current !== null) {
+                    applyHistoryStep(pageIdRef.current, "redo");
+                  }
+                }}
+              />
+            ) : null}
+
             {/*
-              The one real scroll container: native CSS scroll-snap paging,
-              no wheel listeners, no JS physics. While a modal or a drag is
-              up, data-scroll-locked freezes it without changing scrollTop.
+              The one section viewport: exactly the active section's content
+              scroller (plus a brief exiting twin during transitions). While
+              a modal or a drag is up, data-scroll-locked freezes scrolling
+              without changing scrollTop.
             */}
-            <div
-              className="vela-section-stack"
-              ref={navigation.stackRef}
-              data-scroll-locked={scrollLocked ? "true" : undefined}
-            >
-              {pages.map((page) => {
-                const isActive = page.id === activePageId;
-                return (
-                  <section
-                    key={page.id}
-                    ref={navigation.registerSection(page.id)}
-                    data-page-id={page.id}
-                    data-active-section={isActive ? "true" : undefined}
-                    className="vela-section"
-                  >
-                    <DesktopCanvasView
-                      canvas={
-                        isActive && displayCanvas !== null
-                          ? displayCanvas
-                          : resolvePageCanvas(page)
-                      }
-                      grid={page.layout.grid}
-                      workspace={snapshot}
-                      arrange={arrange && isActive}
-                      dragEnabled={arrange && isActive && !handoffLock && !resizeLock}
-                      metrics={isActive ? metrics : null}
-                      canvasRef={isActive ? canvasRef : undefined}
-                      selectedIds={isActive ? selectedItemIds : EMPTY_SELECTION}
-                      resizableIds={isActive ? resizableIds : EMPTY_ID_SET}
-                      resizeActiveId={isActive ? resizeActiveId : null}
-                      onResizeCommit={commitResizedRect}
-                      onResizeSessionChange={handleResizeSessionChange}
-                      onItemSelect={handleItemSelect}
-                      onEntityContextMenu={(entityId, x, y) =>
-                        openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })
-                      }
-                      onOpenFolder={(folderId) => openFolderOverlay(folderId)}
-                      onCanvasPointerDown={
-                        isActive ? handleViewportPointerDown : undefined
-                      }
-                      onCanvasPointerMove={
-                        isActive ? handleViewportPointerMove : undefined
-                      }
-                      onCanvasPointerUp={isActive ? handleViewportPointerUp : undefined}
-                    />
-                  </section>
-                );
-              })}
+            <div className="vela-section-viewport" ref={menuAreaRef} onContextMenu={handleAreaContextMenu}>
+              {exitPage !== undefined && sectionExit !== null ? (
+                <SectionView
+                  key={`exit-${sectionExit.token}-${exitPage.id}`}
+                  page={exitPage}
+                  placement={resolvePagePlacement(exitPage)}
+                  workspace={snapshot}
+                  active={false}
+                  phase={sectionExit.towards === "next" ? "exit-next" : "exit-prev"}
+                  arrange={false}
+                  dragEnabled={false}
+                  scrollLocked
+                  initialScrollTop={undefined}
+                  metrics={null}
+                  gridMetrics={null}
+                  selectedIds={EMPTY_SELECTION}
+                  resizableIds={EMPTY_ID_SET}
+                  resizeActiveId={null}
+                  onResizeCommit={commitResizedGeometry}
+                  onResizeSessionChange={handleResizeSessionChange}
+                  onItemSelect={handleItemSelect}
+                  onEntityContextMenu={(entityId, x, y) =>
+                    openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })
+                  }
+                  onOpenFolder={(folderId) => openFolderOverlay(folderId)}
+                />
+              ) : null}
+
+              {activePage !== undefined && displayPlacement !== null ? (
+                <SectionView
+                  key={activePage.id}
+                  page={activePage}
+                  placement={displayPlacement}
+                  workspace={snapshot}
+                  active
+                  phase="active"
+                  arrange={arrange}
+                  dragEnabled={arrange && !handoffLock && !resizeLock}
+                  scrollLocked={scrollLocked}
+                  initialScrollTop={scrollMemoryRef.current.recall(activePage.id)}
+                  onScrollerMount={(node) => {
+                    activeScrollerRef.current = node;
+                  }}
+                  metrics={freeformMetrics}
+                  gridMetrics={gridMetrics}
+                  canvasRef={canvasRef}
+                  gridStageRef={gridStageRef}
+                  selectedIds={selectedItemIds}
+                  resizableIds={resizableIds}
+                  resizeActiveId={resizeActiveId}
+                  onResizeCommit={commitResizedGeometry}
+                  onResizeSessionChange={handleResizeSessionChange}
+                  onItemSelect={handleItemSelect}
+                  onEntityContextMenu={(entityId, x, y) =>
+                    openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })
+                  }
+                  onOpenFolder={(folderId) => openFolderOverlay(folderId)}
+                  onCanvasPointerDown={handleViewportPointerDown}
+                  onCanvasPointerMove={handleViewportPointerMove}
+                  onCanvasPointerUp={handleViewportPointerUp}
+                />
+              ) : null}
             </div>
+
+            {/*
+              Sync state is a quiet GLOBAL status, not part of the section
+              list: it renders only when there is something to say.
+            */}
+            <SectionSyncStatus workspace={workspace} lastRemoteResult={lastRemoteResult} />
           </div>
         </div>
       </DragDropProvider>
@@ -1599,15 +1831,6 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           }}
         />
       ) : null}
-
-      <SectionNavigation
-        pages={pages}
-        activePageId={activePageId}
-        onSelectSection={handleSectionSelect}
-        onSectionContextMenu={(pageId, x, y) => openContextMenu({ kind: "section", pageId, x, y })}
-        onOpenCommandMenu={(x, y) => openContextMenu({ kind: "desktop", x, y })}
-        footer={<SectionSyncStatus workspace={workspace} lastRemoteResult={lastRemoteResult} />}
-      />
 
       <Dock
         workspace={snapshot}
@@ -1639,18 +1862,10 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         />
       ) : null}
       {dialog !== null && dialog.kind === "edit-app" ? (
-        <EditAppDialog
-          workspace={snapshot}
-          appId={dialog.entityId}
-          onClose={closeDialog}
-        />
+        <EditAppDialog workspace={snapshot} appId={dialog.entityId} onClose={closeDialog} />
       ) : null}
       {dialog !== null && dialog.kind === "edit-visual" ? (
-        <AppVisualEditor
-          workspace={snapshot}
-          appId={dialog.entityId}
-          onClose={closeDialog}
-        />
+        <AppVisualEditor workspace={snapshot} appId={dialog.entityId} onClose={closeDialog} />
       ) : null}
       {dialog !== null && dialog.kind === "delete-app" ? (
         <DeleteAppConfirm
@@ -1666,9 +1881,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           workspace={snapshot}
           gridSourcePage={activePage ?? pages[0]!}
           section={
-            dialog.kind === "rename-section"
-              ? findDesktopPage(snapshot, dialog.pageId)
-              : undefined
+            dialog.kind === "rename-section" ? findDesktopPage(snapshot, dialog.pageId) : undefined
           }
           onCreated={(pageId) => {
             pendingRevealRef.current = pageId;
@@ -1697,7 +1910,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       {dialog !== null && dialog.kind === "rename-folder" ? (
         <FolderDialog
           workspace={snapshot}
-          pageId={activePageId ?? pages[0]!.id}
+          pageId={effectiveActivePageId ?? pages[0]!.id}
           folder={findFolderEntity(snapshot, dialog.folderId)}
           onClose={closeDialog}
         />
@@ -1740,7 +1953,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
 /**
  * Mounts inside the DragDropProvider and configures its manager once:
  * decorative drop animation off (official Feedback#dropAnimation = null),
- * so an arrange drop paints straight into its snapped cell and stays
+ * so an arrange drop paints straight into its target geometry and stays
  * still. See dnd-static-drop.ts for the product rationale.
  */
 function StaticDropFeedback() {
@@ -1753,23 +1966,19 @@ function StaticDropFeedback() {
   return null;
 }
 
-function findFolderEntity(
-  workspace: WorkspaceSnapshot,
-  folderId: EntityId
-): Folder | undefined {
+function findFolderEntity(workspace: WorkspaceSnapshot, folderId: EntityId): Folder | undefined {
   const entity = workspace.entities.find((candidate) => candidate.id === folderId);
   return entity !== undefined && entity.kind === "folder" ? entity : undefined;
 }
 
 /** The page whose canvas currently holds this entity, when any. */
-function containerPageId(
-  workspace: WorkspaceSnapshot,
-  entityId: EntityId
-): DesktopPageId | null {
-  const page = workspace.pages.find((candidate) =>
-    pageItemIds(candidate).includes(entityId)
-  );
+function containerPageId(workspace: WorkspaceSnapshot, entityId: EntityId): DesktopPageId | null {
+  const page = workspace.pages.find((candidate) => pageItemIds(candidate).includes(entityId));
   return page?.id ?? null;
+}
+
+function areRectsEqual(a: CanvasRect, b: CanvasRect): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
 function DeleteAppConfirm({

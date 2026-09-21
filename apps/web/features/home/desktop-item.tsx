@@ -10,21 +10,36 @@ import type {
   RefObject,
 } from "react";
 import type { EntityId, WorkspaceEntity, WorkspaceSnapshot } from "@veladesk/domain";
-import type { CanvasLayoutItem, CanvasPlacementMode, CanvasRect, CanvasResizeHandle } from "@veladesk/canvas-engine";
-import type { GridDefinition } from "@veladesk/desktop-engine";
+import type {
+  CanvasLayoutItem,
+  CanvasResizeHandle,
+  GridCanvasItem,
+} from "@veladesk/canvas-engine";
 
 import { contextMenuAnchorFromElement, isContextMenuKeyEvent } from "./context-menu";
 import { AppIconTile } from "./app-icon-renderer";
-import { CANVAS_RESIZE_HANDLES, canvasResizeRectAt, isCanvasResizeNoop } from "../canvas/canvas-resize";
-import type { CanvasResizeSession } from "../canvas/canvas-resize";
+import {
+  CANVAS_RESIZE_HANDLES,
+  canvasResizeRectAt,
+  gridResizeGeometryAt,
+  isCanvasResizeNoop,
+} from "../canvas/canvas-resize";
+import type {
+  CanvasResizeSession,
+  ResizeCommitGeometry,
+} from "../canvas/canvas-resize";
 import { canvasRectStyle } from "../canvas/canvas-style";
+import { gridPlacementStyle } from "../canvas/square-grid-metrics";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
 import { launchApp } from "./launch-app";
 import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
 
+/** Which geometry model places this item. */
+export type ItemGeometry = "grid" | "freeform";
+
 interface DesktopItemProps {
-  readonly item: CanvasLayoutItem;
+  readonly item: CanvasLayoutItem | GridCanvasItem;
   readonly workspace: WorkspaceSnapshot;
   /** Arrange mode allows dragging and resizing; view mode launches. */
   readonly arrange: boolean;
@@ -34,10 +49,13 @@ interface DesktopItemProps {
    * mode stays a pure user-facing concept.
    */
   readonly dragEnabled: boolean;
-  /** Canvas pixel metrics; geometry gestures need them to convert pointers. */
+  /** Freeform: canvas pixel metrics. Grid: null. */
   readonly metrics: CanvasPixelMetrics | null;
-  readonly grid: GridDefinition;
-  readonly placementMode: CanvasPlacementMode;
+  /** Grid: cell pitch. Freeform: null. */
+  readonly gridPitchPx: number | null;
+  /** Grid: the persistent column count (resize bounds). */
+  readonly gridColumns: number | null;
+  readonly geometry: ItemGeometry;
   /** Whether this item is in the session-only arrange selection. */
   readonly selected: boolean;
   /**
@@ -48,7 +66,7 @@ interface DesktopItemProps {
   readonly resizable: boolean;
   /** The app whose resize session or handoff is live, if any. */
   readonly resizeActiveId: EntityId | null;
-  readonly onResizeCommit: (entityId: EntityId, rect: CanvasRect) => void;
+  readonly onResizeCommit: (entityId: EntityId, geometry: ResizeCommitGeometry) => void;
   /** Reports a session start/end so the shell can lock competing gestures. */
   readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
   /** Arrange-mode click: plain selects, Cmd/Ctrl toggles (shell decides). */
@@ -58,44 +76,29 @@ interface DesktopItemProps {
 }
 
 /**
- * One desktop entity (app, folder or widget) placed on a page canvas.
+ * One desktop entity (app, folder or widget) placed on a page.
  *
- * The item box IS the canvas rect: absolutely positioned in percent space,
- * with the decoration, glyph, label and (in arrange) the resize handles
- * laid out inside it. A rect that is wider than it is tall therefore paints
- * a genuinely rectangular tile — the same code renders a square, a
- * landscape and a portrait app.
+ * In freeform the item box IS the canvas rect: absolutely positioned in
+ * percent space. In grid the item occupies its CSS Grid area
+ * (`gridColumn`/`gridRow` from integer cell geometry). Both models share
+ * the body: decoration, glyph, label and (in arrange) the eight resize
+ * handles laid out inside the item box — a wider-than-tall area paints a
+ * genuinely rectangular tile either way.
  *
  * Apps are buttons: native focus and Enter/Space keep launch accessible in
  * view mode, while dnd-kit's keyboard sensor owns drag gestures in arrange
  * mode. View-mode clicks launch apps / open folders; arrange-mode clicks
  * drive the session selection.
  */
-export function DesktopItem({
-  item,
-  workspace,
-  arrange,
-  dragEnabled,
-  metrics,
-  grid,
-  placementMode,
-  selected,
-  resizable,
-  resizeActiveId,
-  onResizeCommit,
-  onResizeSessionChange,
-  onItemSelect,
-  onEntityContextMenu,
-  onOpenFolder,
-}: DesktopItemProps) {
+export function DesktopItem(props: DesktopItemProps) {
   const { t } = useI18n();
-  const entity = workspace.entities.find((candidate) => candidate.id === item.id);
+  const entity = props.workspace.entities.find((candidate) => candidate.id === props.item.id);
 
   if (entity === undefined) {
     return (
       <div
         className="vela-item vela-item--missing"
-        style={canvasRectStyle(item.rect)}
+        style={itemStyle(props.geometry, props.item)}
         title={t("item.missingTitle")}
         onContextMenu={swallowContextMenu}
       >
@@ -106,25 +109,15 @@ export function DesktopItem({
     );
   }
 
-  return (
-    <DesktopEntity
-      item={item}
-      entity={entity}
-      arrange={arrange}
-      dragEnabled={dragEnabled}
-      metrics={metrics}
-      grid={grid}
-      placementMode={placementMode}
-      selected={selected}
-      resizable={resizable}
-      resizeActiveId={resizeActiveId}
-      onResizeCommit={onResizeCommit}
-      onResizeSessionChange={onResizeSessionChange}
-      onItemSelect={onItemSelect}
-      onEntityContextMenu={onEntityContextMenu}
-      onOpenFolder={onOpenFolder}
-    />
-  );
+  return <DesktopEntity {...props} entity={entity} />;
+}
+
+/** Inline placement of one item under either geometry model. */
+function itemStyle(geometry: ItemGeometry, item: CanvasLayoutItem | GridCanvasItem): CSSProperties {
+  if (geometry === "grid") {
+    return gridPlacementStyle(item as GridCanvasItem);
+  }
+  return canvasRectStyle((item as CanvasLayoutItem).rect);
 }
 
 function swallowContextMenu(event: ReactMouseEvent) {
@@ -149,8 +142,9 @@ function DesktopEntity({
   arrange,
   dragEnabled,
   metrics,
-  grid,
-  placementMode,
+  gridPitchPx,
+  gridColumns,
+  geometry,
   selected,
   resizable,
   resizeActiveId,
@@ -161,32 +155,52 @@ function DesktopEntity({
   onOpenFolder,
 }: DesktopEntityProps) {
   const { t } = useI18n();
+  const gesturesReady =
+    geometry === "grid" ? gridPitchPx !== null && gridColumns !== null : metrics !== null;
   const { ref, isDragging } = useDraggable({
     id: item.id,
-    disabled: !arrange || !dragEnabled || metrics === null,
+    disabled: !arrange || !dragEnabled || !gesturesReady,
   });
   const itemRef = useRef<HTMLElement | null>(null);
   const resizeRef = useRef<ActiveResize | null>(null);
   const [resizing, setResizing] = useState(false);
 
   /**
-   * The rect the element shows right now, as an inline style. During a
+   * The geometry the element shows right now, as inline styles. During a
    * resize gesture the preview writes here directly — never through React
    * state — so a pointermove costs no render. Cancel and no-op commits put
-   * the authoritative start rect back, because React will not re-apply a
-   * style prop that never changed.
+   * the authoritative start geometry back, because React will not re-apply
+   * a style prop that never changed.
    */
-  const applyRect = useCallback((rect: CanvasRect) => {
-    const element = itemRef.current;
-    if (element === null) {
-      return;
-    }
-    const style = canvasRectStyle(rect) as Record<string, string | number>;
-    element.style.left = String(style.left);
-    element.style.top = String(style.top);
-    element.style.width = String(style.width);
-    element.style.height = String(style.height);
-  }, []);
+  const applyGeometry = useCallback(
+    (next: ResizeCommitGeometry) => {
+      const element = itemRef.current;
+      if (element === null) {
+        return;
+      }
+      if (next.kind === "freeform") {
+        const style = canvasRectStyle(next.rect) as Record<string, string | number>;
+        element.style.gridColumn = "";
+        element.style.gridRow = "";
+        element.style.left = String(style.left);
+        element.style.top = String(style.top);
+        element.style.width = String(style.width);
+        element.style.height = String(style.height);
+        return;
+      }
+      const style = gridPlacementStyle({ id: item.id, ...next.geometry }) as Record<
+        string,
+        string | number
+      >;
+      element.style.left = "";
+      element.style.top = "";
+      element.style.width = "";
+      element.style.height = "";
+      element.style.gridColumn = String(style.gridColumn);
+      element.style.gridRow = String(style.gridRow);
+    },
+    [item.id],
+  );
 
   function endResize() {
     resizeRef.current = null;
@@ -199,7 +213,7 @@ function DesktopEntity({
     if (active === null) {
       return;
     }
-    applyRect(active.session.startRect);
+    applyGeometry(startGeometryOf(active.session));
     endResize();
   }
 
@@ -214,24 +228,61 @@ function DesktopEntity({
       // tile would start dragging instead of resizing.
       event.preventDefault();
       event.stopPropagation();
-      if (resizeRef.current !== null || metrics === null) {
+      if (resizeRef.current !== null || !gesturesReady) {
         return;
       }
       event.currentTarget.setPointerCapture(event.pointerId);
-      resizeRef.current = {
-        session: {
-          handle,
-          startRect: item.rect,
-          startPointerX: event.clientX,
-          startPointerY: event.clientY,
-          metrics,
-          grid,
-          mode: placementMode,
-        },
-        pointerId: event.pointerId,
-      };
+      if (geometry === "grid") {
+        const gridItem = item as GridCanvasItem;
+        resizeRef.current = {
+          session: {
+            kind: "grid",
+            handle,
+            itemId: item.id,
+            startGeometry: {
+              column: gridItem.column,
+              row: gridItem.row,
+              columnSpan: gridItem.columnSpan,
+              rowSpan: gridItem.rowSpan,
+            },
+            startPointerX: event.clientX,
+            startPointerY: event.clientY,
+            pitchPx: gridPitchPx ?? 1,
+            columns: gridColumns ?? 1,
+          },
+          pointerId: event.pointerId,
+        };
+      } else {
+        resizeRef.current = {
+          session: {
+            kind: "freeform",
+            handle,
+            startRect: (item as CanvasLayoutItem).rect,
+            startPointerX: event.clientX,
+            startPointerY: event.clientY,
+            metrics: metrics!,
+          },
+          pointerId: event.pointerId,
+        };
+      }
       setResizing(true);
       onResizeSessionChange(entity.id, true);
+    };
+  }
+
+  function previewGeometryAt(
+    session: CanvasResizeSession,
+    pointerX: number,
+    pointerY: number,
+    shiftKey: boolean,
+  ): ResizeCommitGeometry {
+    if (session.kind === "grid") {
+      // Shift is a freeform behavior only — grid spans never aspect-lock.
+      return { kind: "grid", geometry: gridResizeGeometryAt(session, pointerX, pointerY) };
+    }
+    return {
+      kind: "freeform",
+      rect: canvasResizeRectAt(session, pointerX, pointerY, shiftKey),
     };
   }
 
@@ -240,8 +291,8 @@ function DesktopEntity({
     if (active === null || active.pointerId !== event.pointerId) {
       return;
     }
-    applyRect(
-      canvasResizeRectAt(active.session, event.clientX, event.clientY, event.shiftKey),
+    applyGeometry(
+      previewGeometryAt(active.session, event.clientX, event.clientY, event.shiftKey),
     );
   }
 
@@ -250,23 +301,24 @@ function DesktopEntity({
     if (active === null || active.pointerId !== event.pointerId) {
       return;
     }
-    const finalRect = canvasResizeRectAt(
+    const finalGeometry = previewGeometryAt(
       active.session,
       event.clientX,
       event.clientY,
       event.shiftKey,
     );
+    const startGeometry = startGeometryOf(active.session);
     endResize();
-    if (isCanvasResizeNoop(active.session.startRect, finalRect)) {
+    if (isCanvasResizeNoop(startGeometry, finalGeometry)) {
       // No effective change: no commit, no history entry, no sync — and the
-      // preview goes back to the authoritative rect.
-      applyRect(active.session.startRect);
+      // preview goes back to the authoritative geometry.
+      applyGeometry(startGeometry);
       return;
     }
-    // The preview STAYS at finalRect: the shell hands it off to the durable
-    // snapshot, or drops it (failed stage) — it never flashes back to the
-    // old rect in between.
-    onResizeCommit(entity.id, finalRect);
+    // The preview STAYS at the final geometry: the shell hands it off to the
+    // durable snapshot, or drops it (failed stage) — it never flashes back
+    // to the old geometry in between.
+    onResizeCommit(entity.id, finalGeometry);
   }
 
   /** Capture lost without a pointerup (OS gesture, element detach): cancel. */
@@ -297,11 +349,11 @@ function DesktopEntity({
     entity.kind === "app" &&
     resizable &&
     !isDragging &&
-    metrics !== null &&
+    gesturesReady &&
     (resizeActiveId === null || resizeActiveId === entity.id);
 
   const commonStyle: CSSProperties = {
-    ...canvasRectStyle(item.rect),
+    ...itemStyle(geometry, item),
     ...(isDragging ? { zIndex: 30 } : {}),
   };
   const draggingProps = { "data-dragging": isDragging ? "true" : undefined } as const;
@@ -437,6 +489,13 @@ function DesktopEntity({
       </span>
     </div>
   );
+}
+
+/** The committed start geometry of a session, in commit form. */
+function startGeometryOf(session: CanvasResizeSession): ResizeCommitGeometry {
+  return session.kind === "grid"
+    ? { kind: "grid", geometry: session.startGeometry }
+    : { kind: "freeform", rect: session.startRect };
 }
 
 /**

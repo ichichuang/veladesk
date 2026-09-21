@@ -4,12 +4,13 @@ import { describe, expect, it } from "vitest";
 import { fileURLToPath } from "node:url";
 
 /**
- * Static contracts of the arrange resize surface (016-C) and the canvas
- * renderer. React component tests are out of scope for this project, so the
- * behaviour that must not silently regress is asserted against the source:
- * a regression here (a grid placement creeping back in, a handle losing its
- * pointer capture, a resize staging on pointermove) is exactly the kind of
- * change that would look fine in a diff and break the interaction.
+ * Static contracts of the task-017 dual-geometry item surface. React
+ * component tests are out of scope for this project, so the behaviour that
+ * must not silently regress is asserted against the source: a regression
+ * here (freeform items losing percent geometry, grid items losing CSS Grid
+ * placement, a handle losing its pointer capture, a resize staging on
+ * pointermove) is exactly the kind of change that would look fine in a
+ * diff and break the interaction.
  */
 function source(file: string): string {
   return readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
@@ -18,24 +19,35 @@ function source(file: string): string {
 const item = source("./desktop-item.tsx");
 const grid = source("./desktop-grid.tsx");
 const shell = source("./desktop-shell.tsx");
+const stage = source("./section-view.tsx");
 
-describe("desktop item — canvas geometry only", () => {
-  it("positions items through canvasRectStyle, never through CSS grid", () => {
-    expect(item).toContain("canvasRectStyle(item.rect)");
-    expect(item).not.toMatch(/gridColumn|gridRow/);
-    expect(grid).not.toMatch(/gridColumn|gridRow|grid-template|display:\s*grid/);
+describe("desktop item — dual geometry", () => {
+  it("positions freeform items through canvasRectStyle and grid items through gridPlacementStyle", () => {
+    expect(item).toContain("itemStyle(geometry, item)");
+    expect(item).toContain('geometry === "grid"');
+    expect(grid).toMatch(/gridPlacementStyle|gridColumn/);
+    // The CSS Grid host really is a grid with auto rows and a real gap.
+    expect(grid).toContain("gridTemplateColumns");
   });
 
   it("keeps the visual layer separate from the box the pointer hits", () => {
     expect(item).toContain('className="vela-item__body"');
+    expect(grid).toContain('className="vela-grid-host"');
     expect(grid).toContain('className="vela-canvas"');
-    // The lattice overlay is arrange-only AND snap-only: a freeform canvas
-    // has no lattice, so dots there would misdescribe the model.
-    expect(grid).toMatch(/arrange && v1\.mode === "snap"/);
+    // The visible square grid is a pointer-transparent overlay, never
+    // marker nodes, and it is arrange-only.
+    expect(grid).toMatch(/\{arrange \? <div className="vela-grid-lines" aria-hidden="true" \/> : null\}/);
   });
 
-  it("renders the lattice from real cell centers", () => {
-    expect(grid).toContain("canvasLatticeMarkers(grid)");
+  it("passes grid pitch and columns to items for gesture math", () => {
+    expect(grid).toContain("gridPitchPx={gridMetrics?.pitchPx ?? null}");
+    expect(grid).toContain("gridColumns={placement.columns}");
+  });
+
+  it("previews grid resizes by writing gridColumn/gridRow directly", () => {
+    expect(item).toContain("element.style.gridColumn");
+    expect(item).toContain("element.style.gridRow");
+    expect(item).toContain("element.style.left");
   });
 });
 
@@ -72,25 +84,26 @@ describe("desktop item — eight resize handles", () => {
 
 describe("desktop item — resize stays a preview until release", () => {
   it("writes the preview straight to the element, with no React state per frame", () => {
-    expect(item).toContain("applyRect");
+    expect(item).toContain("applyGeometry");
     expect(item).toMatch(/element\.style\.left/);
     // The pointermove handler may only paint: the single commit lives in the
     // pointerup handler, and nothing in this component stages or syncs.
     const pointerMove = item.match(/function handleResizePointerMove[\s\S]*?\n  \}/)?.[0] ?? "";
-    expect(pointerMove).toContain("applyRect(");
+    expect(pointerMove).toContain("applyGeometry(");
     expect(pointerMove).not.toContain("onResizeCommit");
     expect(item).not.toMatch(/stageWorkspace|syncCurrent|runtime\./);
-    expect(item).toContain("onResizeCommit(entity.id, finalRect)");
+    expect(item).toContain("onResizeCommit(entity.id, finalGeometry)");
   });
 
   it("leaves the geometry untouched for a no-op gesture", () => {
     expect(item).toContain("isCanvasResizeNoop(");
-    expect(item).toMatch(/applyRect\(active\.session\.startRect\)/);
+    expect(item).toMatch(/applyGeometry\(startGeometryOf\(active\.session\)\)/);
   });
 
-  it("computes the rect through the pure resize math, not inline pointer math", () => {
+  it("computes the geometry through the pure resize math, not inline pointer math", () => {
+    expect(item).toContain("previewGeometryAt(");
+    expect(item).toContain("gridResizeGeometryAt(");
     expect(item).toContain("canvasResizeRectAt(");
-    expect(item).not.toMatch(/clientX\s*-\s*|deltaX\s*=/);
   });
 });
 
@@ -117,6 +130,6 @@ describe("desktop shell — canvas commit path", () => {
 
   it("locks competing gestures while geometry is in flight", () => {
     expect(shell).toContain("pendingHandoffRef.current !== null || resizeLockRef.current");
-    expect(shell).toContain("data-scroll-locked={scrollLocked");
+    expect(stage).toContain('data-scroll-locked={scrollLocked ? "true" : undefined}');
   });
 });

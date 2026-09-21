@@ -1,40 +1,39 @@
 "use client";
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import type {
-  CanvasLayout,
-  CanvasLayoutV1,
-  CanvasRect,
-} from "@veladesk/canvas-engine";
-import type { GridDefinition } from "@veladesk/desktop-engine";
-import type { EntityId, WorkspaceSnapshot } from "@veladesk/domain";
+import type { CanvasLayoutItem } from "@veladesk/canvas-engine";
+import type { PagePlacement, WorkspaceSnapshot, EntityId } from "@veladesk/domain";
 
 import { DesktopItem } from "./desktop-item";
-import { canvasLatticeMarkers } from "../canvas/canvas-style";
+import type { ResizeCommitGeometry } from "../canvas/canvas-resize";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
+import type { SquareGridMetrics } from "../canvas/square-grid-metrics";
 import "./home-shell.css";
 
 interface DesktopCanvasViewProps {
-  readonly canvas: CanvasLayout;
-  /** The page grid: the snap lattice of this canvas, never a capacity model. */
-  readonly grid: GridDefinition;
+  readonly placement: PagePlacement;
   readonly workspace: WorkspaceSnapshot;
   /**
-   * Whether THIS section runs the arrange session. In the scroll-snap
-   * workspace only the active section arranges (task 015) — passing
-   * `arrange` already implies the section is active.
+   * Whether THIS section runs the arrange session. Only the active section
+   * arranges (task 015 rule kept) — passing `arrange` already implies the
+   * section is active.
    */
   readonly arrange: boolean;
   /**
    * Whether items may start drag sessions at all. Independent of `arrange`:
    * a pending drop handoff briefly disables new drags without pretending the
-   * desktop left arrange mode. Inactive sections always render with drags
-   * off.
+   * desktop left arrange mode. Inactive/exiting sections always render with
+   * drags off.
    */
   readonly dragEnabled: boolean;
-  /** Canvas pixel metrics — only the active section is measured. */
+  /** Freeform: canvas pixel metrics — only the active section is measured. */
   readonly metrics: CanvasPixelMetrics | null;
+  /** Grid: square-cell metrics — only the active section is measured. */
+  readonly gridMetrics: SquareGridMetrics | null;
+  /** Freeform measurement ref (attaches to `.vela-canvas`). */
   readonly canvasRef?: ((node: HTMLDivElement | null) => void) | undefined;
+  /** Grid measurement ref (attaches to `.vela-grid-stage`). */
+  readonly gridStageRef?: ((node: HTMLDivElement | null) => void) | undefined;
   readonly selectedIds: ReadonlySet<EntityId>;
   /**
    * The items that may show the eight resize handles this frame. The shell
@@ -43,7 +42,7 @@ interface DesktopCanvasViewProps {
   readonly resizableIds: ReadonlySet<EntityId>;
   /** The app whose resize session or handoff is live, if any. */
   readonly resizeActiveId: EntityId | null;
-  readonly onResizeCommit: (entityId: EntityId, rect: CanvasRect) => void;
+  readonly onResizeCommit: (entityId: EntityId, geometry: ResizeCommitGeometry) => void;
   readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
@@ -55,25 +54,30 @@ interface DesktopCanvasViewProps {
 }
 
 /**
- * One section's desktop canvas.
+ * One section's placed content — the task 017 dual renderer.
  *
- * `.vela-canvas` is an absolutely positioned box sitting exactly on the
- * desktop's usable content box (nav safe area, paddings and dock reserve
- * come from CSS), so the logical 0..10000 space maps onto percentage
- * placement — there is no CSS grid anywhere in the production renderer.
- * Arrange interaction (lattice markers, marquee, selection) belongs to the
- * active section only; inactive sections render the same items read-only so
- * scrolling shows the real next section. Pure rendering — drag sessions,
- * selection state and context menus live in the shell.
+ * GRID mode is a real CSS Grid: `repeat(columns, minmax(0, 1fr))` columns,
+ * `grid-auto-rows: var(--vd-grid-cell-size)` rows and `gap:
+ * var(--vd-grid-gap)`; content rows grow without a fixed row count, so the
+ * section scroller (the parent) owns vertical scrolling. In Arrange the
+ * stage paints the visible square-cell grid as a pure background pattern —
+ * never marker nodes, never a pointer target.
+ *
+ * FREEFORM keeps the continuous percent-space canvas: absolutely positioned
+ * rects inside one viewport-height stage, exactly the pre-017 model.
+ *
+ * Pure rendering — drag sessions, selection state and context menus live in
+ * the shell.
  */
 export function DesktopCanvasView({
-  canvas,
-  grid,
+  placement,
   workspace,
   arrange,
   dragEnabled,
   metrics,
+  gridMetrics,
   canvasRef,
+  gridStageRef,
   selectedIds,
   resizableIds,
   resizeActiveId,
@@ -86,47 +90,74 @@ export function DesktopCanvasView({
   onCanvasPointerMove,
   onCanvasPointerUp,
 }: DesktopCanvasViewProps) {
-  // The lattice is an alignment hint of SNAP sections only: in freeform the
-  // canvas has no lattice, so showing dots would lie about the model.
-  const v1 = canvas as CanvasLayoutV1;
-  const markers = arrange && v1.mode === "snap" ? canvasLatticeMarkers(grid) : [];
-
-  return (
-    <div className="vela-desktop__viewport" data-arrange={arrange ? "true" : "false"}>
+  if (placement.mode === "grid") {
+    return (
       <div
-        ref={canvasRef}
-        className="vela-canvas"
-        data-placement-mode={v1.mode}
+        ref={gridStageRef}
+        className="vela-grid-stage"
+        data-arrange={arrange ? "true" : "false"}
+        style={
+          {
+            "--vd-grid-cell-size": `${gridMetrics?.cellPx ?? 0}px`,
+            "--vd-grid-gap": `${gridMetrics?.gapPx ?? 0}px`,
+          } as CSSProperties
+        }
         onPointerDown={onCanvasPointerDown}
         onPointerMove={onCanvasPointerMove}
         onPointerUp={onCanvasPointerUp}
       >
-        {markers.length > 0 ? (
-          <div className="vela-desktop__lattice" aria-hidden="true">
-            {markers.map((marker) => (
-              <span
-                key={marker.key}
-                className="vela-desktop__grid-guide"
-                style={
-                  {
-                    left: `${marker.left}%`,
-                    top: `${marker.top}%`,
-                  } as CSSProperties
-                }
-              />
-            ))}
-          </div>
-        ) : null}
-        {v1.items.map((item) => (
+        {arrange ? <div className="vela-grid-lines" aria-hidden="true" /> : null}
+        <div
+          className="vela-grid-host"
+          style={{ gridTemplateColumns: `repeat(${placement.columns}, minmax(0, 1fr))` }}
+        >
+          {placement.items.map((item) => (
+            <DesktopItem
+              key={item.id}
+              item={item}
+              workspace={workspace}
+              arrange={arrange}
+              dragEnabled={dragEnabled}
+              metrics={null}
+              gridPitchPx={gridMetrics?.pitchPx ?? null}
+              gridColumns={placement.columns}
+              geometry="grid"
+              selected={selectedIds.has(item.id)}
+              resizable={resizableIds.has(item.id)}
+              resizeActiveId={resizeActiveId}
+              onResizeCommit={onResizeCommit}
+              onResizeSessionChange={onResizeSessionChange}
+              onItemSelect={onItemSelect}
+              onEntityContextMenu={onEntityContextMenu}
+              onOpenFolder={onOpenFolder}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="vela-freeform-stage" data-arrange={arrange ? "true" : "false"}>
+      <div
+        ref={canvasRef}
+        className="vela-canvas"
+        data-placement-mode="freeform"
+        onPointerDown={onCanvasPointerDown}
+        onPointerMove={onCanvasPointerMove}
+        onPointerUp={onCanvasPointerUp}
+      >
+        {placement.items.map((item) => (
           <DesktopItem
             key={item.id}
-            item={item}
+            item={item as CanvasLayoutItem}
             workspace={workspace}
             arrange={arrange}
             dragEnabled={dragEnabled}
             metrics={metrics}
-            grid={grid}
-            placementMode={v1.mode}
+            gridPitchPx={null}
+            gridColumns={null}
+            geometry="freeform"
             selected={selectedIds.has(item.id)}
             resizable={resizableIds.has(item.id)}
             resizeActiveId={resizeActiveId}

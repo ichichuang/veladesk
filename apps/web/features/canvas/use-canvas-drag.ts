@@ -2,11 +2,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from "@dnd-kit/react";
-import type { CanvasLayout } from "@veladesk/canvas-engine";
 import { areCanvasLayoutsEqual } from "@veladesk/canvas-engine";
-import type { GridDefinition, LayoutItemId } from "@veladesk/desktop-engine";
+import type { PagePlacement } from "@veladesk/domain";
+import type { LayoutItemId } from "@veladesk/desktop-engine";
 
-import { areCanvasPixelMetricsEqual } from "./canvas-metrics";
 import type { CanvasPixelMetrics } from "./canvas-metrics";
 import { commitCanvasDrag, previewCanvasDrag } from "./canvas-drag";
 
@@ -16,27 +15,30 @@ export const CANVAS_DRAG_PREVIEW_VAR = "--vd-canvas-drag-preview";
 interface ActiveCanvasDragSession {
   readonly sourceItemId: LayoutItemId;
   readonly itemIds: readonly LayoutItemId[];
-  readonly canvasAtStart: CanvasLayout;
-  readonly metricsAtStart: CanvasPixelMetrics;
-  readonly grid: GridDefinition;
+  readonly placementAtStart: PagePlacement;
+  /** Freeform: the canvas pixel box at start. Grid: null. */
+  readonly metricsAtStart: CanvasPixelMetrics | null;
+  /** Grid: the cell pitch at start. Freeform: null. */
+  readonly pitchAtStart: number | null;
 }
 
 export interface CanvasDragOptions {
   /**
-   * The canvas being dragged. `null` disables sessions; identity is the
-   * staleness signal, so a canvas replaced mid-drag invalidates the session.
+   * The placement being dragged. `null` disables sessions; identity is the
+   * staleness signal, so a placement replaced mid-drag invalidates the
+   * session.
    */
-  readonly canvas: CanvasLayout | null;
-  /** Snap lattice source (the page grid, kept after materialization). */
-  readonly grid: GridDefinition;
+  readonly placement: PagePlacement | null;
   /** Current canvas pixel metrics, or `null` while unmeasurable. */
   readonly metrics: CanvasPixelMetrics | null;
+  /** Grid cell pitch (cellPx + gapPx), or `null` for freeform sections. */
+  readonly pitchPx: number | null;
   /**
-   * Called exactly once per effective drop with the moved canvas and the
-   * exact drag-start canvas it was computed from. Never called for cancels,
-   * invalidations or no-op drops.
+   * Called exactly once per effective drop with the moved placement and the
+   * exact drag-start placement it was computed from. Never called for
+   * cancels, invalidations or no-op drops.
    */
-  readonly onCommit: (movedCanvas: CanvasLayout, canvasAtStart: CanvasLayout) => void;
+  readonly onCommit: (movedPlacement: PagePlacement, placementAtStart: PagePlacement) => void;
   /** The item ids this drag moves (selection-aware). Defaults to the source. */
   readonly getDragItemIds?: (sourceId: LayoutItemId) => readonly LayoutItemId[];
   readonly resolveItemElement?: (itemId: LayoutItemId) => Element | null;
@@ -46,19 +48,19 @@ export interface CanvasDragOptions {
  * The canvas drag session.
  *
  * dnd-kit owns the pointer-follow transform of the dragged source; this hook
- * owns everything else: it snapshots canvas, metrics and the moving ids at
- * drag start, previews the resolved translation during the move (freeform:
- * continuous; snap: one snapped delta for the whole group, applied to the
- * source as a correction so the source and its peers stay rigid), and
- * commits each drag exactly once at drop time.
+ * owns everything else: it snapshots the placement, metrics/pitch and the
+ * moving ids at drag start, previews the resolved translation during the
+ * move (freeform: continuous; grid: whole cells, one rigid delta for the
+ * whole group, applied to the source as a correction so the source and its
+ * peers stay aligned), and commits each drag exactly once at drop time.
  *
  * Pointermove NEVER stages or persists anything — the preview is a CSS
  * custom property write, and the single durable commit happens on pointerup.
  */
 export function useCanvasDrag({
-  canvas,
-  grid,
+  placement,
   metrics,
+  pitchPx,
   onCommit,
   getDragItemIds,
   resolveItemElement,
@@ -71,18 +73,22 @@ export function useCanvasDrag({
   const [dragging, setDragging] = useState(false);
   const sessionRef = useRef<ActiveCanvasDragSession | null>(null);
   const pendingPeerClearRef = useRef<ActiveCanvasDragSession | null>(null);
-  const canvasRef = useRef<CanvasLayout | null>(canvas);
+  const placementRef = useRef<PagePlacement | null>(placement);
   const metricsRef = useRef<CanvasPixelMetrics | null>(metrics);
+  const pitchRef = useRef<number | null>(pitchPx);
   const onCommitRef = useRef(onCommit);
   const getDragItemIdsRef = useRef(getDragItemIds);
   const resolveItemElementRef = useRef(resolveItemElement);
 
   useEffect(() => {
-    canvasRef.current = canvas;
-  }, [canvas]);
+    placementRef.current = placement;
+  }, [placement]);
   useEffect(() => {
     metricsRef.current = metrics;
   }, [metrics]);
+  useEffect(() => {
+    pitchRef.current = pitchPx;
+  }, [pitchPx]);
   useEffect(() => {
     onCommitRef.current = onCommit;
   });
@@ -94,8 +100,9 @@ export function useCanvasDrag({
   });
 
   // Zero-bounce handoff: the drop render (with the consumer's optimistic
-  // canvas) commits first, then the transient preview is dropped — both land
-  // in the same paint, so the tiles never flash back to the old geometry.
+  // placement) commits first, then the transient preview is dropped — both
+  // land in the same paint, so the tiles never flash back to the old
+  // geometry.
   useLayoutEffect(() => {
     if (dragging) {
       return;
@@ -128,9 +135,14 @@ export function useCanvasDrag({
   }
 
   const handleDragStart = (event: DragStartEvent) => {
-    const currentCanvas = canvasRef.current;
-    const currentMetrics = metricsRef.current;
-    if (currentCanvas === null || currentMetrics === null) {
+    const currentPlacement = placementRef.current;
+    if (currentPlacement === null) {
+      return;
+    }
+    const isGrid = currentPlacement.mode === "grid";
+    const currentMetrics = isGrid ? null : metricsRef.current;
+    const currentPitch = isGrid ? pitchRef.current : null;
+    if ((!isGrid && currentMetrics === null) || (isGrid && currentPitch === null)) {
       return;
     }
     const rawSourceId = event.operation.source?.id;
@@ -145,7 +157,7 @@ export function useCanvasDrag({
     if (
       new Set(requested).size !== requested.length ||
       !requested.includes(sourceId) ||
-      !requested.every((id) => currentCanvas.items.some((item) => item.id === id))
+      !requested.every((id) => currentPlacement.items.some((item) => item.id === id))
     ) {
       // Malformed group request: no session rather than a partial commit.
       return;
@@ -154,9 +166,9 @@ export function useCanvasDrag({
     sessionRef.current = {
       sourceItemId: sourceId,
       itemIds: requested,
-      canvasAtStart: currentCanvas,
+      placementAtStart: currentPlacement,
       metricsAtStart: currentMetrics,
-      grid,
+      pitchAtStart: currentPitch,
     };
     setDragging(true);
   };
@@ -169,18 +181,18 @@ export function useCanvasDrag({
     const deltaX = event.operation.position.current.x - event.operation.position.initial.x;
     const deltaY = event.operation.position.current.y - event.operation.position.initial.y;
     const preview = previewCanvasDrag({
-      canvas: session.canvasAtStart,
+      placement: session.placementAtStart,
       itemIds: session.itemIds,
       deltaX,
       deltaY,
-      metrics: session.metricsAtStart,
-      grid: session.grid,
+      metrics: session.metricsAtStart ?? { width: 1, height: 1 },
+      pitchPx: session.pitchAtStart ?? 1,
     });
 
     for (const id of session.itemIds) {
       if (id === session.sourceItemId) {
         // dnd-kit already moved the source by the RAW pointer delta; the
-        // correction carries it onto the snapped/rounded target so a snap
+        // correction carries it onto the cell/rounded target so a grid
         // group never looks torn between its source and its peers.
         writePreview(
           id,
@@ -204,24 +216,35 @@ export function useCanvasDrag({
       return;
     }
 
-    // The canvas box changed size mid-drag: the pixel space the user aimed
-    // at no longer exists, so the commit is invalidated.
-    const currentMetrics = metricsRef.current;
-    if (
-      currentMetrics === null ||
-      !areCanvasPixelMetricsEqual(currentMetrics, session.metricsAtStart)
+    // The pixel space the user aimed at changed mid-drag (width resize in
+    // freeform, pitch change in grid): the commit is invalidated.
+    const isGrid = session.placementAtStart.mode === "grid";
+    if (isGrid) {
+      if (pitchRef.current === null || pitchRef.current !== session.pitchAtStart) {
+        setDragging(false);
+        clearPreview(session);
+        return;
+      }
+    } else if (
+      metricsRef.current === null ||
+      session.metricsAtStart === null ||
+      metricsRef.current.width !== session.metricsAtStart.width ||
+      metricsRef.current.height !== session.metricsAtStart.height
     ) {
       setDragging(false);
       clearPreview(session);
       return;
     }
 
-    // The canvas this drag started from is no longer current: stale session.
-    // The comparison is STRUCTURAL on purpose — a legacy page renders from a
-    // freshly derived canvas object on every render, so identity would drop
-    // every commit on a page that has not been materialized yet.
-    const currentCanvas = canvasRef.current;
-    if (currentCanvas === null || !areCanvasLayoutsEqual(currentCanvas, session.canvasAtStart)) {
+    // The placement this drag started from is no longer current: stale
+    // session. The comparison is STRUCTURAL on purpose — a legacy page
+    // derives its placement per render, so identity would drop every commit
+    // on a page that has not been materialized yet.
+    const currentPlacement = placementRef.current;
+    if (
+      currentPlacement === null ||
+      !areCanvasLayoutsEqual(currentPlacement, session.placementAtStart)
+    ) {
       setDragging(false);
       clearPreview(session);
       return;
@@ -230,22 +253,22 @@ export function useCanvasDrag({
     const deltaX = event.operation.position.current.x - event.operation.position.initial.x;
     const deltaY = event.operation.position.current.y - event.operation.position.initial.y;
     const moved = commitCanvasDrag({
-      canvas: session.canvasAtStart,
+      placement: session.placementAtStart,
       itemIds: session.itemIds,
       deltaX,
       deltaY,
-      metrics: session.metricsAtStart,
-      grid: session.grid,
+      metrics: session.metricsAtStart ?? { width: 1, height: 1 },
+      pitchPx: session.pitchAtStart ?? 1,
     });
 
     setDragging(false);
     if (moved === null) {
-      // Effective no-op drop (dragged back onto its own rect): no handoff,
+      // Effective no-op drop (dragged back onto its own spot): no handoff,
       // no stage, no history entry, no sync.
       clearPreview(session);
       return;
     }
-    onCommitRef.current(moved, session.canvasAtStart);
+    onCommitRef.current(moved, session.placementAtStart);
     pendingPeerClearRef.current = session;
   };
 

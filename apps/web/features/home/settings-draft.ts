@@ -1,4 +1,4 @@
-import { resolveWorkspaceAppearance } from "@veladesk/domain";
+import { resolveGridGapPx, resolveWorkspaceAppearance } from "@veladesk/domain";
 import type {
   DesktopPageId,
   WorkspaceAppearancePreferences,
@@ -7,13 +7,16 @@ import type {
 } from "@veladesk/domain";
 
 /**
- * Pure draft model of the Settings Center.
+ * Pure draft model of the Settings Center (task 017 shape).
  *
  * The draft is the session-only editable copy of everything the settings
- * surface can change: the full appearance plus the two non-visual desktop
- * preferences. Drafts never touch the workspace snapshot — persistence
- * happens only through `preferencesFromSettingsDraft` +
- * `replaceWorkspacePreferences` at Save time.
+ * surface can change: the full appearance, the default section, the
+ * start-mode lock and the grid gap. The persisted `iconSize` field stays
+ * inside `appearance` for backward compatibility — it has no control in
+ * Settings V2, but saving unrelated settings preserves it verbatim.
+ * Drafts never touch the workspace snapshot — persistence happens only
+ * through `preferencesFromSettingsDraft` + `replaceWorkspacePreferences`
+ * at Save time.
  */
 
 export interface WorkspaceSettingsDraft {
@@ -22,11 +25,13 @@ export interface WorkspaceSettingsDraft {
   readonly defaultPageId: DesktopPageId;
 
   readonly layoutLocked: boolean;
+
+  readonly gridGapPx: number;
 }
 
 /**
  * Opens a draft from the current snapshot. Legacy snapshots without a
- * persisted appearance start from the resolved defaults.
+ * persisted appearance/gap start from the resolved defaults.
  */
 export function createWorkspaceSettingsDraft(
   workspace: WorkspaceSnapshot,
@@ -35,6 +40,7 @@ export function createWorkspaceSettingsDraft(
     appearance: resolveWorkspaceAppearance(workspace.preferences),
     defaultPageId: workspace.preferences.defaultPageId,
     layoutLocked: workspace.preferences.layoutLocked,
+    gridGapPx: resolveGridGapPx(workspace.preferences),
   };
 }
 
@@ -49,6 +55,7 @@ export function preferencesFromSettingsDraft(
   return {
     defaultPageId: draft.defaultPageId,
     layoutLocked: draft.layoutLocked,
+    gridGapPx: draft.gridGapPx,
     appearance: { ...draft.appearance },
   };
 }
@@ -61,12 +68,15 @@ export function areWorkspaceSettingsDraftsEqual(
   return (
     a.defaultPageId === b.defaultPageId &&
     a.layoutLocked === b.layoutLocked &&
+    a.gridGapPx === b.gridGapPx &&
     a.appearance.colorMode === b.appearance.colorMode &&
     a.appearance.accentHue === b.appearance.accentHue &&
     a.appearance.wallpaperPreset === b.appearance.wallpaperPreset &&
     a.appearance.surfaceOpacity === b.appearance.surfaceOpacity &&
     a.appearance.blurPx === b.appearance.blurPx &&
     a.appearance.radiusPx === b.appearance.radiusPx &&
+    // iconSize has no control in V2 but stays part of equality: an external
+    // change to it still counts as a different draft.
     a.appearance.iconSize === b.appearance.iconSize
   );
 }

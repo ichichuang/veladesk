@@ -187,6 +187,7 @@ export function ContextMenu({ state, onClose }: ContextMenuProps) {
             aria-checked={entry.checked === undefined ? undefined : entry.checked}
             className="vela-context-menu__item"
             disabled={entry.disabled === true}
+            title={entry.reason ?? undefined}
             onClick={() => {
               onClose();
               entry.onSelect();

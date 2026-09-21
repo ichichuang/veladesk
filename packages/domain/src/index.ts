@@ -55,9 +55,6 @@ export type {
   PageItemPlacement,
   PagePlacement,
 } from "./canvas";
-// TEMPORARY pre-017 name of the v1 compatibility view — the web rebuild
-// removes it together with `resolvePageCanvasV1`.
-export { resolvePageCanvasV1 as resolvePageCanvas } from "./canvas";
 
 export { decodeWorkspaceSnapshot } from "./decoding";
 

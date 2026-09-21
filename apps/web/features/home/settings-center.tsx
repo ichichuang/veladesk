@@ -5,11 +5,10 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
 } from "react";
-import { DEFAULT_WORKSPACE_APPEARANCE } from "@veladesk/domain";
+import { MAX_GRID_GAP_PX, MIN_GRID_GAP_PX, GRID_GAP_STEP_PX } from "@veladesk/domain";
 import type {
   WorkspaceAppearancePreferences,
   WorkspaceColorMode,
-  WorkspaceIconSize,
   WorkspaceSnapshot,
   WorkspaceWallpaperPreset,
 } from "@veladesk/domain";
@@ -44,11 +43,11 @@ interface SettingsCenterProps {
   readonly onClose: () => void;
 }
 
-type SettingsSection = "appearance" | "desktop" | "general";
+type SettingsSection = "appearance" | "layout" | "general";
 
 const SECTION_LABEL_KEY: Readonly<Record<SettingsSection, TranslationKey>> = {
   appearance: "settings.section.appearance",
-  desktop: "settings.section.desktop",
+  layout: "settings.section.layout",
   general: "settings.section.general",
 };
 
@@ -71,26 +70,23 @@ const WALLPAPER_OPTIONS: readonly {
   { value: "mist", labelKey: "settings.wallpaper.mist" },
 ];
 
-const ICON_SIZE_OPTIONS: readonly {
-  readonly value: WorkspaceIconSize;
-  readonly labelKey: TranslationKey;
-}[] = [
-  { value: "small", labelKey: "settings.iconSize.small" },
-  { value: "medium", labelKey: "settings.iconSize.medium" },
-  { value: "large", labelKey: "settings.iconSize.large" },
-];
-
 /**
- * The workspace Settings Center: one large glass overlay with section
- * navigation (Appearance / Desktop / General) over a draft model of the
+ * The Settings Center V2 (task 017): a compact product-facing dialog with
+ * three sections — Appearance, Layout, General — over a draft model of the
  * workspace preferences.
  *
+ * Appearance leads with the three controls people actually change (color
+ * mode, accent, wallpaper); surface opacity, blur and corner radius fold
+ * into a collapsed Advanced group. Layout owns the default section, the
+ * start-mode lock and the grid gap. The hidden iconSize field survives in
+ * the draft and is preserved on Save.
+ *
  * The component never imports the client runtime and never stages
- * anything: appearance changes preview live through `onPreviewAppearance`,
- * and only Save hands the draft back to the shell for the domain edit +
- * local stage. Cancel (Escape / backdrop / button) simply closes — the
- * shell then drops the preview and the desktop reverts to the persisted
- * appearance.
+ * anything: appearance changes preview live through
+ * `onPreviewAppearance`, and only Save hands the draft back to the shell
+ * for the domain edit + local stage. Cancel (Escape / backdrop / button)
+ * simply closes — the shell then drops the preview and the desktop reverts
+ * to the persisted appearance.
  *
  * The General section's interface language is deliberately NOT part of the
  * draft: it is a browser-local preference (see ui-localization.md) that
@@ -108,6 +104,7 @@ export function SettingsCenter({
     createWorkspaceSettingsDraft(workspace),
   );
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -140,19 +137,9 @@ export function SettingsCenter({
     onPreviewAppearance(next.appearance);
   }
 
-  function updateDesktop(patch: Partial<Omit<WorkspaceSettingsDraft, "appearance">>) {
+  function updateLayout(patch: Partial<Omit<WorkspaceSettingsDraft, "appearance">>) {
     setDraft({ ...draft, ...patch });
     setError(null);
-  }
-
-  function resetAppearance() {
-    const next: WorkspaceSettingsDraft = {
-      ...draft,
-      appearance: { ...DEFAULT_WORKSPACE_APPEARANCE },
-    };
-    setDraft(next);
-    setError(null);
-    onPreviewAppearance(next.appearance);
   }
 
   /** Immediate locale switch — browser preference, never part of the draft. */
@@ -195,7 +182,12 @@ export function SettingsCenter({
   }
 
   return (
-    <div className="vela-settings-backdrop" onMouseDown={handleBackdropMouseDown} onKeyDown={handleKeyDown}>
+    <div
+      className="vela-settings-backdrop"
+      data-vd-wheel-scope="local"
+      onMouseDown={handleBackdropMouseDown}
+      onKeyDown={handleKeyDown}
+    >
       <section
         className="vela-settings"
         role="dialog"
@@ -237,7 +229,16 @@ export function SettingsCenter({
             ))}
           </nav>
 
-          <div className="vela-settings__content" data-vd-wheel-scope="local">
+          {/*
+            Keyed by section: switching remounts the panel so the directional
+            cross-fade replays (reduced motion disables it in CSS).
+          */}
+          <div
+            key={activeSection}
+            className="vela-settings__content"
+            data-vd-wheel-scope="local"
+            data-settings-section={activeSection}
+          >
             {activeSection === "appearance" ? (
               <div className="vela-settings__section">
                 <div
@@ -248,24 +249,28 @@ export function SettingsCenter({
                   <p className="vela-settings__field-label" id="vela-settings-color-mode-label">
                     {t("settings.colorMode")}
                   </p>
-                  <div className="vela-settings__radio-row">
+                  <div className="vela-segmented">
                     {COLOR_MODE_OPTIONS.map((option) => (
-                      <label key={option.value} className="vela-settings__radio">
-                        <input
-                          type="radio"
-                          name="vela-settings-color-mode"
-                          checked={draft.appearance.colorMode === option.value}
-                          onChange={() => updateAppearance({ colorMode: option.value })}
-                        />
+                      <button
+                        key={option.value}
+                        type="button"
+                        className="vela-segmented__option"
+                        role="radio"
+                        aria-checked={draft.appearance.colorMode === option.value}
+                        onClick={() => updateAppearance({ colorMode: option.value })}
+                      >
                         {t(option.labelKey)}
-                      </label>
+                      </button>
                     ))}
                   </div>
                   <p className="vela-settings__hint">{t("settings.colorMode.hint")}</p>
                 </div>
 
                 <div className="vela-settings__field">
-                  <label className="vela-settings__field-label" htmlFor="vela-settings-accent-hue">
+                  <label
+                    className="vela-settings__field-label"
+                    htmlFor="vela-settings-accent-hue"
+                  >
                     {t("settings.accentHue")}
                   </label>
                   <div className="vela-settings__row">
@@ -281,7 +286,10 @@ export function SettingsCenter({
                         updateAppearance({ accentHue: Number(event.target.value) })
                       }
                     />
-                    <output className="vela-settings__value" htmlFor="vela-settings-accent-hue">
+                    <output
+                      className="vela-settings__value"
+                      htmlFor="vela-settings-accent-hue"
+                    >
                       {draft.appearance.accentHue}°
                     </output>
                   </div>
@@ -315,121 +323,124 @@ export function SettingsCenter({
                   </div>
                 </div>
 
-                <div className="vela-settings__field">
-                  <label className="vela-settings__field-label" htmlFor="vela-settings-opacity">
-                    {t("settings.surfaceOpacity")}
-                  </label>
-                  <div className="vela-settings__row">
-                    <input
-                      id="vela-settings-opacity"
-                      className="vela-settings__range"
-                      type="range"
-                      min={0.35}
-                      max={0.9}
-                      step={0.05}
-                      value={draft.appearance.surfaceOpacity}
-                      onChange={(event) =>
-                        updateAppearance({ surfaceOpacity: Number(event.target.value) })
-                      }
-                    />
-                    <output className="vela-settings__value" htmlFor="vela-settings-opacity">
-                      {Math.round(draft.appearance.surfaceOpacity * 100)}%
-                    </output>
-                  </div>
-                </div>
-
-                <div className="vela-settings__field">
-                  <label className="vela-settings__field-label" htmlFor="vela-settings-blur">
-                    {t("settings.blur")}
-                  </label>
-                  <div className="vela-settings__row">
-                    <input
-                      id="vela-settings-blur"
-                      className="vela-settings__range"
-                      type="range"
-                      min={0}
-                      max={32}
-                      step={1}
-                      value={draft.appearance.blurPx}
-                      onChange={(event) =>
-                        updateAppearance({ blurPx: Number(event.target.value) })
-                      }
-                    />
-                    <output className="vela-settings__value" htmlFor="vela-settings-blur">
-                      {draft.appearance.blurPx}px
-                    </output>
-                  </div>
-                </div>
-
-                <div className="vela-settings__field">
-                  <label className="vela-settings__field-label" htmlFor="vela-settings-radius">
-                    {t("settings.cornerRadius")}
-                  </label>
-                  <div className="vela-settings__row">
-                    <input
-                      id="vela-settings-radius"
-                      className="vela-settings__range"
-                      type="range"
-                      min={8}
-                      max={24}
-                      step={1}
-                      value={draft.appearance.radiusPx}
-                      onChange={(event) =>
-                        updateAppearance({ radiusPx: Number(event.target.value) })
-                      }
-                    />
-                    <output className="vela-settings__value" htmlFor="vela-settings-radius">
-                      {draft.appearance.radiusPx}px
-                    </output>
-                  </div>
-                </div>
-
-                <div
-                  className="vela-settings__field"
-                  role="radiogroup"
-                  aria-labelledby="vela-settings-icon-size-label"
-                >
-                  <p className="vela-settings__field-label" id="vela-settings-icon-size-label">
-                    {t("settings.iconSize")}
-                  </p>
-                  <div className="vela-settings__radio-row">
-                    {ICON_SIZE_OPTIONS.map((option) => (
-                      <label key={option.value} className="vela-settings__radio">
-                        <input
-                          type="radio"
-                          name="vela-settings-icon-size"
-                          checked={draft.appearance.iconSize === option.value}
-                          onChange={() => updateAppearance({ iconSize: option.value })}
-                        />
-                        {t(option.labelKey)}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="vela-settings__field">
+                <div className="vela-settings__advanced">
                   <button
                     type="button"
-                    className="vela-button"
-                    onClick={resetAppearance}
-                    disabled={busy}
+                    className="vela-settings__advanced-toggle"
+                    aria-expanded={advancedOpen}
+                    aria-controls="vela-settings-advanced-panel"
+                    onClick={() => setAdvancedOpen((open) => !open)}
                   >
-                    {t("settings.resetAppearance")}
+                    <span
+                      className="vela-settings__advanced-chevron"
+                      data-open={advancedOpen ? "true" : undefined}
+                      aria-hidden="true"
+                    >
+                      ›
+                    </span>
+                    {t("settings.advancedAppearance")}
                   </button>
-                  <p className="vela-settings__hint">{t("settings.resetHint")}</p>
+                  <div
+                    id="vela-settings-advanced-panel"
+                    className="vela-settings__advanced-panel"
+                    data-open={advancedOpen ? "true" : undefined}
+                  >
+                    <div className="vela-settings__advanced-inner">
+                      <div className="vela-settings__field">
+                        <label
+                          className="vela-settings__field-label"
+                          htmlFor="vela-settings-opacity"
+                        >
+                          {t("settings.surfaceOpacity")}
+                        </label>
+                        <div className="vela-settings__row">
+                          <input
+                            id="vela-settings-opacity"
+                            className="vela-settings__range"
+                            type="range"
+                            min={0.35}
+                            max={0.9}
+                            step={0.05}
+                            value={draft.appearance.surfaceOpacity}
+                            onChange={(event) =>
+                              updateAppearance({ surfaceOpacity: Number(event.target.value) })
+                            }
+                          />
+                          <output
+                            className="vela-settings__value"
+                            htmlFor="vela-settings-opacity"
+                          >
+                            {Math.round(draft.appearance.surfaceOpacity * 100)}%
+                          </output>
+                        </div>
+                      </div>
+
+                      <div className="vela-settings__field">
+                        <label className="vela-settings__field-label" htmlFor="vela-settings-blur">
+                          {t("settings.blur")}
+                        </label>
+                        <div className="vela-settings__row">
+                          <input
+                            id="vela-settings-blur"
+                            className="vela-settings__range"
+                            type="range"
+                            min={0}
+                            max={32}
+                            step={1}
+                            value={draft.appearance.blurPx}
+                            onChange={(event) =>
+                              updateAppearance({ blurPx: Number(event.target.value) })
+                            }
+                          />
+                          <output className="vela-settings__value" htmlFor="vela-settings-blur">
+                            {draft.appearance.blurPx}px
+                          </output>
+                        </div>
+                      </div>
+
+                      <div className="vela-settings__field">
+                        <label
+                          className="vela-settings__field-label"
+                          htmlFor="vela-settings-radius"
+                        >
+                          {t("settings.cornerRadius")}
+                        </label>
+                        <div className="vela-settings__row">
+                          <input
+                            id="vela-settings-radius"
+                            className="vela-settings__range"
+                            type="range"
+                            min={8}
+                            max={24}
+                            step={1}
+                            value={draft.appearance.radiusPx}
+                            onChange={(event) =>
+                              updateAppearance({ radiusPx: Number(event.target.value) })
+                            }
+                          />
+                          <output className="vela-settings__value" htmlFor="vela-settings-radius">
+                            {draft.appearance.radiusPx}px
+                          </output>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            ) : activeSection === "desktop" ? (
+            ) : activeSection === "layout" ? (
               <div className="vela-settings__section">
                 <div className="vela-settings__field">
-                  <label className="vela-settings__field-label" htmlFor="vela-settings-default-page">
+                  <label
+                    className="vela-settings__field-label"
+                    htmlFor="vela-settings-default-page"
+                  >
                     {t("settings.defaultPage")}
                   </label>
                   <select
                     id="vela-settings-default-page"
                     className="vela-select"
                     value={draft.defaultPageId}
-                    onChange={(event) => updateDesktop({ defaultPageId: event.target.value })}
+                    onChange={(event) => updateLayout({ defaultPageId: event.target.value })}
                   >
                     {workspace.pages.map((page) => (
                       <option key={page.id} value={page.id}>
@@ -440,18 +451,47 @@ export function SettingsCenter({
                   <p className="vela-settings__hint">{t("settings.defaultPageHint")}</p>
                 </div>
 
+                <div className="vela-settings__field vela-settings__field--row">
+                  <div>
+                    <p className="vela-settings__field-label">{t("settings.startInView")}</p>
+                    <p className="vela-settings__hint">{t("settings.startInViewHint")}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="vela-switch"
+                    role="switch"
+                    aria-checked={draft.layoutLocked}
+                    onClick={() => updateLayout({ layoutLocked: !draft.layoutLocked })}
+                  >
+                    <span className="vela-switch__knob" aria-hidden="true" />
+                  </button>
+                </div>
+
                 <div className="vela-settings__field">
-                  <label className="vela-settings__radio">
+                  <label
+                    className="vela-settings__field-label"
+                    htmlFor="vela-settings-grid-gap"
+                  >
+                    {t("settings.gridGap")}
+                  </label>
+                  <div className="vela-settings__row">
                     <input
-                      type="checkbox"
-                      checked={draft.layoutLocked}
+                      id="vela-settings-grid-gap"
+                      className="vela-settings__range"
+                      type="range"
+                      min={MIN_GRID_GAP_PX}
+                      max={MAX_GRID_GAP_PX}
+                      step={GRID_GAP_STEP_PX}
+                      value={draft.gridGapPx}
                       onChange={(event) =>
-                        updateDesktop({ layoutLocked: event.target.checked })
+                        updateLayout({ gridGapPx: Number(event.target.value) })
                       }
                     />
-                    {t("settings.startInView")}
-                  </label>
-                  <p className="vela-settings__hint">{t("settings.startInViewHint")}</p>
+                    <output className="vela-settings__value" htmlFor="vela-settings-grid-gap">
+                      {draft.gridGapPx}px
+                    </output>
+                  </div>
+                  <p className="vela-settings__hint">{t("settings.gridGapHint")}</p>
                 </div>
               </div>
             ) : (
@@ -464,27 +504,27 @@ export function SettingsCenter({
                   <p className="vela-settings__field-label" id="vela-settings-language-label">
                     {t("settings.language")}
                   </p>
-                  <div className="vela-settings__radio-row">
+                  <div className="vela-segmented">
                     {/* Endonyms by design: 中文 and English read natively in
                         every locale. */}
-                    <label className="vela-settings__radio">
-                      <input
-                        type="radio"
-                        name="vela-settings-language"
-                        checked={locale === "zh-CN"}
-                        onChange={() => updateLocale("zh-CN")}
-                      />
+                    <button
+                      type="button"
+                      className="vela-segmented__option"
+                      role="radio"
+                      aria-checked={locale === "zh-CN"}
+                      onClick={() => updateLocale("zh-CN")}
+                    >
                       {t("settings.language.chinese")}
-                    </label>
-                    <label className="vela-settings__radio">
-                      <input
-                        type="radio"
-                        name="vela-settings-language"
-                        checked={locale === "en-US"}
-                        onChange={() => updateLocale("en-US")}
-                      />
+                    </button>
+                    <button
+                      type="button"
+                      className="vela-segmented__option"
+                      role="radio"
+                      aria-checked={locale === "en-US"}
+                      onClick={() => updateLocale("en-US")}
+                    >
                       {t("settings.language.english")}
-                    </label>
+                    </button>
                   </div>
                   <p className="vela-settings__hint">{t("settings.language.hint")}</p>
                 </div>

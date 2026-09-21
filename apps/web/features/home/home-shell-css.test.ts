@@ -27,11 +27,13 @@ function ruleBlock(selector: string): string {
 
 describe("home-shell.css transform ownership", () => {
   it("gives .vela-item no transform transition", () => {
-    const body = ruleBlock(".vela-item");
-    const transition = body.match(/transition:\s*([^;]+);/);
+    // Anchor at line start: the grid-scoped item rule must not shadow this.
+    const base = css.match(/^\.vela-item\s*\{([\s\S]*?)\}/m);
+    expect(base).not.toBeNull();
+    const transition = base![1]!.match(/transition:\s*([^;]+);/);
     expect(transition).not.toBeNull();
     expect(transition![1]!.trim()).toBe("none");
-    expect(body).not.toMatch(/transition:\s*transform/);
+    expect(base![1]!).not.toMatch(/transition:\s*transform/);
   });
 
   it("scopes a transform easing to view-mode app hover only", () => {
@@ -62,56 +64,59 @@ describe("home-shell.css transform ownership", () => {
   });
 
   it("keeps the drag preview as a transform of the item body only", () => {
-    // A drag preview (or snap correction) must never be written onto the item
-    // box itself: that is what dnd-kit transforms, and the two would fight.
-    const item = ruleBlock(".vela-item");
-    expect(item).not.toMatch(/transform:/);
+    // A drag preview (or cell correction) must never be written onto the
+    // item box itself: that is what dnd-kit transforms, and the two would
+    // fight. Anchored so the grid-scoped rule cannot shadow the base rule.
+    const base = css.match(/^\.vela-item\s*\{([\s\S]*?)\}/m);
+    expect(base).not.toBeNull();
+    expect(base![1]!).not.toMatch(/transform:/);
     const body = ruleBlock(".vela-item__body");
     expect(body).toMatch(/transform:\s*var\(--vd-canvas-drag-preview,\s*none\)/);
   });
 });
 
-describe("home-shell.css canvas geometry contract (016-C)", () => {
-  it("keeps the usable content box as single-source custom properties on the viewport", () => {
-    const viewport = ruleBlock(".vela-desktop__viewport");
-    // The left padding reserves the section-nav rail, so the four edges stay
-    // independent variables (task 015) — and nothing else defines them.
-    expect(viewport).toMatch(/--vd-grid-padding-left:\s*186px/);
-    expect(viewport).toMatch(/--vd-grid-padding-right:\s*34px/);
-    expect(viewport).toMatch(/--vd-grid-padding-top:\s*30px/);
-    expect(viewport).toMatch(/--vd-grid-padding-bottom:\s*30px/);
-    expect(viewport).toMatch(/position:\s*absolute/);
-    expect(viewport).toMatch(/overflow:\s*hidden/);
+describe("home-shell.css geometry contract (task 017)", () => {
+  it("composes the desktop as rail + workspace columns, never viewport paddings", () => {
+    const workbench = ruleBlock(".vela-workbench");
+    expect(workbench).toMatch(/display:\s*flex/);
+
+    const viewport = ruleBlock(".vela-section-viewport");
+    expect(viewport).toMatch(/--vd-section-padding-top:\s*56px/);
+    expect(viewport).toMatch(/--vd-section-padding-bottom:\s*30px/);
+    // The artificial 186px left padding for the floating rail is gone: the
+    // rail is a real flex column now.
+    expect(css).not.toMatch(/--vd-grid-padding-left/);
   });
 
-  it("places .vela-canvas on exactly that content box", () => {
+  it("places .vela-canvas on exactly the freeform stage box", () => {
     const canvas = ruleBlock(".vela-canvas");
     expect(canvas).toMatch(/position:\s*absolute/);
-    expect(canvas).toMatch(
-      /inset:\s*var\(--vd-grid-padding-top\)\s+var\(--vd-grid-padding-right\)\s+var\(--vd-grid-padding-bottom\)\s+var\(--vd-grid-padding-left\)/
-    );
+    expect(canvas).toMatch(/inset:\s*0/);
   });
 
   it("reserves extra bottom space only when a dock actually exists", () => {
-    const docked = ruleBlock('.vela-desktop[data-has-dock="true"] .vela-desktop__viewport');
-    expect(docked).toMatch(/--vd-grid-padding-bottom:\s*108px/);
+    const docked = ruleBlock('.vela-desktop[data-has-dock="true"] .vela-section-viewport');
+    expect(docked).toMatch(/--vd-section-padding-bottom:\s*108px/);
   });
 
-  it("never places production items with CSS grid again", () => {
-    // Placement is percent geometry inside .vela-canvas: a leftover grid
-    // template, track or gap would silently resurrect the old model.
-    expect(css).not.toMatch(/grid-template-columns:\s*repeat\(var\(--vd-grid-columns\)/);
-    expect(css).not.toMatch(/grid-template-rows:\s*repeat\(var\(--vd-grid-rows\)/);
-    expect(css).not.toMatch(/--vd-grid-column-gap/);
-    expect(css).not.toMatch(/--vd-grid-row-gap/);
-    expect(ruleBlock(".vela-desktop__viewport")).not.toMatch(/display:\s*grid/);
+  it("scopes percent-space absolute items to the freeform canvas only", () => {
+    // Anchor at line start so the grid-scoped rule cannot shadow the base.
+    const base = css.match(/^\.vela-item\s*\{([\s\S]*?)\}/m);
+    expect(base).not.toBeNull();
+    expect(base![1]!).toMatch(/position:\s*absolute/);
+    // Grid items are grid-area children instead.
+    const gridItem = ruleBlock(".vela-grid-host .vela-item");
+    expect(gridItem).toMatch(/position:\s*relative/);
   });
 
-  it("sizes every item from its rect and keeps the body as the visual layer", () => {
-    const item = ruleBlock(".vela-item");
-    expect(item).toMatch(/position:\s*absolute/);
-    expect(item).toMatch(/padding:\s*0/);
+  it("runs the grid host as a real CSS grid with auto rows and a gap", () => {
+    const host = ruleBlock(".vela-grid-host");
+    expect(host).toMatch(/display:\s*grid/);
+    expect(host).toMatch(/grid-auto-rows:\s*var\(--vd-grid-cell-size\)/);
+    expect(host).toMatch(/gap:\s*var\(--vd-grid-gap\)/);
+  });
 
+  it("sizes every item from its box and keeps the body as the visual layer", () => {
     const body = ruleBlock(".vela-item__body");
     expect(body).toMatch(/position:\s*absolute/);
     expect(body).toMatch(/inset:\s*0/);
@@ -121,7 +126,7 @@ describe("home-shell.css canvas geometry contract (016-C)", () => {
     expect(wrap).toMatch(/inset:\s*0/);
   });
 
-  it("anchors the label to the tile bottom without touching the rect", () => {
+  it("anchors the label to the tile bottom without touching the geometry", () => {
     const label = ruleBlock(".vela-item__label");
     expect(label).toMatch(/position:\s*absolute/);
     expect(label).toMatch(/bottom:/);
@@ -132,20 +137,16 @@ describe("home-shell.css canvas geometry contract (016-C)", () => {
     const tile = ruleBlock(".vela-canvas .vela-app-icon");
     expect(tile).toMatch(/position:\s*absolute/);
     expect(tile).toMatch(/inset:\s*0/);
-    // An element is never its own query container, so the WRAP declares the
-    // container and the tile's cqmin resolves against the rect's smaller side
-    // (which is what keeps a landscape tile's glyph centered and unstretched).
     expect(tile).not.toMatch(/container-type/);
     expect(ruleBlock(".vela-item__icon-wrap")).toMatch(/container-type:\s*size/);
     expect(tile).toMatch(/cqmin/);
 
     const glyph = ruleBlock(".vela-canvas .vela-app-icon__glyph");
     expect(glyph).toMatch(/62cqmin/);
-    // Legacy iconScale stays a glyph multiplier, never tile geometry.
     expect(glyph).toMatch(/var\(--vd-app-icon-scale,\s*1\)/);
   });
 
-  it("contains an uploaded image inside the rect without cropping it", () => {
+  it("contains an uploaded image inside the box without cropping it", () => {
     const image = ruleBlock(".vela-canvas .vela-app-icon__image");
     expect(image).toMatch(/width:\s*100%/);
     expect(image).toMatch(/height:\s*100%/);
@@ -199,72 +200,19 @@ describe("home-shell.css resize handles (016-C)", () => {
   });
 });
 
-describe("home-shell.css snap lattice contract", () => {
-  /**
-   * The arrange-mode lattice is an ALIGNMENT HINT drawn at real cell
-   * centers: markers keep zero box chrome — no border, no fill — and the
-   * only visual is a tiny dot. A freeform section renders no markers at all
-   * (the renderer decides; this file only guarantees what a marker looks
-   * like).
-   */
-  it("draws markers with no border and no background fill", () => {
-    const guide = ruleBlock(".vela-desktop__grid-guide");
-    expect(guide).toMatch(/border:\s*none/);
-    expect(guide).toMatch(/background:\s*none/);
-    // Exactly one guide rule may exist — no second rule can sneak a tile look
-    // back in through another context.
-    const guideRules = css.match(/^\.vela-desktop__grid-guide\s*\{/gm) ?? [];
-    expect(guideRules.length).toBe(1);
-  });
-
-  it("marks a cell center with a tiny round dot, never a box or ring", () => {
-    const marker = ruleBlock(".vela-desktop__grid-guide::after");
-    for (const axis of ["width", "height"]) {
-      const size = marker.match(new RegExp(`${axis}:\\s*([\\d.]+)px`));
-      expect(size, `${axis} in px`).not.toBeNull();
-      expect(parseFloat(size![1]!)).toBeLessThanOrEqual(8);
-    }
-    expect(marker).toMatch(/border-radius:\s*999px/);
-    expect(marker).toMatch(/background:\s*var\(--vd-grid-dot\)/);
-    // A border on the marker would read as a tiny tile/ring — forbidden.
-    expect(marker).not.toMatch(/(?:^|[\s;])border:/);
-  });
-
-  it("fades the marker layer in quickly, by opacity only", () => {
-    const lattice = ruleBlock(".vela-desktop__lattice");
-    expect(lattice).toMatch(/position:\s*absolute/);
-    expect(lattice).toMatch(/inset:\s*0/);
-    expect(lattice).toMatch(/pointer-events:\s*none/);
-    const animation = lattice.match(/animation:\s*vela-guides-in\s+(\d+)ms/);
-    expect(animation).not.toBeNull();
-    const duration = parseInt(animation![1]!, 10);
-    expect(duration).toBeGreaterThanOrEqual(120);
-    expect(duration).toBeLessThanOrEqual(160);
-    const keyframes = css.match(/@keyframes vela-guides-in\s*\{([\s\S]*?)\n\}/);
-    expect(keyframes).not.toBeNull();
-    // Markers may appear, never move: the fade must not touch transform.
-    expect(keyframes![1]!).not.toMatch(/transform/);
-    expect(keyframes![1]!).toMatch(/opacity:\s*0/);
-  });
-
-  it("disables the marker fade under reduced motion", () => {
-    const start = css.indexOf("@media (prefers-reduced-motion: reduce)");
-    const end = css.indexOf("@media", start + 1);
-    const reduced = css.slice(start, end === -1 ? undefined : end);
-    expect(reduced).toContain(".vela-desktop__lattice");
-    expect(reduced).toMatch(/animation:\s*none/);
+describe("home-shell.css visible square grid (task 017)", () => {
+  it("keeps the old center-dot marker model fully removed", () => {
+    expect(css).not.toMatch(/\.vela-desktop__grid-guide/);
+    expect(css).not.toMatch(/\.vela-desktop__lattice/);
+    expect(css).not.toMatch(/--vd-grid-dot/);
   });
 
   it("sizes the shared icon box through the single --vd-slot-icon-size variable", () => {
     const icon = ruleBlock(".vela-item__icon");
     expect(icon).toMatch(/width:\s*var\(--vd-slot-icon-size\)/);
     expect(icon).toMatch(/height:\s*var\(--vd-slot-icon-size\)/);
-    // The responsive shrink redefines the shared variable instead of
-    // duplicating icon calcs, so the dock and the editor preview track it.
-    const responsive = css.match(
-      /@media \(max-width: 1023px\)\s*\{[\s\S]*?\n\}/
-    );
+    const responsive = css.match(/@media \(max-width: 1023px\)\s*\{[\s\S]*?\n\}/);
     expect(responsive).not.toBeNull();
-    expect(responsive![0]!).toMatch(/--vd-slot-icon-size:\s*calc\(var\(--vd-icon-size\)\s*\*\s*0\.84\)/);
+    expect(responsive![0]!).toMatch(/--vd-slot-icon-size:\s*calc\(var\(--vd-icon-size\)\s\*\s*0\.84\)/);
   });
 });

@@ -391,7 +391,7 @@
   --vd-icon-size: 62px;
   /* Snap-lattice hint color: a tiny 4px dot can afford a higher alpha than
      tile borders would — presence stays whisper-low. */
-  --vd-grid-dot: oklch(0.92 0.03 260 / 0.38);
+  --vd-grid-line: oklch(0.92 0.03 260 / 0.38);
   /* Base slot size of the shared icon tile: the dock, the folder overlay and
      the visual editor preview size themselves from this; desktop canvas
      tiles size themselves from their rect instead (see .vela-canvas rules).
@@ -436,7 +436,7 @@
   --vd-accent-wash: oklch(0.56 0.14 var(--vd-accent-hue) / 0.16);
   --vd-field: oklch(1 0 0 / 0.85);
   --vd-chip: oklch(0.55 0.02 264 / 0.12);
-  --vd-grid-dot: oklch(0.25 0.02 264 / 0.32);
+  --vd-grid-line: oklch(0.25 0.02 264 / 0.32);
   --vd-label-shadow: none;
 }
 
@@ -466,7 +466,7 @@
     --vd-accent-wash: oklch(0.56 0.14 var(--vd-accent-hue) / 0.16);
     --vd-field: oklch(1 0 0 / 0.85);
     --vd-chip: oklch(0.55 0.02 264 / 0.12);
-    --vd-grid-dot: oklch(0.25 0.02 264 / 0.32);
+    --vd-grid-line: oklch(0.25 0.02 264 / 0.32);
     --vd-label-shadow: none;
   }
 }
@@ -513,163 +513,42 @@
   animation: vela-ambient 30s ease-in-out infinite alternate;
 }
 
-/* --- Desktop viewport grid ---------------------------------------------- */
+/* --- Two-column workspace composition (task 017) ------------------------- */
 
 /*
- * Grid geometry single source: the viewport and the arrange-mode guide
- * overlay both consume these custom properties, so guides and tracks can
- * never drift apart. CSS Grid tracks live in the content box (inside this
- * padding), which is exactly what useGridMetrics measures.
+ * Desktop = fixed left section rail + right workspace. The rail takes its
+ * own column and application content NEVER flows under it (the old
+ * artificial 186px canvas left padding is gone). The right layout width is
+ * whatever remains AFTER the rail took its space; dock placement never
+ * forces the rail to reserve desktop content space.
  */
-/*
- * Section stack (task 015): the ONE real scroll container. Native CSS
- * scroll-snap paging — overflow-y plus `y mandatory`, contained
- * overscroll, no wheel listeners, no JS physics. The scrollbar is
- * invisible but the box stays fully scrollable, and `[data-scroll-locked]`
- * freezes paging while a modal or a drag is up without touching scrollTop.
- */
-.vela-section-stack {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scroll-snap-type: y mandatory;
-  overscroll-behavior-y: contain;
-  scrollbar-width: none;
-}
-
-.vela-section-stack::-webkit-scrollbar {
-  display: none;
-}
-
-.vela-section-stack[data-scroll-locked="true"] {
-  overflow-y: hidden;
-}
-
-/*
- * One section = exactly one snap viewport. snap-stop always keeps a fast
- * trackpad fling or a high-wheel burst from skipping past intermediate
- * sections — the browser itself enforces "one section per gesture".
- */
-.vela-section {
+.vela-workbench {
   position: relative;
-  display: block;
-  block-size: 100%;
-  min-block-size: 100%;
-  overflow: hidden;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
-}
-
-/*
- * Canvas geometry single source (016-C): the desktop's usable content box
- * lives ONCE, as custom properties on the viewport, and `.vela-canvas`
- * consumes them as its inset. The LEFT padding reserves the floating
- * section-nav rail; the BOTTOM padding only grows when a dock actually
- * exists (data-has-dock on the desktop root). `.vela-canvas` is therefore
- * exactly the box the logical 0..10000 canvas maps onto — the element the
- * canvas metrics hook measures and the containing block every item is
- * positioned inside.
- */
-.vela-desktop__viewport {
-  --vd-grid-padding-left: 186px;
-  --vd-grid-padding-right: 34px;
-  --vd-grid-padding-top: 30px;
-  --vd-grid-padding-bottom: 30px;
-
-  position: absolute;
-  inset: 0;
   z-index: 1;
-  overflow: hidden;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
 }
 
-.vela-canvas {
-  position: absolute;
-  inset: var(--vd-grid-padding-top) var(--vd-grid-padding-right)
-    var(--vd-grid-padding-bottom) var(--vd-grid-padding-left);
-}
-
-/* With pins on screen the dock owns a strip at the bottom — reserve it. */
-.vela-desktop[data-has-dock="true"] .vela-desktop__viewport {
-  --vd-grid-padding-bottom: 108px;
-}
+/* --- Left section rail ---------------------------------------------------- */
 
 /*
- * Arrange-mode snap lattice. Markers sit at the real lattice cell CENTERS
- * computed from the same edge rounding the snap engine uses, so a marker can
- * never disagree with where an item snaps. Snap sections only: a freeform
- * canvas has no lattice, and dots there would misdescribe the model. The
- * layer is a pointer-transparent overlay (it is not a pointer target, and it
- * never becomes a marquee source). Entering arrange fades it in gently
- * (opacity only); leaving arrange unmounts it entirely.
+ * A real fixed column of titles only: no footer, no ⋯ button, no sync
+ * status. The list can scroll just enough to keep the active title visible
+ * (scrollIntoView) — users never freely scroll it; wheel input belongs to
+ * section navigation (JS, non-passive) and is otherwise suppressed.
  */
-.vela-desktop__lattice {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  animation: vela-guides-in 140ms ease;
-}
-
-@keyframes vela-guides-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/*
- * One lattice marker: a zero-size anchor carrying a single 4px dot, placed
- * by the percentage inline style the marker list provides.
- */
-.vela-desktop__grid-guide {
-  position: absolute;
-  width: 0;
-  height: 0;
-  border: none;
-  background: none;
-}
-
-.vela-desktop__grid-guide::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 4px;
-  margin: -2px 0 0 -2px;
-  border-radius: 999px;
-  background: var(--vd-grid-dot);
-}
-
-/* --- Left section navigation --------------------------------------------- */
-
-/*
- * A lightweight rail floating on the wallpaper — deliberately NOT a
- * sidebar panel: no card, no heavy background, no shadowed surface. The
- * active item gets a 2px accent marker and brighter text. The list scrolls
- * locally when sections overflow (contained); it is a SIBLING of the
- * section stack, so wheel input here can never page the desktop.
- */
-.vela-section-nav {
-  position: fixed;
-  left: 24px;
-  top: 50%;
-  bottom: auto;
-  transform: translateY(-50%);
-  z-index: 10;
+.vela-rail {
+  flex: 0 0 200px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: 138px;
-  max-height: min(64vh, 560px);
+  min-width: 0;
+  padding: 26px 10px 26px 22px;
   text-shadow: 0 1px 3px oklch(0 0 0 / 0.35);
 }
 
-.vela-section-nav__list {
+.vela-rail__list {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -680,13 +559,13 @@
   padding: 2px;
 }
 
-.vela-section-nav__list::-webkit-scrollbar {
+.vela-rail__list::-webkit-scrollbar {
   display: none;
 }
 
-.vela-section-nav__item {
+.vela-rail__item {
   position: relative;
-  padding: 7px 10px 7px 14px;
+  padding: 8px 12px 8px 16px;
   border: none;
   border-radius: 8px;
   background: transparent;
@@ -694,15 +573,19 @@
   font-family: var(--vd-font);
   font-size: 13.5px;
   text-align: left;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
   cursor: pointer;
   transition: color 140ms ease, background-color 140ms ease;
 }
 
+.vela-rail__item-label {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* The accent marker: a quiet 2px rail left of the active label. */
-.vela-section-nav__item::before {
+.vela-rail__item::before {
   content: "";
   position: absolute;
   left: 0;
@@ -715,35 +598,457 @@
   transition: height 140ms ease;
 }
 
-.vela-section-nav__item:hover {
+.vela-rail__item:hover {
   color: var(--vd-text);
 }
 
-.vela-section-nav__item[data-active="true"] {
+.vela-rail__item[data-active="true"] {
   color: var(--vd-text);
+  background: oklch(1 0 0 / 0.06);
 }
 
-.vela-section-nav__item[data-active="true"]::before {
+.vela-rail__item[data-active="true"]::before {
   height: 60%;
 }
 
-.vela-section-nav__item:focus-visible {
+.vela-rail__item:focus-visible {
   outline: 2px solid var(--vd-accent);
   outline-offset: -1px;
 }
 
-.vela-section-nav__footer {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+.vela-desktop[data-vd-color-mode="light"] .vela-rail__item {
+  color: oklch(0.3 0.02 264 / 0.6);
 }
 
-.vela-section-nav__sync {
+.vela-desktop[data-vd-color-mode="light"] .vela-rail__item[data-active="true"] {
+  color: var(--vd-text);
+  background: oklch(0 0 0 / 0.045);
+}
+
+.vela-desktop[data-vd-color-mode="light"] .vela-rail,
+.vela-desktop[data-vd-color-mode="light"] .vela-rail__item {
+  text-shadow: none;
+}
+
+@media (prefers-color-scheme: light) {
+  .vela-desktop[data-vd-color-mode="system"] .vela-rail__item {
+    color: oklch(0.3 0.02 264 / 0.6);
+  }
+
+  .vela-desktop[data-vd-color-mode="system"] .vela-rail__item[data-active="true"] {
+    color: var(--vd-text);
+    background: oklch(0 0 0 / 0.045);
+  }
+
+  .vela-desktop[data-vd-color-mode="system"] .vela-rail,
+  .vela-desktop[data-vd-color-mode="system"] .vela-rail__item {
+    text-shadow: none;
+  }
+}
+
+/* --- Right workspace + section scroll ownership ---------------------------- */
+
+/*
+ * The right workspace owns the rest of the width: a compact Arrange-only
+ * toolbar band on top (reserved space — it never covers application
+ * content), then the one section viewport, then the quiet global sync
+ * status at the bottom-left.
+ */
+.vela-workspace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/*
+ * The section viewport holds exactly the ACTIVE section's view (plus a
+ * brief exiting twin during transitions). Padding reserves the chrome
+ * bands; the dock reserve only grows when a dock actually exists.
+ */
+.vela-section-viewport {
+  --vd-section-padding-right: 34px;
+  --vd-section-padding-top: 56px;
+  --vd-section-padding-bottom: 30px;
+
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vela-desktop[data-has-dock="true"] .vela-section-viewport {
+  --vd-section-padding-bottom: 108px;
+}
+
+/*
+ * One mounted section view. The transition phases animate the whole-page
+ * vertical movement (next: exit up / enter from below; previous: mirrored).
+ * Both pages unmount/resolve when the transition completes; rapid input
+ * swaps instantly (the shell decides — CSS only defines the animation).
+ */
+.vela-section-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.vela-section-view[data-phase="enter-next"] {
+  animation: vela-section-enter-next 190ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.vela-section-view[data-phase="enter-prev"] {
+  animation: vela-section-enter-prev 190ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Exiting views render below the entering one and never take pointers. */
+.vela-section-view[data-phase="exit-next"],
+.vela-section-view[data-phase="exit-prev"] {
+  pointer-events: none;
+  z-index: 0;
+}
+
+.vela-section-view[data-phase="enter-next"],
+.vela-section-view[data-phase="enter-prev"],
+.vela-section-view[data-phase="active"] {
+  z-index: 1;
+}
+
+.vela-section-view[data-phase="exit-next"] {
+  animation: vela-section-exit-next 190ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.vela-section-view[data-phase="exit-prev"] {
+  animation: vela-section-exit-prev 190ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes vela-section-enter-next {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vela-section-enter-prev {
+  from {
+    opacity: 0;
+    transform: translateY(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vela-section-exit-next {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-28px);
+  }
+}
+
+@keyframes vela-section-exit-prev {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+}
+
+/*
+ * THE right-side scroller: it scrolls the active section's apps and nothing
+ * else — wheel input here never changes the section. Stable scrollbar
+ * gutter so appearing/disappearing scrollbars never change the Grid width
+ * or cell size; Firefox gets a thin scrollbar; WebKit gets a narrow,
+ * low-contrast one. The main scrollbar is never fully hidden.
+ */
+.vela-section-scroller {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  padding: var(--vd-section-padding-top) var(--vd-section-padding-right)
+    var(--vd-section-padding-bottom) 18px;
+}
+
+.vela-section-scroller::-webkit-scrollbar {
+  width: 8px;
+}
+
+.vela-section-scroller::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: oklch(0.7 0.02 260 / 0.28);
+}
+
+.vela-section-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Freezing while a modal or drag is up must not change scrollTop. */
+.vela-section-scroller[data-scroll-locked="true"] {
+  overflow-y: hidden;
+}
+
+/* --- Grid content (task 017) ------------------------------------------------ */
+
+/*
+ * The square-cell Grid stage: the scroller's content box sizes it, the
+ * square cell metrics derive from its width. min-height keeps empty grid
+ * pages filling the visible content height, and the arrange-mode visible
+ * grid is a pure background pattern (never marker nodes, never a pointer
+ * target — pointer-events:none).
+ */
+.vela-grid-stage {
+  position: relative;
+  min-height: 100%;
+}
+
+.vela-grid-host {
+  display: grid;
+  grid-auto-rows: var(--vd-grid-cell-size);
+  gap: var(--vd-grid-gap);
+  /* Items own their explicit gridColumn/gridRow placement styles. */
+}
+
+/*
+ * The visible grid: quiet ~1px cell edges via a repeating background. The
+ * pattern repeats per pitch (cell + gap), so the lines land exactly at the
+ * real cell edges the CSS Grid uses. Opacity-only entrance; reduced motion
+ * removes the fade.
+ */
+.vela-grid-lines {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image:
+    linear-gradient(to right, var(--vd-grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--vd-grid-line) 1px, transparent 1px);
+  background-size:
+    calc(var(--vd-grid-cell-size) + var(--vd-grid-gap))
+    calc(var(--vd-grid-cell-size) + var(--vd-grid-gap));
+  animation: vela-guides-in 140ms ease;
+}
+
+@keyframes vela-guides-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.55;
+  }
+}
+
+/* --- Freeform content ------------------------------------------------------- */
+
+/*
+ * The continuous canvas keeps the pre-017 model: one viewport-height stage
+ * whose box IS the logical 0..10000 canvas — the element the canvas
+ * metrics hook measures and the containing block items position inside.
+ */
+.vela-freeform-stage {
+  position: relative;
+  height: 100%;
+}
+
+.vela-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+/* Grid items are grid-area children, NOT absolutely positioned rects. */
+.vela-grid-host .vela-item {
+  position: relative;
+}
+
+/* --- Arrange toolbar (task 017) ---------------------------------------------- */
+
+/*
+ * A small, visually quiet Arrange-only surface in the reserved top band of
+ * the right workspace: mode switch, gap stepper, undo/redo. View mode
+ * never renders it.
+ */
+.vela-arrange-bar {
+  position: absolute;
+  top: 10px;
+  right: 24px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--vd-border);
+  border-radius: 999px;
+  background: var(--vd-surface);
+  backdrop-filter: blur(var(--vd-blur));
+  -webkit-backdrop-filter: blur(var(--vd-blur));
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.22);
+}
+
+.vela-arrange-bar__modes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: oklch(0 0 0 / 0.16);
+}
+
+.vela-segmented__option {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--vd-text-muted);
+  font-family: var(--vd-font);
+  font-size: 12.5px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.vela-segmented__option:hover:not(:disabled) {
+  color: var(--vd-text);
+}
+
+.vela-segmented__option[aria-pressed="true"] {
+  background: var(--vd-accent-strong);
+  color: var(--vd-accent-contrast);
+}
+
+.vela-segmented__option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vela-segmented__option:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: 1px;
+}
+
+.vela-arrange-bar__gap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vela-arrange-bar__gap-label {
+  color: var(--vd-text-muted);
+  font-size: 12px;
+}
+
+.vela-arrange-bar__gap-step {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 999px;
+  background: oklch(0 0 0 / 0.16);
+  color: var(--vd-text);
+  font-family: var(--vd-font);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.vela-arrange-bar__gap-step:hover:not(:disabled) {
+  background: var(--vd-accent-strong);
+  color: var(--vd-accent-contrast);
+}
+
+.vela-arrange-bar__gap-step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.vela-arrange-bar__gap-step:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: 1px;
+}
+
+.vela-arrange-bar__gap-value {
+  min-width: 34px;
+  color: var(--vd-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.vela-arrange-bar__spacer {
+  width: 1px;
+  height: 18px;
+  background: var(--vd-border);
+}
+
+.vela-arrange-bar__history {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--vd-text-muted);
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.vela-arrange-bar__history svg {
+  width: 16px;
+  height: 16px;
+}
+
+.vela-arrange-bar__history:hover:not(:disabled) {
+  background: oklch(0 0 0 / 0.16);
+  color: var(--vd-text);
+}
+
+.vela-arrange-bar__history:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.vela-arrange-bar__history:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: 1px;
+}
+
+/* --- Global sync status ------------------------------------------------------ */
+
+/*
+ * A quiet whisper at the bottom-left of the right workspace — global
+ * desktop state, deliberately out of the section list. Renders nothing
+ * while clean.
+ */
+.vela-sync-status {
+  position: absolute;
+  left: 18px;
+  bottom: 12px;
+  z-index: 11;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
+  padding: 3px 10px;
   border: none;
   border-radius: 999px;
   background: oklch(0.25 0.02 264 / 0.4);
@@ -752,86 +1057,28 @@
   color: var(--vd-text-muted);
 }
 
-button.vela-section-nav__sync {
+button.vela-sync-status {
   cursor: pointer;
 }
 
-button.vela-section-nav__sync:focus-visible {
+button.vela-sync-status:focus-visible {
   outline: 2px solid var(--vd-accent);
   outline-offset: 1px;
 }
 
-.vela-section-nav__sync-dot {
+.vela-sync-status__dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: oklch(0.8 0.13 80);
 }
 
-.vela-section-nav__sync[data-state="offline"] .vela-section-nav__sync-dot {
+.vela-sync-status[data-state="offline"] .vela-sync-status__dot {
   background: oklch(0.75 0.13 60);
 }
 
-.vela-section-nav__sync[data-state="conflict"] .vela-section-nav__sync-dot {
+.vela-sync-status[data-state="conflict"] .vela-sync-status__dot {
   background: oklch(0.65 0.19 25);
-}
-
-.vela-section-nav__more {
-  padding: 4px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: oklch(0.88 0.01 260 / 0.45);
-  font-family: var(--vd-font);
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-  transition: color 140ms ease;
-}
-
-.vela-section-nav__more:hover {
-  color: var(--vd-text);
-}
-
-.vela-section-nav__more:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: -1px;
-}
-
-.vela-desktop[data-vd-color-mode="light"] .vela-section-nav__item {
-  color: oklch(0.3 0.02 264 / 0.6);
-}
-
-.vela-desktop[data-vd-color-mode="light"] .vela-section-nav__item[data-active="true"] {
-  color: var(--vd-text);
-}
-
-.vela-desktop[data-vd-color-mode="light"] .vela-section-nav,
-.vela-desktop[data-vd-color-mode="light"] .vela-section-nav__item {
-  text-shadow: none;
-}
-
-.vela-desktop[data-vd-color-mode="light"] .vela-section-nav__more {
-  color: oklch(0.3 0.02 264 / 0.45);
-}
-
-@media (prefers-color-scheme: light) {
-  .vela-desktop[data-vd-color-mode="system"] .vela-section-nav__item {
-    color: oklch(0.3 0.02 264 / 0.6);
-  }
-
-  .vela-desktop[data-vd-color-mode="system"] .vela-section-nav__item[data-active="true"] {
-    color: var(--vd-text);
-  }
-
-  .vela-desktop[data-vd-color-mode="system"] .vela-section-nav,
-  .vela-desktop[data-vd-color-mode="system"] .vela-section-nav__item {
-    text-shadow: none;
-  }
-
-  .vela-desktop[data-vd-color-mode="system"] .vela-section-nav__more {
-    color: oklch(0.3 0.02 264 / 0.45);
-  }
 }
 
 /* --- Move-to-section dialog list ------------------------------------------ */
@@ -852,12 +1099,13 @@ button.vela-section-nav__sync:focus-visible {
 /* --- Desktop items ------------------------------------------------------- */
 
 /*
- * An item IS a canvas rect: absolutely positioned in percent space by
- * `canvasRectStyle`, with no CSS grid anywhere in the production renderer.
- * The box stays visually empty — the looks live in `.vela-item__body`, which
- * is what a drag preview or a snap correction transforms. Geometry and
- * appearance therefore never fight each other, and the rect the user resizes
- * is the rect the pointer hit-tests against.
+ * An item is its placement box: a percent-space rect in freeform (absolute,
+ * inline left/top/width/height from `canvasRectStyle`) or a CSS Grid area
+ * in grid mode (inline gridColumn/gridRow). The box stays visually empty —
+ * the looks live in `.vela-item__body`, which is what a drag preview or a
+ * snap correction transforms. Geometry and appearance therefore never fight
+ * each other, and the box the user resizes is the box the pointer
+ * hit-tests against.
  */
 .vela-item {
   position: absolute;
@@ -1701,15 +1949,27 @@ button.vela-section-nav__sync:focus-visible {
 .vela-settings {
   display: flex;
   flex-direction: column;
-  width: min(760px, 100%);
-  max-height: min(84vh, 720px);
+  width: min(740px, 100%);
+  max-height: min(72vh, 620px);
   border: 1px solid var(--vd-border);
   border-radius: calc(var(--vd-radius) + 6px);
   background: var(--vd-surface-strong);
   backdrop-filter: blur(var(--vd-blur));
   -webkit-backdrop-filter: blur(var(--vd-blur));
   box-shadow: 0 24px 70px oklch(0 0 0 / 0.5);
-  animation: vela-rise 200ms ease;
+  /* V2 motion: opacity plus a small translateY/scale entrance. */
+  animation: vela-settings-in 180ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes vela-settings-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .vela-settings__header {
@@ -1738,7 +1998,7 @@ button.vela-section-nav__sync:focus-visible {
 
 .vela-settings__body {
   display: grid;
-  grid-template-columns: 176px minmax(0, 1fr);
+  grid-template-columns: 152px minmax(0, 1fr);
   flex: 1;
   min-height: 0;
 }
@@ -1998,10 +2258,17 @@ button.vela-section-nav__sync:focus-visible {
     transform: translateX(0);
   }
 
-  .vela-desktop__lattice,
-  .vela-section-nav__item,
-  .vela-section-nav__item::before,
-  .vela-section-nav__more,
+  .vela-grid-lines,
+  .vela-rail__item,
+  .vela-rail__item::before,
+  .vela-section-view,
+  .vela-arrange-bar__history,
+  .vela-arrange-bar__gap-step,
+  .vela-segmented__option,
+  .vela-switch,
+  .vela-switch__knob,
+  .vela-settings__advanced-panel,
+  .vela-settings__advanced-chevron,
   .vela-item,
   .vela-dock__item,
   .vela-button,
@@ -2022,6 +2289,137 @@ button.vela-section-nav__sync:focus-visible {
     transition: none;
     animation: none;
   }
+}
+
+/*
+ * Section content transition (V2): the panel remounts on section switch
+ * (keyed in React), so a mount animation with a small directional movement
+ * is all the motion there is — 8-12px, opacity combined.
+ */
+.vela-settings__content {
+  animation: vela-settings-section-in 160ms ease;
+}
+
+@keyframes vela-settings-section-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- Advanced appearance group ------------------------------------------------
+   Collapsed by default; expanding animates the panel height via grid rows
+   (content never has to be re-measured). */
+.vela-settings__advanced {
+  margin-top: 4px;
+  border-top: 1px solid var(--vd-border);
+  padding-top: 10px;
+}
+
+.vela-settings__advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border: none;
+  background: transparent;
+  color: var(--vd-text-muted);
+  font-family: var(--vd-font);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.vela-settings__advanced-toggle:hover {
+  color: var(--vd-text);
+}
+
+.vela-settings__advanced-toggle:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.vela-settings__advanced-chevron {
+  display: inline-block;
+  font-size: 15px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 150ms ease;
+}
+
+.vela-settings__advanced-chevron[data-open="true"] {
+  transform: rotate(90deg);
+}
+
+.vela-settings__advanced-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 180ms ease;
+}
+
+.vela-settings__advanced-panel[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+
+.vela-settings__advanced-inner {
+  overflow: hidden;
+  min-height: 0;
+  padding: 0 2px;
+}
+
+.vela-settings__advanced-panel[data-open="true"] .vela-settings__advanced-inner {
+  padding-top: 8px;
+}
+
+/* --- Switch (booleans) --------------------------------------------------------- */
+.vela-settings__field--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.vela-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: oklch(0.5 0.02 264 / 0.4);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.vela-switch[aria-checked="true"] {
+  background: var(--vd-accent-strong);
+}
+
+.vela-switch:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: 2px;
+}
+
+.vela-switch__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: oklch(0.98 0.005 260);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.35);
+  transition: transform 150ms ease;
+}
+
+.vela-switch[aria-checked="true"] .vela-switch__knob {
+  transform: translateX(18px);
 }
 
 /* Settings small-screen adaptation: navigation turns horizontal, content
@@ -2058,20 +2456,31 @@ button.vela-section-nav__sync:focus-visible {
     font-size: 11.5px;
   }
 
-  .vela-desktop__viewport {
-    --vd-grid-padding-left: 136px;
-    --vd-grid-padding-right: 22px;
-    --vd-grid-padding-top: 22px;
-    --vd-grid-padding-bottom: 22px;
+  .vela-rail {
+    flex-basis: 136px;
+    padding: 18px 6px 18px 14px;
   }
 
-  .vela-desktop[data-has-dock="true"] .vela-desktop__viewport {
-    --vd-grid-padding-bottom: 96px;
+  .vela-section-viewport {
+    --vd-section-padding-right: 20px;
+    --vd-section-padding-top: 48px;
+    --vd-section-padding-bottom: 22px;
   }
 
-  .vela-section-nav {
-    left: 16px;
-    width: 104px;
+  .vela-desktop[data-has-dock="true"] .vela-section-viewport {
+    --vd-section-padding-bottom: 96px;
+  }
+
+  .vela-section-scroller {
+    padding-left: 10px;
+  }
+
+  /* Narrow screens keep the two-column shape usable — the rail shrinks,
+     never disappears: wheel navigation is its primary input. */
+  .vela-arrange-bar {
+    top: 8px;
+    right: 14px;
+    gap: 6px;
   }
 }
 

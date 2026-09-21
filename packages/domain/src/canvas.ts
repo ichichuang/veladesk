@@ -19,13 +19,11 @@ import {
   firstFreeGridPlacement,
   findCanvasItem,
   freeformLayoutFromV1,
-  gridItemToCanvasRect,
   gridLayoutFromV1,
   nearestEdgeIndex,
 } from "@veladesk/canvas-engine";
 import type {
   CanvasLayout,
-  CanvasLayoutV1,
   CanvasRect,
   FreeformCanvasLayoutV2,
   GridCanvasItem,
@@ -314,31 +312,6 @@ export function gridPlacementOf(page: DesktopPage): GridCanvasLayoutV2 | undefin
   return placement !== undefined && placement.version === 2 && placement.mode === "grid"
     ? placement
     : undefined;
-}
-
-/**
- * TEMPORARY v1 compatibility view (removed again by the task-017 web
- * rebuild): the page as a v1 canvas, so pre-017 call sites keep compiling
- * and behaving while the production renderer migrates to
- * {@link resolvePagePlacement}. v2 Grid pages project onto a v1 `snap`
- * canvas through the lattice; v2 Freeform pages project onto v1 `freeform`.
- */
-export function resolvePageCanvasV1(page: DesktopPage): CanvasLayoutV1 {
-  if (page.canvas !== undefined && page.canvas.version === 1) {
-    return page.canvas;
-  }
-  const placement = resolvePagePlacement(page);
-  if (placement.mode === "freeform") {
-    return { version: 1, mode: "freeform", items: placement.items };
-  }
-  return {
-    version: 1,
-    mode: "snap",
-    items: placement.items.map((item) => ({
-      id: item.id,
-      rect: gridItemToCanvasRect(item, page.layout.grid),
-    })),
-  };
 }
 
 export type { GridCanvasItem, GridCanvasLayoutV2, FreeformCanvasLayoutV2 };

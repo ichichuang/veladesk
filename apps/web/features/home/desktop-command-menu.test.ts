@@ -16,7 +16,8 @@ function commandEntries(overrides: Partial<Parameters<typeof buildDesktopCommand
   return buildDesktopCommandEntries({
     t: (key: TranslationKey) => translate("zh-CN", key),
     arrange: false,
-    placementMode: "snap",
+    placementMode: "grid",
+    freeformBlockedReason: null,
     canUndo: false,
     canRedo: false,
     syncState: "clean",
@@ -68,22 +69,22 @@ describe("buildDesktopCommandEntries", () => {
   });
 
   it("offers the placement mode choice only while arranging", () => {
-    expect(actionIds(commandEntries({ arrange: false }))).not.toContain("placement-snap");
+    expect(actionIds(commandEntries({ arrange: false }))).not.toContain("placement-grid");
     expect(actionIds(commandEntries({ arrange: false }))).not.toContain("placement-freeform");
 
     const arranging = actionIds(commandEntries({ arrange: true }));
-    expect(arranging).toContain("placement-snap");
+    expect(arranging).toContain("placement-grid");
     expect(arranging).toContain("placement-freeform");
   });
 
   it("marks the section's current placement mode as checked", () => {
-    const snap = commandEntries({ arrange: true, placementMode: "snap" });
-    expect(snap.find((entry) => entry.kind === "action" && entry.id === "placement-snap")).toMatchObject({
+    const grid = commandEntries({ arrange: true, placementMode: "grid" });
+    expect(grid.find((entry) => entry.kind === "action" && entry.id === "placement-grid")).toMatchObject({
       checked: true,
-      label: "自动对齐",
+      label: "网格排列",
     });
     expect(
-      snap.find((entry) => entry.kind === "action" && entry.id === "placement-freeform"),
+      grid.find((entry) => entry.kind === "action" && entry.id === "placement-freeform"),
     ).toMatchObject({ checked: false, label: "自由排列" });
 
     const freeform = commandEntries({ arrange: true, placementMode: "freeform" });
@@ -91,7 +92,7 @@ describe("buildDesktopCommandEntries", () => {
       freeform.find((entry) => entry.kind === "action" && entry.id === "placement-freeform"),
     ).toMatchObject({ checked: true });
     expect(
-      freeform.find((entry) => entry.kind === "action" && entry.id === "placement-snap"),
+      freeform.find((entry) => entry.kind === "action" && entry.id === "placement-grid"),
     ).toMatchObject({ checked: false });
   });
 
@@ -117,11 +118,11 @@ describe("buildDesktopCommandEntries", () => {
     const freeform = entries.find(
       (entry) => entry.kind === "action" && entry.id === "placement-freeform",
     );
-    const snap = entries.find((entry) => entry.kind === "action" && entry.id === "placement-snap");
+    const grid = entries.find((entry) => entry.kind === "action" && entry.id === "placement-grid");
     if (freeform?.kind === "action") freeform.onSelect();
-    if (snap?.kind === "action") snap.onSelect();
+    if (grid?.kind === "action") grid.onSelect();
 
-    expect(chosen).toEqual(["freeform", "snap"]);
+    expect(chosen).toEqual(["freeform", "grid"]);
   });
 
   it("shows undo/redo only while arranging with available history", () => {

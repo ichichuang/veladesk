@@ -18,7 +18,7 @@ import {
   validateGridCanvasItems,
 } from "./grid";
 import { areCanvasLayoutsEqual, validateCanvasLayout } from "./layout";
-import type { CanvasLayoutV1, GridCanvasItem, GridCanvasLayoutV2 } from "./types";
+import type { CanvasLayout, CanvasLayoutV1, GridCanvasItem, GridCanvasLayoutV2 } from "./types";
 
 const GRID_6X5 = { columns: 6, rows: 5 };
 
@@ -344,7 +344,7 @@ describe("layout equality across versions", () => {
 
   it("distinguishes freeform v2 from v1", () => {
     const v1: CanvasLayoutV1 = { version: 1, mode: "freeform", items: [] };
-    const v2 = { version: 2, mode: "freeform" as const, items: [] };
+    const v2: CanvasLayout = { version: 2, mode: "freeform", items: [] };
     expect(areCanvasLayoutsEqual(v1, v2)).toBe(false);
   });
 });
