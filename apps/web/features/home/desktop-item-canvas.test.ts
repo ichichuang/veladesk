@@ -108,6 +108,33 @@ describe("desktop item — resize stays a preview until release", () => {
   });
 });
 
+describe("desktop item — per-app presentation (017-C)", () => {
+  const overlay = source("./folder-overlay.tsx");
+
+  it("rides the presentation vars on the item button next to the geometry styles", () => {
+    // The label is a SIBLING of the icon tile, so the item element must
+    // carry --vd-app-label-scale; the merge never touches geometry keys.
+    expect(item).toMatch(
+      /style=\{\{ \.\.\.buildAppIconStyleVars\(presentation\), \.\.\.commonStyle \} as CSSProperties\}/
+    );
+  });
+
+  it("keeps an accessible name that does not depend on the visible label", () => {
+    expect(item).toMatch(/aria-label=\{entity\.name\}/);
+    expect(item).toMatch(
+      /label\.visible \? <span className="vela-item__label">\{entity\.name\}<\/span> : null/
+    );
+  });
+
+  it("applies the same presentation contract in the folder overlay", () => {
+    expect(overlay).toMatch(/buildAppIconStyleVars\(appVisual\(entity\)\)/);
+    expect(overlay).toMatch(/aria-label=\{entity\.name\}/);
+    expect(overlay).toMatch(
+      /appLabelPresentation\(appVisual\(entity\)\)\.visible \? \(\s*<span className="vela-item__label">/
+    );
+  });
+});
+
 describe("desktop shell — canvas commit path", () => {
   it("commits geometry through the canvas handoff, then the domain op", () => {
     expect(shell).toContain("commitCanvasEdit");

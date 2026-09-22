@@ -19,6 +19,11 @@ import type {
 import { contextMenuAnchorFromElement, isContextMenuKeyEvent } from "./context-menu";
 import { AppIconTile } from "./app-icon-renderer";
 import {
+  appLabelPresentation,
+  appVisual,
+  buildAppIconStyleVars,
+} from "./app-icon";
+import {
   CANVAS_RESIZE_HANDLES,
   areGridGeometriesEqual,
   canvasResizeRectAt,
@@ -462,6 +467,11 @@ function DesktopEntity({
     ) : null;
 
   if (entity.kind === "app") {
+    // Per-app presentation (017-C): the label vars ride on the ITEM button
+    // because the label is a sibling of the icon tile — geometry styles and
+    // presentation vars are disjoint key sets, so the merge is conflict-free.
+    const presentation = appVisual(entity);
+    const label = appLabelPresentation(presentation);
     return (
       <button
         type="button"
@@ -471,7 +481,10 @@ function DesktopEntity({
         data-kind="app"
         {...draggingProps}
         {...selectionProps}
-        style={commonStyle}
+        style={{ ...buildAppIconStyleVars(presentation), ...commonStyle } as CSSProperties}
+        // The accessible name never depends on the visible label: hiding
+        // the label (labelVisible=false) must keep the button announced.
+        aria-label={entity.name}
         title={entity.name}
         onContextMenu={handleContextMenu}
         onKeyDown={handleKeyDown}
@@ -481,7 +494,7 @@ function DesktopEntity({
           <span className="vela-item__icon-wrap">
             <AppIconTile app={entity} />
           </span>
-          <span className="vela-item__label">{entity.name}</span>
+          {label.visible ? <span className="vela-item__label">{entity.name}</span> : null}
         </span>
         {resizeHandles}
       </button>

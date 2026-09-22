@@ -1,11 +1,28 @@
 import type { AppDecorationStyle, AppShortcut, AppVisualStyle } from "@veladesk/domain";
 import {
+  DEFAULT_APP_LABEL_SCALE,
+  DEFAULT_APP_LABEL_VISIBLE,
   isValidAppHexColor,
   resolveAppVisualStyle,
 } from "@veladesk/domain";
 import { findIconCollection, isIconCollectionId } from "@veladesk/icon-catalog/meta";
 
 import { generatedIconText } from "./generated-icon";
+
+/**
+ * The label presentation an app renders with: visible + scale, with the
+ * domain defaults for legacy styles. Desktop items and folder-overlay
+ * children read this instead of poking at `visual?.…` themselves.
+ */
+export function appLabelPresentation(style: AppVisualStyle): {
+  visible: boolean;
+  scale: number;
+} {
+  return {
+    visible: style.labelVisible ?? DEFAULT_APP_LABEL_VISIBLE,
+    scale: style.labelScale ?? DEFAULT_APP_LABEL_SCALE,
+  };
+}
 
 /**
  * Pure helpers behind the shared AppIconRenderer (task 016-A).
@@ -146,11 +163,14 @@ export function normalizeAppHexColor(value: string | undefined | null): string |
  * CSS custom properties for the icon tile, all composed from validated
  * data. `--vd-app-icon-bg` is only emitted for a custom decoration color
  * (the CSS default per decoration style handles "Auto"), and the
- * foreground var only for a custom foreground color.
+ * foreground var only for a custom foreground color. The label-scale var
+ * is always emitted (resolved default 1) because the LABEL is a sibling of
+ * the tile — the item button carries the vars so both inherit them.
  */
 export function buildAppIconStyleVars(style: AppVisualStyle): Readonly<Record<string, string>> {
   const vars: Record<string, string> = {
     "--vd-app-icon-scale": String(style.iconScale),
+    "--vd-app-label-scale": String(style.labelScale ?? DEFAULT_APP_LABEL_SCALE),
   };
 
   const decoration = style.decorationColor;

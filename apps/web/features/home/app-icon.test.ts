@@ -201,21 +201,32 @@ describe("decorationBackground", () => {
 });
 
 describe("buildAppIconStyleVars", () => {
-  it("emits only the scale var for the default style", () => {
+  it("emits the resolved presentation vars for the default style (017-C)", () => {
+    // The label var is always emitted: the label is a SIBLING of the tile,
+    // so the item button carries it for both. Default resolves to 1.
     expect(buildAppIconStyleVars(DEFAULT_APP_VISUAL_STYLE)).toEqual({
       "--vd-app-icon-scale": "1",
+      "--vd-app-label-scale": "1",
     });
   });
 
-  it("carries custom colors through composed values", () => {
+  it("resolves absent label fields to the shown/100% defaults", () => {
+    const vars = buildAppIconStyleVars({ iconScale: 1.15, decorationStyle: "glass" });
+
+    expect(vars["--vd-app-label-scale"]).toBe("1");
+  });
+
+  it("carries a custom label scale and custom colors through composed values", () => {
     const vars = buildAppIconStyleVars({
       iconScale: 1.15,
       decorationStyle: "glass",
+      labelScale: 1.4,
       foregroundColor: "#AABBCC",
       decorationColor: "#112233",
     });
 
     expect(vars["--vd-app-icon-scale"]).toBe("1.15");
+    expect(vars["--vd-app-label-scale"]).toBe("1.4");
     expect(vars["--vd-app-icon-bg"]).toBe("rgba(17, 34, 51, 0.34)");
     expect(vars["--vd-app-icon-fg"]).toBe("#aabbcc");
   });

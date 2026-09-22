@@ -1,11 +1,20 @@
 "use client";
 
 import { useEffect } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+} from "react";
 import type { AppShortcut, EntityId, Folder, WorkspaceSnapshot } from "@veladesk/domain";
 
 import { useI18n } from "../i18n/use-i18n";
 import { AppIconTile } from "./app-icon-renderer";
+import {
+  appLabelPresentation,
+  appVisual,
+  buildAppIconStyleVars,
+} from "./app-icon";
 import {
   contextMenuAnchorFromElement,
   isContextMenuKeyEvent,
@@ -124,13 +133,20 @@ export function FolderOverlay({
                 type="button"
                 className="vela-item"
                 data-kind="app"
+                style={buildAppIconStyleVars(appVisual(entity)) as CSSProperties}
+                // Same presentation contract as the desktop (017-C): the
+                // overlay renders the app's icon-scale label settings, and
+                // the accessible name survives a hidden visible label.
+                aria-label={entity.name}
                 title={entity.name}
                 onClick={() => onLaunchApp(entity)}
                 onContextMenu={(event) => childContextMenu(event, childId)}
                 onKeyDown={(event) => childKeyDown(event, childId)}
               >
                 <AppIconTile app={entity} />
-                <span className="vela-item__label">{entity.name}</span>
+                {appLabelPresentation(appVisual(entity)).visible ? (
+                  <span className="vela-item__label">{entity.name}</span>
+                ) : null}
               </button>
             );
           })}

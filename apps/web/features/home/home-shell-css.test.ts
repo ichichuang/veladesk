@@ -134,6 +134,20 @@ describe("home-shell.css geometry contract (task 017)", () => {
     expect(label).toMatch(/position:\s*absolute/);
     expect(label).toMatch(/bottom:/);
     expect(label).toMatch(/text-overflow:\s*ellipsis/);
+    // 017-C: label size is presentation — baseline × per-app scale, clamped.
+    expect(label).toMatch(/clamp\(9px,\s*calc\(12\.5px\s*\*\s*var\(--vd-app-label-scale,\s*1\)\),\s*24px\)/);
+  });
+
+  it("scales the desktop label off the item box through cqmin (017-C)", () => {
+    const desktop = ruleBlock(".vela-canvas .vela-item__label, .vela-grid-host .vela-item__label");
+    expect(desktop).toMatch(/clamp\(9px,\s*calc\(14cqmin\s*\*\s*var\(--vd-app-label-scale,\s*1\)\),\s*24px\)/);
+    // The body is the label's query container; the glyph keeps its own.
+    expect(ruleBlock(".vela-item__body")).toMatch(/container-type:\s*size/);
+    // No media override may pin the label font again — that would mute
+    // labelScale and the responsive baseline on small screens.
+    const media = css.match(/@media \(max-width: 1023px\)\s*\{[\s\S]*?\n\}/);
+    expect(media).not.toBeNull();
+    expect(media![0]!).not.toMatch(/\.vela-item__label[^{]*\{[^}]*font-size/);
   });
 
   it("fills the tile with the decoration and scales the glyph off the smaller side", () => {
@@ -151,9 +165,25 @@ describe("home-shell.css geometry contract (task 017)", () => {
 
   it("contains an uploaded image inside the box without cropping it", () => {
     const image = ruleBlock(".vela-canvas .vela-app-icon__image, .vela-grid-host .vela-app-icon__image");
-    expect(image).toMatch(/width:\s*100%/);
-    expect(image).toMatch(/height:\s*100%/);
     expect(image).toMatch(/object-fit:\s*contain/);
+    // 017-C: the image IS the glyph — it follows the same responsive,
+    // iconScale-aware box as the library glyphs instead of filling the tile.
+    expect(image).toMatch(/62cqmin/);
+    expect(image).toMatch(/var\(--vd-app-icon-scale,\s*1\)/);
+    expect(image).toMatch(/margin:\s*auto/);
+  });
+
+  it("keeps the dock button fixed while every glyph source scales (017-C)", () => {
+    const glyphs = ruleBlock(
+      ".vela-dock__item .vela-app-icon__glyph, .vela-dock__item .vela-app-icon__image"
+    );
+    expect(glyphs).toMatch(/min\(calc\(24px\s*\*\s*var\(--vd-app-icon-scale,\s*1\)\),\s*40px\)/);
+    // The button box itself stays presentation-free: no per-app var may
+    // size the dock button.
+    const dock = ruleBlock(".vela-dock__item, .vela-dock__utility");
+    expect(dock).toMatch(/width:\s*44px/);
+    expect(dock).toMatch(/height:\s*44px/);
+    expect(dock).not.toMatch(/var\(--vd-app-icon-scale/);
   });
 });
 
