@@ -863,6 +863,29 @@
   }
 }
 
+/*
+ * Target-slot feedback (task 017-B): while a Grid drag or resize is live,
+ * the RESOLVED target cells get one quiet accent wash. One box per moved
+ * item — never one component per grid cell — positioned from the same
+ * square-grid metrics (column * pitch, gridSpanExtentPx). Grid feels
+ * discrete, so the feedback jumps cell-by-cell: no transitions. It is
+ * decorative only and disappears the moment the gesture ends.
+ */
+.vela-grid-target-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.vela-grid-target {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid var(--vd-accent);
+  background: var(--vd-accent-wash);
+  transition: none;
+}
+
 /* --- Freeform content ------------------------------------------------------- */
 
 /*
@@ -1175,8 +1198,9 @@ button.vela-sync-status:focus-visible {
   display: grid;
   place-items: center;
   /* The shared slot variable (not --vd-icon-size directly) so the editor
-     preview and the dock stay in lockstep with the responsive shrink. The
-     desktop canvas overrides this box to fill the rect instead (below). */
+     preview and the dock stay in lockstep with the responsive shrink. Both
+     desktop geometry hosts (.vela-canvas, .vela-grid-host) override this
+     box to fill the placement box instead (below). */
   width: var(--vd-slot-icon-size);
   height: var(--vd-slot-icon-size);
   border-radius: calc(var(--vd-slot-icon-size) * 0.26);
@@ -1195,16 +1219,23 @@ button.vela-sync-status:focus-visible {
   color: oklch(0.85 0.09 85);
 }
 
-/* On the canvas a folder tile is a surface too: it fills the rect and keeps
-   its glyph centered and proportional. */
-.vela-canvas .vela-item__icon--folder {
+/* On the DESKTOP (freeform canvas AND grid host) a folder tile is a
+   surface too: it fills the placement box and keeps its glyph centered
+   and proportional. The tile is also the QUERY CONTAINER for its svg —
+   apps get one from .vela-item__icon-wrap, but the folder branch has no
+   wrap, so without container-type here the cqmin below would fall back
+   to the viewport and always sit at the 180px cap. */
+.vela-canvas .vela-item__icon--folder,
+.vela-grid-host .vela-item__icon--folder {
   position: absolute;
   inset: 0;
   width: auto;
   height: auto;
+  container-type: size;
 }
 
-.vela-canvas .vela-item__icon--folder svg {
+.vela-canvas .vela-item__icon--folder svg,
+.vela-grid-host .vela-item__icon--folder svg {
   width: min(58cqmin, 180px);
   height: min(58cqmin, 180px);
 }
@@ -1283,16 +1314,19 @@ button.vela-sync-status:focus-visible {
 }
 
 /*
- * On the desktop canvas the tile IS the rect: it fills the item box, and
- * every internal dimension is measured against the SMALLER side of that box
- * (cqmin), so a wide or tall rect keeps a centered, proportional glyph
+ * On the DESKTOP (task 017-B: freeform canvas AND grid host) the tile IS
+ * the placement box: it fills the item element, and every internal
+ * dimension is measured against the SMALLER side of that box (cqmin), so
+ * a wide, tall or multi-cell rect keeps a centered, proportional glyph
  * instead of a stretched one. The glyph itself is capped — a full-canvas
  * tile should not paint a 500px logo — but the TILE has no size cap: the
- * rect is whatever the user resized it to. `iconScale` stays exactly what it
- * always was for legacy data: a multiplier for the glyph inside the tile,
- * never tile geometry.
+ * box is whatever geometry the user gave it (rect or CSS Grid span).
+ * `iconScale` stays exactly what it always was for legacy data: a
+ * multiplier for the glyph inside the tile, never tile geometry — the
+ * outer box here is `inset: 0`, never --vd-slot-icon-size.
  */
-.vela-canvas .vela-app-icon {
+.vela-canvas .vela-app-icon,
+.vela-grid-host .vela-app-icon {
   position: absolute;
   inset: 0;
   width: auto;
@@ -1301,16 +1335,18 @@ button.vela-sync-status:focus-visible {
   font-size: max(11px, min(calc(34cqmin * var(--vd-app-icon-scale, 1)), 96px));
 }
 
-.vela-canvas .vela-app-icon__glyph {
+.vela-canvas .vela-app-icon__glyph,
+.vela-grid-host .vela-app-icon__glyph {
   width: min(calc(62cqmin * var(--vd-app-icon-scale, 1)), 192px);
   height: min(calc(62cqmin * var(--vd-app-icon-scale, 1)), 192px);
 }
 
-/* An uploaded image keeps its own aspect ratio inside the rect: contain,
-   never cropped, never stretched. It is taken OUT OF FLOW on purpose — an
-   in-flow image would size the tile's grid row from its own intrinsic ratio
-   and push the tile past the rect it is supposed to fill. */
-.vela-canvas .vela-app-icon__image {
+/* An uploaded image keeps its own aspect ratio inside the placement box:
+   contain, never cropped, never stretched. It is taken OUT OF FLOW on
+   purpose — an in-flow image would size the tile's grid row from its own
+   intrinsic ratio and push the tile past the box it is supposed to fill. */
+.vela-canvas .vela-app-icon__image,
+.vela-grid-host .vela-app-icon__image {
   position: absolute;
   inset: 0;
   width: 100%;

@@ -17,8 +17,11 @@ const css = readFileSync(
 );
 
 function ruleBlock(selector: string): string {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`${escaped}\\s*\\{([\\s\\S]*?)\\}`, "m"));
+  // Selector groups are written one selector per line in the stylesheet, so
+  // each comma-separated part is matched with flexible whitespace.
+  const escape = (part: string) => part.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = selector.split(",").map(escape).join("\\s*,\\s*");
+  const match = css.match(new RegExp(`${pattern}\\s*\\{([\\s\\S]*?)\\}`, "m"));
   if (match === null) {
     throw new Error(`CSS rule not found: ${selector}`);
   }
@@ -134,20 +137,20 @@ describe("home-shell.css geometry contract (task 017)", () => {
   });
 
   it("fills the tile with the decoration and scales the glyph off the smaller side", () => {
-    const tile = ruleBlock(".vela-canvas .vela-app-icon");
+    const tile = ruleBlock(".vela-canvas .vela-app-icon, .vela-grid-host .vela-app-icon");
     expect(tile).toMatch(/position:\s*absolute/);
     expect(tile).toMatch(/inset:\s*0/);
     expect(tile).not.toMatch(/container-type/);
     expect(ruleBlock(".vela-item__icon-wrap")).toMatch(/container-type:\s*size/);
     expect(tile).toMatch(/cqmin/);
 
-    const glyph = ruleBlock(".vela-canvas .vela-app-icon__glyph");
+    const glyph = ruleBlock(".vela-canvas .vela-app-icon__glyph, .vela-grid-host .vela-app-icon__glyph");
     expect(glyph).toMatch(/62cqmin/);
     expect(glyph).toMatch(/var\(--vd-app-icon-scale,\s*1\)/);
   });
 
   it("contains an uploaded image inside the box without cropping it", () => {
-    const image = ruleBlock(".vela-canvas .vela-app-icon__image");
+    const image = ruleBlock(".vela-canvas .vela-app-icon__image, .vela-grid-host .vela-app-icon__image");
     expect(image).toMatch(/width:\s*100%/);
     expect(image).toMatch(/height:\s*100%/);
     expect(image).toMatch(/object-fit:\s*contain/);
