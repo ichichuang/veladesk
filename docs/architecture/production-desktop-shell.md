@@ -148,19 +148,26 @@ drags with a transient peer preview, keyboard nudges and a per-page
 geometry Undo/Redo (move AND resize) — see
 [arrange-session.md](./arrange-session.md).
 
-### Visible square grid (017)
+### Visible square grid (017 / 017-A)
 
-In Arrange + Grid the stage paints the real placement grid as a quiet ~1px
-background pattern (`.vela-grid-lines`): `pointer-events: none`,
-`background-size: calc(var(--vd-grid-cell-size) + var(--vd-grid-gap))`, so
-the lines land exactly on the cell edges the CSS Grid uses — never
-thousands of marker nodes, never a pointer target. View mode and freeform
-render no grid. Entering arrange fades the pattern in with a 140ms
-opacity-only animation (`vela-guides-in`, disabled under
-`prefers-reduced-motion`). The old center-dot snap lattice (016-C) is
-deleted. A lossy Grid→Freeform conversion (content beyond the freeform
-viewport) is refused with a localized reason — the toolbar disables the
-switch, the menu shows the reason, geometry is never silently dropped.
+In Arrange + Grid the stage shows the placement grid as ISOLATED SQUARE
+SLOTS (`.vela-grid-slots`, task 017-A), not graph paper: one
+pointer-transparent SVG whose repeating `userSpaceOnUse` pattern tile
+spans a full pitch (`cellPx + gapPx`) and draws exactly ONE stroked
+square. The tile's remaining area stays transparent, so the persisted
+`gridGapPx` is the literal blank distance between neighbouring slots —
+a 2×2 item covers four squares plus the internal gap on each axis. The
+overlay starts at the grid content origin, covers the stage (so at least
+the visible height and every content row), never participates in layout
+and never takes pointers; its `cellPx`/`gapPx` come straight from
+`calculateSquareGridMetrics`, the sole geometry source. View mode and
+freeform render no grid. Entering arrange fades the slots in with a
+140ms opacity-only animation (`vela-guides-in`, disabled under
+`prefers-reduced-motion`). The old center-dot snap lattice (016-C) and
+the continuous-line background pair (017) are deleted. A lossy
+Grid→Freeform conversion (content beyond the freeform viewport) is
+refused with a localized reason — the toolbar disables the switch, the
+menu shows the reason, geometry is never silently dropped.
 
 ### Drop = snapped and still (014-D)
 

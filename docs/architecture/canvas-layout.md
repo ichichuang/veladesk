@@ -87,10 +87,12 @@ a 2×1 item is exactly `2 * cellPx + gapPx` wide. No fixed row count, no
 one-screen canvas height — content rows grow automatically and an empty
 grid still fills the visible height (`min-height: 100%`).
 
-The visible Arrange+Grid overlay is a quiet ~1px background pattern sized
-by `calc(var(--vd-grid-cell-size) + var(--vd-grid-gap))` —
-`pointer-events: none`, opacity-only entrance, gone in View mode and in
-freeform. The v1 center-dot lattice is deleted.
+The visible Arrange+Grid overlay (task 017-A) is a pointer-transparent
+SVG of isolated square slots: a `userSpaceOnUse` pattern tile of one full
+pitch (`cellPx + gapPx`) containing exactly one stroked square, so the
+gap between neighbouring slots is the real persisted blank space.
+Opacity-only entrance, gone in View mode and in freeform. The v1
+center-dot lattice and the 017 continuous-line background are deleted.
 
 ## The global grid gap
 
