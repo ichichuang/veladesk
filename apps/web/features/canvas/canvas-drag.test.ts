@@ -85,6 +85,35 @@ describe("previewCanvasDrag — grid", () => {
     }
   });
 
+  it("crosses the half-pitch threshold symmetrically in both directions (017-B table)", () => {
+    // Spec table at pitch 120: abs(delta) < pitch/2 keeps the current
+    // cell, abs(delta) >= pitch/2 moves — mirrored for negative deltas.
+    const floating = grid([
+      { id: "solo", column: 3, row: 4, columnSpan: 1, rowSpan: 1 },
+    ]);
+    for (const [deltaPx, cells] of [
+      [0, 0],
+      [59, 0],
+      [60, 1],
+      [119, 1],
+      [180, 2],
+      [-59, 0],
+      [-60, -1],
+      [-119, -1],
+      [-180, -2],
+    ] as const) {
+      const preview = previewCanvasDrag({
+        placement: floating,
+        itemIds: ["solo"],
+        deltaX: deltaPx,
+        deltaY: 0,
+        metrics,
+        pitchPx: 120,
+      });
+      expect(preview.appliedX, `delta ${deltaPx}`).toBe(cells * 120);
+    }
+  });
+
   it("applies one rigid cell delta to the whole selection", () => {
     const moved = commitCanvasDrag({
       placement: gridPair,

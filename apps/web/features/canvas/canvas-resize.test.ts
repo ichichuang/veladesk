@@ -106,6 +106,38 @@ describe("gridResizeGeometryAt — grid", () => {
     );
     expect(geometry).toEqual({ column: 0, row: 0, columnSpan: 4, rowSpan: 1 });
   });
+
+  it("every one of the eight handles crosses exactly one cell at half-pitch and is a no-op below it (017-B)", () => {
+    const start = { column: 2, row: 2, columnSpan: 1, rowSpan: 1 };
+    const threshold = [
+      ["e", 60, 0, { column: 2, row: 2, columnSpan: 2, rowSpan: 1 }],
+      ["w", -60, 0, { column: 1, row: 2, columnSpan: 2, rowSpan: 1 }],
+      ["s", 0, 60, { column: 2, row: 2, columnSpan: 1, rowSpan: 2 }],
+      ["n", 0, -60, { column: 2, row: 1, columnSpan: 1, rowSpan: 2 }],
+      ["se", 60, 60, { column: 2, row: 2, columnSpan: 2, rowSpan: 2 }],
+      ["nw", -60, -60, { column: 1, row: 1, columnSpan: 2, rowSpan: 2 }],
+      ["ne", 60, -60, { column: 2, row: 1, columnSpan: 2, rowSpan: 2 }],
+      ["sw", -60, 60, { column: 1, row: 2, columnSpan: 2, rowSpan: 2 }],
+    ] as const;
+    for (const [handle, dx, dy, expected] of threshold) {
+      expect(gridResizeGeometryAt(session(handle, start, 8, 100), dx, dy), handle).toEqual(expected);
+    }
+    // Below the half-pitch threshold every handle leaves the geometry
+    // untouched — integer previews only, no fractional spans.
+    const below = [
+      ["e", 40, 0],
+      ["w", -40, 0],
+      ["s", 0, 40],
+      ["n", 0, -40],
+      ["se", 40, 40],
+      ["nw", -40, -40],
+      ["ne", 40, -40],
+      ["sw", -40, 40],
+    ] as const;
+    for (const [handle, dx, dy] of below) {
+      expect(gridResizeGeometryAt(session(handle, start, 8, 100), dx, dy), handle).toEqual(start);
+    }
+  });
 });
 
 describe("isCanvasResizeNoop", () => {

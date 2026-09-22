@@ -71,12 +71,19 @@ export function calculateSquareGridMetrics(
 /**
  * Pixel delta → whole-cell delta. Rounding happens here and only here, so a
  * drag/resize gesture always lands on integer row/column geometry.
+ *
+ * Halves round AWAY FROM ZERO, symmetric in both directions: the threshold
+ * abs(delta) >= pitch/2 must move one cell in the drag's own direction —
+ * Math.round's half-toward-+Infinity would strand westward/northward
+ * half-pitch gestures. Zero normalizes to +0, never -0.
  */
 export function pixelsToCellDelta(deltaPx: number, pitchPx: number): number {
   if (!Number.isFinite(deltaPx) || !Number.isFinite(pitchPx) || pitchPx <= 0) {
     return 0;
   }
-  return Math.round(deltaPx / pitchPx);
+  const cells = deltaPx / pitchPx;
+  const rounded = cells >= 0 ? Math.round(cells) : -Math.round(-cells);
+  return rounded === 0 ? 0 : rounded;
 }
 
 /** Pixel extent of a span: 2 cells are exactly `2 * cellPx + gapPx` wide. */

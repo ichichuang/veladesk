@@ -37,6 +37,13 @@ export interface CanvasDragArgs {
 export interface CanvasDragPreview {
   readonly appliedX: number;
   readonly appliedY: number;
+  /**
+   * The resolved whole-cell delta (grid mode; 0 in freeform). Consumers that
+   * need the logical cells — e.g. the target-slot feedback — read these
+   * instead of dividing pixels back down.
+   */
+  readonly columnDelta: number;
+  readonly rowDelta: number;
 }
 
 function gridTranslationOf(args: CanvasDragArgs): {
@@ -60,6 +67,8 @@ export function previewCanvasDrag(args: CanvasDragArgs): CanvasDragPreview {
     return {
       appliedX: columnDelta * args.pitchPx,
       appliedY: rowDelta * args.pitchPx,
+      columnDelta,
+      rowDelta,
     };
   }
 
@@ -73,6 +82,8 @@ export function previewCanvasDrag(args: CanvasDragArgs): CanvasDragPreview {
   return {
     appliedX: unitsToPixels(translation.x, args.metrics.width),
     appliedY: unitsToPixels(translation.y, args.metrics.height),
+    columnDelta: 0,
+    rowDelta: 0,
   };
 }
 

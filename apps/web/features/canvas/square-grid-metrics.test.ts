@@ -85,13 +85,19 @@ describe("gap geometry", () => {
 });
 
 describe("pixelsToCellDelta", () => {
-  it("rounds to the nearest whole cell", () => {
+  it("rounds to the nearest whole cell, halves away from zero (017-B)", () => {
     expect(pixelsToCellDelta(112, 112)).toBe(1);
     expect(pixelsToCellDelta(168, 112)).toBe(2); // 1.5 rounds up
     expect(pixelsToCellDelta(56, 112)).toBe(1); // 0.5 rounds up
     expect(pixelsToCellDelta(55, 112)).toBe(0);
-    // -1.5 rounds half toward +Infinity, matching Math.round.
-    expect(pixelsToCellDelta(-168, 112)).toBe(-1);
+    // Halves mirror on the negative side (017-B): the threshold
+    // abs(delta) >= pitch/2 must move one cell in the drag's own
+    // direction. Math.round's half-toward-+Infinity stranded
+    // westward/northward half-pitch gestures, so rounding is symmetric
+    // away from zero.
+    expect(pixelsToCellDelta(-56, 112)).toBe(-1);
+    expect(pixelsToCellDelta(-55, 112)).toBe(0);
+    expect(pixelsToCellDelta(-168, 112)).toBe(-2);
     expect(pixelsToCellDelta(-224, 112)).toBe(-2);
     expect(pixelsToCellDelta(Number.NaN, 112)).toBe(0);
     expect(pixelsToCellDelta(100, 0)).toBe(0);
