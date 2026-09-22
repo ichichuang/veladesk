@@ -20,12 +20,14 @@ import { contextMenuAnchorFromElement, isContextMenuKeyEvent } from "./context-m
 import { AppIconTile } from "./app-icon-renderer";
 import {
   CANVAS_RESIZE_HANDLES,
+  areGridGeometriesEqual,
   canvasResizeRectAt,
   gridResizeGeometryAt,
   isCanvasResizeNoop,
 } from "../canvas/canvas-resize";
 import type {
   CanvasResizeSession,
+  GridItemGeometry,
   ResizeCommitGeometry,
 } from "../canvas/canvas-resize";
 import { canvasRectStyle } from "../canvas/canvas-style";
@@ -69,6 +71,13 @@ interface DesktopItemProps {
   readonly onResizeCommit: (entityId: EntityId, geometry: ResizeCommitGeometry) => void;
   /** Reports a session start/end so the shell can lock competing gestures. */
   readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
+  /**
+   * Grid-only target-slot feedback (task 017-B): the live integer preview
+   * geometry while a resize gesture moves across cells (deduped by
+   * equality — never once per pointer frame), and `null` when the gesture
+   * ends, commits or cancels.
+   */
+  readonly onResizePreview?: ((geometry: GridItemGeometry | null) => void) | undefined;
   /** Arrange-mode click: plain selects, Cmd/Ctrl toggles (shell decides). */
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
@@ -150,6 +159,7 @@ function DesktopEntity({
   resizeActiveId,
   onResizeCommit,
   onResizeSessionChange,
+  onResizePreview,
   onItemSelect,
   onEntityContextMenu,
   onOpenFolder,
@@ -164,6 +174,11 @@ function DesktopEntity({
   const itemRef = useRef<HTMLElement | null>(null);
   const resizeRef = useRef<ActiveResize | null>(null);
   const [resizing, setResizing] = useState(false);
+  const onResizePreviewRef = useRef(onResizePreview);
+  const reportedPreviewRef = useRef<GridItemGeometry | null>(null);
+  useEffect(() => {
+    onResizePreviewRef.current = onResizePreview;
+  });
 
   /**
    * The geometry the element shows right now, as inline styles. During a
@@ -205,7 +220,26 @@ function DesktopEntity({
   function endResize() {
     resizeRef.current = null;
     setResizing(false);
+    reportResizePreview(null);
     onResizeSessionChange(entity.id, false);
+  }
+
+  /**
+   * Target-slot feedback: the live integer preview, deduped by structural
+   * equality so a report only fires when the resolved geometry actually
+   * changed — never once per pointermove.
+   */
+  function reportResizePreview(geometry: GridItemGeometry | null): void {
+    const last = reportedPreviewRef.current;
+    if (geometry === null) {
+      if (last === null) {
+        return;
+      }
+    } else if (last !== null && areGridGeometriesEqual(last, geometry)) {
+      return;
+    }
+    reportedPreviewRef.current = geometry;
+    onResizePreviewRef.current?.(geometry);
   }
 
   function cancelResize() {
@@ -291,9 +325,11 @@ function DesktopEntity({
     if (active === null || active.pointerId !== event.pointerId) {
       return;
     }
-    applyGeometry(
-      previewGeometryAt(active.session, event.clientX, event.clientY, event.shiftKey),
-    );
+    const next = previewGeometryAt(active.session, event.clientX, event.clientY, event.shiftKey);
+    applyGeometry(next);
+    if (next.kind === "grid") {
+      reportResizePreview(next.geometry);
+    }
   }
 
   function handleResizePointerUp(event: ReactPointerEvent<HTMLElement>) {
@@ -344,6 +380,14 @@ function DesktopEntity({
     return () => window.removeEventListener("keydown", onKeyDown, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cancelResize only reads refs and stable setters
   }, [resizing]);
+
+  // A remount mid-gesture (drop handoff eviction, section switch) must not
+  // leave a dangling feedback box in the shell.
+  useEffect(() => {
+    return () => {
+      onResizePreviewRef.current?.(null);
+    };
+  }, []);
 
   const showResizeHandles =
     entity.kind === "app" &&

@@ -53,7 +53,7 @@ import { resolveDragItemIds } from "../desktop-grid/group-drag";
 import { useCanvasDrag } from "../canvas/use-canvas-drag";
 import { useCanvasMetrics } from "../canvas/use-canvas-metrics";
 import { useSquareGridMetrics } from "../canvas/use-square-grid-metrics";
-import type { ResizeCommitGeometry } from "../canvas/canvas-resize";
+import type { GridItemGeometry, ResizeCommitGeometry } from "../canvas/canvas-resize";
 import {
   reconcileCanvasHandoff,
   resolveDisplayPlacement,
@@ -1030,11 +1030,28 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     displayGapPx,
   );
 
+  // --- Grid target-slot feedback (task 017-B) ---------------------------------
+  // The resolved cells a live drag aims at, plus the live integer preview of
+  // a resize. Reported only on integer-geometry changes; every gesture exit
+  // path (cancel, invalidation, no-op, commit, unmount) reports null, and
+  // the derived array below additionally gates on arrange — no effect-driven
+  // clearing needed.
+  const [dragTargetBoxes, setDragTargetBoxes] = useState<readonly GridItemGeometry[] | null>(null);
+  const [resizeTargetBox, setResizeTargetBox] = useState<GridItemGeometry | null>(null);
+  const gridFeedbackBoxes =
+    arrange && displayPlacement !== null && displayPlacement.mode === "grid"
+      ? [
+          ...(dragTargetBoxes ?? []),
+          ...(resizeTargetBox !== null ? [resizeTargetBox] : []),
+        ]
+      : undefined;
+
   const { dragging, handleDragStart, handleDragMove, handleDragEnd } = useCanvasDrag({
     placement: displayPlacement,
     metrics: freeformMetrics,
     pitchPx: gridMetrics?.pitchPx ?? null,
     onCommit: commitDraggedCanvas,
+    onGridTargetChange: setDragTargetBoxes,
     getDragItemIds: useCallback(
       (sourceId: LayoutItemId) => resolveDragItemIds(sourceId, selectionRef.current),
       []
@@ -1806,6 +1823,8 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
                   resizeActiveId={resizeActiveId}
                   onResizeCommit={commitResizedGeometry}
                   onResizeSessionChange={handleResizeSessionChange}
+                  onResizePreview={setResizeTargetBox}
+                  gridFeedbackBoxes={gridFeedbackBoxes}
                   onItemSelect={handleItemSelect}
                   onEntityContextMenu={(entityId, x, y) =>
                     openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })

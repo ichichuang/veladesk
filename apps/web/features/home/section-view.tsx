@@ -5,7 +5,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { DesktopPage, PagePlacement, WorkspaceSnapshot, EntityId } from "@veladesk/domain";
 
 import { DesktopCanvasView } from "./desktop-grid";
-import type { ResizeCommitGeometry } from "../canvas/canvas-resize";
+import type { ResizeCommitGeometry, GridItemGeometry } from "../canvas/canvas-resize";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
 import type { SquareGridMetrics } from "../canvas/square-grid-metrics";
 import "./home-shell.css";
@@ -36,6 +36,9 @@ interface SectionViewProps {
   readonly resizeActiveId: EntityId | null;
   readonly onResizeCommit: (entityId: EntityId, geometry: ResizeCommitGeometry) => void;
   readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
+  /** Grid target-slot feedback (active view only). */
+  readonly onResizePreview?: ((geometry: GridItemGeometry | null) => void) | undefined;
+  readonly gridFeedbackBoxes?: readonly GridItemGeometry[] | undefined;
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
   readonly onOpenFolder: (folderId: EntityId) => void;
@@ -73,6 +76,8 @@ export function SectionView({
   resizeActiveId,
   onResizeCommit,
   onResizeSessionChange,
+  onResizePreview,
+  gridFeedbackBoxes,
   onItemSelect,
   onEntityContextMenu,
   onOpenFolder,
@@ -144,6 +149,8 @@ export function SectionView({
           resizeActiveId={active ? resizeActiveId : null}
           onResizeCommit={onResizeCommit}
           onResizeSessionChange={onResizeSessionChange}
+          onResizePreview={active ? onResizePreview : undefined}
+          gridFeedbackBoxes={active ? gridFeedbackBoxes : undefined}
           onItemSelect={onItemSelect}
           onEntityContextMenu={onEntityContextMenu}
           onOpenFolder={onOpenFolder}

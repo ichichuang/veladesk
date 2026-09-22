@@ -6,7 +6,9 @@ import type { PagePlacement, WorkspaceSnapshot, EntityId } from "@veladesk/domai
 
 import { DesktopItem } from "./desktop-item";
 import { GridSlotOverlay } from "./grid-slot-overlay";
+import { GridTargetFeedback } from "./grid-target-feedback";
 import type { ResizeCommitGeometry } from "../canvas/canvas-resize";
+import type { GridItemGeometry } from "../canvas/canvas-resize";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
 import type { SquareGridMetrics } from "../canvas/square-grid-metrics";
 import "./home-shell.css";
@@ -45,6 +47,10 @@ interface DesktopCanvasViewProps {
   readonly resizeActiveId: EntityId | null;
   readonly onResizeCommit: (entityId: EntityId, geometry: ResizeCommitGeometry) => void;
   readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
+  /** Grid target-slot feedback: live resolved boxes during resize. */
+  readonly onResizePreview?: ((geometry: GridItemGeometry | null) => void) | undefined;
+  /** Grid target-slot feedback boxes (drag targets + resize preview). */
+  readonly gridFeedbackBoxes?: readonly GridItemGeometry[] | undefined;
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
   readonly onOpenFolder: (folderId: EntityId) => void;
@@ -85,6 +91,8 @@ export function DesktopCanvasView({
   resizeActiveId,
   onResizeCommit,
   onResizeSessionChange,
+  onResizePreview,
+  gridFeedbackBoxes,
   onItemSelect,
   onEntityContextMenu,
   onOpenFolder,
@@ -111,6 +119,13 @@ export function DesktopCanvasView({
         {arrange && gridMetrics !== null ? (
           <GridSlotOverlay cellPx={gridMetrics.cellPx} gapPx={gridMetrics.gapPx} />
         ) : null}
+        {arrange && gridMetrics !== null && gridFeedbackBoxes !== undefined ? (
+          <GridTargetFeedback
+            boxes={gridFeedbackBoxes}
+            cellPx={gridMetrics.cellPx}
+            gapPx={gridMetrics.gapPx}
+          />
+        ) : null}
         <div
           className="vela-grid-host"
           style={{ gridTemplateColumns: `repeat(${placement.columns}, minmax(0, 1fr))` }}
@@ -131,6 +146,7 @@ export function DesktopCanvasView({
               resizeActiveId={resizeActiveId}
               onResizeCommit={onResizeCommit}
               onResizeSessionChange={onResizeSessionChange}
+              onResizePreview={onResizePreview}
               onItemSelect={onItemSelect}
               onEntityContextMenu={onEntityContextMenu}
               onOpenFolder={onOpenFolder}

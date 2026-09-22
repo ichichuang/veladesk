@@ -8,6 +8,7 @@ import type { LayoutItemId } from "@veladesk/desktop-engine";
 
 import type { CanvasPixelMetrics } from "./canvas-metrics";
 import { commitCanvasDrag, previewCanvasDrag } from "./canvas-drag";
+import type { GridItemGeometry } from "./canvas-resize";
 
 /** Custom property the item body moves with during a drag preview. */
 export const CANVAS_DRAG_PREVIEW_VAR = "--vd-canvas-drag-preview";
@@ -42,6 +43,15 @@ export interface CanvasDragOptions {
   /** The item ids this drag moves (selection-aware). Defaults to the source. */
   readonly getDragItemIds?: (sourceId: LayoutItemId) => readonly LayoutItemId[];
   readonly resolveItemElement?: (itemId: LayoutItemId) => Element | null;
+  /**
+   * Grid-only target-slot feedback (task 017-B): reports the resolved
+   * target boxes while the drag moves across cells (deduped — a report per
+   * integer delta CHANGE, never per pointer frame) and `null` when the
+   * gesture clears, cancels, invalidates, no-ops or commits.
+   */
+  readonly onGridTargetChange?:
+    | ((boxes: readonly GridItemGeometry[] | null) => void)
+    | undefined;
 }
 
 /**
@@ -50,9 +60,12 @@ export interface CanvasDragOptions {
  * dnd-kit owns the pointer-follow transform of the dragged source; this hook
  * owns everything else: it snapshots the placement, metrics/pitch and the
  * moving ids at drag start, previews the resolved translation during the
- * move (freeform: continuous; grid: whole cells, one rigid delta for the
+ * move — driven by NATIVE pointermove positions, because the 0.5
+ * DragMoveEvent payload lags the real pointer by one event (freeform: the
+ * lag is sub-pixel noise; grid: it visibly misses the snapped cell) —
+ * writes grid: whole cells / freeform: continuous, one rigid delta for the
  * whole group, applied to the source as a correction so the source and its
- * peers stay aligned), and commits each drag exactly once at drop time.
+ * peers stay aligned, and commits each drag exactly once at drop time.
  *
  * Pointermove NEVER stages or persists anything — the preview is a CSS
  * custom property write, and the single durable commit happens on pointerup.
@@ -64,6 +77,7 @@ export function useCanvasDrag({
   onCommit,
   getDragItemIds,
   resolveItemElement,
+  onGridTargetChange,
 }: CanvasDragOptions): {
   dragging: boolean;
   handleDragStart: (event: DragStartEvent) => void;
@@ -79,6 +93,15 @@ export function useCanvasDrag({
   const onCommitRef = useRef(onCommit);
   const getDragItemIdsRef = useRef(getDragItemIds);
   const resolveItemElementRef = useRef(resolveItemElement);
+  const onGridTargetChangeRef = useRef(onGridTargetChange);
+  const lastTargetKeyRef = useRef<string | null>(null);
+  /** dnd-kit's delta origin, captured from the first DragMoveEvent. */
+  const dragInitialRef = useRef<{ x: number; y: number } | null>(null);
+  /** Latest native pointermove position while a session is live. */
+  const livePointerRef = useRef<{ x: number; y: number } | null>(null);
+  /** Whether this session ever saw a native pointer move. */
+  const sawNativePointerRef = useRef(false);
+  const nativeMoveHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
 
   useEffect(() => {
     placementRef.current = placement;
@@ -98,6 +121,9 @@ export function useCanvasDrag({
   useEffect(() => {
     resolveItemElementRef.current = resolveItemElement;
   });
+  useEffect(() => {
+    onGridTargetChangeRef.current = onGridTargetChange;
+  });
 
   // Zero-bounce handoff: the drop render (with the consumer's optimistic
   // placement) commits first, then the transient preview is dropped — both
@@ -111,8 +137,20 @@ export function useCanvasDrag({
     if (session !== null) {
       pendingPeerClearRef.current = null;
       clearPreview(session);
+      reportTargets(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- clearPreview only reads refs and the DOM
+  }, [dragging]);
+
+  // Safety net: a session that never reaches handleDragEnd (unmount mid-
+  // drag) must not leak the native pointermove listener.
+  useEffect(() => {
+    if (!dragging) {
+      detachNativePointerTracking();
+      dragInitialRef.current = null;
+      sawNativePointerRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- teardown only touches refs
   }, [dragging]);
 
   function writePreview(itemId: LayoutItemId, value: string | null): void {
@@ -132,6 +170,42 @@ export function useCanvasDrag({
     for (const id of session.itemIds) {
       writePreview(id, null);
     }
+  }
+
+  /**
+   * Target-slot feedback: the resolved boxes of the moving items at the
+   * current integer delta. Reported only when the delta actually crossed a
+   * cell boundary — a setState per crossing, never per pointer frame.
+   */
+  function reportGridTargets(
+    session: ActiveCanvasDragSession,
+    columnDelta: number,
+    rowDelta: number,
+  ): void {
+    const callback = onGridTargetChangeRef.current;
+    if (callback === undefined || session.placementAtStart.mode !== "grid") {
+      return;
+    }
+    const boxes = session.placementAtStart.items
+      .filter((item) => session.itemIds.includes(item.id))
+      .map((item) => ({
+        column: item.column + columnDelta,
+        row: item.row + rowDelta,
+        columnSpan: item.columnSpan,
+        rowSpan: item.rowSpan,
+      }));
+    const key = JSON.stringify(boxes);
+    if (key === lastTargetKeyRef.current) {
+      return;
+    }
+    lastTargetKeyRef.current = key;
+    callback(boxes);
+  }
+
+  /** Clears the target-slot feedback (idempotent). */
+  function reportTargets(value: null): void {
+    lastTargetKeyRef.current = null;
+    onGridTargetChangeRef.current?.(value);
   }
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -170,16 +244,17 @@ export function useCanvasDrag({
       metricsAtStart: currentMetrics,
       pitchAtStart: currentPitch,
     };
+    dragInitialRef.current = null;
+    sawNativePointerRef.current = false;
+    attachNativePointerTracking();
     setDragging(true);
   };
 
-  const handleDragMove = (event: DragMoveEvent) => {
-    const session = sessionRef.current;
-    if (session === null) {
-      return;
-    }
-    const deltaX = event.operation.position.current.x - event.operation.position.initial.x;
-    const deltaY = event.operation.position.current.y - event.operation.position.initial.y;
+  /**
+   * Writes the resolved preview (source correction + peer transforms +
+   * target feedback) for one raw pointer delta.
+   */
+  function runPreview(session: ActiveCanvasDragSession, deltaX: number, deltaY: number): void {
     const preview = previewCanvasDrag({
       placement: session.placementAtStart,
       itemIds: session.itemIds,
@@ -202,16 +277,87 @@ export function useCanvasDrag({
       }
       writePreview(id, `translate3d(${preview.appliedX}px, ${preview.appliedY}px, 0)`);
     }
+    reportGridTargets(session, preview.columnDelta, preview.rowDelta);
+  }
+
+  /**
+   * The drag preview is driven by NATIVE pointermove positions, not by
+   * DragMoveEvent.operation.position: in @dnd-kit/react 0.5 the event's
+   * `current` lags the real pointer by one event (observed mid-gesture in
+   * the browser), so a correction computed from it visibly misses the
+   * snapped cell until the pointer stops. Native moves are exact; the
+   * event's `initial` is still the authoritative delta origin, captured
+   * once on the first move event (native moves that arrive earlier are
+   * replayed against it).
+   */
+  function attachNativePointerTracking(): void {
+    const handler = (event: PointerEvent) => {
+      const session = sessionRef.current;
+      if (session === null) {
+        return;
+      }
+      sawNativePointerRef.current = true;
+      livePointerRef.current = { x: event.clientX, y: event.clientY };
+      const initial = dragInitialRef.current;
+      if (initial === null) {
+        return;
+      }
+      runPreview(session, event.clientX - initial.x, event.clientY - initial.y);
+    };
+    nativeMoveHandlerRef.current = handler;
+    window.addEventListener("pointermove", handler, { capture: true });
+  }
+
+  function detachNativePointerTracking(): void {
+    if (nativeMoveHandlerRef.current !== null) {
+      window.removeEventListener("pointermove", nativeMoveHandlerRef.current, { capture: true });
+      nativeMoveHandlerRef.current = null;
+    }
+    livePointerRef.current = null;
+  }
+
+  const handleDragMove = (event: DragMoveEvent) => {
+    const session = sessionRef.current;
+    if (session === null) {
+      return;
+    }
+    if (dragInitialRef.current === null) {
+      dragInitialRef.current = {
+        x: event.operation.position.initial.x,
+        y: event.operation.position.initial.y,
+      };
+      const live = livePointerRef.current;
+      if (live !== null) {
+        runPreview(
+          session,
+          live.x - dragInitialRef.current.x,
+          live.y - dragInitialRef.current.y,
+        );
+      }
+      return;
+    }
+    // Pointer drags are previewed from native moves (see above). The event
+    // path remains for sensor sessions that never produce native moves —
+    // e.g. dnd-kit's keyboard sensor with synthetic positions.
+    if (!sawNativePointerRef.current) {
+      const deltaX = event.operation.position.current.x - dragInitialRef.current.x;
+      const deltaY = event.operation.position.current.y - dragInitialRef.current.y;
+      runPreview(session, deltaX, deltaY);
+    }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const session = sessionRef.current;
     sessionRef.current = null;
+    detachNativePointerTracking();
+    dragInitialRef.current = null;
+    sawNativePointerRef.current = false;
 
     if (event.canceled || session === null) {
       setDragging(false);
       if (session !== null) {
         clearPreview(session);
+        reportTargets(null);
       }
       return;
     }
@@ -223,6 +369,7 @@ export function useCanvasDrag({
       if (pitchRef.current === null || pitchRef.current !== session.pitchAtStart) {
         setDragging(false);
         clearPreview(session);
+        reportTargets(null);
         return;
       }
     } else if (
@@ -233,6 +380,7 @@ export function useCanvasDrag({
     ) {
       setDragging(false);
       clearPreview(session);
+      reportTargets(null);
       return;
     }
 
@@ -247,6 +395,7 @@ export function useCanvasDrag({
     ) {
       setDragging(false);
       clearPreview(session);
+      reportTargets(null);
       return;
     }
 
@@ -266,10 +415,12 @@ export function useCanvasDrag({
       // Effective no-op drop (dragged back onto its own spot): no handoff,
       // no stage, no history entry, no sync.
       clearPreview(session);
+      reportTargets(null);
       return;
     }
     onCommitRef.current(moved, session.placementAtStart);
     pendingPeerClearRef.current = session;
+    reportTargets(null);
   };
 
   return { dragging, handleDragStart, handleDragMove, handleDragEnd };
