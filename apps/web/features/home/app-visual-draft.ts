@@ -1,4 +1,8 @@
 import type { AppDecorationStyle, AppIcon, AppShortcut, AppVisualStyle } from "@veladesk/domain";
+import {
+  DEFAULT_APP_LABEL_SCALE,
+  DEFAULT_APP_LABEL_VISIBLE,
+} from "@veladesk/domain";
 
 import { normalizeAppHexColor } from "./app-icon";
 import { generatedIconText } from "./generated-icon";
@@ -30,6 +34,13 @@ export interface AppVisualDraft {
   readonly textMode: "auto" | "custom";
   readonly customText: string;
   readonly iconScale: number;
+  /**
+   * Label presentation (017-C), resolved — the draft always holds concrete
+   * values so equality can be field-by-field. Edits the INNER presentation
+   * only; geometry is untouchable from here.
+   */
+  readonly labelVisible: boolean;
+  readonly labelScale: number;
   readonly decorationStyle: AppDecorationStyle;
   /** undefined = Auto (no persisted color). */
   readonly foregroundColor?: string | undefined;
@@ -72,6 +83,8 @@ export function draftFromApp(app: AppShortcut): AppVisualDraft {
     textMode,
     customText,
     iconScale: visual?.iconScale ?? 1,
+    labelVisible: visual?.labelVisible ?? DEFAULT_APP_LABEL_VISIBLE,
+    labelScale: visual?.labelScale ?? DEFAULT_APP_LABEL_SCALE,
     decorationStyle: visual?.decorationStyle ?? "gradient",
     foregroundColor: normalizeAppHexColor(visual?.foregroundColor),
     decorationColor: normalizeAppHexColor(visual?.decorationColor),
@@ -118,7 +131,10 @@ export function buildDraftIcon(app: AppShortcut, draft: AppVisualDraft): AppIcon
 
 /**
  * The persisted visual style of a draft. Colors are stored only when set —
- * "Auto" never writes a redundant default hex into the snapshot.
+ * "Auto" never writes a redundant default hex into the snapshot. Label
+ * presentation persists compactly the same way: shown/100% stays absent so
+ * legacy-shaped styles remain the norm, while a hidden label or a custom
+ * scale is written explicitly (task 017-C).
  */
 export function buildDraftVisual(draft: AppVisualDraft): AppVisualStyle {
   const foreground = normalizeAppHexColor(draft.foregroundColor);
@@ -126,6 +142,8 @@ export function buildDraftVisual(draft: AppVisualDraft): AppVisualStyle {
   return {
     iconScale: draft.iconScale,
     decorationStyle: draft.decorationStyle,
+    ...(draft.labelVisible ? {} : { labelVisible: false }),
+    ...(draft.labelScale !== DEFAULT_APP_LABEL_SCALE ? { labelScale: draft.labelScale } : {}),
     ...(foreground !== undefined ? { foregroundColor: foreground } : {}),
     ...(decoration !== undefined ? { decorationColor: decoration } : {}),
   };
@@ -152,6 +170,8 @@ export function draftEquals(a: AppVisualDraft, b: AppVisualDraft): boolean {
     a.textMode === b.textMode &&
     a.customText === b.customText &&
     a.iconScale === b.iconScale &&
+    a.labelVisible === b.labelVisible &&
+    a.labelScale === b.labelScale &&
     a.decorationStyle === b.decorationStyle &&
     normalizeAppHexColor(a.foregroundColor) === normalizeAppHexColor(b.foregroundColor) &&
     normalizeAppHexColor(a.decorationColor) === normalizeAppHexColor(b.decorationColor)

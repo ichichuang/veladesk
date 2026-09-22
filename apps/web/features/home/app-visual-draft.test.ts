@@ -38,10 +38,37 @@ describe("draftFromApp", () => {
       textMode: "auto",
       customText: "",
       iconScale: 1,
+      labelVisible: true,
+      labelScale: 1,
       decorationStyle: "gradient",
       foregroundColor: undefined,
       decorationColor: undefined,
     });
+  });
+
+  it("resolves absent label fields to shown/100% (017-C legacy default)", () => {
+    const draft = draftFromApp(
+      makeApp({ visual: { iconScale: 1.2, decorationStyle: "glass" } })
+    );
+
+    expect(draft.labelVisible).toBe(true);
+    expect(draft.labelScale).toBe(1);
+  });
+
+  it("carries persisted label presentation into the draft", () => {
+    const draft = draftFromApp(
+      makeApp({
+        visual: {
+          iconScale: 1,
+          decorationStyle: "solid",
+          labelVisible: false,
+          labelScale: 1.4,
+        },
+      })
+    );
+
+    expect(draft.labelVisible).toBe(false);
+    expect(draft.labelScale).toBe(1.4);
   });
 
   it("opens a library draft preserving the iconify id and style", () => {
@@ -206,6 +233,37 @@ describe("buildDraftVisual", () => {
       decorationColor: "#112233",
     });
   });
+
+  it("persists label presentation compactly: defaults absent, deviations explicit (017-C)", () => {
+    const app = makeApp();
+    // Shown + 100% stays legacy-shaped — no redundant fields.
+    const defaults = buildDraftVisual(draftFromApp(app));
+    expect("labelVisible" in defaults).toBe(false);
+    expect("labelScale" in defaults).toBe(false);
+
+    // Hidden label persists explicitly.
+    const hidden = buildDraftVisual({ ...draftFromApp(app), labelVisible: false });
+    expect(hidden).toEqual({ iconScale: 1, decorationStyle: "gradient", labelVisible: false });
+
+    // Non-default scale persists; default never does.
+    const scaled = buildDraftVisual({ ...draftFromApp(app), labelScale: 1.4 });
+    expect(scaled).toEqual({ iconScale: 1, decorationStyle: "gradient", labelScale: 1.4 });
+
+    // Both deviations together, order-independent of colors.
+    const both = buildDraftVisual({
+      ...draftFromApp(app),
+      labelVisible: false,
+      labelScale: 0.75,
+      decorationColor: "#112233",
+    });
+    expect(both).toEqual({
+      iconScale: 1,
+      decorationStyle: "gradient",
+      labelVisible: false,
+      labelScale: 0.75,
+      decorationColor: "#112233",
+    });
+  });
 });
 
 describe("buildDraftApp", () => {
@@ -223,13 +281,32 @@ describe("buildDraftApp", () => {
 
     expect(next.id).toBe(app.id);
     expect(next.kind).toBe("app");
+    expect(next.name).toBe(app.name);
     expect(next.url).toBe(app.url);
+    expect(next.openMode).toBe(app.openMode);
     expect(next.categoryId).toBe("cat");
+    expect(next.tags).toEqual(["work"]);
     expect(next.icon).toEqual({ kind: "iconify", icon: "tabler:server" });
     expect(next.visual).toEqual({
       iconScale: 1.6,
       decorationStyle: "none",
       foregroundColor: "#ffffff",
+    });
+  });
+
+  it("carries label presentation through to the persisted app (017-C)", () => {
+    const app = makeApp();
+    const next = buildDraftApp(app, {
+      ...draftFromApp(app),
+      labelVisible: false,
+      labelScale: 1.25,
+    });
+
+    expect(next.visual).toEqual({
+      iconScale: 1,
+      decorationStyle: "gradient",
+      labelVisible: false,
+      labelScale: 1.25,
     });
   });
 });
@@ -240,11 +317,20 @@ describe("draftEquals", () => {
   it("is true for identical drafts and false on any semantic change", () => {
     expect(draftEquals(base, { ...base })).toBe(true);
     expect(draftEquals(base, { ...base, iconScale: 1.05 })).toBe(false);
+    expect(draftEquals(base, { ...base, labelVisible: false })).toBe(false);
+    expect(draftEquals(base, { ...base, labelScale: 1.25 })).toBe(false);
     expect(draftEquals(base, { ...base, decorationStyle: "solid" })).toBe(false);
     expect(draftEquals(base, { ...base, source: "library", libraryIcon: "lucide:home" })).toBe(
       false
     );
     expect(draftEquals(base, { ...base, textMode: "custom", customText: "AI" })).toBe(false);
+  });
+
+  it("treats a hidden label with a custom scale as dirty, not default-equal (017-C)", () => {
+    const hidden = { ...base, labelVisible: false, labelScale: 1.4 };
+    expect(draftEquals(hidden, { ...hidden })).toBe(true);
+    expect(draftEquals(hidden, { ...hidden, labelScale: 1 })).toBe(false);
+    expect(draftEquals(hidden, { ...hidden, labelVisible: true })).toBe(false);
   });
 
   it("compares colors undefined-aware (Auto vs set, any hex case)", () => {

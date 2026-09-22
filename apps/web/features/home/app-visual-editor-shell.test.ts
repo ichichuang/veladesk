@@ -90,13 +90,53 @@ describe("visual editor source contract", () => {
     expect(body.slice(0, 400)).toMatch(/data-vd-wheel-scope="local"/);
   });
 
-  it("never renders an icon-size range input again", () => {
-    expect(editorSource).not.toMatch(/type="range"/);
-    expect(editorSource).not.toMatch(/iconSize/);
-    expect(editorSource).not.toMatch(/scaleFromPercent|percentFromScale/);
+  it("exposes exactly one icon-size and one title-size range (017-C)", () => {
+    // The 016-C "no range input" contract is intentionally obsolete: icon
+    // and title presentation are edited HERE since 017-C. But geometry is
+    // still not editable in this dialog — exactly two ranges, both bound to
+    // the presentation draft, and no tile/grid/rect control anywhere.
+    const ranges = editorSource.match(/type="range"/g) ?? [];
+    expect(ranges).toHaveLength(2);
+    expect(editorSource).toMatch(/"vela-visual-icon-scale"/);
+    expect(editorSource).toMatch(/"vela-visual-label-scale"/);
+    expect(editorSource).not.toMatch(/gridColumn|gridRow|columnSpan|rowSpan/);
+    expect(editorSource).not.toMatch(/canvasRectStyle|gridPlacementStyle/);
   });
 
-  it("points size editing at Arrange mode instead of a control", () => {
+  it("binds the ranges to the semantic domain bounds", () => {
+    expect(editorSource).toMatch(/min=\{MIN_ICON_SCALE\}/);
+    expect(editorSource).toMatch(/max=\{MAX_ICON_SCALE\}/);
+    expect(editorSource).toMatch(/min=\{MIN_APP_LABEL_SCALE\}/);
+    expect(editorSource).toMatch(/max=\{MAX_APP_LABEL_SCALE\}/);
+  });
+
+  it("orders the body sections Icon → Title → Appearance", () => {
+    const icon = editorSource.indexOf("visualEditor.section.icon");
+    const title = editorSource.indexOf("visualEditor.section.title");
+    const appearance = editorSource.indexOf("visualEditor.section.appearance");
+
+    expect(icon).toBeGreaterThan(-1);
+    expect(title).toBeGreaterThan(icon);
+    expect(appearance).toBeGreaterThan(title);
+  });
+
+  it("disables title size while the name is hidden, without resetting it", () => {
+    expect(editorSource).toMatch(/disabled=\{!draft\.labelVisible\}/);
+    expect(editorSource).toMatch(/data-disabled=\{draft\.labelVisible \? undefined : "true"\}/);
+  });
+
+  it("renders the preview name only while the label is visible", () => {
+    const preview = editorSource.slice(editorSource.indexOf("vela-visual-editor__preview"));
+    expect(preview.slice(0, 1600)).toMatch(
+      /\{draft\.labelVisible \? \([\s\S]*vela-visual-editor__preview-name/
+    );
+  });
+
+  it("feeds the preview from the shared presentation vars, not a second formula", () => {
+    expect(editorSource).toMatch(/buildAppIconStyleVars\(appVisual\(previewApp\)\)/);
+  });
+
+  it("points tile-size editing at Arrange mode instead of a control", () => {
     expect(editorSource).toMatch(/visualEditor\.resizeHint/);
   });
 

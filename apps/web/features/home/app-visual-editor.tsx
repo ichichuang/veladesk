@@ -1,9 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, DragEvent as ReactDragEvent, FormEvent, ClipboardEvent as ReactClipboardEvent } from "react";
+import type {
+  ChangeEvent,
+  CSSProperties,
+  DragEvent as ReactDragEvent,
+  FormEvent,
+  ClipboardEvent as ReactClipboardEvent,
+} from "react";
 import type { AppShortcut, WorkspaceSnapshot } from "@veladesk/domain";
-import { replaceApp } from "@veladesk/domain";
+import {
+  MAX_APP_LABEL_SCALE,
+  MAX_ICON_SCALE,
+  MIN_APP_LABEL_SCALE,
+  MIN_ICON_SCALE,
+  replaceApp,
+} from "@veladesk/domain";
 import type { WorkspaceEditFailureReason } from "@veladesk/domain";
 import type { PreparedAsset } from "@veladesk/assets/core";
 
@@ -12,7 +24,7 @@ import { useI18n } from "../i18n/use-i18n";
 import type { TranslateFn } from "../i18n/use-i18n";
 import { getBrowserAssetRuntime } from "../assets/browser-assets";
 import { AppIconTile, appIconDecorationProps } from "./app-icon-renderer";
-import { appGlyphColorModel } from "./app-icon";
+import { appGlyphColorModel, appVisual, buildAppIconStyleVars } from "./app-icon";
 import {
   buildDraftApp,
   decorationStyleChoices,
@@ -29,18 +41,24 @@ import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import "./home-shell.css";
 
 /**
- * App Visual Editor (task 016-A/016-B, fixed shell in 016-C) — icon source,
- * colors and decoration style for ONE app, opened from the app context
- * menu's "Edit appearance…".
+ * App Visual Editor (task 016-A/016-B, fixed shell in 016-C, per-app
+ * presentation in 017-C) — icon source, icon size, label visibility, label
+ * size, colors and decoration style for ONE app, opened from the app
+ * context menu's "Edit appearance…".
  *
  * The dialog is a FIXED SHELL: the live preview (header) and the
  * Save/Cancel actions (footer) sit outside the one scrolling region, so
  * editing a property at the bottom of the form can never push the preview
- * off screen. Size is deliberately NOT edited here — the user resizes the
- * icon by dragging its corners in Arrange mode, and the header says so.
+ * off screen. The scrolling body is three sections: Icon (source + icon
+ * size), Title (show-name switch + title size) and Appearance (decoration
+ * + colors). Every size control here edits the INNER presentation — the
+ * tile/occupied area stays an Arrange-mode geometry gesture, and the hint
+ * in the header says so.
  *
  * The top preview renders the draft through the same AppIconRenderer as
- * the desktop. Every change stays in the draft: nothing is staged until
+ * the desktop, on a FIXED tile: only the glyph and the name respond to the
+ * draft, mirroring the desktop contract that outer geometry never follows
+ * presentation. Every change stays in the draft: nothing is staged until
  * Save, and Cancel closes with zero mutation.
  *
  * Upload flow (016-B): a chosen file is validated immediately (size,
@@ -279,10 +297,17 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
               {t("visualEditor.title", { name: existing.name })}
             </h2>
 
-            {/* Live draft preview — same renderer as the desktop, larger slot.
-                A pending (not yet staged) upload previews from its own object
-                URL; everything else goes through the shared renderer. */}
-            <div className="vela-visual-editor__preview" data-vd-slot-size="preview">
+            {/* Live draft preview — same renderer as the desktop, on a FIXED
+                tile (017-C): the presentation vars ride on the preview box so
+                glyph AND name react to the draft while the tile itself never
+                grows with iconScale. A pending (not yet staged) upload
+                previews from its own object URL; everything else goes through
+                the shared renderer. */}
+            <div
+              className="vela-visual-editor__preview"
+              data-vd-slot-size="preview"
+              style={buildAppIconStyleVars(appVisual(previewApp)) as CSSProperties}
+            >
               {draft.source === "upload" && pendingUpload !== null ? (
                 <span
                   aria-hidden="true"
@@ -300,7 +325,9 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
               ) : (
                 <AppIconTile app={previewApp} />
               )}
-              <span className="vela-visual-editor__preview-name">{existing.name}</span>
+              {draft.labelVisible ? (
+                <span className="vela-visual-editor__preview-name">{existing.name}</span>
+              ) : null}
             </div>
 
             <p className="vela-visual-editor__hint vela-visual-editor__resize-hint">
@@ -308,181 +335,262 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
             </p>
           </header>
 
-          {/* The one scrolling region: every property lives here. */}
+          {/* The one scrolling region: three sections — Icon, Title,
+              Appearance. Every control edits the draft only. */}
           <div className="vela-visual-editor__body" data-vd-wheel-scope="local">
-            <div
-              className="vela-visual-editor__tabs"
-              role="tablist"
-              aria-label={t("visualEditor.sourceLabel")}
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={draft.source === "library"}
-                className="vela-visual-editor__tab"
-                onClick={() => patch({ source: "library" })}
+            <section className="vela-visual-editor__section">
+              <h3 className="vela-visual-editor__section-title">
+                {t("visualEditor.section.icon")}
+              </h3>
+              <div
+                className="vela-visual-editor__tabs"
+                role="tablist"
+                aria-label={t("visualEditor.sourceLabel")}
               >
-                {t("visualEditor.tab.library")}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={draft.source === "text"}
-                className="vela-visual-editor__tab"
-                onClick={() => patch({ source: "text" })}
-              >
-                {t("visualEditor.tab.text")}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={draft.source === "upload"}
-                className="vela-visual-editor__tab"
-                onClick={() => patch({ source: "upload" })}
-              >
-                {t("visualEditor.tab.upload")}
-              </button>
-            </div>
-
-            {draft.source === "library" ? (
-              <IconPicker
-                selectedId={draft.libraryIcon.length > 0 ? draft.libraryIcon : null}
-                onSelect={(iconId) => patch({ libraryIcon: iconId })}
-              />
-            ) : draft.source === "upload" ? (
-              <div className="vela-visual-editor__upload">
-                <div
-                  className="vela-upload-dropzone"
-                  data-busy={uploadBusy ? "true" : undefined}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={t("visualEditor.upload.dropHere")}
-                  onClick={() => fileInputRef.current?.click()}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      fileInputRef.current?.click();
-                    }
-                  }}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={handleDrop}
-                  onPaste={handlePaste}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={draft.source === "library"}
+                  className="vela-visual-editor__tab"
+                  onClick={() => patch({ source: "library" })}
                 >
-                  {pendingUpload !== null ? (
+                  {t("visualEditor.tab.library")}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={draft.source === "text"}
+                  className="vela-visual-editor__tab"
+                  onClick={() => patch({ source: "text" })}
+                >
+                  {t("visualEditor.tab.text")}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={draft.source === "upload"}
+                  className="vela-visual-editor__tab"
+                  onClick={() => patch({ source: "upload" })}
+                >
+                  {t("visualEditor.tab.upload")}
+                </button>
+              </div>
+
+              {draft.source === "library" ? (
+                <IconPicker
+                  selectedId={draft.libraryIcon.length > 0 ? draft.libraryIcon : null}
+                  onSelect={(iconId) => patch({ libraryIcon: iconId })}
+                />
+              ) : draft.source === "upload" ? (
+                <div className="vela-visual-editor__upload">
+                  <div
+                    className="vela-upload-dropzone"
+                    data-busy={uploadBusy ? "true" : undefined}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={t("visualEditor.upload.dropHere")}
+                    onClick={() => fileInputRef.current?.click()}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        fileInputRef.current?.click();
+                      }
+                    }}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={handleDrop}
+                    onPaste={handlePaste}
+                  >
+                    {pendingUpload !== null ? (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- local object URL, not an optimizable remote image */}
+                        <img
+                          className="vela-upload-dropzone__preview"
+                          src={pendingUpload.previewUrl}
+                          alt=""
+                          draggable={false}
+                        />
+                      </>
+                    ) : (
+                      <span className="vela-upload-dropzone__hint">
+                        {uploadSelected
+                          ? t("visualEditor.upload.replaceHint")
+                          : t("visualEditor.upload.dropHere")}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="vela-upload-input"
+                    accept=".png,.jpg,.jpeg,.webp,.avif,image/png,image/jpeg,image/webp,image/avif"
+                    onChange={handleFileChange}
+                    aria-hidden="true"
+                    tabIndex={-1}
+                  />
+                  {uploadIssue !== null ? (
+                    <p className="vela-form__error" role="alert">
+                      {describeUploadIssue(uploadIssue)}
+                    </p>
+                  ) : null}
+                  <p className="vela-visual-editor__hint">{t("visualEditor.upload.hint")}</p>
+                </div>
+              ) : (
+                <div className="vela-visual-editor__text">
+                  <label className="vela-form__label" htmlFor="vela-visual-text-mode">
+                    {t("visualEditor.textModeLabel")}
+                  </label>
+                  <select
+                    id="vela-visual-text-mode"
+                    className="vela-input"
+                    value={draft.textMode}
+                    onChange={(event) =>
+                      patch({ textMode: event.target.value === "custom" ? "custom" : "auto" })
+                    }
+                  >
+                    <option value="auto">{t("visualEditor.textMode.auto")}</option>
+                    <option value="custom">{t("visualEditor.textMode.custom")}</option>
+                  </select>
+                  {draft.textMode === "custom" ? (
                     <>
-                      {/* eslint-disable-next-line @next/next/no-img-element -- local object URL, not an optimizable remote image */}
-                      <img
-                        className="vela-upload-dropzone__preview"
-                        src={pendingUpload.previewUrl}
-                        alt=""
-                        draggable={false}
+                      <label className="vela-form__label" htmlFor="vela-visual-text">
+                        {t("visualEditor.customTextLabel")}
+                      </label>
+                      <input
+                        id="vela-visual-text"
+                        className="vela-input"
+                        type="text"
+                        value={draft.customText}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={t("visualEditor.customTextPlaceholder")}
+                        onChange={(event) => patch({ customText: event.target.value })}
                       />
+                      <p className="vela-visual-editor__hint">{t("visualEditor.customTextHint")}</p>
                     </>
                   ) : (
-                    <span className="vela-upload-dropzone__hint">
-                      {uploadSelected
-                        ? t("visualEditor.upload.replaceHint")
-                        : t("visualEditor.upload.dropHere")}
-                    </span>
+                    <p className="vela-visual-editor__hint">
+                      {t("visualEditor.textAutoHint", {
+                        text: previewApp.icon.kind === "generated" ? previewApp.icon.text : "",
+                      })}
+                    </p>
                   )}
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="vela-upload-input"
-                  accept=".png,.jpg,.jpeg,.webp,.avif,image/png,image/jpeg,image/webp,image/avif"
-                  onChange={handleFileChange}
-                  aria-hidden="true"
-                  tabIndex={-1}
-                />
-                {uploadIssue !== null ? (
-                  <p className="vela-form__error" role="alert">
-                    {describeUploadIssue(uploadIssue)}
-                  </p>
-                ) : null}
-                <p className="vela-visual-editor__hint">{t("visualEditor.upload.hint")}</p>
-              </div>
-            ) : (
-              <div className="vela-visual-editor__text">
-                <label className="vela-form__label" htmlFor="vela-visual-text-mode">
-                  {t("visualEditor.textModeLabel")}
+              )}
+
+              {/* Icon size (017-C): the INNER glyph multiplier. This is not
+                  the tile size — placement geometry is Arrange-mode only. */}
+              <div className="vela-visual-editor__control">
+                <label className="vela-form__label" htmlFor="vela-visual-icon-scale">
+                  {t("visualEditor.iconSize")}
                 </label>
-                <select
-                  id="vela-visual-text-mode"
-                  className="vela-input"
-                  value={draft.textMode}
-                  onChange={(event) =>
-                    patch({ textMode: event.target.value === "custom" ? "custom" : "auto" })
-                  }
-                >
-                  <option value="auto">{t("visualEditor.textMode.auto")}</option>
-                  <option value="custom">{t("visualEditor.textMode.custom")}</option>
-                </select>
-                {draft.textMode === "custom" ? (
-                  <>
-                    <label className="vela-form__label" htmlFor="vela-visual-text">
-                      {t("visualEditor.customTextLabel")}
-                    </label>
-                    <input
-                      id="vela-visual-text"
-                      className="vela-input"
-                      type="text"
-                      value={draft.customText}
-                      autoComplete="off"
-                      spellCheck={false}
-                      placeholder={t("visualEditor.customTextPlaceholder")}
-                      onChange={(event) => patch({ customText: event.target.value })}
-                    />
-                    <p className="vela-visual-editor__hint">{t("visualEditor.customTextHint")}</p>
-                  </>
-                ) : (
-                  <p className="vela-visual-editor__hint">
-                    {t("visualEditor.textAutoHint", {
-                      text: previewApp.icon.kind === "generated" ? previewApp.icon.text : "",
-                    })}
-                  </p>
-                )}
+                <div className="vela-visual-editor__scale-row">
+                  <input
+                    id="vela-visual-icon-scale"
+                    className="vela-visual-editor__range"
+                    type="range"
+                    min={MIN_ICON_SCALE}
+                    max={MAX_ICON_SCALE}
+                    step={0.05}
+                    value={draft.iconScale}
+                    aria-valuetext={scalePercentText(draft.iconScale)}
+                    onChange={(event) => patch({ iconScale: Number(event.target.value) })}
+                  />
+                  <span className="vela-visual-editor__range-value">
+                    {scalePercentText(draft.iconScale)}
+                  </span>
+                </div>
               </div>
-            )}
+            </section>
 
-            <span className="vela-form__label">{t("visualEditor.decorationStyle")}</span>
-            <div className="vela-visual-editor__decorations">
-              {decorationStyleChoices().map((style) => (
-                <button
-                  key={style}
-                  type="button"
-                  className="vela-visual-editor__decoration"
-                  data-style={style}
-                  data-selected={draft.decorationStyle === style ? "true" : undefined}
-                  aria-pressed={draft.decorationStyle === style}
-                  onClick={() => patch({ decorationStyle: style })}
-                >
-                  <span className="vela-visual-editor__decoration-tile" data-style={style} />
-                  <span>{decorationStyleLabel(style, t)}</span>
-                </button>
-              ))}
-            </div>
+            <section className="vela-visual-editor__section">
+              <h3 className="vela-visual-editor__section-title">
+                {t("visualEditor.section.title")}
+              </h3>
+              <div className="vela-visual-editor__switch-row">
+                <label className="vela-form__label" htmlFor="vela-visual-label-visible">
+                  {t("visualEditor.labelVisible")}
+                </label>
+                <input
+                  id="vela-visual-label-visible"
+                  className="vela-visual-editor__switch"
+                  type="checkbox"
+                  role="switch"
+                  checked={draft.labelVisible}
+                  onChange={(event) => patch({ labelVisible: event.target.checked })}
+                />
+              </div>
+              {/* Hiding the name keeps the stored scale: re-enabling restores
+                  it, and the control reads disabled rather than resetting. */}
+              <div
+                className="vela-visual-editor__control"
+                data-disabled={draft.labelVisible ? undefined : "true"}
+              >
+                <label className="vela-form__label" htmlFor="vela-visual-label-scale">
+                  {t("visualEditor.labelSize")}
+                </label>
+                <div className="vela-visual-editor__scale-row">
+                  <input
+                    id="vela-visual-label-scale"
+                    className="vela-visual-editor__range"
+                    type="range"
+                    min={MIN_APP_LABEL_SCALE}
+                    max={MAX_APP_LABEL_SCALE}
+                    step={0.05}
+                    value={draft.labelScale}
+                    disabled={!draft.labelVisible}
+                    aria-valuetext={scalePercentText(draft.labelScale)}
+                    onChange={(event) => patch({ labelScale: Number(event.target.value) })}
+                  />
+                  <span className="vela-visual-editor__range-value">
+                    {scalePercentText(draft.labelScale)}
+                  </span>
+                </div>
+              </div>
+            </section>
 
-            {showForegroundControl ? (
+            <section className="vela-visual-editor__section">
+              <h3 className="vela-visual-editor__section-title">
+                {t("visualEditor.section.appearance")}
+              </h3>
+              <span className="vela-form__label">{t("visualEditor.decorationStyle")}</span>
+              <div className="vela-visual-editor__decorations">
+                {decorationStyleChoices().map((style) => (
+                  <button
+                    key={style}
+                    type="button"
+                    className="vela-visual-editor__decoration"
+                    data-style={style}
+                    data-selected={draft.decorationStyle === style ? "true" : undefined}
+                    aria-pressed={draft.decorationStyle === style}
+                    onClick={() => patch({ decorationStyle: style })}
+                  >
+                    <span className="vela-visual-editor__decoration-tile" data-style={style} />
+                    <span>{decorationStyleLabel(style, t)}</span>
+                  </button>
+                ))}
+              </div>
+
+              {showForegroundControl ? (
+                <ColorRow
+                  label={t("visualEditor.foregroundColor")}
+                  autoLabel={t("visualEditor.autoColor")}
+                  value={draft.foregroundColor}
+                  onChange={(value) => patch({ foregroundColor: value })}
+                />
+              ) : (
+                <p className="vela-visual-editor__hint">
+                  {draft.source === "upload"
+                    ? t("visualEditor.upload.originalColorNote")
+                    : t("visualEditor.originalColorNote")}
+                </p>
+              )}
               <ColorRow
-                label={t("visualEditor.foregroundColor")}
+                label={t("visualEditor.decorationColor")}
                 autoLabel={t("visualEditor.autoColor")}
-                value={draft.foregroundColor}
-                onChange={(value) => patch({ foregroundColor: value })}
+                value={draft.decorationColor}
+                onChange={(value) => patch({ decorationColor: value })}
               />
-            ) : (
-              <p className="vela-visual-editor__hint">
-                {draft.source === "upload"
-                  ? t("visualEditor.upload.originalColorNote")
-                  : t("visualEditor.originalColorNote")}
-              </p>
-            )}
-            <ColorRow
-              label={t("visualEditor.decorationColor")}
-              autoLabel={t("visualEditor.autoColor")}
-              value={draft.decorationColor}
-              onChange={(value) => patch({ decorationColor: value })}
-            />
+            </section>
 
             {error !== null ? (
               <p className="vela-form__error" role="alert">
@@ -508,6 +616,11 @@ export function AppVisualEditor({ workspace, appId, onClose }: AppVisualEditorPr
       </div>
     </div>
   );
+}
+
+/** Slider readout: the effective percentage, e.g. `100%`. */
+function scalePercentText(scale: number): string {
+  return `${Math.round(scale * 100)}%`;
 }
 
 function ColorRow({
