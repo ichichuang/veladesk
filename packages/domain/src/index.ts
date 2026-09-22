@@ -25,8 +25,12 @@ export {
 } from "./preferences";
 
 export {
+  DEFAULT_APP_LABEL_SCALE,
+  DEFAULT_APP_LABEL_VISIBLE,
   DEFAULT_APP_VISUAL_STYLE,
+  MAX_APP_LABEL_SCALE,
   MAX_ICON_SCALE,
+  MIN_APP_LABEL_SCALE,
   MIN_ICON_SCALE,
   isValidAppHexColor,
   resolveAppVisualStyle,

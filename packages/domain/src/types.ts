@@ -77,12 +77,24 @@ export type AppDecorationStyle = "gradient" | "solid" | "glass" | "none";
 /**
  * Per-app visual style, optional on `AppShortcut` so every legacy snapshot
  * stays valid without a migration. Colors are exact `#RRGGBB` hex — never
- * arbitrary CSS. `iconScale` is a visual multiplier only; grid cells, spans
- * and drag metrics are never affected.
+ * arbitrary CSS. `iconScale`, `labelVisible` and `labelScale` are visual
+ * multipliers/switches only; grid cells, spans and drag metrics are never
+ * affected. Absent `labelVisible`/`labelScale` resolve to shown/1 — no
+ * migration, ever.
  */
 export interface AppVisualStyle {
   readonly iconScale: number;
   readonly decorationStyle: AppDecorationStyle;
+
+  /**
+   * Whether the desktop/folder-overlay label is painted. Absent = shown.
+   * Presentation only — it never hides the app's real name from search,
+   * menus, dialogs or accessibility.
+   */
+  readonly labelVisible?: boolean;
+
+  /** Unitless multiplier on the responsive label baseline. Absent = 1. */
+  readonly labelScale?: number;
 
   readonly foregroundColor?: string;
 

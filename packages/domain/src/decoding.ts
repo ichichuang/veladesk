@@ -82,15 +82,19 @@ function isAppIcon(value: unknown): boolean {
 const APP_DECORATION_STYLES: readonly string[] = ["gradient", "solid", "glass", "none"];
 
 /**
- * Structural shape of `AppVisualStyle` only — the numeric scale range and
+ * Structural shape of `AppVisualStyle` only — the numeric scale ranges and
  * hex color rules are semantic and belong to `validateAppVisualStyle`
  * (iconScale 99 or `url(...)` decode fine and fail validation later).
+ * `labelVisible`/`labelScale` are optional and only shape-checked here:
+ * boolean / number, exactly like the legacy fields.
  */
 function isAppVisualStyle(value: unknown): boolean {
   return (
     isRecord(value) &&
     typeof value.iconScale === "number" &&
     APP_DECORATION_STYLES.includes(value.decorationStyle as string) &&
+    (value.labelVisible === undefined || typeof value.labelVisible === "boolean") &&
+    (value.labelScale === undefined || typeof value.labelScale === "number") &&
     (value.foregroundColor === undefined || typeof value.foregroundColor === "string") &&
     (value.decorationColor === undefined || typeof value.decorationColor === "string")
   );

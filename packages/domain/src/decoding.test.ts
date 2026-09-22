@@ -527,6 +527,67 @@ describe("decodeWorkspaceSnapshot — app visual styles", () => {
     ]);
   });
 
+  it("decodes optional label presentation fields structurally", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([
+        appWithVisual({
+          visual: {
+            iconScale: 1,
+            decorationStyle: "solid",
+            labelVisible: false,
+            labelScale: 1.4,
+          },
+        }),
+      ])
+    );
+
+    expect(decoded).toBeDefined();
+    const app = decoded!.entities[0]!;
+    expect(app.kind === "app" ? app.visual : undefined).toEqual({
+      iconScale: 1,
+      decorationStyle: "solid",
+      labelVisible: false,
+      labelScale: 1.4,
+    });
+  });
+
+  it("rejects a non-boolean labelVisible structurally", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([
+        appWithVisual({ visual: { iconScale: 1, decorationStyle: "solid", labelVisible: "yes" } }),
+      ])
+    );
+
+    expect(decoded).toBeUndefined();
+  });
+
+  it("rejects a non-number labelScale structurally", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([
+        appWithVisual({ visual: { iconScale: 1, decorationStyle: "solid", labelScale: "1.2" } }),
+      ])
+    );
+
+    expect(decoded).toBeUndefined();
+  });
+
+  it("decodes a semantically out-of-range labelScale; validateWorkspace rejects it", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      snapshotWithEntities([
+        appWithVisual({ visual: { iconScale: 1, decorationStyle: "solid", labelScale: 42 } }),
+      ])
+    );
+
+    expect(decoded).toBeDefined();
+    expect(validateWorkspace(decoded!)).toEqual([
+      {
+        type: "invalid-app-visual",
+        entityId: "app-1",
+        issue: { type: "invalid-label-scale" },
+      },
+    ]);
+  });
+
   it("decodes a semantically invalid color; validateWorkspace rejects it", () => {
     const decoded = decodeWorkspaceSnapshot(
       snapshotWithEntities([

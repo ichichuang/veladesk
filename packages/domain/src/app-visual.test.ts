@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_APP_VISUAL_STYLE,
+  MAX_APP_LABEL_SCALE,
   MAX_ICON_SCALE,
+  MIN_APP_LABEL_SCALE,
   MIN_ICON_SCALE,
   isValidAppHexColor,
   resolveAppVisualStyle,
@@ -174,6 +176,77 @@ describe("validateAppVisualStyle: colors", () => {
   });
 });
 
+describe("validateAppVisualStyle: label presentation (017-C)", () => {
+  it("accepts legacy styles without the label fields", () => {
+    expect(validateAppVisualStyle({ iconScale: 1, decorationStyle: "gradient" })).toEqual([]);
+  });
+
+  it("accepts both labelVisible values and never issues one for them", () => {
+    for (const labelVisible of [true, false]) {
+      expect(
+        validateAppVisualStyle({ iconScale: 1, decorationStyle: "solid", labelVisible })
+      ).toEqual([]);
+    }
+  });
+
+  it("accepts the exact labelScale boundaries 0.75 and 1.75", () => {
+    expect(
+      validateAppVisualStyle({ iconScale: 1, decorationStyle: "solid", labelScale: MIN_APP_LABEL_SCALE })
+    ).toEqual([]);
+    expect(
+      validateAppVisualStyle({ iconScale: 1, decorationStyle: "solid", labelScale: MAX_APP_LABEL_SCALE })
+    ).toEqual([]);
+  });
+
+  it("accepts interior label scales including the legacy default 1", () => {
+    expect(
+      validateAppVisualStyle({ iconScale: 1, decorationStyle: "solid", labelScale: 1 })
+    ).toEqual([]);
+    expect(
+      validateAppVisualStyle({ iconScale: 1, decorationStyle: "solid", labelScale: 1.4 })
+    ).toEqual([]);
+  });
+
+  it("reports below-minimum and above-maximum label scales", () => {
+    expect(
+      validateAppVisualStyle({ iconScale: 1, decorationStyle: "solid", labelScale: 0.74 })
+    ).toEqual([{ type: "invalid-label-scale" }]);
+    expect(
+      validateAppVisualStyle({ iconScale: 1, decorationStyle: "solid", labelScale: 1.76 })
+    ).toEqual([{ type: "invalid-label-scale" }]);
+  });
+
+  it("reports NaN and Infinity as invalid label scale", () => {
+    expect(
+      validateAppVisualStyle({ iconScale: 1, decorationStyle: "solid", labelScale: Number.NaN })
+    ).toEqual([{ type: "invalid-label-scale" }]);
+    expect(
+      validateAppVisualStyle({
+        iconScale: 1,
+        decorationStyle: "solid",
+        labelScale: Number.POSITIVE_INFINITY,
+      })
+    ).toEqual([{ type: "invalid-label-scale" }]);
+  });
+
+  it("reports every issue in deterministic order: iconScale, labelScale, colors", () => {
+    expect(
+      validateAppVisualStyle({
+        iconScale: 9,
+        decorationStyle: "glass",
+        labelScale: 9,
+        foregroundColor: "nope",
+        decorationColor: "also-nope",
+      })
+    ).toEqual([
+      { type: "invalid-icon-scale" },
+      { type: "invalid-label-scale" },
+      { type: "invalid-foreground-color" },
+      { type: "invalid-decoration-color" },
+    ]);
+  });
+});
+
 describe("isValidAppHexColor", () => {
   it("accepts exactly #RRGGBB", () => {
     expect(isValidAppHexColor("#000000")).toBe(true);
@@ -235,6 +308,22 @@ describe("validateWorkspace integration", () => {
         type: "invalid-app-visual",
         entityId: "app-1",
         issue: { type: "invalid-decoration-color" },
+      },
+    ]);
+  });
+
+  it("reports out-of-range label scales with their owning entity", () => {
+    const workspace = workspaceWith(
+      makeApp({
+        visual: { iconScale: 1, decorationStyle: "solid", labelScale: 2.5 },
+      })
+    );
+
+    expect(validateWorkspace(workspace)).toEqual([
+      {
+        type: "invalid-app-visual",
+        entityId: "app-1",
+        issue: { type: "invalid-label-scale" },
       },
     ]);
   });
@@ -323,6 +412,35 @@ describe("replaceApp with visual styles", () => {
       iconScale: 1.2,
       decorationStyle: "solid",
       decorationColor: "#3366FF",
+    });
+  });
+
+  it("carries label presentation fields through replaceApp verbatim", () => {
+    const workspace = workspaceWith(
+      makeApp({
+        visual: {
+          iconScale: 0.75,
+          decorationStyle: "none",
+          labelVisible: false,
+          labelScale: 1.4,
+        },
+      })
+    );
+    const existing = workspace.entities[0]!;
+    if (existing.kind !== "app") {
+      throw new Error("fixture must hold an app");
+    }
+    const result = replaceApp(workspace, { ...existing, name: "Renamed" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const next = result.workspace.entities[0]!;
+    expect(next.kind === "app" ? next.visual : undefined).toEqual({
+      iconScale: 0.75,
+      decorationStyle: "none",
+      labelVisible: false,
+      labelScale: 1.4,
     });
   });
 

@@ -23,6 +23,16 @@ export const DEFAULT_APP_VISUAL_STYLE: AppVisualStyle = {
 export const MIN_ICON_SCALE = 0.5;
 export const MAX_ICON_SCALE = 2;
 
+/**
+ * Semantic range of `labelScale`: 75%–175% of the responsive label
+ * baseline, with the resolved default of 1 (100%).
+ */
+export const MIN_APP_LABEL_SCALE = 0.75;
+export const MAX_APP_LABEL_SCALE = 1.75;
+export const DEFAULT_APP_LABEL_SCALE = 1;
+/** Absent `labelVisible` resolves to shown (legacy apps keep their label). */
+export const DEFAULT_APP_LABEL_VISIBLE = true;
+
 /** Exact `#RRGGBB` hex (uppercase or lowercase digits, both fine). */
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
@@ -38,6 +48,9 @@ export function isValidAppHexColor(value: string): boolean {
 export type AppVisualValidationIssue =
   | {
       readonly type: "invalid-icon-scale";
+    }
+  | {
+      readonly type: "invalid-label-scale";
     }
   | {
       readonly type: "invalid-foreground-color";
@@ -56,8 +69,10 @@ export function resolveAppVisualStyle(app: AppShortcut): AppVisualStyle {
 
 /**
  * Semantic validation of a per-app visual style (structurally decoded data
- * is still in range). Deterministic issue order: iconScale,
- * foregroundColor, decorationColor. Never throws, never mutates.
+ * is still in range). Deterministic issue order: iconScale, labelScale,
+ * foregroundColor, decorationColor. `labelVisible` has no semantic rule —
+ * boolean-ness is structural (like enum legality). Never throws, never
+ * mutates.
  */
 export function validateAppVisualStyle(
   style: AppVisualStyle
@@ -70,6 +85,14 @@ export function validateAppVisualStyle(
     style.iconScale > MAX_ICON_SCALE
   ) {
     issues.push({ type: "invalid-icon-scale" });
+  }
+  if (
+    style.labelScale !== undefined &&
+    (!Number.isFinite(style.labelScale) ||
+      style.labelScale < MIN_APP_LABEL_SCALE ||
+      style.labelScale > MAX_APP_LABEL_SCALE)
+  ) {
+    issues.push({ type: "invalid-label-scale" });
   }
   if (
     style.foregroundColor !== undefined &&
