@@ -146,6 +146,14 @@ optimistic drop handoff semantics — resolved placements are compared
 structurally (`areCanvasLayoutsEqual` handles all versions), never by the
 object identity of a derived legacy placement.
 
+Per-app presentation (`iconScale`, `labelVisible`, `labelScale` — see
+[app-visual-system.md](./app-visual-system.md)) is strictly downstream of
+geometry: placement → rendered item box → inner glyph/label presentation,
+never the reverse. Saving presentation goes through `replaceApp` and can
+never produce a canvas write, a span change or a rect rewrite; responsive
+re-layout (viewport/gap changes) re-renders the box without any geometry
+write at all.
+
 ## Compatibility path
 
 | Persisted shape | Read as | First geometry-aware mutation |

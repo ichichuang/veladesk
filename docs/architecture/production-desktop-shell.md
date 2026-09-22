@@ -218,16 +218,20 @@ edited afterwards via the context menu — see
 The app context menu gained 编辑外观… / Edit appearance… between Edit
 and the section/dock group. It opens the App Visual Editor, a FIXED SHELL
 whose preview header and Cancel/Save footer stay outside the one
-scrolling body: icon source (the paginated self-hosted catalog, or
-auto/custom text, or an uploaded image since 016-B), Auto- or-hex
-foreground/decoration colors and the four decoration styles, rendered
-live in a draft preview through the shared AppIconRenderer. The size
-slider is gone — tile size and shape are edited by dragging the rect's handles
-in Arrange mode (see [app-resize.md](./app-resize.md)) and the header says so.
-Only Save stages anything (via `replaceApp`, which preserves page, folder,
-dock placement and the current icon scale); Cancel never mutates. Edit
-App keeps its name/URL/open-mode scope and only recalculates initials for
-auto-sourced generated icons.
+scrolling body. The scrolling body has three sections (017-C): §Icon —
+the icon source (the paginated self-hosted catalog, or auto/custom text,
+or an uploaded image since 016-B) plus the per-app **Icon size** slider
+(0.5–2.0, the INNER glyph multiplier); §Title — the per-app **show name**
+switch and **Title size** slider; §Appearance — Auto-or-hex
+foreground/decoration colors and the four decoration styles. Everything
+renders live in a draft preview through the shared AppIconRenderer on a
+fixed tile (the preview tile never grows with the draft's icon size).
+Tile size and SHAPE remain Arrange-mode geometry — dragging the rect's
+handles (see [app-resize.md](./app-resize.md)); the header hint says so in
+one line. Only Save stages anything (via `replaceApp`, which preserves
+page, folder, dock placement and the current presentation); Cancel never
+mutates. Edit App keeps its name/URL/open-mode scope and only recalculates
+initials for auto-sourced generated icons.
 
 ## Arrange tile resize (016-C)
 

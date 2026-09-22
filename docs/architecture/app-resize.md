@@ -13,14 +13,16 @@ spans). See [canvas-layout.md](./canvas-layout.md) for the geometry model.
 
 | Owns | Never touches |
 | --- | --- |
-| `CanvasRect` of one app (x, y, width, height) | `AppVisualStyle.iconScale` (a glyph multiplier, unchanged) |
+| `CanvasRect` of one app (x, y, width, height) | per-app presentation: `iconScale`, `labelVisible`, `labelScale` (017-C) |
 | the transient DOM preview during the gesture | folder sizes, group resize (not a feature) |
 | the commit handoff around the durable stage | the grid definition, other items, z-order |
 | the arrange `CanvasHistory` entry | mode, dock, appearance |
 
-`iconScale` is untouched by this gesture and keeps its legacy meaning: a
-multiplier for the glyph *inside* the tile (see
-[app-visual-system.md](./app-visual-system.md)).
+Presentation is untouched by this gesture and keeps its meaning: a set of
+inner-content multipliers/switches (glyph scale, label visibility, label
+scale — see [app-visual-system.md](./app-visual-system.md)). The reverse
+holds too: saving presentation in the visual editor never rewrites this
+rect or any grid span.
 
 ## Layers
 

@@ -60,6 +60,8 @@ their own text.
 interface AppVisualStyle {
   iconScale: number;              // 0.5 – 2.0, finite (semantic range)
   decorationStyle: "gradient" | "solid" | "glass" | "none";
+  labelVisible?: boolean;         // absent = shown (017-C)
+  labelScale?: number;            // 0.75 – 1.75, absent = 1 (017-C)
   foregroundColor?: string;       // exact #RRGGBB, upper or lower case
   decorationColor?: string;
 }
@@ -90,7 +92,10 @@ additionally ignored defensively by the renderer's var composition.
 `62cqmin × iconScale` (a share of the rect's smaller side), capped so a
 full-canvas tile does not paint an oversized logo. The dock, the folder
 overlay and the visual editor preview size themselves from the global base
-slot instead (`--vd-slot-icon-size × iconScale`).
+slot instead (`--vd-slot-icon-size × iconScale`). Since 017-C this holds
+for EVERY glyph source on every surface: generated text, monochrome and
+multicolor library icons, and uploaded images (which used to fill the whole
+desktop tile and silently ignore the scale).
 
 Either way a scale is a VISUAL property: it never moves, resizes or reorders
 anything. Since 016-C tile geometry is the canvas rect
@@ -99,6 +104,33 @@ the user resizes the tile by dragging its handles
 ([app-resize.md](./app-resize.md)), and `iconScale` survives as the
 per-app glyph multiplier it always was, so legacy snapshots keep rendering
 exactly as before.
+
+### Label presentation (017-C)
+
+`labelVisible` and `labelScale` complete the per-app presentation set:
+an app can hide its desktop name (icons like GitHub need no caption, while
+custom text icons keep theirs) and scale the label baseline. The rules:
+
+- **Ownership.** Same boundary as `iconScale`: presentation of the INNER
+  content. `labelVisible: false` removes only the painted label — never the
+  grid span, never the rect, never the accessible name (desktop and
+  folder-overlay app buttons carry `aria-label={app.name}` so a hidden
+  label cannot unname the button).
+- **Scope.** Desktop and folder overlay render labels, so both honor all
+  three fields (the overlay emits the same presentation vars). The dock has
+  no label element, so label settings cannot affect it. Launcher, context
+  menus, dialogs and search always show the REAL name — they are metadata,
+  not presentation.
+- **Size.** `.vela-item__label` = `clamp(10px, 12.5px × labelScale, 24px)`;
+  the desktop hosts (`.vela-canvas`, `.vela-grid-host`) upgrade the
+  baseline to `10cqmin` so the label responds to the item box exactly like
+  the glyph — responsive container size × per-app scale, never persisted
+  pixels. Hiding a label keeps its stored scale (the editor disables the
+  control instead of resetting it).
+- **Persistence.** Compact, like colors: defaults (shown, 100%) stay
+  ABSENT — `buildDraftVisual` writes `labelVisible: false` only when hidden
+  and `labelScale` only when ≠ 1 — so legacy-shaped styles remain the norm
+  and old snapshots need no migration.
 
 ### Colors
 
@@ -251,7 +283,9 @@ Edit appearance…. Its layout is a FIXED SHELL:
 ```
 form (grid: auto / minmax(0, 1fr) / auto, height 100%)
 ├── header   — title, live preview, resize hint   (never scrolls)
-├── body     — source tabs, picker / text / upload, decoration, colors
+├── body     — §Icon: source tabs, picker / text / upload, icon size
+│             §Title: show-name switch, title size
+│             §Appearance: decoration, colors
 └── footer   — Cancel / Save                      (never scrolls)
 ```
 
@@ -273,17 +307,31 @@ is staged into the asset store at Save, BEFORE the workspace mutation
 that already has an uploaded icon opens the upload tab with the current
 image and never re-stages unless a new file is chosen.
 
-The editor carries NO size control. Tile size and shape are edited by
-dragging the rect's handles in Arrange mode, and the header says so in one
-line of text. `foregroundColor` is hidden (replaced by a one-line note) for
-multicolor library icons and uploaded images, whose colors are their own.
+Since 017-C the body is three sections. §Icon holds the source tabs and the
+**Icon size** slider (0.5–2.0, step 0.05, shown as a percentage) — the
+inner glyph multiplier, explicitly NOT the tile size. §Title holds the
+**显示应用名称 / Show application name** switch (a `role="switch"`
+checkbox) and the **Title size** slider (0.75–1.75); hiding the name
+disables the size control but keeps its stored value, so re-enabling
+restores it. §Appearance holds the decoration styles and colors.
+`foregroundColor` is hidden (replaced by a one-line note) for multicolor
+library icons and uploaded images, whose colors are their own.
+
+The header hint distinguishes the two size concepts in one line: the
+app's occupied area is adjusted in Arrange mode; icon and title appearance
+are configured here. The PREVIEW is faithful: it renders the draft through
+the shared renderer on a FIXED tile (`--vd-slot-icon-size: 84px`, never
+grown by the draft) and the glyph + name react live to icon size, label
+visibility, label size, decoration and colors — the same
+`buildAppIconStyleVars` contract the desktop uses, so the editor owns no
+second sizing formula.
 
 Everything edits the draft only: Save runs (asset stage →) `replaceApp`
 → local stage → sync attempt (and is disabled while the draft equals the
 persisted state); Cancel closes with zero mutation — a pending upload is
 discarded without ever touching IndexedDB or the workspace. The draft
-still CARRIES `iconScale` so switching source or colors preserves the
-current size.
+still CARRIES `iconScale` (and since 017-C the label fields) so switching
+source or colors preserves the current presentation.
 
 ## What 016-A deliberately did not do — and 016-B / 016-C delivered
 
