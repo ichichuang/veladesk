@@ -814,7 +814,7 @@
  * The square-cell Grid stage: the scroller's content box sizes it, the
  * square cell metrics derive from its width. min-height keeps empty grid
  * pages filling the visible content height, and the arrange-mode visible
- * grid is a pure background pattern (never marker nodes, never a pointer
+ * grid is the SVG slot overlay (never marker nodes, never a pointer
  * target — pointer-events:none).
  */
 .vela-grid-stage {
@@ -830,23 +830,27 @@
 }
 
 /*
- * The visible grid: quiet ~1px cell edges via a repeating background. The
- * pattern repeats per pitch (cell + gap), so the lines land exactly at the
- * real cell edges the CSS Grid uses. Opacity-only entrance; reduced motion
- * removes the fade.
+ * The visible grid (task 017-A): ISOLATED SQUARE SLOTS, never graph
+ * paper. The element is an SVG overlay (grid-slot-overlay.tsx) whose
+ * pattern tile spans a full pitch (cell + gap) and draws exactly one
+ * square — the tile's remaining area stays transparent, so the persisted
+ * gap is real blank space between neighbouring slots. This rule only
+ * pins the overlay to the grid content origin and keeps it out of
+ * pointers, layout and stacking; the squares themselves carry no fill,
+ * rounding or shadow. Opacity-only entrance; reduced motion removes
+ * the fade.
  */
-.vela-grid-lines {
+.vela-grid-slots {
   position: absolute;
   inset: 0;
+  /* SVG is a replaced element: inset:0 alone would leave it at the
+   * intrinsic 300x150 default, so the cover size must be explicit. */
+  width: 100%;
+  height: 100%;
   z-index: 0;
+  display: block;
   pointer-events: none;
   opacity: 0.55;
-  background-image:
-    linear-gradient(to right, var(--vd-grid-line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--vd-grid-line) 1px, transparent 1px);
-  background-size:
-    calc(var(--vd-grid-cell-size) + var(--vd-grid-gap))
-    calc(var(--vd-grid-cell-size) + var(--vd-grid-gap));
   animation: vela-guides-in 140ms ease;
 }
 
@@ -2258,7 +2262,7 @@ button.vela-sync-status:focus-visible {
     transform: translateX(0);
   }
 
-  .vela-grid-lines,
+  .vela-grid-slots,
   .vela-rail__item,
   .vela-rail__item::before,
   .vela-section-view,

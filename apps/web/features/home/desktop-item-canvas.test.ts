@@ -34,9 +34,10 @@ describe("desktop item — dual geometry", () => {
     expect(item).toContain('className="vela-item__body"');
     expect(grid).toContain('className="vela-grid-host"');
     expect(grid).toContain('className="vela-canvas"');
-    // The visible square grid is a pointer-transparent overlay, never
-    // marker nodes, and it is arrange-only.
-    expect(grid).toMatch(/\{arrange \? <div className="vela-grid-lines" aria-hidden="true" \/> : null\}/);
+    // The visible square grid is an SVG slot overlay (one square per
+    // pattern tile — task 017-A), pointer-transparent and arrange-only.
+    expect(grid).toMatch(/\{arrange && gridMetrics !== null \? \(\s*<GridSlotOverlay/);
+    expect(grid).not.toContain("vela-grid-lines");
   });
 
   it("passes grid pitch and columns to items for gesture math", () => {

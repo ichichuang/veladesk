@@ -5,6 +5,7 @@ import type { CanvasLayoutItem } from "@veladesk/canvas-engine";
 import type { PagePlacement, WorkspaceSnapshot, EntityId } from "@veladesk/domain";
 
 import { DesktopItem } from "./desktop-item";
+import { GridSlotOverlay } from "./grid-slot-overlay";
 import type { ResizeCommitGeometry } from "../canvas/canvas-resize";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
 import type { SquareGridMetrics } from "../canvas/square-grid-metrics";
@@ -60,7 +61,8 @@ interface DesktopCanvasViewProps {
  * `grid-auto-rows: var(--vd-grid-cell-size)` rows and `gap:
  * var(--vd-grid-gap)`; content rows grow without a fixed row count, so the
  * section scroller (the parent) owns vertical scrolling. In Arrange the
- * stage paints the visible square-cell grid as a pure background pattern —
+ * stage paints the visible square slots as one pointer-transparent SVG
+ * pattern (task 017-A) — isolated squares separated by the real gap,
  * never marker nodes, never a pointer target.
  *
  * FREEFORM keeps the continuous percent-space canvas: absolutely positioned
@@ -106,7 +108,9 @@ export function DesktopCanvasView({
         onPointerMove={onCanvasPointerMove}
         onPointerUp={onCanvasPointerUp}
       >
-        {arrange ? <div className="vela-grid-lines" aria-hidden="true" /> : null}
+        {arrange && gridMetrics !== null ? (
+          <GridSlotOverlay cellPx={gridMetrics.cellPx} gapPx={gridMetrics.gapPx} />
+        ) : null}
         <div
           className="vela-grid-host"
           style={{ gridTemplateColumns: `repeat(${placement.columns}, minmax(0, 1fr))` }}

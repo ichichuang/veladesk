@@ -71,22 +71,29 @@ describe("home-shell.css right-side scroll ownership (task 017)", () => {
     expect(css).not.toMatch(/--vd-grid-padding-left/);
   });
 
-  it("draws the visible grid as a background pattern, quiet 1px lines", () => {
-    const lines = ruleBlock(".vela-grid-lines");
-    expect(lines).toMatch(/pointer-events:\s*none/);
-    expect(lines).toMatch(/background-image:/);
-    expect(lines).toMatch(/1px, transparent 1px/);
-    expect(lines).toMatch(
-      /calc\(var\(--vd-grid-cell-size\) \+ var\(--vd-grid-gap\)\)/,
-    );
+  it("draws the visible grid as isolated square slots, never continuous lines", () => {
+    const slots = ruleBlock(".vela-grid-slots");
+    expect(slots).toMatch(/position:\s*absolute/);
+    expect(slots).toMatch(/pointer-events:\s*none/);
+    // SVG is a replaced element: inset:0 alone keeps the intrinsic
+    // 300x150 default, so covering the stage needs explicit sizes.
+    expect(slots).toMatch(/width:\s*100%/);
+    expect(slots).toMatch(/height:\s*100%/);
+    // The squares are SVG rects in a pattern tile; the overlay itself must
+    // not paint any background image (the old graph-paper line pair).
+    expect(slots).not.toMatch(/background-image/);
+    // The continuous-line model is gone entirely — no legacy class, no
+    // full-width/full-height 1px gradient lines anywhere.
+    expect(css).not.toMatch(/\.vela-grid-lines/);
+    expect(css).not.toMatch(/--vd-grid-line\) 1px, transparent 1px/);
     // No per-cell marker nodes anywhere.
     expect(css).not.toMatch(/\.vela-desktop__grid-guide/);
     expect(css).not.toMatch(/\.vela-desktop__lattice/);
   });
 
   it("fades the visible grid in by opacity only, removed under reduced motion", () => {
-    const lines = ruleBlock(".vela-grid-lines");
-    expect(lines).toMatch(/animation:\s*vela-guides-in\s+140ms/);
+    const slots = ruleBlock(".vela-grid-slots");
+    expect(slots).toMatch(/animation:\s*vela-guides-in\s+140ms/);
     const keyframes = css.match(/@keyframes vela-guides-in\s*\{([\s\S]*?)\n\}/);
     expect(keyframes).not.toBeNull();
     expect(keyframes![1]!).not.toMatch(/transform/);
@@ -94,7 +101,7 @@ describe("home-shell.css right-side scroll ownership (task 017)", () => {
     const start = css.indexOf("@media (prefers-reduced-motion: reduce)");
     const end = css.indexOf("@media", start + 1);
     const reduced = css.slice(start, end === -1 ? undefined : end);
-    expect(reduced).toContain(".vela-grid-lines");
+    expect(reduced).toContain(".vela-grid-slots");
     expect(reduced).toMatch(/animation:\s*none/);
   });
 
