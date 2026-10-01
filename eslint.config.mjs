@@ -10,6 +10,10 @@ const eslintConfig = [
       "**/coverage/**",
       "**/.turbo/**",
       "**/next-env.d.ts",
+      // Task debug archives: generated build/trace snapshots (e.g. the
+      // task 018 Playwright report) are not source code. Scoped to the
+      // archive root only — apps/ and packages/ stay fully linted.
+      "artifacts/**",
     ],
   },
   ...coreWebVitals,

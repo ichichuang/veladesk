@@ -1,6 +1,6 @@
 {
   "name": "@veladesk/sync",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Browser-safe workspace HTTP transport and explicit outbox sync coordination for VelaDesk.",
   "main": "./src/index.ts",

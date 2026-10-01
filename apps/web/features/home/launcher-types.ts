@@ -15,8 +15,7 @@ export type LauncherCommandId =
   | "new-section"
   | "open-settings"
   | "toggle-mode"
-  | "sync-current"
-  | "pull-current";
+  | "sync-current";
 
 /**
  * One searchable launcher entry: pure data, no callbacks.

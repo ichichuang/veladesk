@@ -1,12 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_WORKSPACE_APPEARANCE } from "@veladesk/domain";
+import { DEFAULT_WORKSPACE_APPEARANCE, resolveInterfaceStyle } from "@veladesk/domain";
 import type { WorkspaceAppearancePreferences } from "@veladesk/domain";
 
 import { buildAppearanceTheme, ICON_SIZE_PX } from "./appearance-theme";
 
 function appearanceWith(overrides: Partial<WorkspaceAppearancePreferences>): WorkspaceAppearancePreferences {
   return { ...DEFAULT_WORKSPACE_APPEARANCE, ...overrides };
+}
+
+function surfaceSignature(theme: ReturnType<typeof buildAppearanceTheme>): string {
+  return [
+    theme.style["--vd-surface-opacity"],
+    theme.style["--vd-blur"],
+    theme.style["--vd-radius"],
+    theme.style["--vd-surface-border-strength"],
+    theme.style["--vd-surface-shadow"],
+  ].join("|");
 }
 
 describe("buildAppearanceTheme", () => {
@@ -20,9 +30,52 @@ describe("buildAppearanceTheme", () => {
         "--vd-surface-strong-opacity": "0.78",
         "--vd-blur": "18px",
         "--vd-radius": "14px",
+        "--vd-surface-border-strength": "1",
         "--vd-icon-size": "62px",
       },
     });
+  });
+
+  it("renders a pre-019-D appearance from its persisted raw values (no silent restyle)", () => {
+    const legacy = appearanceWith({ surfaceOpacity: 0.4, blurPx: 6, radiusPx: 20 });
+    const theme = buildAppearanceTheme(legacy);
+
+    expect(theme.style["--vd-surface-opacity"]).toBe("0.4");
+    expect(theme.style["--vd-blur"]).toBe("6px");
+    expect(theme.style["--vd-radius"]).toBe("20px");
+    // No shadow/window tokens: the desktop CSS keeps its per-surface
+    // fallbacks and the overlay windows stay solid, exactly as before.
+    expect(theme.style["--vd-surface-shadow"]).toBeUndefined();
+    expect(theme.style["--vd-window-alpha"]).toBeUndefined();
+    expect(theme.style["--vd-window-blur"]).toBeUndefined();
+  });
+
+  it("resolves a persisted interface style through the canonical resolver", () => {
+    const theme = buildAppearanceTheme(appearanceWith({ interfaceStyle: "clean" }));
+    const clean = resolveInterfaceStyle("clean");
+
+    expect(theme.style["--vd-surface-opacity"]).toBe(String(clean.surfaceOpacity));
+    expect(theme.style["--vd-blur"]).toBe(`${clean.blurPx}px`);
+    expect(theme.style["--vd-radius"]).toBe(`${clean.radiusPx}px`);
+    expect(theme.style["--vd-surface-border-strength"]).toBe(String(clean.borderStrength));
+    expect(theme.style["--vd-surface-shadow"]).toBe("none");
+    // The overlay layer (settings window, dialogs, popovers) follows the
+    // style: the interface must visibly change while previewing.
+    expect(theme.style["--vd-window-alpha"]).toBe(String(clean.surfaceStrongOpacity));
+    expect(theme.style["--vd-window-blur"]).toBe(`${clean.blurPx}px`);
+  });
+
+  it("produces different surface output for every interface style", () => {
+    const styles = ["clean", "soft", "glass"] as const;
+    const signatures = new Set(
+      styles.map((interfaceStyle) =>
+        surfaceSignature(buildAppearanceTheme(appearanceWith({ interfaceStyle }))),
+      ),
+    );
+
+    // The ownership contract: the style control can never be disconnected —
+    // each style MUST change the resolved theme output.
+    expect(signatures.size).toBe(styles.length);
   });
 
   it("passes the accent hue through at both range boundaries", () => {
@@ -31,29 +84,6 @@ describe("buildAppearanceTheme", () => {
 
     expect(low.style["--vd-accent-hue"]).toBe("0");
     expect(high.style["--vd-accent-hue"]).toBe("359");
-  });
-
-  it("computes the strong surface opacity from the base opacity", () => {
-    const low = buildAppearanceTheme(appearanceWith({ surfaceOpacity: 0.35 }));
-    expect(low.style["--vd-surface-opacity"]).toBe("0.35");
-    expect(low.style["--vd-surface-strong-opacity"]).toBe("0.58");
-  });
-
-  it("clamps the strong surface opacity at 0.98", () => {
-    const high = buildAppearanceTheme(appearanceWith({ surfaceOpacity: 0.9 }));
-
-    expect(high.style["--vd-surface-opacity"]).toBe("0.9");
-    expect(high.style["--vd-surface-strong-opacity"]).toBe("0.98");
-  });
-
-  it("passes blur through at both boundaries", () => {
-    expect(buildAppearanceTheme(appearanceWith({ blurPx: 0 })).style["--vd-blur"]).toBe("0px");
-    expect(buildAppearanceTheme(appearanceWith({ blurPx: 32 })).style["--vd-blur"]).toBe("32px");
-  });
-
-  it("passes radius through at both boundaries", () => {
-    expect(buildAppearanceTheme(appearanceWith({ radiusPx: 8 })).style["--vd-radius"]).toBe("8px");
-    expect(buildAppearanceTheme(appearanceWith({ radiusPx: 24 })).style["--vd-radius"]).toBe("24px");
   });
 
   it("maps every icon size to a fixed pixel size around the Task013 medium baseline", () => {
@@ -85,13 +115,21 @@ describe("buildAppearanceTheme", () => {
       "--vd-surface-strong-opacity",
       "--vd-blur",
       "--vd-radius",
+      "--vd-surface-border-strength",
+      "--vd-surface-shadow",
+      "--vd-window-alpha",
+      "--vd-window-blur",
       "--vd-icon-size",
     ]);
 
-    const style = buildAppearanceTheme(DEFAULT_WORKSPACE_APPEARANCE).style;
-    for (const key of Object.keys(style)) {
-      expect(allowed.has(key)).toBe(true);
+    for (const appearance of [
+      DEFAULT_WORKSPACE_APPEARANCE,
+      appearanceWith({ interfaceStyle: "soft" }),
+    ]) {
+      const style = buildAppearanceTheme(appearance).style;
+      for (const key of Object.keys(style)) {
+        expect(allowed.has(key)).toBe(true);
+      }
     }
-    expect(Object.keys(style)).toHaveLength(allowed.size);
   });
 });

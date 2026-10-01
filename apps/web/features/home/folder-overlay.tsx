@@ -9,6 +9,9 @@ import type {
 import type { AppShortcut, EntityId, Folder, WorkspaceSnapshot } from "@veladesk/domain";
 
 import { useI18n } from "../i18n/use-i18n";
+import { VdScrollArea } from "@components/vd/scroll-area";
+import { useVdPresence } from "@components/vd/presence";
+import { VdAnimatedSurface } from "@components/vd/animated-surface";
 import { AppIconTile } from "./app-icon-renderer";
 import {
   appLabelPresentation,
@@ -22,6 +25,8 @@ import {
 import "./home-shell.css";
 
 interface FolderOverlayProps {
+  /** Requested visibility; the overlay stays mounted through its exit. */
+  readonly open: boolean;
   readonly folder: Folder;
   readonly workspace: WorkspaceSnapshot;
   /** Presentation-only action error (e.g. no-space on dissolve). */
@@ -40,6 +45,7 @@ interface FolderOverlayProps {
  * their context menu. Escape or a backdrop click closes.
  */
 export function FolderOverlay({
+  open,
   folder,
   workspace,
   error,
@@ -48,8 +54,14 @@ export function FolderOverlay({
   onChildContextMenu,
 }: FolderOverlayProps) {
   const { t } = useI18n();
+  // Presence (022): a close intent plays the exit while the semantics
+  // stand down; only the exit completion releases the subtree.
+  const presence = useVdPresence(open);
 
   useEffect(() => {
+    if (!open) {
+      return;
+    }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
@@ -57,7 +69,7 @@ export function FolderOverlay({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [open, onClose]);
 
   function childContextMenu(event: ReactMouseEvent, entityId: EntityId) {
     event.preventDefault();
@@ -80,19 +92,33 @@ export function FolderOverlay({
     entity: workspace.entities.find((candidate) => candidate.id === childId),
   }));
 
+  if (!presence.mounted) {
+    return null;
+  }
+
   return (
-    <div
+    <VdAnimatedSurface
+      variant="overlay"
+      active={open}
+      onPresenceReleased={presence.completeExit}
       className="vela-folder-overlay"
       role="dialog"
       aria-modal="true"
       aria-label={folder.name}
+      inert={open ? undefined : true}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
         }
       }}
     >
-      <section className="vela-folder-overlay__panel">
+      <VdAnimatedSurface
+        variant="launcher"
+        active={open}
+        onPresenceReleased={presence.completeExit}
+        className="vela-folder-overlay__panel"
+      >
+        <section className="vela-folder-overlay__panel-inner">
         <header className="vela-folder-overlay__header">
           <h2 className="vela-folder-overlay__title">{folder.name}</h2>
           <span className="vela-folder-overlay__spacer" />
@@ -110,7 +136,10 @@ export function FolderOverlay({
             {error}
           </p>
         ) : null}
-        <div className="vela-folder-overlay__grid" data-vd-wheel-scope="local">
+        {/* The scroll owner (VdScrollArea, 021-A) — the grid inside is
+            layout only. Wheel stays local to the overlay. */}
+        <VdScrollArea axis="y" className="vela-folder-overlay__scroll" data-vd-wheel-scope="local">
+          <div className="vela-folder-overlay__grid">
           {children.map(({ childId, entity }) => {
             if (entity === undefined) {
               return (
@@ -153,9 +182,11 @@ export function FolderOverlay({
           {children.length === 0 ? (
             <p className="vela-folder-overlay__empty">{t("overlay.empty")}</p>
           ) : null}
-        </div>
+          </div>
+        </VdScrollArea>
         <p className="vela-folder-overlay__hint">{t("overlay.dissolveHint")}</p>
-      </section>
-    </div>
+        </section>
+      </VdAnimatedSurface>
+    </VdAnimatedSurface>
   );
 }

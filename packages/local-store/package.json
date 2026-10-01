@@ -1,6 +1,6 @@
 {
   "name": "@veladesk/local-store",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Browser IndexedDB working copy, coalesced outbox and local-first sync state for VelaDesk workspaces.",
   "main": "./src/index.ts",

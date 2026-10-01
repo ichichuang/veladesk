@@ -36,17 +36,37 @@ import "./home-shell.css";
 
 type IconLoadStatus = "loading" | "ready" | "failed";
 
-/**
- * Local-first object URL for an uploaded asset: an IndexedDB blob when
- * present, a hash-verified remote GET + hydrate on a miss, or `null`
- * (→ initials fallback) on any failure. The URL is revoked on
- * change/unmount — no object-URL leaks.
+/*
+ * Icon-layer cold-work caches (task 026-R2 §21/§22): every mobile section
+ * switch remounts tiles, so a re-shown icon must neither re-probe the
+ * library SVG nor re-fetch/re-decode an uploaded asset. Both caches live
+ * HERE — the one icon layer shared by the desktop grid, dock, folder
+ * overlay, launcher and mobile tiles (no second cache system):
+ *
+ *  - probe results: a library URL that loaded (or failed) once never
+ *    probes again — a remount renders the glyph synchronously.
+ *  - asset object URLs: created once per asset id and never revoked under
+ *    a live surface, exactly like the wallpaper layer's assetUrlCache —
+ *    bounded by the workspace's distinct icon assets for the tab session.
  */
+const libraryIconProbeResults = new Map<string, Exclude<IconLoadStatus, "loading">>();
+const assetIconUrlCache = new Map<string, string>();
+
+/** One uploaded-asset glyph: layer-cached local object URL, initials on failure. */
 function useAssetImageUrl(assetId: string): string | null {
-  const [url, setUrl] = useState<string | null>(null);
+  // Same shape as the wallpaper layer's URL hook: cache hits are DERIVED
+  // during render (never a setState-in-effect); only an async load result
+  // lives in state, keyed by asset so a late result can't leak onto
+  // another asset's tile.
+  const [loaded, setLoaded] = useState<{ readonly id: string; readonly url: string | null } | null>(null);
+  const cached = assetIconUrlCache.get(assetId);
+  const url =
+    cached ?? (loaded !== null && loaded.id === assetId ? loaded.url : null);
   useEffect(() => {
+    if (assetIconUrlCache.has(assetId)) {
+      return;
+    }
     let cancelled = false;
-    let createdUrl: string | null = null;
     getBrowserAssetRuntime()
       .then((runtime) => runtime.loadAsset(assetId))
       .then((result) => {
@@ -54,22 +74,20 @@ function useAssetImageUrl(assetId: string): string | null {
           return;
         }
         if (result.ok) {
-          createdUrl = URL.createObjectURL(result.blob);
-          setUrl(createdUrl);
+          const created = URL.createObjectURL(result.blob);
+          assetIconUrlCache.set(assetId, created);
+          setLoaded({ id: assetId, url: created });
         } else {
-          setUrl(null);
+          setLoaded({ id: assetId, url: null });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setUrl(null);
+          setLoaded({ id: assetId, url: null });
         }
       });
     return () => {
       cancelled = true;
-      if (createdUrl !== null) {
-        URL.revokeObjectURL(createdUrl);
-      }
     };
   }, [assetId]);
   return url;
@@ -118,22 +136,28 @@ export function glyphMaskStyle(url: string): CSSProperties {
 function LibraryIconGlyph({ icon, fallback }: { icon: string; fallback: string }) {
   const model = iconifyGlyphModel(icon);
   const url = model?.url;
-  const [loadStatus, setLoadStatus] = useState<IconLoadStatus>("loading");
+  const [loadStatus, setLoadStatus] = useState<IconLoadStatus>(() =>
+    url === undefined ? "failed" : (libraryIconProbeResults.get(url) ?? "loading"),
+  );
 
   // Probing with an Image() means a 404 or a decode failure renders the
-  // initials — a multicolor icon never shows up as a broken image.
+  // initials — a multicolor icon never shows up as a broken image. The
+  // result is cached at the icon layer: a REMOUNT never probes again, so
+  // re-shown tiles render their glyph synchronously (R2 §21).
   useEffect(() => {
-    if (url === undefined) {
+    if (url === undefined || libraryIconProbeResults.has(url)) {
       return;
     }
     let cancelled = false;
     const image = new Image();
     image.onload = () => {
+      libraryIconProbeResults.set(url, "ready");
       if (!cancelled) {
         setLoadStatus("ready");
       }
     };
     image.onerror = () => {
+      libraryIconProbeResults.set(url, "failed");
       if (!cancelled) {
         setLoadStatus("failed");
       }
@@ -144,8 +168,7 @@ function LibraryIconGlyph({ icon, fallback }: { icon: string; fallback: string }
     };
   }, [url]);
 
-  const status: IconLoadStatus = url === undefined ? "failed" : loadStatus;
-  if (status !== "ready" || model === undefined) {
+  if (loadStatus !== "ready" || model === undefined) {
     return <span className="vela-app-icon__text">{fallback}</span>;
   }
   if (model.kind === "image") {
@@ -178,7 +201,7 @@ export function AppIconGlyph({ app }: { app: AppShortcut }) {
 /**
  * Host-element props that turn a button/div into the icon tile itself —
  * used by the dock, whose buttons ARE the tiles (the desktop item instead
- * nests {@link AppIconTile} inside its slot).
+ * composes surface + glyph through the adaptive content layer).
  */
 export function appIconDecorationProps(app: AppShortcut): {
   "data-decoration": AppDecorationStyle;
@@ -191,7 +214,11 @@ export function appIconDecorationProps(app: AppShortcut): {
   };
 }
 
-/** The full icon tile for an app, as rendered on the desktop grid. */
+/**
+ * The full icon tile for an app, as rendered in fixed-slot contexts (dock,
+ * folder overlay): decoration + glyph in one element, sized by the shared
+ * slot variable.
+ */
 export function AppIconTile({ app }: { app: AppShortcut }) {
   const style = appVisual(app);
   return (
@@ -203,5 +230,24 @@ export function AppIconTile({ app }: { app: AppShortcut }) {
     >
       <AppIconGlyph app={app} />
     </span>
+  );
+}
+
+/**
+ * The DECORATION-ONLY layer of an adaptive desktop tile (019-B): fills the
+ * ENTIRE outer geometry (grid span box / freeform rect / preview stage)
+ * with the app's gradient/solid/glass/none surface, and nothing else. The
+ * icon + title composition lives in the sibling `.vela-app-content` flow
+ * (see desktop-item.tsx and app-content-layout.ts).
+ */
+export function AppIconSurface({ app }: { app: AppShortcut }) {
+  const style = appVisual(app);
+  return (
+    <span
+      aria-hidden="true"
+      className="vela-app-icon vela-app-icon--surface"
+      data-decoration={style.decorationStyle}
+      style={buildAppIconStyleVars(style) as CSSProperties}
+    />
   );
 }

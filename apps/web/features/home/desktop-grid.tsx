@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type { CanvasLayoutItem } from "@veladesk/canvas-engine";
 import type { PagePlacement, WorkspaceSnapshot, EntityId } from "@veladesk/domain";
@@ -16,6 +17,8 @@ import "./home-shell.css";
 interface DesktopCanvasViewProps {
   readonly placement: PagePlacement;
   readonly workspace: WorkspaceSnapshot;
+  /** The app the appearance inspector edits — quiet affordance (019-C). */
+  readonly appearanceEditingId?: EntityId | null;
   /**
    * Whether THIS section runs the arrange session. Only the active section
    * arranges (task 015 rule kept) — passing `arrange` already implies the
@@ -77,9 +80,10 @@ interface DesktopCanvasViewProps {
  * Pure rendering — drag sessions, selection state and context menus live in
  * the shell.
  */
-export function DesktopCanvasView({
+export const DesktopCanvasView = memo(function DesktopCanvasView({
   placement,
   workspace,
+  appearanceEditingId,
   arrange,
   dragEnabled,
   metrics,
@@ -141,6 +145,7 @@ export function DesktopCanvasView({
               gridPitchPx={gridMetrics?.pitchPx ?? null}
               gridColumns={placement.columns}
               geometry="grid"
+              editingAppearance={appearanceEditingId === item.id}
               selected={selectedIds.has(item.id)}
               resizable={resizableIds.has(item.id)}
               resizeActiveId={resizeActiveId}
@@ -178,6 +183,7 @@ export function DesktopCanvasView({
             gridPitchPx={null}
             gridColumns={null}
             geometry="freeform"
+            editingAppearance={appearanceEditingId === item.id}
             selected={selectedIds.has(item.id)}
             resizable={resizableIds.has(item.id)}
             resizeActiveId={resizeActiveId}
@@ -191,4 +197,12 @@ export function DesktopCanvasView({
       </div>
     </div>
   );
-}
+});
+
+/**
+ * Memoized (020-A2 §18): several section layers are mounted at once, and
+ * a shell re-render (selection, marquee, dialogs) must not re-render the
+ * warm layers' item trees. Works because every caller passes stable
+ * callback identities and set references; warm layers additionally get
+ * constant empty selection sets.
+ */

@@ -37,38 +37,32 @@ describe("draftFromApp", () => {
       assetId: "",
       textMode: "auto",
       customText: "",
-      iconScale: 1,
       labelVisible: true,
-      labelScale: 1,
       decorationStyle: "gradient",
       foregroundColor: undefined,
       decorationColor: undefined,
     });
   });
 
-  it("resolves absent label fields to shown/100% (017-C legacy default)", () => {
+  it("resolves an absent labelVisible to shown (legacy default)", () => {
     const draft = draftFromApp(
-      makeApp({ visual: { iconScale: 1.2, decorationStyle: "glass" } })
+      makeApp({ visual: { decorationStyle: "glass" } })
     );
 
     expect(draft.labelVisible).toBe(true);
-    expect(draft.labelScale).toBe(1);
   });
 
-  it("carries persisted label presentation into the draft", () => {
+  it("carries persisted label visibility into the draft", () => {
     const draft = draftFromApp(
       makeApp({
         visual: {
-          iconScale: 1,
           decorationStyle: "solid",
           labelVisible: false,
-          labelScale: 1.4,
         },
       })
     );
 
     expect(draft.labelVisible).toBe(false);
-    expect(draft.labelScale).toBe(1.4);
   });
 
   it("opens a library draft preserving the iconify id and style", () => {
@@ -76,7 +70,6 @@ describe("draftFromApp", () => {
       makeApp({
         icon: { kind: "iconify", icon: "simple-icons:github" },
         visual: {
-          iconScale: 1.2,
           decorationStyle: "glass",
           foregroundColor: "#AABBCC",
           decorationColor: "#112233",
@@ -86,7 +79,6 @@ describe("draftFromApp", () => {
 
     expect(draft.source).toBe("library");
     expect(draft.libraryIcon).toBe("simple-icons:github");
-    expect(draft.iconScale).toBe(1.2);
     expect(draft.decorationStyle).toBe("glass");
     expect(draft.foregroundColor).toBe("#aabbcc");
     expect(draft.decorationColor).toBe("#112233");
@@ -125,7 +117,7 @@ describe("draftFromApp", () => {
   it("round-trips: the fresh draft equals itself", () => {
     const app = makeApp({
       icon: { kind: "iconify", icon: "lucide:terminal" },
-      visual: { iconScale: 0.75, decorationStyle: "solid", decorationColor: "#3366FF" },
+      visual: { decorationStyle: "solid", decorationColor: "#3366FF" },
     });
 
     expect(draftEquals(draftFromApp(app), draftFromApp(app))).toBe(true);
@@ -218,7 +210,6 @@ describe("buildDraftVisual", () => {
       foregroundColor: "#AABBCC",
     });
     expect(withForeground).toEqual({
-      iconScale: 1,
       decorationStyle: "gradient",
       foregroundColor: "#aabbcc",
     });
@@ -228,41 +219,46 @@ describe("buildDraftVisual", () => {
       decorationColor: "#112233",
     });
     expect(withDecoration).toEqual({
-      iconScale: 1,
       decorationStyle: "gradient",
       decorationColor: "#112233",
     });
   });
 
-  it("persists label presentation compactly: defaults absent, deviations explicit (017-C)", () => {
+  it("persists label visibility compactly: shown absent, hidden explicit", () => {
     const app = makeApp();
-    // Shown + 100% stays legacy-shaped — no redundant fields.
+    // Shown stays legacy-shaped — no redundant fields.
     const defaults = buildDraftVisual(draftFromApp(app));
     expect("labelVisible" in defaults).toBe(false);
-    expect("labelScale" in defaults).toBe(false);
 
     // Hidden label persists explicitly.
     const hidden = buildDraftVisual({ ...draftFromApp(app), labelVisible: false });
-    expect(hidden).toEqual({ iconScale: 1, decorationStyle: "gradient", labelVisible: false });
+    expect(hidden).toEqual({ decorationStyle: "gradient", labelVisible: false });
+  });
 
-    // Non-default scale persists; default never does.
-    const scaled = buildDraftVisual({ ...draftFromApp(app), labelScale: 1.4 });
-    expect(scaled).toEqual({ iconScale: 1, decorationStyle: "gradient", labelScale: 1.4 });
+  it("normalizes deprecated legacy scale fields away on save (019-B)", () => {
+    // An app that still carries iconScale/labelScale (legacy snapshot)
+    // keeps them untouched by open/cancel — but an editor SAVE writes the
+    // visual WITHOUT them: the documented, only migration path.
+    const legacyApp = makeApp({
+      visual: {
+        iconScale: 1.6,
+        decorationStyle: "solid",
+        labelScale: 1.4,
+      },
+    });
+    const draft = draftFromApp(legacyApp);
+    expect(draft.decorationStyle).toBe("solid");
 
-    // Both deviations together, order-independent of colors.
-    const both = buildDraftVisual({
-      ...draftFromApp(app),
-      labelVisible: false,
-      labelScale: 0.75,
-      decorationColor: "#112233",
+    const saved = buildDraftVisual(draft);
+    expect(saved).toEqual({ decorationStyle: "solid" });
+    expect("iconScale" in saved).toBe(false);
+    expect("labelScale" in saved).toBe(false);
+
+    // Label visibility survives the normalization untouched.
+    const hiddenSaved = buildDraftVisual({
+      ...draftFromApp(makeApp({ visual: { iconScale: 2, labelScale: 0.75, decorationStyle: "gradient", labelVisible: false } })),
     });
-    expect(both).toEqual({
-      iconScale: 1,
-      decorationStyle: "gradient",
-      labelVisible: false,
-      labelScale: 0.75,
-      decorationColor: "#112233",
-    });
+    expect(hiddenSaved).toEqual({ decorationStyle: "gradient", labelVisible: false });
   });
 });
 
@@ -273,7 +269,6 @@ describe("buildDraftApp", () => {
       ...draftFromApp(app),
       source: "library" as const,
       libraryIcon: "tabler:server",
-      iconScale: 1.6,
       decorationStyle: "none" as const,
       foregroundColor: "#FFFFFF",
     };
@@ -288,25 +283,21 @@ describe("buildDraftApp", () => {
     expect(next.tags).toEqual(["work"]);
     expect(next.icon).toEqual({ kind: "iconify", icon: "tabler:server" });
     expect(next.visual).toEqual({
-      iconScale: 1.6,
       decorationStyle: "none",
       foregroundColor: "#ffffff",
     });
   });
 
-  it("carries label presentation through to the persisted app (017-C)", () => {
+  it("carries label visibility through to the persisted app (017-C/019-B)", () => {
     const app = makeApp();
     const next = buildDraftApp(app, {
       ...draftFromApp(app),
       labelVisible: false,
-      labelScale: 1.25,
     });
 
     expect(next.visual).toEqual({
-      iconScale: 1,
       decorationStyle: "gradient",
       labelVisible: false,
-      labelScale: 1.25,
     });
   });
 });
@@ -316,9 +307,7 @@ describe("draftEquals", () => {
 
   it("is true for identical drafts and false on any semantic change", () => {
     expect(draftEquals(base, { ...base })).toBe(true);
-    expect(draftEquals(base, { ...base, iconScale: 1.05 })).toBe(false);
     expect(draftEquals(base, { ...base, labelVisible: false })).toBe(false);
-    expect(draftEquals(base, { ...base, labelScale: 1.25 })).toBe(false);
     expect(draftEquals(base, { ...base, decorationStyle: "solid" })).toBe(false);
     expect(draftEquals(base, { ...base, source: "library", libraryIcon: "lucide:home" })).toBe(
       false
@@ -326,11 +315,18 @@ describe("draftEquals", () => {
     expect(draftEquals(base, { ...base, textMode: "custom", customText: "AI" })).toBe(false);
   });
 
-  it("treats a hidden label with a custom scale as dirty, not default-equal (017-C)", () => {
-    const hidden = { ...base, labelVisible: false, labelScale: 1.4 };
+  it("treats a hidden label as dirty, not default-equal", () => {
+    const hidden = { ...base, labelVisible: false };
     expect(draftEquals(hidden, { ...hidden })).toBe(true);
-    expect(draftEquals(hidden, { ...hidden, labelScale: 1 })).toBe(false);
     expect(draftEquals(hidden, { ...hidden, labelVisible: true })).toBe(false);
+  });
+
+  it("ignores legacy scale fields: a legacy app and its modernized twin open identical drafts", () => {
+    const legacyApp = makeApp({
+      visual: { iconScale: 1.6, labelScale: 1.4, decorationStyle: "glass" },
+    });
+    const modernApp = makeApp({ visual: { decorationStyle: "glass" } });
+    expect(draftEquals(draftFromApp(legacyApp), draftFromApp(modernApp))).toBe(true);
   });
 
   it("compares colors undefined-aware (Auto vs set, any hex case)", () => {

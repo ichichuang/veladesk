@@ -1,4 +1,5 @@
 import type { WorkspaceSnapshot } from "./types";
+import { isWallpaperConfig } from "./wallpaper";
 
 /**
  * Structural decoding of `WorkspaceSnapshot` from untrusted JSON.
@@ -86,12 +87,15 @@ const APP_DECORATION_STYLES: readonly string[] = ["gradient", "solid", "glass", 
  * hex color rules are semantic and belong to `validateAppVisualStyle`
  * (iconScale 99 or `url(...)` decode fine and fail validation later).
  * `labelVisible`/`labelScale` are optional and only shape-checked here:
- * boolean / number, exactly like the legacy fields.
+ * boolean / number, exactly like the legacy fields. Since 019-B the
+ * deprecated `iconScale` is optional too: legacy snapshots keep decoding
+ * with it, new saves omit it (normalized away by an appearance save) —
+ * both forms are structurally legal.
  */
 function isAppVisualStyle(value: unknown): boolean {
   return (
     isRecord(value) &&
-    typeof value.iconScale === "number" &&
+    (value.iconScale === undefined || typeof value.iconScale === "number") &&
     APP_DECORATION_STYLES.includes(value.decorationStyle as string) &&
     (value.labelVisible === undefined || typeof value.labelVisible === "boolean") &&
     (value.labelScale === undefined || typeof value.labelScale === "number") &&
@@ -220,7 +224,10 @@ function isDesktopPage(value: unknown): boolean {
     isPageLayout(value.layout) &&
     // Optional for backward compatibility: grid-era pages stay decodable
     // forever; only a structurally valid canvas is accepted.
-    (value.canvas === undefined || isCanvasLayout(value.canvas))
+    (value.canvas === undefined || isCanvasLayout(value.canvas)) &&
+    // Optional per-section wallpaper override (023-C.1): absent means
+    // follow-the-workspace; only a structurally valid config is accepted.
+    (value.wallpaper === undefined || isWallpaperConfig(value.wallpaper))
   );
 }
 
@@ -235,11 +242,14 @@ function isDock(value: unknown): boolean {
 const COLOR_MODES: readonly string[] = ["system", "dark", "light"];
 const WALLPAPER_PRESETS: readonly string[] = ["aurora", "midnight", "dawn", "mist"];
 const ICON_SIZES: readonly string[] = ["small", "medium", "large"];
+const INTERFACE_STYLES: readonly string[] = ["clean", "soft", "glass"];
 
 /**
  * Structural shape of `WorkspaceAppearancePreferences` only — numeric
  * ranges are semantic and belong to `validateWorkspaceAppearance`
- * (accentHue 999 decodes fine and fails validation later).
+ * (accentHue 999 decodes fine and fails validation later). `interfaceStyle`
+ * is optional for backward compatibility: pre-019-D snapshots decode
+ * forever, and the nearest preset is inferred for display only.
  */
 function isAppearancePreferences(value: unknown): boolean {
   return (
@@ -250,6 +260,10 @@ function isAppearancePreferences(value: unknown): boolean {
     typeof value.surfaceOpacity === "number" &&
     typeof value.blurPx === "number" &&
     typeof value.radiusPx === "number" &&
+    (value.interfaceStyle === undefined || INTERFACE_STYLES.includes(value.interfaceStyle as string)) &&
+    // Optional workspace default wallpaper (023-C.1); absent resolves
+    // through the legacy wallpaperPreset above.
+    (value.wallpaper === undefined || isWallpaperConfig(value.wallpaper)) &&
     ICON_SIZES.includes(value.iconSize as string)
   );
 }

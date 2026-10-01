@@ -147,7 +147,6 @@ describe("buildLauncherEntries — entity scope", () => {
       "command:new-section",
       "command:open-settings",
       "command:toggle-mode",
-      "command:pull-current",
       "app:app-solo",
       "page:page-1",
     ]);
@@ -279,9 +278,9 @@ describe("buildLauncherEntries — commands", () => {
     expect(keys).not.toContain("command:pull-current");
   });
 
-  it("offers Refresh from Server only for a clean workspace", () => {
+  it("offers no remote command for a clean workspace — refresh-from-server is not a user command (023-B.2)", () => {
     const keys = keysOf(richInput({ syncState: "clean" }));
-    expect(keys).toContain("command:pull-current");
+    expect(keys).not.toContain("command:pull-current");
     expect(keys).not.toContain("command:sync-current");
   });
 

@@ -10,10 +10,13 @@ export type { CreateEmptyWorkspaceArgs } from "./workspace";
 
 export {
   DEFAULT_WORKSPACE_APPEARANCE,
+  INTERFACE_STYLES,
+  inferInterfaceStyle,
+  resolveInterfaceStyle,
   resolveWorkspaceAppearance,
   validateWorkspaceAppearance,
 } from "./appearance";
-export type { WorkspaceAppearanceValidationIssue } from "./appearance";
+export type { InterfaceStyleParameters, WorkspaceAppearanceValidationIssue } from "./appearance";
 
 export {
   DEFAULT_GRID_GAP_PX,
@@ -111,7 +114,22 @@ export type {
   WorkspaceEntity,
   WorkspaceIconSize,
   WorkspaceId,
+  WorkspaceInterfaceStyle,
   WorkspacePreferences,
   WorkspaceSnapshot,
   WorkspaceWallpaperPreset,
 } from "./types";
+
+export {
+  DEFAULT_WALLPAPER,
+  isWallpaperConfig,
+  resolveEffectiveWallpaper,
+} from "./wallpaper";
+export type {
+  EffectiveWallpaper,
+  WallpaperConfig,
+  WallpaperFit,
+  WallpaperProvenance,
+  WorkspaceWallpaperDraft,
+} from "./wallpaper";
+export { replacePageWallpaper } from "./editing";

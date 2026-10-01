@@ -39,6 +39,13 @@ export interface BuildLauncherEntriesInput {
   readonly syncState: LocalWorkspaceSyncState;
   /** UI locale for command labels; search metadata is bilingual either way. */
   readonly locale: UiLocale;
+  /**
+   * Task 026 §34: the mobile search surface shares this model but is
+   * consumption-only — commands (Add App, New Section, Settings, mode
+   * toggle, sync) are excluded entirely, not disabled. Default true (the
+   * desktop launcher contract).
+   */
+  readonly includeCommands?: boolean;
 }
 
 interface EntryDraft {
@@ -62,6 +69,7 @@ export function buildLauncherEntries(
   input: BuildLauncherEntriesInput,
 ): readonly LauncherEntry[] {
   const { workspace, activePageId, mode, syncState, locale } = input;
+  const includeCommands = input.includeCommands !== false;
 
   const drafts: EntryDraft[] = [];
   const seen = new Set<string>();
@@ -147,63 +155,54 @@ export function buildLauncherEntries(
   }
 
   // 1. Commands — fixed local order; exactly one remote command by sync state.
-  pushCommand("add-app", translate(locale, "launcher.command.addApp"), [
-    "add app",
-    "new shortcut",
-    "create app",
-    "添加应用",
-    "新建快捷方式",
-  ]);
-  pushCommand("new-section", translate(locale, "launcher.command.newSection"), [
-    "new section",
-    "create section",
-    "new page",
-    "新建分区",
-    "创建分区",
-    "新建页面",
-  ]);
-  pushCommand("open-settings", translate(locale, "launcher.command.openSettings"), [
-    "settings",
-    "preferences",
-    "appearance",
-    "theme",
-    "desktop",
-    "设置",
-    "偏好",
-    "外观",
-    "主题",
-    "桌面",
-  ]);
-  pushCommand(
-    "toggle-mode",
-    translate(locale, MODE_COMMAND_LABEL[mode]),
-    MODE_COMMAND_SECONDARY[mode],
-  );
-  if (syncState === "dirty") {
-    pushCommand("sync-current", translate(locale, "launcher.command.syncNow"), [
-      "sync",
-      "save",
-      "upload",
-      "server",
-      "同步",
-      "保存",
-      "上传",
-      "服务器",
+  //    Consumption-only surfaces (mobile search, 026 §34) skip the whole
+  //    block: management commands never appear there, not even disabled.
+  if (includeCommands) {
+    pushCommand("add-app", translate(locale, "launcher.command.addApp"), [
+      "add app",
+      "new shortcut",
+      "create app",
+      "添加应用",
+      "新建快捷方式",
     ]);
-  }
-  if (syncState === "clean") {
-    pushCommand("pull-current", translate(locale, "launcher.command.refreshFromServer"), [
-      "refresh",
-      "pull",
-      "reload workspace",
-      "server",
-      "刷新",
-      "拉取",
-      "重新加载工作区",
-      "服务器",
+    pushCommand("new-section", translate(locale, "launcher.command.newSection"), [
+      "new section",
+      "create section",
+      "new page",
+      "新建分区",
+      "创建分区",
+      "新建页面",
     ]);
+    pushCommand("open-settings", translate(locale, "launcher.command.openSettings"), [
+      "settings",
+      "preferences",
+      "appearance",
+      "theme",
+      "desktop",
+      "设置",
+      "偏好",
+      "外观",
+      "主题",
+      "桌面",
+    ]);
+    pushCommand(
+      "toggle-mode",
+      translate(locale, MODE_COMMAND_LABEL[mode]),
+      MODE_COMMAND_SECONDARY[mode],
+    );
+    if (syncState === "dirty") {
+      pushCommand("sync-current", translate(locale, "launcher.command.syncNow"), [
+        "sync",
+        "save",
+        "upload",
+        "server",
+        "同步",
+        "保存",
+        "上传",
+        "服务器",
+      ]);
+    }
   }
-
   // 2. Dock pins, strictly in dock order.
   for (const entityId of workspace.dock.items) {
     const entity = workspace.entities.find((candidate) => candidate.id === entityId);

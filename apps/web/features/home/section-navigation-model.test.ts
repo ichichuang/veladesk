@@ -5,6 +5,7 @@ import {
   previousSectionId,
   resolveSectionAfterDelete,
   sectionNavDirection,
+  sectionTransitionDirection,
 } from "./section-navigation-model";
 
 const PAGES = ["home", "dev", "ai", "tools"] as const;
@@ -73,5 +74,30 @@ describe("sectionNavDirection", () => {
     expect(sectionNavDirection("ArrowRight")).toBeNull();
     expect(sectionNavDirection("a")).toBeNull();
     expect(sectionNavDirection(" ")).toBeNull();
+  });
+});
+
+describe("sectionTransitionDirection (019-E §23)", () => {
+  it("answers next/prev from workspace.pages order", () => {
+    expect(sectionTransitionDirection(0, 1)).toBe("next");
+    expect(sectionTransitionDirection(4, 9)).toBe("next");
+    expect(sectionTransitionDirection(1, 0)).toBe("prev");
+    expect(sectionTransitionDirection(9, 4)).toBe("prev");
+    // A jump across several sections is still one whole-page move.
+    expect(sectionTransitionDirection(0, 5)).toBe("next");
+  });
+
+  it("resolves nothing for same-position or out-of-range requests", () => {
+    expect(sectionTransitionDirection(2, 2)).toBeNull();
+    expect(sectionTransitionDirection(-1, 0)).toBeNull();
+    expect(sectionTransitionDirection(0, -1)).toBeNull();
+  });
+
+  it("the latest destination always wins — there is no queue", () => {
+    // Rapid A→B→C and A→B→A: each call is answered from the CURRENT
+    // position alone; the shell holds exactly one destination state.
+    expect(sectionTransitionDirection(0, 1)).toBe("next"); // A→B
+    expect(sectionTransitionDirection(1, 2)).toBe("next"); // B→C
+    expect(sectionTransitionDirection(1, 0)).toBe("prev"); // B→A
   });
 });

@@ -41,11 +41,16 @@ function workspaceWith(app: AppShortcut): WorkspaceSnapshot {
 }
 
 describe("DEFAULT_APP_VISUAL_STYLE", () => {
-  it("is the exact Task016 default contract", () => {
+  it("is the adaptive-era default contract: no deprecated sizing fields", () => {
+    // 019-B: icon/title sizing stopped being persisted presentation.
+    // The default style is decoration-only; legacy snapshots carrying
+    // iconScale/labelScale still decode+validate, and an appearance save
+    // normalizes them away (absence is the modern form).
     expect(DEFAULT_APP_VISUAL_STYLE).toEqual({
-      iconScale: 1,
       decorationStyle: "gradient",
     });
+    expect("iconScale" in DEFAULT_APP_VISUAL_STYLE).toBe(false);
+    expect("labelScale" in DEFAULT_APP_VISUAL_STYLE).toBe(false);
   });
 
   it("has no persisted colors (auto stays undefined, not a default hex)", () => {

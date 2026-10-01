@@ -1,6 +1,6 @@
 {
   "name": "@veladesk/client-runtime",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Browser workspace session/bootstrap runtime: local-first startup, remote discovery, in-memory selection and explicit sync orchestration for VelaDesk.",
   "main": "./src/index.ts",

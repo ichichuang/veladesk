@@ -1,18 +1,21 @@
 import type { AppDecorationStyle, AppIcon, AppShortcut, AppVisualStyle } from "@veladesk/domain";
-import {
-  DEFAULT_APP_LABEL_SCALE,
-  DEFAULT_APP_LABEL_VISIBLE,
-} from "@veladesk/domain";
+import { DEFAULT_APP_LABEL_VISIBLE } from "@veladesk/domain";
 
 import { normalizeAppHexColor } from "./app-icon";
 import { generatedIconText } from "./generated-icon";
 
 /**
- * Pure draft model of the App Visual Editor (task 016-A).
+ * Pure draft model of the App Visual Editor (task 016-A, sizing controls
+ * removed in 019-B).
  *
  * The editor edits a DRAFT; only Save touches the workspace (via
  * `replaceApp`). These helpers build the draft from an app, turn a draft
  * back into persisted domain values, and compare drafts — all pure.
+ *
+ * 019-B: icon/title SIZING is no longer user-editable, so the draft
+ * carries no scale fields. The composition is adaptive at render time;
+ * an editor Save normalizes deprecated legacy scale fields away (they
+ * simply stop being written).
  */
 
 export const APP_ICON_TEXT_MAX_CODE_POINTS = 4;
@@ -33,14 +36,13 @@ export interface AppVisualDraft {
   /** Text mode: derived initials that follow renames, or user-owned text. */
   readonly textMode: "auto" | "custom";
   readonly customText: string;
-  readonly iconScale: number;
   /**
    * Label presentation (017-C), resolved — the draft always holds concrete
    * values so equality can be field-by-field. Edits the INNER presentation
-   * only; geometry is untouchable from here.
+   * only; geometry is untouchable from here. The title SIZE is adaptive
+   * (019-B): visibility is the only title preference left.
    */
   readonly labelVisible: boolean;
-  readonly labelScale: number;
   readonly decorationStyle: AppDecorationStyle;
   /** undefined = Auto (no persisted color). */
   readonly foregroundColor?: string | undefined;
@@ -82,9 +84,7 @@ export function draftFromApp(app: AppShortcut): AppVisualDraft {
     assetId,
     textMode,
     customText,
-    iconScale: visual?.iconScale ?? 1,
     labelVisible: visual?.labelVisible ?? DEFAULT_APP_LABEL_VISIBLE,
-    labelScale: visual?.labelScale ?? DEFAULT_APP_LABEL_SCALE,
     decorationStyle: visual?.decorationStyle ?? "gradient",
     foregroundColor: normalizeAppHexColor(visual?.foregroundColor),
     decorationColor: normalizeAppHexColor(visual?.decorationColor),
@@ -132,18 +132,21 @@ export function buildDraftIcon(app: AppShortcut, draft: AppVisualDraft): AppIcon
 /**
  * The persisted visual style of a draft. Colors are stored only when set —
  * "Auto" never writes a redundant default hex into the snapshot. Label
- * presentation persists compactly the same way: shown/100% stays absent so
- * legacy-shaped styles remain the norm, while a hidden label or a custom
- * scale is written explicitly (task 017-C).
+ * visibility persists compactly the same way: shown stays absent so
+ * legacy-shaped styles remain the norm, a hidden label is written
+ * explicitly (task 017-C).
+ *
+ * 019-B normalization: deprecated sizing fields (iconScale/labelScale)
+ * are NEVER written — an app that carried legacy values drops them on
+ * its next appearance save, which is the documented (only) migration
+ * path. Opening or canceling the editor mutates nothing.
  */
 export function buildDraftVisual(draft: AppVisualDraft): AppVisualStyle {
   const foreground = normalizeAppHexColor(draft.foregroundColor);
   const decoration = normalizeAppHexColor(draft.decorationColor);
   return {
-    iconScale: draft.iconScale,
     decorationStyle: draft.decorationStyle,
     ...(draft.labelVisible ? {} : { labelVisible: false }),
-    ...(draft.labelScale !== DEFAULT_APP_LABEL_SCALE ? { labelScale: draft.labelScale } : {}),
     ...(foreground !== undefined ? { foregroundColor: foreground } : {}),
     ...(decoration !== undefined ? { decorationColor: decoration } : {}),
   };
@@ -169,9 +172,7 @@ export function draftEquals(a: AppVisualDraft, b: AppVisualDraft): boolean {
     a.assetId === b.assetId &&
     a.textMode === b.textMode &&
     a.customText === b.customText &&
-    a.iconScale === b.iconScale &&
     a.labelVisible === b.labelVisible &&
-    a.labelScale === b.labelScale &&
     a.decorationStyle === b.decorationStyle &&
     normalizeAppHexColor(a.foregroundColor) === normalizeAppHexColor(b.foregroundColor) &&
     normalizeAppHexColor(a.decorationColor) === normalizeAppHexColor(b.decorationColor)

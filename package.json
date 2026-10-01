@@ -1,6 +1,6 @@
 {
   "name": "veladesk",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "A self-hosted, highly customizable browser start page and web desktop with free-form drag & drop, themes, animated wallpapers, widgets, plugins, and silky-smooth interactions.",
@@ -29,6 +29,8 @@
     "typecheck": "turbo typecheck",
     "test": "vitest",
     "test:run": "vitest run",
+    "version:set": "node ./scripts/set-version.mjs",
+    "version:check": "node ./scripts/check-version.mjs",
     "lint": "eslint .",
     "clean": "rm -rf .turbo node_modules coverage apps/*/.next apps/*/.turbo apps/*/node_modules packages/*/.turbo packages/*/node_modules"
   },

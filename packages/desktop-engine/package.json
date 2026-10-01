@@ -1,6 +1,6 @@
 {
   "name": "@veladesk/desktop-engine",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Pure-logic desktop grid, layout, collision and selection engine for VelaDesk.",
   "main": "./src/index.ts",

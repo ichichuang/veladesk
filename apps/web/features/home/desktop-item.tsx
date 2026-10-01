@@ -17,8 +17,16 @@ import type {
 } from "@veladesk/canvas-engine";
 
 import { contextMenuAnchorFromElement, isContextMenuKeyEvent } from "./context-menu";
-import { AppIconTile } from "./app-icon-renderer";
+import { useVdHoverLift } from "@components/vd/hover-lift";
+import { elementBoxChanged } from "./element-box";
+import { AppIconSurface, AppIconGlyph } from "./app-icon-renderer";
 import {
+  appContentIconKind,
+  buildAppContentStyleVars,
+  resolveAppContentLayout,
+} from "./app-content-layout";
+import {
+  appIconDisplayText,
   appLabelPresentation,
   appVisual,
   buildAppIconStyleVars,
@@ -63,6 +71,11 @@ interface DesktopItemProps {
   /** Grid: the persistent column count (resize bounds). */
   readonly gridColumns: number | null;
   readonly geometry: ItemGeometry;
+  /**
+   * The appearance inspector is editing THIS app (019-C): a quiet accent
+   * affordance only — never geometry handles, never drag changes.
+   */
+  readonly editingAppearance?: boolean;
   /** Whether this item is in the session-only arrange selection. */
   readonly selected: boolean;
   /**
@@ -95,9 +108,10 @@ interface DesktopItemProps {
  * In freeform the item box IS the canvas rect: absolutely positioned in
  * percent space. In grid the item occupies its CSS Grid area
  * (`gridColumn`/`gridRow` from integer cell geometry). Both models share
- * the body: decoration, glyph, label and (in arrange) the eight resize
- * handles laid out inside the item box — a wider-than-tall area paints a
- * genuinely rectangular tile either way.
+ * the body; apps compose adaptively (019-B): the decoration surface fills
+ * the whole box and icon + title flow inside it from the pure content
+ * layout resolver, measured off the RENDERED box — never off persisted
+ * pixel sizes. Folders keep their legacy centered-glyph composition.
  *
  * Apps are buttons: native focus and Enter/Space keep launch accessible in
  * view mode, while dnd-kit's keyboard sensor owns drag gestures in arrange
@@ -159,6 +173,7 @@ function DesktopEntity({
   gridPitchPx,
   gridColumns,
   geometry,
+  editingAppearance,
   selected,
   resizable,
   resizeActiveId,
@@ -177,6 +192,23 @@ function DesktopEntity({
     disabled: !arrange || !dragEnabled || !gesturesReady,
   });
   const itemRef = useRef<HTMLElement | null>(null);
+  // Decorative View-mode hover lift (task 022): GSAP owns the tween on the
+  // INNER .vela-item__body node; the dnd-kit transform on the item root is
+  // untouched. Arrange mode never lifts (hover must not fight a gesture).
+  const {
+    innerRef: liftInnerRef,
+    onPointerEnter: liftEnter,
+    onPointerLeave: liftLeave,
+    onPointerCancel: liftCancel,
+  } = useVdHoverLift<HTMLButtonElement>(-2);
+  const handleLiftEnter = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (!arrange && event.currentTarget.dataset.dragging !== "true") {
+        liftEnter(event);
+      }
+    },
+    [arrange, liftEnter],
+  );
   const resizeRef = useRef<ActiveResize | null>(null);
   const [resizing, setResizing] = useState(false);
   const onResizePreviewRef = useRef(onResizePreview);
@@ -184,6 +216,12 @@ function DesktopEntity({
   useEffect(() => {
     onResizePreviewRef.current = onResizePreview;
   });
+  // The RENDERED item box (019-B): the single sizing authority for the
+  // adaptive app content. Grid gaps, span changes, freeform rects and
+  // window resizes all funnel through one measurement. Deduped to 0.5px so
+  // writing the presentation vars never re-triggers the observer (content
+  // is absolutely positioned — it cannot resize the box back).
+  const box = useElementBox(itemRef);
 
   /**
    * The geometry the element shows right now, as inline styles. During a
@@ -467,11 +505,28 @@ function DesktopEntity({
     ) : null;
 
   if (entity.kind === "app") {
-    // Per-app presentation (017-C): the label vars ride on the ITEM button
-    // because the label is a sibling of the icon tile — geometry styles and
-    // presentation vars are disjoint key sets, so the merge is conflict-free.
+    // Adaptive content composition (019-B): the user owns only the outer
+    // geometry; the resolver decides icon/title layout from the RENDERED
+    // box. Presentation vars ride on the ITEM button next to the geometry
+    // styles — disjoint key sets (--vd-app-* vs gridColumn/gridRow/left/…),
+    // so the merge is conflict-free and sizing can never leak into tracks.
     const presentation = appVisual(entity);
     const label = appLabelPresentation(presentation);
+    const contentLayout =
+      box === null
+        ? undefined
+        : resolveAppContentLayout({
+            width: box.width,
+            height: box.height,
+            labelVisible: label.visible,
+            iconKind: appContentIconKind(entity),
+            ...(entity.icon.kind === "generated"
+              ? {
+                  generatedTextLength: Array.from(appIconDisplayText(entity).trim())
+                    .length,
+                }
+              : {}),
+          });
     return (
       <button
         type="button"
@@ -481,7 +536,14 @@ function DesktopEntity({
         data-kind="app"
         {...draggingProps}
         {...selectionProps}
-        style={{ ...buildAppIconStyleVars(presentation), ...commonStyle } as CSSProperties}
+        data-inspector-editing={editingAppearance === true ? "true" : undefined}
+        style={
+          {
+            ...buildAppIconStyleVars(presentation),
+            ...(contentLayout === undefined ? undefined : buildAppContentStyleVars(contentLayout)),
+            ...commonStyle,
+          } as CSSProperties
+        }
         // The accessible name never depends on the visible label: hiding
         // the label (labelVisible=false) must keep the button announced.
         aria-label={entity.name}
@@ -489,12 +551,18 @@ function DesktopEntity({
         onContextMenu={handleContextMenu}
         onKeyDown={handleKeyDown}
         onClick={handleClick}
+        onPointerEnter={handleLiftEnter}
+        onPointerLeave={liftLeave}
+        onPointerCancel={liftCancel}
       >
-        <span className="vela-item__body">
-          <span className="vela-item__icon-wrap">
-            <AppIconTile app={entity} />
+        <span className="vela-item__body" ref={liftInnerRef}>
+          <AppIconSurface app={entity} />
+          <span className="vela-app-content" data-layout={contentLayout?.mode ?? "stack"}>
+            <span className="vela-app-content__icon">
+              <AppIconGlyph app={entity} />
+            </span>
+            {label.visible ? <span className="vela-item__label">{entity.name}</span> : null}
           </span>
-          {label.visible ? <span className="vela-item__label">{entity.name}</span> : null}
         </span>
         {resizeHandles}
       </button>
@@ -567,6 +635,42 @@ function mergeRefs<T>(
     first(node);
     second.current = node;
   };
+}
+
+/**
+ * Observes the element behind `ref` and reports its rendered box, deduped
+ * to half a pixel via {@link elementBoxChanged} (019-B): the single sizing
+ * authority for the adaptive app content. `null` until the first
+ * observation — CSS carries mid-size fallbacks for that first frame. The
+ * content it feeds is absolutely positioned, so writing the derived vars
+ * can never resize the box back.
+ */
+function useElementBox(
+  ref: RefObject<HTMLElement | null>
+): { width: number; height: number } | null {
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
+  useEffect(() => {
+    const node = ref.current;
+    if (node === null) {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (rect === undefined || rect.width <= 0 || rect.height <= 0) {
+        return;
+      }
+      setBox((current) =>
+        elementBoxChanged(current, rect)
+          ? { width: rect.width, height: rect.height }
+          : current
+      );
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+    // The item element is stable for the component's lifetime; remounts
+    // (drop handoff eviction, section switch) re-run this hook fresh.
+  }, [ref]);
+  return box;
 }
 
 function FolderGlyph() {

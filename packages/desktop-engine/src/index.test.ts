@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { DESKTOP_ENGINE_VERSION } from "./index";
+import { createGridDefinition, isValidGridDefinition } from "./index";
 
-describe("@veladesk/desktop-engine", () => {
-  it("exposes DESKTOP_ENGINE_VERSION as the current package version", () => {
-    expect(DESKTOP_ENGINE_VERSION).toBe("0.1.0");
+describe("@veladesk/desktop-engine public surface", () => {
+  it("still exports the grid definition contract", () => {
+    // The package version itself is NOT hand-maintained here anymore: the
+    // single VelaDesk version source is the root package.json (task 025).
+    expect(isValidGridDefinition(createGridDefinition(10, 6))).toBe(true);
   });
 });

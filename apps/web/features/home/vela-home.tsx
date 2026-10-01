@@ -4,7 +4,7 @@ import { WorkspaceRuntimeProvider } from "../workspace-runtime/workspace-runtime
 import { useWorkspaceRuntimeState } from "../workspace-runtime/use-workspace-runtime";
 import { UiLocaleProvider } from "../i18n/ui-locale-provider";
 import { useI18n } from "../i18n/use-i18n";
-import { DesktopShell } from "./desktop-shell";
+import { ResponsiveWorkspaceShell } from "./responsive-workspace-shell";
 import { OnboardingScreen } from "./onboarding";
 import { StartupScreen } from "./startup-screen";
 import { WorkspacePickerScreen } from "./workspace-picker";
@@ -13,8 +13,9 @@ import "./home-shell.css";
 /**
  * The production VelaDesk home: mounts the workspace runtime against the
  * default local database and renders the matching runtime state — ambient
- * boot, first-use onboarding, workspace selection, the desktop shell, or a
- * fullscreen recovery screen when local storage itself cannot be opened.
+ * boot, first-use onboarding, workspace selection, the RESPONSIVE shell
+ * (desktop authoring or mobile consumption, task 026), or a fullscreen
+ * recovery screen when local storage itself cannot be opened.
  *
  * Everything renders inside the UiLocaleProvider: server and first client
  * frame are zh-CN; the stored browser locale restores after hydration.
@@ -45,7 +46,9 @@ function HomeScreen() {
     case "selection-required":
       return <WorkspacePickerScreen candidates={state.candidates} />;
     case "ready":
-      return <DesktopShell workspace={state.workspace} lastRemoteResult={state.lastRemoteResult} />;
+      return (
+        <ResponsiveWorkspaceShell workspace={state.workspace} lastRemoteResult={state.lastRemoteResult} />
+      );
   }
 }
 

@@ -1,0 +1,415 @@
+/*
+ * VelaDesk designed-control token layer (task 018).
+ *
+ * Scope: every element under `[data-vd-ui]` — the desktop root and the
+ * overlay portal root both carry the attribute, so dialogs portalled to
+ * the portal root stay themed without a second provider. The layer is
+ * SOLID by design: desktop surface-opacity / blur / radius preferences
+ * deliberately do NOT feed these tokens — configuration surfaces must
+ * stay readable over any wallpaper. Only the accent hue bridges in.
+ *
+ * Color modes mirror the desktop contract: dark default, an explicit
+ * `light` palette, and `system` resolved by CSS media query only.
+ */
+
+:root,
+[data-vd-ui] {
+  /* Window surface, raised wells and hover fills — opaque. */
+  --vdu-bg: oklch(0.215 0.015 264);
+  --vdu-bg-raised: oklch(0.255 0.015 264);
+  --vdu-bg-hover: oklch(0.295 0.016 264);
+  --vdu-bg-active: oklch(0.325 0.016 264);
+
+  /*
+   * The overlay WINDOW surface (settings window, dialogs, popovers). It
+   * follows the chosen interface style through --vd-window-alpha/blur,
+   * which the theme emits ONLY when a style is persisted or previewed —
+   * legacy snapshots fall back to the solid 018 window exactly.
+   */
+  --vdu-window: oklch(0.215 0.015 264 / var(--vd-window-alpha, 1));
+  --vdu-window-blur: var(--vd-window-blur, 0px);
+
+  /*
+   * The overlay POPUP surface (Select listboxes, HeroUI popovers). Option
+   * text must stay readable over ANY backdrop — wallpaper OR busy window
+   * content — so unlike the window the popup never inherits arbitrary
+   * app-tile translucency: the window alpha is floored at 0.96 (021-R1;
+   * 0.9 still ghosted bright controls behind a dark list). Foreground
+   * pairing is asserted by the token-contract tests.
+   */
+  --vdu-overlay: oklch(0.215 0.015 264 / clamp(0.96, var(--vd-window-alpha, 1), 1));
+
+  --vdu-fg: oklch(0.95 0.01 260);
+  --vdu-fg-muted: oklch(0.72 0.02 264);
+  --vdu-fg-disabled: oklch(0.55 0.012 264);
+
+  --vdu-border: oklch(0.9 0.02 264 / 0.14);
+  --vdu-border-strong: oklch(0.9 0.02 264 / 0.3);
+
+  /* Accent rides the workspace hue; fallback covers the :root-only scope. */
+  --vdu-accent: oklch(0.78 0.12 var(--vd-accent-hue, 205));
+  --vdu-accent-hover: oklch(0.83 0.12 var(--vd-accent-hue, 205));
+  --vdu-accent-fg: oklch(0.17 0.02 264);
+  --vdu-accent-wash: oklch(0.78 0.11 var(--vd-accent-hue, 205) / 0.16);
+  --vdu-accent-wash-strong: oklch(0.78 0.11 var(--vd-accent-hue, 205) / 0.26);
+
+  --vdu-focus: oklch(0.85 0.1 var(--vd-accent-hue, 205));
+
+  --vdu-danger: oklch(0.64 0.19 25);
+  --vdu-danger-hover: oklch(0.69 0.19 25);
+  --vdu-danger-fg: oklch(0.99 0.005 25);
+
+  --vdu-shadow:
+    0 24px 64px oklch(0 0 0 / 0.5),
+    0 4px 16px oklch(0 0 0 / 0.32);
+  --vdu-shadow-pop:
+    0 12px 32px oklch(0 0 0 / 0.4),
+    0 2px 8px oklch(0 0 0 / 0.28);
+
+  /* Control geometry: 36px touch rows, 8-10px control radii, 18px dialogs. */
+  --vdu-radius: 9px;
+  --vdu-radius-dialog: 18px;
+  --vdu-control-h: 36px;
+
+  /*
+   * Canonical motion tokens (task 019-D). The JS mirror lives in
+   * components/vd/motion-tokens.ts; motion-tokens.test.ts keeps the two
+   * identical. The easing is one smooth ease-out — no springs, no bounce.
+   * Grid/Freeform drag, resize and snap landing never use these.
+   */
+  --vd-motion-fast: 180ms;
+  --vd-motion-control: 220ms;
+  --vd-motion-popover: 260ms;
+  --vd-motion-dialog: 300ms;
+  --vd-motion-panel: 320ms;
+  --vd-motion-page: 400ms;
+  --vd-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /*
+   * HeroUI v3 semantic-token bridge (task 019-D). The canonical component
+   * library for Settings + the App Appearance Inspector is HeroUI v3, whose
+   * component styles read these semantic variables. Defining them here —
+   * from the --vdu-* layer, unlayered so they win over @heroui/styles'
+   * @layer-base themes — themes HeroUI through VelaDesk's tokens on BOTH
+   * themed roots (desktop + portal root): color mode and accent hue flow
+   * in automatically, and no library default palette leaks through.
+   * Derived vars are each defined explicitly (custom properties substitute
+   * var() at their defining element, so overriding --accent alone would
+   * not update --accent-hover). Everything the INSTALLED @heroui/styles
+   * consumes is bridged here — including the derived field-border mixes
+   * and the scrollbar aliases — because any alias left unbridged inherits
+   * the library's light-theme `:root` defaults regardless of the resolved
+   * mode (021-R1).
+   */
+  color-scheme: dark;
+
+  --background: var(--vdu-bg);
+  --background-secondary: var(--vdu-bg-raised);
+  --foreground: var(--vdu-fg);
+  --surface: var(--vdu-bg-raised);
+  --surface-foreground: var(--vdu-fg);
+  --surface-hover: var(--vdu-bg-hover);
+  --surface-secondary: var(--vdu-bg-hover);
+  --surface-secondary-foreground: var(--vdu-fg);
+  --surface-tertiary: var(--vdu-bg-active);
+  --surface-tertiary-foreground: var(--vdu-fg);
+  --overlay: var(--vdu-overlay);
+  --overlay-foreground: var(--vdu-fg);
+  --muted: var(--vdu-fg-muted);
+  --default: var(--vdu-bg-hover);
+  --default-foreground: var(--vdu-fg);
+  --default-hover: var(--vdu-bg-active);
+  --accent: var(--vdu-accent);
+  --accent-hover: var(--vdu-accent-hover);
+  --accent-foreground: var(--vdu-accent-fg);
+  --accent-soft: var(--vdu-accent-wash);
+  --accent-soft-hover: var(--vdu-accent-wash-strong);
+  --accent-soft-foreground: var(--vdu-fg);
+  --danger: var(--vdu-danger);
+  --danger-hover: var(--vdu-danger-hover);
+  --danger-foreground: var(--vdu-danger-fg);
+  --danger-soft: color-mix(in oklab, var(--vdu-danger) 15%, transparent);
+  --danger-soft-foreground: var(--vdu-danger);
+  --segment: var(--vdu-bg-active);
+  --segment-foreground: var(--vdu-fg);
+  --border: var(--vdu-border);
+  --border-secondary: var(--vdu-border);
+  --border-tertiary: var(--vdu-border);
+  --separator: var(--vdu-border);
+  --separator-secondary: var(--vdu-border);
+  --separator-tertiary: var(--vdu-border);
+  --focus: var(--vdu-focus);
+  --link: var(--vdu-accent);
+  --field-background: var(--vdu-bg-raised);
+  --field-foreground: var(--vdu-fg);
+  --field-placeholder: var(--vdu-fg-disabled);
+  --field-border: transparent;
+  /* The library derives these from the field border + foreground; bridged
+     explicitly (same mix shares) so they resolve mode-correctly at this
+     boundary instead of inheriting light-theme values computed at :root. */
+  --field-border-hover: color-mix(in oklab, var(--vdu-fg) 10%, transparent);
+  --field-border-focus: color-mix(in oklab, var(--vdu-fg) 22%, transparent);
+  --field-hover: var(--vdu-bg-hover);
+  --field-focus: var(--vdu-bg-hover);
+  --field-radius: var(--vdu-radius);
+  --radius: var(--vdu-radius);
+  --overlay-shadow: var(--vdu-shadow-pop);
+  --surface-shadow: var(--vdu-shadow);
+  --field-shadow: 0 0 0 0 transparent;
+  /* Scrollbar aliases consumed by HeroUI's `scrollbar` utility (e.g. the
+     Select listbox scroller) — mirroring the library's 15%-foreground thumb
+     from the bridged foreground so the thumb tracks the resolved mode. */
+  --scrollbar-width: thin;
+  --scrollbar-gutter: auto;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: color-mix(in oklch, var(--vdu-fg) 15%, transparent);
+  --scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+[data-vd-ui] {
+  font-family:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  color: var(--vdu-fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+[data-vd-ui][data-vd-color-mode="light"] {
+  color-scheme: light;
+
+  --vdu-bg: oklch(0.985 0.004 264);
+  --vdu-bg-raised: oklch(0.955 0.006 264);
+  --vdu-bg-hover: oklch(0.925 0.008 264);
+  --vdu-bg-active: oklch(0.895 0.01 264);
+
+  --vdu-window: oklch(0.985 0.004 264 / var(--vd-window-alpha, 1));
+  --vdu-overlay: oklch(0.985 0.004 264 / clamp(0.96, var(--vd-window-alpha, 1), 1));
+
+  --vdu-fg: oklch(0.24 0.02 264);
+  --vdu-fg-muted: oklch(0.44 0.02 264);
+  --vdu-fg-disabled: oklch(0.62 0.012 264);
+
+  --vdu-border: oklch(0.35 0.02 264 / 0.16);
+  --vdu-border-strong: oklch(0.35 0.02 264 / 0.34);
+
+  /* Accent lightness 0.53 (was 0.55): with --vdu-accent-fg at 0.99 the
+     pair must hold ≥ 4.5:1 for EVERY accent hue on the wheel, and the
+     deepest-hued in-gamut accents bottomed out at 4.41 (021-R1). */
+  --vdu-accent: oklch(0.53 0.15 var(--vd-accent-hue, 205));
+  --vdu-accent-hover: oklch(0.48 0.15 var(--vd-accent-hue, 205));
+  --vdu-accent-fg: oklch(0.99 0.005 264);
+  --vdu-accent-wash: oklch(0.53 0.14 var(--vd-accent-hue, 205) / 0.12);
+  --vdu-accent-wash-strong: oklch(0.53 0.14 var(--vd-accent-hue, 205) / 0.22);
+
+  --vdu-focus: oklch(0.5 0.14 var(--vd-accent-hue, 205));
+
+  --vdu-shadow:
+    0 24px 64px oklch(0.3 0.02 264 / 0.22),
+    0 4px 16px oklch(0.3 0.02 264 / 0.14);
+  --vdu-shadow-pop:
+    0 12px 32px oklch(0.3 0.02 264 / 0.18),
+    0 2px 8px oklch(0.3 0.02 264 / 0.12);
+}
+
+/*
+ * The former `@media (prefers-color-scheme: light)` branch for
+ * `[data-vd-color-mode="system"]` is superseded (021-R1): the shell now
+ * resolves "system" to an effective light/dark value in JS
+ * (resolveEffectiveColorMode + matchMedia) and emits that value on every
+ * themed root, so the light palette above applies through the plain
+ * `[data-vd-color-mode="light"]` selector everywhere.
+ */
+
+/* Shared list-box option states for HeroUI popups (021-R1). The library's
+   base styles leave the selected item invisible (aria-selected only), so
+   the boundary owns the selected treatment: an accent wash plus the
+   composed ListBox.ItemIndicator checkmark. Hover/press/disabled and the
+   keyboard focus ring remain the library's, themed through the aliases
+   above. */
+[data-vd-ui] [data-slot="list-box-item"][aria-selected="true"],
+[data-vd-ui] [data-slot="list-box-item"][data-selected="true"] {
+  background-color: var(--accent-soft);
+  color: var(--accent-soft-foreground);
+}
+
+/* The shared visible focus treatment for designed controls. */
+[data-vd-ui] :focus-visible {
+  outline: 2px solid var(--vdu-focus);
+  outline-offset: 2px;
+}
+
+/*
+ * HeroUI overlay surfaces (Select listbox, popovers) ride the popup
+ * surface token (--overlay → the 0.9-floored --vdu-overlay) and the same
+ * interface-style backdrop blur while a style is active, solid otherwise.
+ */
+[data-vd-ui] .popover,
+[data-vd-ui] .select__popover {
+  background: var(--overlay);
+  backdrop-filter: blur(var(--vdu-window-blur));
+  -webkit-backdrop-filter: blur(var(--vdu-window-blur));
+}
+
+/*
+ * Reduced motion (task 019-D §16): surfaces appear immediately instead of
+ * animating in — dialogs without transform, the inspector without slide,
+ * section switches as an instant swap. State feedback stays accessible:
+ * colors, focus rings and selection states all still render. The JS side
+ * (GSAP-owned surfaces, task 022) checks the shared reduced-motion bridge
+ * and settles instantly. Grid gestures are unaffected — they were already
+ * direct.
+ */
+@media (prefers-reduced-motion: reduce) {
+  [data-vd-ui] *,
+  [data-vd-ui] *::before,
+  [data-vd-ui] *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/*
+ * Wallpaper preset swatches (task 018): miniature gradients mirroring the
+ * desktop presets — self-contained, no .vela-desktop scoping needed.
+ */
+[data-vd-ui] .vdu-wallpaper-swatch {
+  height: 40px;
+  border-radius: 6px;
+}
+
+[data-vd-ui] .vdu-wallpaper-swatch[data-wallpaper="aurora"] {
+  background:
+    radial-gradient(90% 90% at 20% 20%, oklch(0.45 0.09 278 / 0.8), transparent 70%),
+    radial-gradient(80% 80% at 80% 30%, oklch(0.4 0.09 218 / 0.7), transparent 70%),
+    radial-gradient(90% 90% at 50% 100%, oklch(0.45 0.08 318 / 0.6), transparent 70%),
+    oklch(0.17 0.02 264);
+}
+
+[data-vd-ui] .vdu-wallpaper-swatch[data-wallpaper="midnight"] {
+  background:
+    radial-gradient(90% 90% at 20% 20%, oklch(0.32 0.08 265 / 0.9), transparent 70%),
+    radial-gradient(80% 80% at 80% 30%, oklch(0.3 0.07 292 / 0.8), transparent 70%),
+    radial-gradient(90% 90% at 50% 100%, oklch(0.3 0.07 240 / 0.8), transparent 70%),
+    oklch(0.13 0.02 264);
+}
+
+[data-vd-ui] .vdu-wallpaper-swatch[data-wallpaper="dawn"] {
+  background:
+    radial-gradient(90% 90% at 20% 20%, oklch(0.68 0.08 60 / 0.75), transparent 70%),
+    radial-gradient(80% 80% at 80% 30%, oklch(0.62 0.09 35 / 0.7), transparent 70%),
+    radial-gradient(90% 90% at 50% 100%, oklch(0.58 0.07 15 / 0.65), transparent 70%),
+    oklch(0.32 0.03 50);
+}
+
+[data-vd-ui] .vdu-wallpaper-swatch[data-wallpaper="mist"] {
+  background:
+    radial-gradient(90% 90% at 20% 20%, oklch(0.55 0.02 250 / 0.8), transparent 70%),
+    radial-gradient(80% 80% at 80% 30%, oklch(0.5 0.02 230 / 0.7), transparent 70%),
+    radial-gradient(90% 90% at 50% 100%, oklch(0.55 0.018 270 / 0.7), transparent 70%),
+    oklch(0.3 0.008 264);
+}
+
+/* react-colorful sizing inside the shared color popover (task 018). */
+[data-vd-ui] .vdu-colorful .react-colorful {
+  width: 100%;
+  height: 150px;
+}
+
+/*
+ * Canonical scroll surface (task 021-A). Only explicitly opted-in internal
+ * scrollers carry [data-vd-scroll] (emitted by components/vd/scroll-area.tsx
+ * or, for the section rail's inner title list, the bare attribute) — there
+ * is deliberately NO global wildcard scrollbar styling, and the desktop
+ * root never becomes a scroll surface through this layer.
+ *
+ * Visual contract (§5): idle thumb = muted foreground at low alpha on a
+ * transparent track, fully rounded, ~4–6px visual width; hover/active
+ * strengthen the alpha (and widen the painted thumb where the WebKit
+ * pseudo-element API still rules — Safari and older Blink). Firefox and
+ * current Chrome take the standard `scrollbar-width/color` path, where the
+ * thumb geometry is the UA's thin rendering.
+ *
+ * `scrollbar-gutter: stable` on vertical surfaces (§7): a scrollbar becoming
+ * possible never resizes Settings / Launcher / list content.
+ */
+[data-vd-ui] [data-vd-scroll] {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--vdu-fg-muted) 30%, transparent)
+    transparent;
+}
+
+[data-vd-ui] [data-vd-scroll]:hover {
+  scrollbar-color: color-mix(in oklab, var(--vdu-fg-muted) 48%, transparent)
+    transparent;
+}
+
+[data-vd-ui] [data-vd-scroll="y"] {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+[data-vd-ui] [data-vd-scroll="x"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+}
+
+[data-vd-ui] [data-vd-scroll="both"] {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+[data-vd-ui] [data-vd-scroll]::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+[data-vd-ui] [data-vd-scroll]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-vd-ui] [data-vd-scroll]::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: color-mix(in oklab, var(--vdu-fg-muted) 30%, transparent);
+  background-clip: padding-box;
+}
+
+[data-vd-ui] [data-vd-scroll]:hover::-webkit-scrollbar-thumb {
+  border-width: 2px;
+  background-color: color-mix(in oklab, var(--vdu-fg-muted) 48%, transparent);
+}
+
+[data-vd-ui] [data-vd-scroll]::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--vdu-fg-muted) 62%, transparent);
+}
+
+[data-vd-ui] [data-vd-scroll]::-webkit-scrollbar-thumb:active {
+  border-width: 1px;
+  background-color: color-mix(in oklab, var(--vdu-fg-muted) 72%, transparent);
+}
+
+/*
+ * VdTooltip (task 021-C, GSAP entrance 022): the portalled content settles
+ * in with opacity and a 4px rise on the tooltip token — owned by the GSAP
+ * VdPopupSurface. The CSS vd-tooltip-in keyframes are gone; Radix drives
+ * data-state for semantics only.
+ */
+
+/*
+ * VdSwitch (task 022): the thumb travel and track feedback on THIS slot
+ * are GSAP-owned. HeroUI's installed styles transition the thumb's margin
+ * and the control's background — on the VdSwitch slot those transitions
+ * are disabled (state colors flip instantly, GSAP interpolates only the
+ * thumb travel). Scoped to [data-vd-switch-gsap]; every other HeroUI
+ * switch keeps the library styling.
+ */
+[data-vd-ui] .switch[data-vd-switch-gsap] .switch__thumb {
+  transition: none;
+}
+
+[data-vd-ui] .switch[data-vd-switch-gsap] .switch__control {
+  transition: none;
+}

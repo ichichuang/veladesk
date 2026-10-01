@@ -5,6 +5,9 @@ import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent
 
 import type { DesktopMenuEntry } from "./desktop-command-menu";
 import { clampContextMenuPosition } from "./context-menu-position";
+import { gsap } from "@components/vd/gsap";
+import { VD_MOTION_EASE, vdMotionDuration } from "@components/vd/motion-tokens";
+import { useVdReducedMotion } from "@components/vd/reduced-motion";
 import "./home-shell.css";
 
 /** A menu row that can be walked with the keyboard. */
@@ -66,6 +69,38 @@ interface ContextMenuProps {
 export function ContextMenu({ state, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const reducedMotion = useVdReducedMotion();
+
+  // 022 entrance: the menu surface settles in with opacity + scale/y via
+  // ONE GSAP tween on mount (the CSS vela-menu-in keyframe is gone). The
+  // menu unmounts on close (selection/Escape/outside click) — a transient
+  // popup needs no exit machinery. Runs after measurement so the animated
+  // node is the finally-positioned one.
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (menu === null || position === null) {
+      return;
+    }
+    if (reducedMotion) {
+      gsap.set(menu, { opacity: 1, scale: 1, y: 0 });
+      return;
+    }
+    gsap.fromTo(
+      menu,
+      { opacity: 0, scale: 0.98, y: -2 },
+      {
+        opacity: 1,
+        scale: 1,
+        y: 0,
+        duration: vdMotionDuration("popup"),
+        ease: VD_MOTION_EASE,
+      },
+    );
+    return () => {
+      gsap.killTweensOf(menu);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- entrance runs once per opened menu
+  }, [position]);
 
   // Measure the real menu rect, then clamp once.
   useLayoutEffect(() => {

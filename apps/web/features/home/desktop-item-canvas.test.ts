@@ -108,15 +108,26 @@ describe("desktop item — resize stays a preview until release", () => {
   });
 });
 
-describe("desktop item — per-app presentation (017-C)", () => {
+describe("desktop item — per-app presentation (017-C / 019-B)", () => {
   const overlay = source("./folder-overlay.tsx");
 
   it("rides the presentation vars on the item button next to the geometry styles", () => {
-    // The label is a SIBLING of the icon tile, so the item element must
-    // carry --vd-app-label-scale; the merge never touches geometry keys.
+    // 019-B: the resolver's --vd-app-* content vars ride on the button
+    // beside the color vars and the geometry styles; the merge never
+    // touches geometry keys (gridColumn/left/width/…).
     expect(item).toMatch(
-      /style=\{\{ \.\.\.buildAppIconStyleVars\(presentation\), \.\.\.commonStyle \} as CSSProperties\}/
+      /\.\.\.buildAppIconStyleVars\(presentation\),/
     );
+    expect(item).toMatch(
+      /buildAppContentStyleVars\(contentLayout\)/
+    );
+  });
+
+  it("composes the adaptive content inside the full-geometry surface", () => {
+    expect(item).toMatch(/<AppIconSurface app=\{entity\} \/>/);
+    expect(item).toMatch(/className="vela-app-content"/);
+    expect(item).toMatch(/data-layout=\{contentLayout\?\.mode \?\? "stack"\}/);
+    expect(item).toMatch(/resolveAppContentLayout\(\{/);
   });
 
   it("keeps an accessible name that does not depend on the visible label", () => {

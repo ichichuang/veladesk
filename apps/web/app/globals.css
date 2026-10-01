@@ -1,4 +1,43 @@
 @import "tailwindcss";
+/*
+ * HeroUI v3 (task 019-D): the canonical component library for the Settings
+ * Center and the App Appearance Inspector. Its @layer-base themes define
+ * the semantic variables its components read; the unlayered [data-vd-ui]
+ * bridge in vd-ui.css (imported after) re-themes every one of them through
+ * VelaDesk's --vdu-* tokens on the desktop and portal roots.
+ */
+@import "@heroui/styles";
+@import "./vd-ui.css";
+
+/*
+ * Tailwind theme bridge (task 018): maps the [data-vd-ui] tokens onto
+ * Tailwind color/radius utilities. `inline` keeps the var() reference, so
+ * utilities resolve at their use site — portalled dialogs pick up the
+ * portal root's theme, the desktop picks up the desktop root's.
+ */
+@theme inline {
+  --color-vdu-bg: var(--vdu-bg);
+  --color-vdu-bg-raised: var(--vdu-bg-raised);
+  --color-vdu-bg-hover: var(--vdu-bg-hover);
+  --color-vdu-bg-active: var(--vdu-bg-active);
+  --color-vdu-fg: var(--vdu-fg);
+  --color-vdu-fg-muted: var(--vdu-fg-muted);
+  --color-vdu-fg-disabled: var(--vdu-fg-disabled);
+  --color-vdu-border: var(--vdu-border);
+  --color-vdu-border-strong: var(--vdu-border-strong);
+  --color-vdu-accent: var(--vdu-accent);
+  --color-vdu-accent-hover: var(--vdu-accent-hover);
+  --color-vdu-accent-fg: var(--vdu-accent-fg);
+  --color-vdu-accent-wash: var(--vdu-accent-wash);
+  --color-vdu-accent-wash-strong: var(--vdu-accent-wash-strong);
+  --color-vdu-focus: var(--vdu-focus);
+  --color-vdu-danger: var(--vdu-danger);
+  --color-vdu-danger-hover: var(--vdu-danger-hover);
+  --color-vdu-danger-fg: var(--vdu-danger-fg);
+
+  --radius-vdu: var(--vdu-radius);
+  --radius-vdu-dialog: var(--vdu-radius-dialog);
+}
 
 /* Foundation engineering check only — the real desktop shell is a later task. */
 html,

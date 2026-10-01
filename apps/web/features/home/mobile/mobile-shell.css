@@ -1,0 +1,694 @@
+/*
+ * Mobile companion shell (task 026) — the vela-mobile-* namespace ONLY.
+ *
+ * Desktop `.vela-*` rules are never touched; the mobile shell reuses the
+ * workspace surface/color tokens and the shared fixed-slot icon variable
+ * (`--vd-slot-icon-size`, rescope here) and defines only ITS geometry,
+ * safe areas and component shapes (§84/§85). No second token system.
+ */
+
+/* ---------------------------------------------------------------------------
+ * Root (§11/§54/§55): column layout, dynamic-viewport height, no page-level
+ * horizontal overflow. Only the tabs strip and the dock scroll sideways —
+ * the page itself never does.
+ * ------------------------------------------------------------------------- */
+.vela-mobile-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* fallback */
+  height: 100dvh;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  overflow-x: clip;
+  overflow-y: hidden;
+  /* Consumption tile geometry (§24): apps are identified by name — a
+     uniform, larger-than-desktop icon slot. Scoped here, never global. */
+  --vd-slot-icon-size: 52px;
+}
+
+@media (min-width: 480px) {
+  .vela-mobile-shell {
+    --vd-slot-icon-size: 54px;
+  }
+}
+
+/* The shared wallpaper layers, positioned by the mobile root (§43–§45). */
+.vela-mobile-shell__wallpaper {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Header (§12/§13): 56px + top safe area; the workspace name truncates to
+ * one line — long names never grow the header.
+ * ------------------------------------------------------------------------- */
+.vela-mobile-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 6px 12px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 6px);
+  z-index: 2;
+}
+
+.vela-mobile-header__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--vd-text, inherit);
+}
+
+.vela-mobile-header__sync {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 40%;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--vd-text-muted, inherit);
+}
+
+.vela-mobile-header__sync-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.vela-mobile-header__sync[data-state="dirty"] {
+  color: var(--vd-accent, inherit);
+}
+
+.vela-mobile-header__sync[data-state="conflict"] {
+  color: var(--vdu-danger, #e5484d);
+}
+
+.vela-mobile-header__actions {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Icon-only header/dock buttons: ≥44px touch targets (§83). */
+.vela-mobile-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--vd-text, inherit);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vela-mobile-icon-button:active {
+  background: color-mix(in oklab, currentColor 12%, transparent);
+}
+
+.vela-mobile-icon-button:focus-visible {
+  outline: 2px solid var(--vdu-focus, currentColor);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Category tabs (§14/§15): horizontal strip, natural horizontal scroll,
+ * no visible scrollbar (the scroll-surface policy), active tab always
+ * scrolled into view by a direct scrollLeft write (§15 — never smooth).
+ * ------------------------------------------------------------------------- */
+.vela-mobile-tabs {
+  flex: none;
+  position: relative;
+  z-index: 2;
+}
+
+.vela-mobile-tabs__list {
+  /* The indicator's positioned container (R1): VdAnimatedIndicator only
+     places a marker whose offsetParent IS this element — without this the
+     pill never appeared and the active category was guesswork. */
+  position: relative;
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+  padding: 2px 10px 6px;
+  padding-left: calc(env(safe-area-inset-left, 0px) + 10px);
+  padding-right: calc(env(safe-area-inset-right, 0px) + 10px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+}
+
+.vela-mobile-tabs__list::-webkit-scrollbar {
+  display: none;
+}
+
+.vela-mobile-tabs__tab {
+  position: relative;
+  flex: none;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  /* Inactive = primary foreground at ~70% visual strength (R1 §6/§38/§40):
+     clearly readable navigation, never a disabled-level token. */
+  color: color-mix(in oklab, var(--vd-text) 70%, transparent);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vela-mobile-tabs__tab[aria-selected="true"] {
+  /* Active = full primary foreground + clearly heavier weight (R1 §6). */
+  color: var(--vd-text);
+  font-weight: 650;
+}
+
+.vela-mobile-tabs__tab:focus-visible {
+  outline: 2px solid var(--vdu-focus, currentColor);
+  outline-offset: -2px;
+}
+
+/* The GSAP indicator (§16, strengthened R1 §7): the ONE active marker — an
+   accent-derived pill behind the active tab, clearly visible without being
+   a primary button. First placement is a set, later changes tween
+   (VdAnimatedIndicator owns the motion; reduced motion pins instantly). */
+/* In horizontal mode (R2 §16) the shared indicator writes WIDTH once per
+   placement and MOVES via transform x — never per-frame layout tweens; the
+   vertical band comes from these insets (the list's own padding), so GSAP
+   never writes top/height on this marker. */
+.vela-mobile-tabs__indicator {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 6px;
+  width: 0;
+  opacity: 0;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--vd-accent) 18%, transparent);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Section content (§18/§56/§57): the one native vertical scroller. Content
+ * entrance is a short GSAP fade/slide owned by the entrance wrapper.
+ * ------------------------------------------------------------------------- */
+.vela-mobile-shell__content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: clip;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  z-index: 1;
+}
+
+/* Section panes (R2 §7): at most the visible page + ONE hidden-mounted
+   pending page. Pending is visibility/inert hidden — never display:none,
+   so layout, styles and image decodes prepare while nothing paints. The
+   entering pane alone may hint the compositor (§24); idle panes never do. */
+.vela-mobile-pane {
+  min-height: 100%;
+}
+
+.vela-mobile-pane--pending {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.vela-mobile-pane--entering {
+  will-change: transform, opacity;
+}
+
+/* Empty section: quiet centered hint, never a management affordance. */
+.vela-mobile-grid--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40dvh;
+  color: var(--vd-text-muted, inherit);
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------------------
+ * App grid + tiles (§23/§24): regular CSS grid; column count is a pure
+ * viewport function (never measured in JS, never persisted). Tiles are
+ * icon + ALWAYS-visible name buttons with ≥44px targets.
+ * ------------------------------------------------------------------------- */
+.vela-mobile-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px 6px;
+  padding: 18px 12px 28px;
+  list-style: none;
+  margin: 0;
+}
+
+@media (min-width: 480px) {
+  .vela-mobile-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+/* Touch tablets and landscape phones (the shell stays mobile there): the
+   widest regular grid. */
+@media (min-width: 768px) {
+  .vela-mobile-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 20px 10px;
+    padding: 22px 20px 32px;
+  }
+}
+
+.vela-mobile-tile__button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 76px;
+  padding: 6px 2px 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vela-mobile-tile__button:active {
+  transform: scale(0.96);
+}
+
+.vela-mobile-tile__button:focus-visible {
+  outline: 2px solid var(--vdu-focus, currentColor);
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+
+.vela-mobile-tile__label {
+  /* Two-line block (R1 §13/§14): every tile reserves exactly two line
+     heights, long names wrap and clamp — short and long names share one
+     grid rhythm. Normal text color, never a low-strength token. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  min-height: 36px;
+  width: 100%;
+  text-align: center;
+  font-size: 14px;
+  line-height: 18px;
+  color: var(--vd-text);
+  text-shadow: 0 1px 3px oklch(0 0 0 / 0.35);
+}
+
+/* Folder tiles reuse the shared folder glyph shape at the mobile slot. */
+.vela-mobile-tile__icon--folder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--vd-slot-icon-size);
+  height: var(--vd-slot-icon-size);
+  border-radius: calc(var(--vd-slot-icon-size) * 0.26);
+  background: color-mix(in oklab, var(--vd-accent, #7aa2f7) 26%, transparent);
+  color: var(--vd-text, inherit);
+}
+
+/* ---------------------------------------------------------------------------
+ * Mobile dock (§39–§42): pinned bottom bar over the content, horizontal
+ * scroll when it overflows, bottom safe area respected, empty dock renders
+ * nothing at all (§41 — the bar, not the data).
+ * ------------------------------------------------------------------------- */
+.vela-mobile-dock {
+  flex: none;
+  position: relative;
+  z-index: 2;
+  padding: 8px 10px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  padding-left: calc(env(safe-area-inset-left, 0px) + 10px);
+  padding-right: calc(env(safe-area-inset-right, 0px) + 10px);
+  display: flex;
+  justify-content: center;
+}
+
+.vela-mobile-dock__track {
+  display: flex;
+  gap: 6px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  padding: 8px 10px;
+  border-radius: 22px;
+  background: color-mix(in oklab, var(--vd-surface, oklch(0.2 0.02 260)) 72%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.vela-mobile-dock__track::-webkit-scrollbar {
+  display: none;
+}
+
+.vela-mobile-dock__item {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vela-mobile-dock__item:active {
+  transform: scale(0.94);
+}
+
+.vela-mobile-dock__item:focus-visible {
+  outline: 2px solid var(--vdu-focus, currentColor);
+  outline-offset: 2px;
+}
+
+/* Content clears the dock (and collapses when there is none). */
+.vela-mobile-shell[data-has-dock="true"] .vela-mobile-shell__content {
+  padding-bottom: 84px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Mobile sheets (§30–§34/§47): the shared Radix+GSAP surface used by the
+ * folder sheet (tall bottom), the menu (content-sized bottom) and search
+ * (fullscreen). Layering (R1 §24/§48): wallpaper/content < dock (z 2) <
+ * scrim (z 50) < sheet host (z 50, after the scrim in DOM order) — the
+ * single explicit order, no scattered z-index patches.
+ * ------------------------------------------------------------------------- */
+.vela-mobile-sheet__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: color-mix(in oklab, black 45%, transparent);
+}
+
+.vela-mobile-sheet--bottom-host {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  outline: none;
+  padding: 0 10px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px));
+}
+
+.vela-mobile-sheet--fullscreen-host {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+/* Shared bottom-sheet surface geometry (026-R1 §18–§20): the HOST only
+   positions; the per-variant surface classes below are the ONLY sizing
+   owners. Menu = content-sized with a capped max (a tiny menu must not
+   wear the folder's tall slab); folder = the tall policy, unchanged. */
+.vela-mobile-sheet__surface--folder,
+.vela-mobile-sheet__surface--menu {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  border-radius: 22px 22px 0 0;
+  border: 1px solid var(--vdu-border, transparent);
+  border-bottom: none;
+  background: var(--vdu-overlay);
+  box-shadow: var(--vdu-shadow, 0 -8px 40px oklch(0 0 0 / 0.3));
+  overflow: hidden;
+}
+
+.vela-mobile-sheet__surface--folder {
+  max-height: min(82dvh, 640px);
+  min-height: 240px;
+}
+
+.vela-mobile-sheet__surface--menu {
+  /* Content-sized: the block follows its rows; the cap exists only so a
+     pathological locale can never outrun the screen. */
+  max-block-size: min(70dvh, 520px);
+}
+
+/* The sheet close affordance rides the surface's top-right corner. */
+.vela-mobile-sheet__close {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 1;
+}
+
+.vela-mobile-sheet__surface--fullscreen {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--vdu-overlay);
+  overflow: hidden;
+}
+
+.vela-mobile-sheet__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 14px);
+}
+
+.vela-mobile-sheet__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--vdu-fg, inherit);
+  margin: 0;
+}
+
+.vela-mobile-sheet__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ---------------------------------------------------------------------------
+ * Mobile search (§33–§37): fullscreen surface; 16px input (no iOS zoom);
+ * result rows ≥52px with icon + name + kind.
+ * ------------------------------------------------------------------------- */
+.vela-mobile-search__bar {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+}
+
+.vela-mobile-search__input {
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  padding: 0 16px;
+  font-size: 16px; /* §36: >=16px — iOS must not auto-zoom */
+  color: var(--vdu-fg, inherit);
+  background: color-mix(in oklab, var(--vdu-bg, oklch(0.2 0.02 260)) 80%, transparent);
+  border: 1px solid var(--vdu-border, transparent);
+  border-radius: 14px;
+  outline: none;
+}
+
+.vela-mobile-search__input:focus-visible {
+  border-color: var(--vdu-focus, currentColor);
+}
+
+.vela-mobile-search__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: var(--vdu-fg, inherit);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vela-mobile-search__row[data-active="true"] {
+  background: color-mix(in oklab, var(--vdu-accent, #7aa2f7) 16%, transparent);
+}
+
+.vela-mobile-search__row:focus-visible {
+  outline: 2px solid var(--vdu-focus, currentColor);
+  outline-offset: -2px;
+}
+
+.vela-mobile-search__row-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+}
+
+.vela-mobile-search__row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vela-mobile-search__row-kind {
+  flex: none;
+  font-size: 12px;
+  color: var(--vdu-fg-muted, inherit);
+}
+
+.vela-mobile-search__empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--vdu-fg-muted, inherit);
+}
+
+/* ---------------------------------------------------------------------------
+ * Mobile menu (§47–§49): bottom sheet, tiny by design — workspace info,
+ * language, version, and the desktop-management hint. Nothing else.
+ * ------------------------------------------------------------------------- */
+.vela-mobile-menu__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 16px 18px;
+  /* The hint never rides the home-indicator gesture zone (§31). */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+}
+
+.vela-mobile-menu__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 6px 2px;
+  font-size: 14px;
+  color: var(--vdu-fg, inherit);
+}
+
+.vela-mobile-menu__row-label {
+  color: var(--vdu-fg-muted, inherit);
+}
+
+.vela-mobile-menu__row-value {
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vela-mobile-menu__language {
+  display: inline-flex;
+  border: none;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--vdu-accent, #7aa2f7) 16%, transparent);
+  color: var(--vdu-fg, inherit);
+  font-size: 13px;
+  min-height: 44px;
+}
+
+.vela-mobile-menu__language-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--vdu-fg-muted, inherit);
+  font-size: 13px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.vela-mobile-menu__language-option[aria-pressed="true"] {
+  color: var(--vdu-fg, inherit);
+  font-weight: 650;
+}
+
+.vela-mobile-menu__language-option:focus-visible {
+  outline: 2px solid var(--vdu-focus, currentColor);
+  outline-offset: -2px;
+}
+
+.vela-mobile-menu__hint {
+  margin: 10px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--vdu-border, transparent);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--vdu-fg-muted, inherit);
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion (§61): the GSAP owners check the shared bridge; these
+ * rules only neutralize the CSS press/settle transforms.
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .vela-mobile-tile__button,
+  .vela-mobile-dock__item,
+  .vela-mobile-icon-button {
+    transition: none;
+  }
+
+  .vela-mobile-tile__button:active,
+  .vela-mobile-dock__item:active {
+    transform: none;
+  }
+}

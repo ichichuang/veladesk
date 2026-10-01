@@ -52,7 +52,6 @@ describe("message catalogs", () => {
       "launcher.command.switchToView",
       "launcher.command.switchToArrange",
       "launcher.command.syncNow",
-      "launcher.command.refreshFromServer",
     ];
     for (const key of commandKeys) {
       expect(zhCN[key].length, `zhCN[${key}]`).toBeGreaterThan(0);

@@ -1,6 +1,5 @@
 import type { AppDecorationStyle, AppShortcut, AppVisualStyle } from "@veladesk/domain";
 import {
-  DEFAULT_APP_LABEL_SCALE,
   DEFAULT_APP_LABEL_VISIBLE,
   isValidAppHexColor,
   resolveAppVisualStyle,
@@ -10,17 +9,17 @@ import { findIconCollection, isIconCollectionId } from "@veladesk/icon-catalog/m
 import { generatedIconText } from "./generated-icon";
 
 /**
- * The label presentation an app renders with: visible + scale, with the
- * domain defaults for legacy styles. Desktop items and folder-overlay
- * children read this instead of poking at `visual?.…` themselves.
+ * The label presentation an app renders with (019-B): just the visible
+ * switch. Title SIZE stopped being per-app presentation — the adaptive
+ * content resolver derives it from the rendered box. Desktop items and
+ * folder-overlay children read this instead of poking at `visual?.…`
+ * themselves.
  */
 export function appLabelPresentation(style: AppVisualStyle): {
   visible: boolean;
-  scale: number;
 } {
   return {
     visible: style.labelVisible ?? DEFAULT_APP_LABEL_VISIBLE,
-    scale: style.labelScale ?? DEFAULT_APP_LABEL_SCALE,
   };
 }
 
@@ -72,6 +71,22 @@ export function iconSvgUrl(collection: string, name: string): string {
 export function iconSvgUrlForId(icon: string): string | undefined {
   const parsed = parseIconifyIconId(icon);
   return parsed === undefined ? undefined : iconSvgUrl(parsed.collection, parsed.name);
+}
+
+/**
+ * A human-readable icon name for product surfaces (019-D): the catalog id
+ * (`noto:rocket`) is a technical identifier and must never be the primary
+ * label. Derives display text from the name segment — kebab/snake segments
+ * become capitalized words ("logos:visual-studio" → "Visual Studio").
+ * Degenerate input falls back to the raw tail. Pure.
+ */
+export function humanizeIconName(icon: string): string {
+  const tail = icon.includes(":") ? icon.slice(icon.indexOf(":") + 1) : icon;
+  const words = tail
+    .split(/[-_]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
+  return words.length > 0 ? words.join(" ") : tail;
 }
 
 /**
@@ -163,15 +178,16 @@ export function normalizeAppHexColor(value: string | undefined | null): string |
  * CSS custom properties for the icon tile, all composed from validated
  * data. `--vd-app-icon-bg` is only emitted for a custom decoration color
  * (the CSS default per decoration style handles "Auto"), and the
- * foreground var only for a custom foreground color. The label-scale var
- * is always emitted (resolved default 1) because the LABEL is a sibling of
- * the tile — the item button carries the vars so both inherit them.
+ * foreground var only for a custom foreground color.
+ *
+ * 019-B: the deprecated `--vd-app-icon-scale`/`--vd-app-label-scale`
+ * multipliers are no longer emitted — icon/title sizing is adaptive
+ * (app-content-layout.ts). Consumers still carrying the legacy var()
+ * fallbacks (dock, folder overlay) resolve them to 1 and keep their
+ * compact fixed geometry.
  */
 export function buildAppIconStyleVars(style: AppVisualStyle): Readonly<Record<string, string>> {
-  const vars: Record<string, string> = {
-    "--vd-app-icon-scale": String(style.iconScale),
-    "--vd-app-label-scale": String(style.labelScale ?? DEFAULT_APP_LABEL_SCALE),
-  };
+  const vars: Record<string, string> = {};
 
   const decoration = style.decorationColor;
   if (decoration !== undefined && isValidAppHexColor(decoration)) {

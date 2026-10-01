@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createEmptyWorkspace,
   DEFAULT_WORKSPACE_APPEARANCE,
+  resolveInterfaceStyle,
 } from "@veladesk/domain";
 import type { WorkspaceSnapshot } from "@veladesk/domain";
 
@@ -45,20 +46,29 @@ function legacyWorkspace(): WorkspaceSnapshot {
 }
 
 describe("createWorkspaceSettingsDraft", () => {
-  it("fills a legacy workspace without appearance with the exact defaults", () => {
+  it("fills a legacy workspace without appearance with the exact defaults plus the inferred style", () => {
     const draft = createWorkspaceSettingsDraft(legacyWorkspace());
 
     expect(draft).toEqual({
-      appearance: DEFAULT_WORKSPACE_APPEARANCE,
+      // The Task013 baseline has no persisted interfaceStyle; the draft
+      // shows the NEAREST preset (display only — cancelled drafts never
+      // write it back).
+      appearance: { ...DEFAULT_WORKSPACE_APPEARANCE, interfaceStyle: "glass" },
       defaultPageId: "page-1",
       layoutLocked: true,
       gridGapPx: 16,
+      background: { workspace: undefined, pages: {} },
     });
   });
 
-  it("preserves an explicit appearance and the desktop preferences", () => {
+  it("keeps a persisted interface style and the desktop preferences", () => {
     const snapshot = workspaceWith(true);
-    const appearance = { ...DEFAULT_WORKSPACE_APPEARANCE, accentHue: 310, iconSize: "large" as const };
+    const appearance = {
+      ...DEFAULT_WORKSPACE_APPEARANCE,
+      accentHue: 310,
+      interfaceStyle: "clean" as const,
+      iconSize: "large" as const,
+    };
     const withAppearance: WorkspaceSnapshot = {
       ...snapshot,
       preferences: { ...snapshot.preferences, layoutLocked: false, appearance },
@@ -69,28 +79,64 @@ describe("createWorkspaceSettingsDraft", () => {
       defaultPageId: "page-1",
       layoutLocked: false,
       gridGapPx: 16,
+      background: { workspace: undefined, pages: {} },
     });
   });
 });
 
 describe("preferencesFromSettingsDraft", () => {
-  it("stores the draft appearance explicitly on the preferences", () => {
+  it("normalizes the surface values into the chosen style's canonical preset", () => {
     const draft: WorkspaceSettingsDraft = {
-      appearance: { ...DEFAULT_WORKSPACE_APPEARANCE, wallpaperPreset: "dawn" },
+      appearance: {
+        ...DEFAULT_WORKSPACE_APPEARANCE,
+        // The draft was opened on the legacy baseline, then the user picked
+        // Clean explicitly (the raw fields still hold legacy numbers here).
+        surfaceOpacity: 0.55,
+        blurPx: 18,
+        radiusPx: 14,
+        interfaceStyle: "clean",
+      },
       defaultPageId: "page-2",
       layoutLocked: false,
       gridGapPx: 24,
+      background: { workspace: undefined, pages: {} },
+    };
+
+    const preferences = preferencesFromSettingsDraft(draft);
+    const clean = resolveInterfaceStyle("clean");
+
+    expect(preferences.appearance).toEqual({
+      ...DEFAULT_WORKSPACE_APPEARANCE,
+      surfaceOpacity: clean.surfaceOpacity,
+      blurPx: clean.blurPx,
+      radiusPx: clean.radiusPx,
+      interfaceStyle: "clean",
+    });
+    expect(preferences.appearance).not.toBe(draft.appearance);
+  });
+
+  it("keeps color mode, accent, wallpaper and the hidden iconSize verbatim", () => {
+    const draft: WorkspaceSettingsDraft = {
+      appearance: {
+        ...DEFAULT_WORKSPACE_APPEARANCE,
+        colorMode: "light",
+        accentHue: 310,
+        wallpaperPreset: "dawn",
+        iconSize: "large",
+        interfaceStyle: "soft",
+      },
+      defaultPageId: "page-1",
+      layoutLocked: true,
+      gridGapPx: 16,
+      background: { workspace: undefined, pages: {} },
     };
 
     const preferences = preferencesFromSettingsDraft(draft);
 
-    expect(preferences).toEqual({
-      defaultPageId: "page-2",
-      layoutLocked: false,
-      gridGapPx: 24,
-      appearance: { ...DEFAULT_WORKSPACE_APPEARANCE, wallpaperPreset: "dawn" },
-    });
-    expect(preferences.appearance).not.toBe(draft.appearance);
+    expect(preferences.appearance?.colorMode).toBe("light");
+    expect(preferences.appearance?.accentHue).toBe(310);
+    expect(preferences.appearance?.wallpaperPreset).toBe("dawn");
+    expect(preferences.appearance?.iconSize).toBe("large");
   });
 
   it("round-trips through replaceWorkspacePreferences as a valid workspace edit", async () => {
@@ -103,17 +149,28 @@ describe("preferencesFromSettingsDraft", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(validateWorkspace(result.workspace)).toEqual([]);
-      expect(result.workspace.preferences.appearance).toEqual(DEFAULT_WORKSPACE_APPEARANCE);
+      // The legacy baseline normalizes into the canonical glass preset.
+      expect(result.workspace.preferences.appearance).toEqual({
+        colorMode: "dark",
+        accentHue: 205,
+        wallpaperPreset: "aurora",
+        surfaceOpacity: 0.5,
+        blurPx: 24,
+        radiusPx: 18,
+        interfaceStyle: "glass",
+        iconSize: "medium",
+      });
     }
   });
 });
 
 describe("areWorkspaceSettingsDraftsEqual", () => {
   const base: WorkspaceSettingsDraft = {
-    appearance: DEFAULT_WORKSPACE_APPEARANCE,
+    appearance: { ...DEFAULT_WORKSPACE_APPEARANCE, interfaceStyle: "soft" },
     defaultPageId: "page-1",
     layoutLocked: true,
     gridGapPx: 16,
+    background: { workspace: undefined, pages: {} },
   };
 
   it("treats identical drafts as equal", () => {
@@ -127,6 +184,11 @@ describe("areWorkspaceSettingsDraftsEqual", () => {
 
   it("detects a wallpaper change", () => {
     const next = { ...base, appearance: { ...base.appearance, wallpaperPreset: "mist" as const } };
+    expect(areWorkspaceSettingsDraftsEqual(base, next)).toBe(false);
+  });
+
+  it("detects an interface style change", () => {
+    const next = { ...base, appearance: { ...base.appearance, interfaceStyle: "clean" as const } };
     expect(areWorkspaceSettingsDraftsEqual(base, next)).toBe(false);
   });
 

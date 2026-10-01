@@ -30,9 +30,7 @@ function commandEntries(overrides: Partial<Parameters<typeof buildDesktopCommand
       onUndo: noop,
       onRedo: noop,
       onSync: noop,
-      onRefresh: noop,
       onOpenSettings: noop,
-      onToggleLocale: noop,
     },
     ...overrides,
   });
@@ -109,9 +107,7 @@ describe("buildDesktopCommandEntries", () => {
         onUndo: noop,
         onRedo: noop,
         onSync: noop,
-        onRefresh: noop,
         onOpenSettings: noop,
-        onToggleLocale: noop,
       },
     });
 
@@ -135,7 +131,7 @@ describe("buildDesktopCommandEntries", () => {
     expect(ids).not.toContain("redo");
   });
 
-  it("offers 立即同步 when dirty and 从服务器刷新 when clean — never both", () => {
+  it("offers 立即同步 only while dirty — refresh-from-server is not a user command (023-B.2)", () => {
     const dirty = commandEntries({ syncState: "dirty" });
     const dirtyIds = actionIds(dirty);
     expect(dirtyIds).toContain("sync");
@@ -143,8 +139,8 @@ describe("buildDesktopCommandEntries", () => {
 
     const clean = commandEntries({ syncState: "clean" });
     const cleanIds = actionIds(clean);
-    expect(cleanIds).toContain("refresh");
     expect(cleanIds).not.toContain("sync");
+    expect(cleanIds).not.toContain("refresh");
   });
 
   it("offers no remote action on conflict", () => {
@@ -154,20 +150,10 @@ describe("buildDesktopCommandEntries", () => {
     expect(ids).not.toContain("refresh");
   });
 
-  it("always offers settings and the other-locale toggle", () => {
+  it("always offers settings; language is a Settings concern, never a menu row (023-B.2)", () => {
     const ids = actionIds(commandEntries());
     expect(ids).toContain("open-settings");
-    expect(ids).toContain("toggle-locale");
-  });
-
-  it("shows English while in Chinese and 中文 while in English", () => {
-    const zh = commandEntries();
-    const zhToggle = zh.find((entry) => entry.kind === "action" && entry.id === "toggle-locale");
-    expect(zhToggle?.kind === "action" && zhToggle.label).toBe("English");
-
-    const en = commandEntries({ t: (key) => translate("en-US", key) });
-    const enToggle = en.find((entry) => entry.kind === "action" && entry.id === "toggle-locale");
-    expect(enToggle?.kind === "action" && enToggle.label).toBe("中文");
+    expect(ids).not.toContain("toggle-locale");
   });
 
   it("groups the menu with separators (one per group, never adjacent)", () => {
@@ -270,12 +256,13 @@ describe("buildSectionMenuEntries", () => {
     isFirst: false,
     isLast: false,
     isEmpty: true,
-    callbacks: { onRename: noop, onSetDefault: noop, onMoveUp: noop, onMoveDown: noop, onDelete: noop },
+    callbacks: { onRename: noop, onBackground: noop, onSetDefault: noop, onMoveUp: noop, onMoveDown: noop, onDelete: noop },
   };
 
   it("offers rename, default, both moves and delete for a middle empty section", () => {
     expect(actionIds(buildSectionMenuEntries(base))).toEqual([
       "rename-section",
+      "section-background",
       "set-default-section",
       "move-section-up",
       "move-section-down",

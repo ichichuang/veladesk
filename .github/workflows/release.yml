@@ -1,0 +1,309 @@
+name: Release
+
+# VelaDesk formal release pipeline (task 025).
+#
+# The ROOT package.json is the single version source. A push to main that
+# touches package.json may or may not be a release (dependency-only edits
+# touch it too), so `prepare` compares the previous commit's version with
+# the current one and decides via scripts/release-version.mjs. Nothing is
+# tagged or published until quality + all three platform packages pass;
+# the tag and the GitHub Release are created LAST, by the final job only.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Never cancel a release in flight; a newer push waits for it.
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.decide.outputs.should_release }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+      commit_sha: ${{ steps.commit.outputs.commit_sha }}
+    steps:
+      - name: Checkout (full history for the previous version)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Version check (all manifests agree with the root)
+        run: pnpm version:check
+
+      - name: Read previous root version
+        id: previous
+        run: |
+          set -eu
+          BEFORE="${{ github.event.before }}"
+          PREVIOUS="-"
+          # A zero sha (first push / force push) has no predecessor.
+          if [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && \
+             git cat-file -e "$BEFORE" 2>/dev/null; then
+            PREVIOUS=$(git show "$BEFORE:package.json" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const v=JSON.parse(d).version;console.log(typeof v==="string"?v:"-")})')
+          fi
+          echo "Previous version: $PREVIOUS"
+          echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether the target tag already exists
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          VERSION=$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync("package.json","utf8")).version)')
+          TAG="v$VERSION"
+          echo "Expected tag: $TAG"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Decide release
+        id: decide
+        run: |
+          set -eu
+          CURRENT=$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync("package.json","utf8")).version)')
+          DECISION=$(node scripts/release-version.mjs \
+            "${{ steps.previous.outputs.previous }}" \
+            "$CURRENT" \
+            "${{ steps.tag.outputs.exists }}")
+          echo "$DECISION"
+          printf '%s' "$DECISION" | node -e '
+            const fs = require("node:fs");
+            let d = "";
+            process.stdin.on("data", (c) => (d += c));
+            process.stdin.on("end", () => {
+              const line = d.split("\n").find((l) => l.startsWith("decision: "));
+              if (line === undefined) {
+                throw new Error("no decision line in release-version output");
+              }
+              const decision = JSON.parse(line.slice("decision: ".length));
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_release=${decision.shouldRelease}\n`);
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${decision.version}\n`);
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${decision.tag}\n`);
+            });
+          '
+
+      - name: Record commit
+        id: commit
+        run: echo "commit_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          echo "Previous version: ${{ steps.previous.outputs.previous }}"
+          echo "Current version: ${{ steps.decide.outputs.version }}"
+          echo "Expected tag: ${{ steps.decide.outputs.tag }}"
+          echo "Commit: ${{ steps.decide.outputs.commit_sha }}"
+          echo "Should release: ${{ steps.decide.outputs.should_release }}"
+
+  quality:
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Version check
+        run: pnpm version:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test:run
+
+      - name: Build
+        run: pnpm build
+
+      - name: Standalone API smoke
+        run: pnpm --filter @veladesk/web smoke:standalone
+
+  package:
+    needs: [prepare, quality]
+    if: needs.prepare.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        # better-sqlite3 is a native module: every platform builds its own
+        # bundle from scratch on its own runner — never renamed copies.
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Version check
+        run: pnpm version:check
+
+      - name: Build
+        run: pnpm build
+
+      - name: Standalone API smoke (this platform's native bundle)
+        run: pnpm --filter @veladesk/web smoke:standalone
+
+      - name: Package release bundle
+        run: node apps/web/scripts/package-release.mjs --out dist
+
+      - name: Read the packager manifest (single naming rule)
+        id: pkg
+        shell: bash
+        run: |
+          set -eu
+          node -e '
+            const fs = require("node:fs");
+            const m = JSON.parse(fs.readFileSync("dist/release-manifest.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `archive_name=${m.archiveName}\n`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `package_dir=${m.directory}\n`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `archive_format=${m.archiveName.endsWith(".zip") ? "zip" : "tar.gz"}\n`);
+          '
+
+      - name: Archive (tar.gz)
+        if: steps.pkg.outputs.archive_format == 'tar.gz'
+        run: tar -czf "dist/${{ steps.pkg.outputs.archive_name }}" -C "$(dirname "${{ steps.pkg.outputs.package_dir }}")" "$(basename "${{ steps.pkg.outputs.package_dir }}")"
+
+      - name: Archive (zip)
+        if: steps.pkg.outputs.archive_format == 'zip'
+        shell: pwsh
+        run: Compress-Archive -Path "${{ steps.pkg.outputs.package_dir }}" -DestinationPath "dist/${{ steps.pkg.outputs.archive_name }}"
+
+      - name: Verify the release package (static, no server)
+        run: node apps/web/scripts/verify-release-package.mjs "${{ steps.pkg.outputs.package_dir }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.pkg.outputs.archive_name }}
+          path: dist/${{ steps.pkg.outputs.archive_name }}
+          if-no-files-found: error
+          retention-days: 7
+
+  final:
+    needs: [prepare, quality, package]
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      # The ONLY job that can publish; created after every gate passed.
+      contents: write
+    steps:
+      - name: Checkout (release commit)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download all platform archives
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Verify all three platform archives are present
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -eu
+          cd dist
+          EXPECTED_WINDOWS="VelaDesk-v${VERSION}-windows-x64.zip"
+          EXPECTED_LINUX="VelaDesk-v${VERSION}-linux-x64.tar.gz"
+          EXPECTED_MACOS_ARM="VelaDesk-v${VERSION}-macos-arm64.tar.gz"
+          for f in "$EXPECTED_WINDOWS" "$EXPECTED_LINUX"; do
+            [ -f "$f" ] || { echo "missing $f"; ls -la; exit 1; }
+          done
+          # The mac runner's real arch decides the name (arm64 today; the
+          # packager never fakes an arch, so accept the actual macos-* file).
+          MAC_FILE=$(ls VelaDesk-v${VERSION}-macos-*.tar.gz 2>/dev/null | head -n1 || true)
+          [ -n "$MAC_FILE" ] || { echo "missing VelaDesk-v${VERSION}-macos-*.tar.gz"; ls -la; exit 1; }
+          echo "Mac archive: $MAC_FILE"
+
+      - name: Generate SHA256SUMS.txt
+        run: |
+          set -eu
+          cd dist
+          shopt -s nullglob
+          rm -f SHA256SUMS.txt
+          sha256sum VelaDesk-*.zip VelaDesk-*.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Re-verify root version matches prepare
+        run: |
+          set -eu
+          CURRENT=$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync("package.json","utf8")).version)')
+          [ "$CURRENT" = "${{ needs.prepare.outputs.version }}" ] || {
+            echo "root version moved during the release run: $CURRENT vs ${{ needs.prepare.outputs.version }}"
+            exit 1
+          }
+
+      - name: Re-verify the tag does not exist (never overwrite a release)
+        run: |
+          set -eu
+          if git ls-remote --tags origin "refs/tags/${{ needs.prepare.outputs.tag }}" | grep -q .; then
+            echo "tag ${{ needs.prepare.outputs.tag }} already exists; refusing to overwrite"
+            exit 1
+          fi
+
+      - name: Create the GitHub Release (formal, never draft/prerelease)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd dist
+          gh release create "${{ needs.prepare.outputs.tag }}" \
+            VelaDesk-*.zip VelaDesk-*.tar.gz SHA256SUMS.txt \
+            --repo "${{ github.repository }}" \
+            --target "${{ needs.prepare.outputs.commit_sha }}" \
+            --title "VelaDesk ${{ needs.prepare.outputs.tag }}" \
+            --generate-notes

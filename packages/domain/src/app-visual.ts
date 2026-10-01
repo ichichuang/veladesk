@@ -15,17 +15,22 @@ import type { AppShortcut, AppVisualStyle } from "./types";
  */
 
 export const DEFAULT_APP_VISUAL_STYLE: AppVisualStyle = {
-  iconScale: 1,
   decorationStyle: "gradient",
 };
 
-/** Semantic range of `iconScale`: 50%–200% of the global base icon size. */
+/**
+ * DEPRECATED (019-B): legacy semantic range of `iconScale` — 50%–200% of
+ * the global base icon size. Kept ONLY so validation keeps accepting
+ * legacy legal values; new saves omit the field and the adaptive desktop
+ * renderer never reads it.
+ */
 export const MIN_ICON_SCALE = 0.5;
 export const MAX_ICON_SCALE = 2;
 
 /**
- * Semantic range of `labelScale`: 75%–175% of the responsive label
- * baseline, with the resolved default of 1 (100%).
+ * DEPRECATED (019-B): legacy semantic range of `labelScale` — 75%–175%
+ * of the responsive label baseline. Same compatibility policy as
+ * `iconScale`.
  */
 export const MIN_APP_LABEL_SCALE = 0.75;
 export const MAX_APP_LABEL_SCALE = 1.75;
@@ -71,8 +76,10 @@ export function resolveAppVisualStyle(app: AppShortcut): AppVisualStyle {
  * Semantic validation of a per-app visual style (structurally decoded data
  * is still in range). Deterministic issue order: iconScale, labelScale,
  * foregroundColor, decorationColor. `labelVisible` has no semantic rule —
- * boolean-ness is structural (like enum legality). Never throws, never
- * mutates.
+ * boolean-ness is structural (like enum legality). The deprecated
+ * `iconScale`/`labelScale` fields (019-B) validate only when PRESENT —
+ * absence is the modern normalized form and always legal. Never throws,
+ * never mutates.
  */
 export function validateAppVisualStyle(
   style: AppVisualStyle
@@ -80,9 +87,10 @@ export function validateAppVisualStyle(
   const issues: AppVisualValidationIssue[] = [];
 
   if (
-    !Number.isFinite(style.iconScale) ||
-    style.iconScale < MIN_ICON_SCALE ||
-    style.iconScale > MAX_ICON_SCALE
+    style.iconScale !== undefined &&
+    (!Number.isFinite(style.iconScale) ||
+      style.iconScale < MIN_ICON_SCALE ||
+      style.iconScale > MAX_ICON_SCALE)
   ) {
     issues.push({ type: "invalid-icon-scale" });
   }

@@ -1,6 +1,6 @@
 {
   "name": "@veladesk/icon-catalog",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Self-hosted, bundled icon catalog for VelaDesk: nine IconifyJSON collections with deterministic paginated search, browser-safe collection metadata and local SVG rendering. Server-side pure data only.",
   "main": "./src/index.ts",

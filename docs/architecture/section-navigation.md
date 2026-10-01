@@ -35,18 +35,59 @@ a separate `Category` entity).
 ## Section transition
 
 Switching sections plays a whole-page vertical transition (not browser page
-scrolling):
+scrolling). Re-architected in 020-A2 around a warm-mounted layer model;
+repaired and re-grounded in 021-R1:
 
-- next section: the current page exits upward, the next enters from below;
-  previous section: mirrored;
-- ~190 ms, opacity combined with `translateY`;
-- during the transition both views are mounted (the exiting twin renders
-  read-only, pointer-transparent); after it completes only the active view
-  remains;
-- rapid input stays deterministic: a second switch before the first settles
-  swaps instantly instead of stacking exits (exit animations never queue);
-- structural reveals and `prefers-reduced-motion` switch instantly with no
-  transform animation.
+- **Warm layers (020-A2)**: the active section plus its ±1 neighbors stay
+  MOUNTED (hidden but laid out) so a switch animates existing subtrees
+  instead of building the destination inside the transition commit. The
+  mounted set rotates only when the machine settles.
+- **One machine** (`features/home/section-transition-machine.ts`):
+  `idle / prepared / transition` — pure state math, no timers, no queues.
+  Layer visual phases (`warm / entering / active / exit`) are DERIVED from
+  it; there are no independent visibility booleans in the shell, the page
+  or the CSS.
+- **Painted-page invariants (021-R1)**, derived via
+  `paintableSectionIds`: at idle exactly ONE page paints (the settled
+  destination, opacity 1, translation 0); during motion at most TWO —
+  the incoming participant and its single outgoing partner; hidden warm
+  layers are `visibility: hidden`, `inert`, `aria-hidden`, never paint
+  and never join a transition merely because they carried an old exit
+  flag (interrupting requests collapse older exits; the binding cancels
+  their animation in the same commit that starts the newer one).
+- **Motion, 400ms on the one product easing**: next section — the current
+  page exits upward, the next enters from below; previous — mirrored;
+  travel ≈ 16% of the live viewport height. The transform/opacity frames
+  are owned by `section-layer-animator.ts` (`createSectionLayerBinding` +
+  Motion's imperative driver): a fresh entry's from-pose is written in the
+  layout phase (the first painted frame is already the moving pose — no
+  rest-pose flash), retargets animate from the CURRENT visual position
+  (A→B→A reverses instead of snapping), and completions are
+  generation-guarded.
+- **Request identity (021-R1)**: every accepted request mints a
+  monotonically increasing generation; a completion from a superseded
+  animation or generation can never settle, rotate or cancel the newer
+  request. Repeated requests for the same effective target are idempotent.
+  A cold destination (outside the warm set) mounts hidden first and arms
+  one PAINTED frame later (`requestAnimationFrame`-scheduled, supersede
+  -safe) — the destination's observers and adaptive layout settle before
+  the reveal.
+- **Cross-page isolation (021-R1)**: every shell lookup inside the section
+  viewport (scroll-save, marquee stage, drag item resolution) is scoped to
+  the interactive page's own layer via `section-layer-query.ts` — a warm
+  hidden page can never win a selector lookup, overwrite the shared
+  measurement refs (they attach to the interactive layer only), restore
+  another page's scroll, or register as a drag/collision target
+  (`dragEnabled` is gated on the interactive flag).
+- Navigation is session-only: switching never writes a workspace revision.
+- Structural reveals and `prefers-reduced-motion` switch instantly with no
+  transform animation (the reduced-motion path bumps the generation and
+  keeps the same visibility invariants).
+- The 021-R1/021-R3 navigation diagnostics (trace ring buffer,
+  localStorage activation flag, recording window and Settings entry) were
+  removed outright in 023-B.2 — no hidden activation path remains. The
+  generation guards, completion-order repairs and visibility invariants
+  they once observed are covered by the deterministic test suites.
 
 ## Two-column composition
 

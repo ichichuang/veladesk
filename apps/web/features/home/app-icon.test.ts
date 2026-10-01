@@ -11,6 +11,7 @@ import {
   generatedIconFollowsName,
   iconSvgUrl,
   iconSvgUrlForId,
+  humanizeIconName,
   iconifyGlyphModel,
   normalizeAppHexColor,
   parseIconifyIconId,
@@ -201,22 +202,20 @@ describe("decorationBackground", () => {
 });
 
 describe("buildAppIconStyleVars", () => {
-  it("emits the resolved presentation vars for the default style (017-C)", () => {
-    // The label var is always emitted: the label is a SIBLING of the tile,
-    // so the item button carries it for both. Default resolves to 1.
-    expect(buildAppIconStyleVars(DEFAULT_APP_VISUAL_STYLE)).toEqual({
-      "--vd-app-icon-scale": "1",
-      "--vd-app-label-scale": "1",
-    });
+  it("emits only color vars for the default style (019-B)", () => {
+    // Sizing stopped being persisted presentation: no scale vars are
+    // emitted at all — the adaptive content resolver owns sizes.
+    expect(buildAppIconStyleVars(DEFAULT_APP_VISUAL_STYLE)).toEqual({});
   });
 
-  it("resolves absent label fields to the shown/100% defaults", () => {
-    const vars = buildAppIconStyleVars({ iconScale: 1.15, decorationStyle: "glass" });
+  it("ignores deprecated legacy scale fields entirely", () => {
+    const vars = buildAppIconStyleVars({ iconScale: 1.15, labelScale: 1.4, decorationStyle: "glass" });
 
-    expect(vars["--vd-app-label-scale"]).toBe("1");
+    expect(vars["--vd-app-icon-scale"]).toBeUndefined();
+    expect(vars["--vd-app-label-scale"]).toBeUndefined();
   });
 
-  it("carries a custom label scale and custom colors through composed values", () => {
+  it("carries custom colors through composed values, never scales", () => {
     const vars = buildAppIconStyleVars({
       iconScale: 1.15,
       decorationStyle: "glass",
@@ -225,10 +224,10 @@ describe("buildAppIconStyleVars", () => {
       decorationColor: "#112233",
     });
 
-    expect(vars["--vd-app-icon-scale"]).toBe("1.15");
-    expect(vars["--vd-app-label-scale"]).toBe("1.4");
     expect(vars["--vd-app-icon-bg"]).toBe("rgba(17, 34, 51, 0.34)");
     expect(vars["--vd-app-icon-fg"]).toBe("#aabbcc");
+    expect(vars["--vd-app-icon-scale"]).toBeUndefined();
+    expect(vars["--vd-app-label-scale"]).toBeUndefined();
   });
 
   it("ignores persisted-but-invalid colors (validation owns the error)", () => {
@@ -287,5 +286,24 @@ describe("appVisual", () => {
     const style = { iconScale: 1.6, decorationStyle: "none" } as const;
     expect(appVisual(makeApp({ visual: style }))).toEqual(style);
     expect(appVisual(makeApp())).toEqual(DEFAULT_APP_VISUAL_STYLE);
+  });
+});
+
+describe("humanizeIconName (019-D)", () => {
+  it("derives readable names from technical catalog ids", () => {
+    expect(humanizeIconName("noto:rocket")).toBe("Rocket");
+    expect(humanizeIconName("simple-icons:github")).toBe("Github");
+    expect(humanizeIconName("logos:visual-studio")).toBe("Visual Studio");
+    expect(humanizeIconName("mdi:cloud_upload")).toBe("Cloud Upload");
+    expect(humanizeIconName("fluent-emoji:alien-monster")).toBe("Alien Monster");
+  });
+
+  it("never returns an empty label", () => {
+    expect(humanizeIconName("noto:")).toBe("");
+    expect(humanizeIconName("")).toBe("");
+  });
+
+  it("falls back to the raw tail for odd ids", () => {
+    expect(humanizeIconName("weird")).toBe("Weird");
   });
 });

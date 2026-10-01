@@ -6,6 +6,8 @@
  * @veladesk/canvas-engine and only referenced here.
  */
 
+import type { WallpaperConfig } from "./wallpaper";
+
 import type { CanvasLayout } from "@veladesk/canvas-engine";
 import type { PageLayout } from "@veladesk/desktop-engine";
 
@@ -77,13 +79,21 @@ export type AppDecorationStyle = "gradient" | "solid" | "glass" | "none";
 /**
  * Per-app visual style, optional on `AppShortcut` so every legacy snapshot
  * stays valid without a migration. Colors are exact `#RRGGBB` hex — never
- * arbitrary CSS. `iconScale`, `labelVisible` and `labelScale` are visual
- * multipliers/switches only; grid cells, spans and drag metrics are never
- * affected. Absent `labelVisible`/`labelScale` resolve to shown/1 — no
- * migration, ever.
+ * arbitrary CSS. `labelVisible` is the only sizing-adjacent preference
+ * left (019-B): icon/title composition is adaptive, derived from the
+ * rendered box at runtime and never persisted. `iconScale`/`labelScale`
+ * are DEPRECATED compatibility fields: snapshots that still carry them
+ * decode and validate like before (legacy legal ranges), the renderer
+ * ignores them, and an app-appearance save normalizes them away. Absent
+ * `labelVisible` resolves to shown — no migration, ever.
  */
 export interface AppVisualStyle {
-  readonly iconScale: number;
+  /**
+   * DEPRECATED (019-B): manual icon-size multiplier. No longer
+   * user-editable, no longer rendered; kept readable for legacy
+   * snapshots and omitted by new saves.
+   */
+  readonly iconScale?: number;
   readonly decorationStyle: AppDecorationStyle;
 
   /**
@@ -93,7 +103,10 @@ export interface AppVisualStyle {
    */
   readonly labelVisible?: boolean;
 
-  /** Unitless multiplier on the responsive label baseline. Absent = 1. */
+  /**
+   * DEPRECATED (019-B): manual title-size multiplier. Same compatibility
+   * policy as `iconScale`.
+   */
   readonly labelScale?: number;
 
   readonly foregroundColor?: string;
@@ -189,6 +202,14 @@ export interface DesktopPage {
   readonly layout: PageLayout;
 
   /**
+   * Optional per-section background override (023-C.1). Absent means the
+   * section FOLLOWS the workspace background — never a duplicate copy of
+   * it. Optional for backward compatibility: pre-023-C snapshots stay
+   * valid forever; only a structurally valid config is accepted.
+   */
+  readonly wallpaper?: WallpaperConfig;
+
+  /**
    * Continuous canvas geometry and per-section placement mode.
    *
    * Optional for backward compatibility: snapshots persisted before canvas
@@ -220,12 +241,29 @@ export type WorkspaceWallpaperPreset = "aurora" | "midnight" | "dawn" | "mist";
 /** Desktop icon scale. Grid cells and drag metrics are never affected. */
 export type WorkspaceIconSize = "small" | "medium" | "large";
 
+/*
+ * Wallpaper configuration (023-C.1) lives in ./wallpaper — imported here as
+ * a type-only re-export so DesktopPage/preferences can reference it without
+ * a value cycle.
+ */
+export type { WallpaperConfig, WallpaperFit } from "./wallpaper";
+
+/**
+ * The one user-facing surface style (019-D). Resolves the raw surface
+ * parameters (`resolveInterfaceStyle`) so users never tune opacity/blur/
+ * radius by hand. Optional for backward compatibility: snapshots persisted
+ * before it existed stay valid; the nearest preset is inferred for display
+ * and only a Settings save normalizes the raw values.
+ */
+export type WorkspaceInterfaceStyle = "clean" | "soft" | "glass";
+
 /**
  * Persisted visual preferences of a workspace.
  *
  * Ranges are semantic (see `validateWorkspaceAppearance`): accentHue is an
  * integer 0–359, surfaceOpacity 0.35–0.9, blurPx an integer 0–32 and
- * radiusPx an integer 8–24.
+ * radiusPx an integer 8–24. The surface fields are style-normalized at
+ * every Settings save (see `resolveInterfaceStyle`).
  */
 export interface WorkspaceAppearancePreferences {
   readonly colorMode: WorkspaceColorMode;
@@ -234,11 +272,25 @@ export interface WorkspaceAppearancePreferences {
 
   readonly wallpaperPreset: WorkspaceWallpaperPreset;
 
+  /**
+   * The workspace default background (023-C.1). Optional: absent resolves
+   * through the legacy `wallpaperPreset` below, so old snapshots render
+   * exactly as before and only a Settings save upgrades the shape.
+   */
+  readonly wallpaper?: WallpaperConfig;
+
   readonly surfaceOpacity: number;
 
   readonly blurPx: number;
 
   readonly radiusPx: number;
+
+  /**
+   * The user-facing surface style. Absent on pre-019-D snapshots —
+   * `inferInterfaceStyle` resolves the nearest preset for display without
+   * ever writing it back.
+   */
+  readonly interfaceStyle?: WorkspaceInterfaceStyle;
 
   readonly iconSize: WorkspaceIconSize;
 }

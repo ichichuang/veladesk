@@ -3,7 +3,7 @@ import type { WorkspaceSnapshot } from "@veladesk/domain";
 /**
  * Version of the persisted WorkspaceSnapshot JSON structure.
  *
- * This is independent from the package version (0.1.0): bump it when the
+ * This is independent from the product version: bump it when the
  * Domain JSON shape changes so persistence migrations can tell stored
  * snapshots apart.
  */

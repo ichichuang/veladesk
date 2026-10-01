@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_WORKSPACE_APPEARANCE,
+  INTERFACE_STYLES,
+  inferInterfaceStyle,
+  resolveInterfaceStyle,
   resolveWorkspaceAppearance,
   validateWorkspaceAppearance,
 } from "./appearance";
@@ -156,5 +159,82 @@ describe("createEmptyWorkspace appearance", () => {
     });
 
     expect(validateWorkspace(workspace)).toEqual([]);
+  });
+});
+
+describe("resolveInterfaceStyle (019-D)", () => {
+  it("resolves each style to its canonical parameter set", () => {
+    expect(resolveInterfaceStyle("clean")).toEqual({
+      style: "clean",
+      surfaceOpacity: 0.9,
+      surfaceStrongOpacity: 0.98,
+      blurPx: 0,
+      radiusPx: 10,
+      borderStrength: 0.7,
+      shadowPreset: "none",
+    });
+    expect(resolveInterfaceStyle("soft")).toEqual({
+      style: "soft",
+      surfaceOpacity: 0.72,
+      surfaceStrongOpacity: 0.95,
+      blurPx: 10,
+      radiusPx: 14,
+      borderStrength: 1,
+      shadowPreset: "subtle",
+    });
+    expect(resolveInterfaceStyle("glass")).toEqual({
+      style: "glass",
+      surfaceOpacity: 0.5,
+      surfaceStrongOpacity: 0.73,
+      blurPx: 24,
+      radiusPx: 18,
+      borderStrength: 1.7,
+      shadowPreset: "elevated",
+    });
+  });
+
+  it("never produces parameters outside the persisted semantic ranges", () => {
+    for (const style of INTERFACE_STYLES) {
+      const params = resolveInterfaceStyle(style);
+      expect(
+        validateWorkspaceAppearance({
+          ...DEFAULT_WORKSPACE_APPEARANCE,
+          surfaceOpacity: params.surfaceOpacity,
+          blurPx: params.blurPx,
+          radiusPx: params.radiusPx,
+        }),
+      ).toEqual([]);
+    }
+  });
+
+  it("is pure — the same style always resolves to an equal, fresh object", () => {
+    const a = resolveInterfaceStyle("glass");
+    const b = resolveInterfaceStyle("glass");
+    expect(a).toEqual(b);
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("inferInterfaceStyle (019-D)", () => {
+  it("infers the nearest preset for the Task013 baseline (display only)", () => {
+    expect(inferInterfaceStyle(DEFAULT_WORKSPACE_APPEARANCE)).toBe("glass");
+  });
+
+  it("infers exact presets exactly", () => {
+    expect(inferInterfaceStyle({ ...DEFAULT_WORKSPACE_APPEARANCE, surfaceOpacity: 0.9, blurPx: 0, radiusPx: 10 })).toBe("clean");
+    expect(inferInterfaceStyle({ ...DEFAULT_WORKSPACE_APPEARANCE, surfaceOpacity: 0.72, blurPx: 10, radiusPx: 14 })).toBe("soft");
+    expect(inferInterfaceStyle({ ...DEFAULT_WORKSPACE_APPEARANCE, surfaceOpacity: 0.5, blurPx: 24, radiusPx: 18 })).toBe("glass");
+  });
+
+  it("returns the persisted style without inferring", () => {
+    expect(
+      inferInterfaceStyle({ ...DEFAULT_WORKSPACE_APPEARANCE, interfaceStyle: "clean" }),
+    ).toBe("clean");
+  });
+
+  it("never mutates the input", () => {
+    const appearance = { ...DEFAULT_WORKSPACE_APPEARANCE };
+    inferInterfaceStyle(appearance);
+    expect("interfaceStyle" in appearance).toBe(false);
   });
 });

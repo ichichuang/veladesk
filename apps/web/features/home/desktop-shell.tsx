@@ -5,8 +5,22 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { CSSProperties } from "react";
+import {
+  VdHeroOverlayScope,
+  VdPortalContainerProvider,
+} from "@components/ui/overlay-scope";
+import { useVdReducedMotion } from "@components/vd/reduced-motion";
+import { useVdAmbientDrift } from "@components/vd/ambient-drift";
 import {
   areCanvasLayoutsEqual,
   canvasCellSize,
@@ -38,10 +52,12 @@ import {
 } from "@veladesk/domain";
 import type {
   AppShortcut,
+  DesktopPage,
   DesktopPageId,
   EntityId,
   Folder,
   WorkspaceAppearancePreferences,
+  WorkspacePreferences,
   WorkspaceSnapshot,
 } from "@veladesk/domain";
 import type { LayoutItemId } from "@veladesk/desktop-engine";
@@ -53,6 +69,8 @@ import { resolveDragItemIds } from "../desktop-grid/group-drag";
 import { useCanvasDrag } from "../canvas/use-canvas-drag";
 import { useCanvasMetrics } from "../canvas/use-canvas-metrics";
 import { useSquareGridMetrics } from "../canvas/use-square-grid-metrics";
+import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
+import type { SquareGridMetrics } from "../canvas/square-grid-metrics";
 import type { GridItemGeometry, ResizeCommitGeometry } from "../canvas/canvas-resize";
 import {
   reconcileCanvasHandoff,
@@ -72,7 +90,13 @@ import type { ArrangeCanvasHistories } from "../canvas/arrange-history";
 import { ContextMenu } from "./context-menu";
 import type { ContextMenuState } from "./context-menu";
 import { AddAppDialog } from "./add-app-dialog";
-import { AppVisualEditor } from "./app-visual-editor";
+import { AppAppearanceInspector } from "./app-appearance-inspector";
+import {
+  appearanceHandoffSettled,
+  openAppearanceSession,
+  projectRenderedWorkspace,
+  type AppAppearanceSession,
+} from "./app-appearance-session";
 import { resolveArrangeHistoryCommand } from "./arrange-shortcuts";
 import { ArrangeToolbar } from "./arrange-toolbar";
 import { ConfirmDialog } from "./confirm-dialog";
@@ -91,16 +115,51 @@ import type { DesktopMenuEntry } from "./desktop-command-menu";
 import { MoveToSectionDialog } from "./move-to-section-dialog";
 import { SectionDialog } from "./section-dialog";
 import { SectionRail } from "./section-rail";
+import {
+  WorkspaceWallpaperLayers,
+  useWallpaperAssetUrl,
+  type BackgroundPreview,
+} from "./desktop-wallpaper";
+import { getBrowserAssetRuntime } from "../assets/browser-assets";
+import type { PreparedWallpaperImage } from "./wallpaper-prep";
+import {
+  resolveEffectiveWallpaper,
+  replacePageWallpaper,
+} from "@veladesk/domain";
+import type { WallpaperConfig } from "@veladesk/domain";
 import { SectionSyncStatus } from "./section-sync-status";
-import { SectionView } from "./section-view";
-import type { SectionViewPhase } from "./section-view";
+import { SectionLayer, SectionView } from "./section-view";
+import { createSectionPairCoordinator } from "./section-pair-animator";
+import type { SectionPairCoordinator, SectionPairSettledListener } from "./section-pair-animator";
+import {
+  IDLE_SECTION_NAV,
+  deriveLayerPhase,
+  interactiveActiveIdOf,
+  pruneMissingSections,
+  reportLayerSettled,
+  requestSection,
+  startPreparedTransition,
+  visibleActiveIdOf,
+} from "./section-transition-machine";
+import type { SectionNavMachine } from "./section-transition-machine";
+import { scopedToLayer } from "./section-layer-query";
+import { resolveWarmSectionIds } from "./section-warm-cache";
 import { SectionScrollMemory } from "./section-scroll-memory";
+import { loadWorkspaceViewState, type WorkspaceViewStateV1 } from "./workspace-view-state";
+import {
+  useWorkspaceActiveSection,
+  type WorkspaceActiveSection,
+} from "./workspace-active-section";
+import { useSystemPrefersLight } from "./use-system-prefers-light";
 import { normalizeSelection, selectAllIds, toggleSelection } from "./selection-state";
 import { normalizeSelectionRect, selectIntersectingItemIds } from "./selection-geometry";
-import { resolveSectionAfterDelete } from "./section-navigation-model";
+import {
+  resolveSectionAfterDelete,
+  sectionTransitionDirection,
+} from "./section-navigation-model";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import { launchApp } from "./launch-app";
-import { buildAppearanceTheme } from "./appearance-theme";
+import { buildAppearanceTheme, resolveEffectiveColorMode } from "./appearance-theme";
 import { disableDndDropAnimation } from "./dnd-static-drop";
 import { useI18n } from "../i18n/use-i18n";
 import { Launcher } from "./launcher";
@@ -172,22 +231,20 @@ type LayoutCommitOutcome =
   | { readonly status: "noop" }
   | { readonly status: "failed" };
 
-/** Section transition duration — must match the CSS keyframes. */
-const SECTION_TRANSITION_MS = 190;
-
 const EMPTY_SELECTION: ReadonlySet<LayoutItemId> = new Set();
 const EMPTY_ID_SET: ReadonlySet<EntityId> = new Set();
 
 interface DesktopShellProps {
   readonly workspace: LocalWorkspaceRecord;
   readonly lastRemoteResult?: WorkspaceRuntimeRemoteResult | undefined;
-}
-
-/** One section currently animating out of the viewport. */
-interface SectionExit {
-  readonly pageId: DesktopPageId;
-  readonly token: number;
-  readonly towards: "next" | "prev";
+  /**
+   * The externally-owned shared active section (task 026 §17): supplied by
+   * ResponsiveWorkspaceShell so desktop and mobile point at ONE active
+   * section across shell switches. Absent (standalone/test renders) the
+   * shell owns the section itself through the same shared hook — the
+   * pre-026 behavior, unchanged.
+   */
+  readonly activeSection?: WorkspaceActiveSection | undefined;
 }
 
 /**
@@ -205,10 +262,17 @@ interface SectionExit {
  * explicit sync. Arrange mode belongs to the ACTIVE section only —
  * selection, drags, nudges and the per-page history never cross sections.
  */
-export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps) {
+export function DesktopShell({ workspace, lastRemoteResult, activeSection: externalActiveSection }: DesktopShellProps) {
   const runtime = useWorkspaceRuntimeInstance();
-  const { locale, setLocale, t } = useI18n();
+  const { locale, t } = useI18n();
   const snapshot = workspace.snapshot;
+  const reducedMotion = useVdReducedMotion();
+
+  // Ambient wallpaper drift (022): one GSAP-owned yoyo on a real node
+  // (the CSS ::before keyframes are gone). Pure decoration behind
+  // everything; reduced motion renders a static backdrop.
+  const desktopAmbientRef = useRef<HTMLDivElement | null>(null);
+  useVdAmbientDrift(desktopAmbientRef, { durationSeconds: 30 });
 
   const [mode, setMode] = useState<DesktopMode>(() =>
     snapshot.preferences.layoutLocked ? "view" : "arrange"
@@ -217,6 +281,13 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   const [dialog, setDialog] = useState<HomeDialog | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [overlayFolderId, setOverlayFolderId] = useState<EntityId | null>(null);
+  /**
+   * The last OPENED folder entity (022): during the overlay's exit the id
+   * is already null, so this mirror keeps the fading surface rendering
+   * real content. Set together with the id (one batched open commit);
+   * cleared only when the surface is fully closed.
+   */
+  const [lastOverlayFolder, setLastOverlayFolder] = useState<Folder | null>(null);
 
   /**
    * Presentation-only error for folder-overlay actions (dissolve). Never
@@ -236,6 +307,16 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    */
   const [appearancePreview, setAppearancePreview] = useState<WorkspaceAppearancePreferences | null>(null);
   /**
+   * Live background draft preview (023-C): ONE scope-keyed layer fed by the
+   * Settings background editor — the workspace layer or the ACTIVE
+   * section's layer, exactly what the resolver substitutes. Cleared on
+   * Cancel/close and after a successful Save (the snapshot then carries
+   * the same config, so there is no flash-back).
+   */
+  const [backgroundPreview, setBackgroundPreview] = useState<BackgroundPreview | null>(null);
+  /** The section whose context menu opened Settings (its scope preselected). */
+  const [settingsBackgroundSection, setSettingsBackgroundSection] = useState<DesktopPageId | null>(null);
+  /**
    * Session-only optimistic display canvas for a just-committed geometry
    * edit (drag drop, resize, mode switch). It is established synchronously
    * at release time — before any IndexedDB promise is awaited — so the
@@ -253,19 +334,66 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    */
   const [resizeSessionAppId, setResizeSessionAppId] = useState<EntityId | null>(null);
   /**
-   * The ACTIVE section as explicit session state (task 017). The right
-   * workspace renders exactly this section's scroller; nothing is derived
-   * from scroll positions anymore.
+   * The per-mount persisted view state (task 023-A): read ONCE per mounted
+   * shell, hydration-safe like every other boot read, and used ONLY to
+   * seed the session scroll memory — the ACTIVE SECTION itself is owned by
+   * the shared hook below (026 §17).
    */
-  const [activePageId, setActivePageId] = useState<DesktopPageId | null>(() =>
-    snapshot.pages.some((page) => page.id === snapshot.preferences.defaultPageId)
-      ? snapshot.preferences.defaultPageId
-      : (snapshot.pages[0]?.id ?? null)
+  const bootPersistedRef = useRef<{ readonly persisted: WorkspaceViewStateV1 | null } | null>(null);
+  const bootPersisted = useCallback(() => {
+    bootPersistedRef.current ??= {
+      persisted: loadWorkspaceViewState(window.localStorage, workspace.id),
+    };
+    return bootPersistedRef.current;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately mount-scoped: reads the shell's FIRST workspace record exactly once
+  }, []);
+
+  const pageIds = useMemo(() => snapshot.pages.map((page) => page.id), [snapshot.pages]);
+
+  /**
+   * The ACTIVE section owner (026 §17): the shared minimal controller,
+   * either the externally-owned instance from ResponsiveWorkspaceShell or
+   * — for standalone renders — an internally-owned one with exactly the
+   * pre-026 boot/persistence semantics. The effective fallback (default
+   * section, then first) lives in the hook, derived so structural changes
+   * reconcile within one render.
+   */
+  const activeSection = useWorkspaceActiveSection({
+    external: externalActiveSection,
+    workspaceId: workspace.id,
+    pageIds,
+    defaultSectionId: snapshot.preferences.defaultPageId,
+    captureActiveScroll,
+  });
+  const effectiveActivePageId = activeSection.effectiveActivePageId;
+  /**
+   * The MOUNTED sections (task 020-A2): the warm set around the active
+   * section — previous, active, next — kept mounted, hidden and
+   * layout-ready so a switch never builds the destination tree inside the
+   * commit that starts the visible transition. Rotated ONLY when the
+   * navigation machine settles (never during a visible transition).
+   */
+  const [mountedSectionIds, setMountedSectionIds] = useState<readonly DesktopPageId[]>(() =>
+    resolveWarmSectionIds({
+      pageOrder: snapshot.pages.map((page) => page.id),
+      activePageId: activeSection.activePageId,
+    })
   );
-  /** The section currently animating out, unmounted when it settles. */
-  const [sectionExit, setSectionExit] = useState<SectionExit | null>(null);
-  /** The phase the ACTIVE view mounted with (its enter animation). */
-  const [enterPhase, setEnterPhase] = useState<SectionViewPhase>("active");
+  /**
+   * The section-navigation machine (020-A2 §15): idle / preparing-target /
+   * transitioning, separating mounted content from the visible transition.
+   * Pure model in section-transition-machine.ts; the shell applies its
+   * lifecycle flips and renders one stable layer per mounted section.
+   */
+  const [sectionNavMachine, setSectionNavMachine] = useState<SectionNavMachine>(
+    IDLE_SECTION_NAV
+  );
+  /**
+   * The shared overlay portal root element (themed sibling of the desktop
+   * root — see the render). State so newly mounted dialogs re-render with
+   * the container available.
+   */
+  const [portalRoot, setPortalRoot] = useState<HTMLDivElement | null>(null);
   /**
    * Session-only preview of a just-clicked toolbar gap change — applies to
    * the visual grid immediately while the durable preference stage lands.
@@ -284,27 +412,39 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   /** The app whose resize is live. */
   const resizeActiveId = resizeSessionAppId;
 
-  const pageIds = useMemo(() => snapshot.pages.map((page) => page.id), [snapshot.pages]);
-
-  /**
-   * The effective active section: the explicit state while it still exists,
-   * otherwise the default section, otherwise the first — derived so
-   * structural changes (delete) reconcile within one render.
-   */
-  const effectiveActivePageId = useMemo(() => {
-    if (activePageId !== null && pageIds.includes(activePageId)) {
-      return activePageId;
-    }
-    if (pageIds.includes(snapshot.preferences.defaultPageId)) {
-      return snapshot.preferences.defaultPageId;
-    }
-    return pageIds[0] ?? null;
-  }, [activePageId, pageIds, snapshot.preferences.defaultPageId]);
-
   const activePage =
     effectiveActivePageId !== null
       ? findDesktopPage(snapshot, effectiveActivePageId)
       : undefined;
+
+  // --- Appearance editing session (task 019-C) ----------------------------
+  // While the inspector is open, the desktop renders the persisted snapshot
+  // + this draft through ONE canonical projection (app-appearance-session)
+  // — the real placed app is the live preview, never a simulated tile.
+  // Cancel drops the session immediately. After a successful Save the
+  // panel closes but the session may outlive it as an INERT override:
+  // once the authoritative snapshot structurally carries the projected
+  // app, projecting changes nothing (rendered === persisted), so there is
+  // no bounce and nothing to reconcile — the derivation below simply
+  // stops using it. A stale inert session costs nothing and is replaced
+  // by the next editing session.
+  const [appearanceSession, setAppearanceSession] = useState<AppAppearanceSession | null>(null);
+  const inspectorOpen = dialog !== null && dialog.kind === "edit-visual";
+  const effectiveAppearanceSession = useMemo(() => {
+    if (appearanceSession === null) {
+      return null;
+    }
+    if (!inspectorOpen && appearanceHandoffSettled(snapshot, appearanceSession)) {
+      return null; // Inert: the persisted app IS the projection.
+    }
+    return appearanceSession;
+  }, [appearanceSession, inspectorOpen, snapshot]);
+  const renderedSnapshot = useMemo(
+    () => projectRenderedWorkspace(snapshot, effectiveAppearanceSession),
+    [snapshot, effectiveAppearanceSession]
+  );
+  /** The app the inspector edits — drives the quiet desktop affordance. */
+  const appearanceEditingId = inspectorOpen ? (appearanceSession?.appId ?? null) : null;
 
   /**
    * The rendered theme: the Settings preview while open, otherwise the
@@ -314,6 +454,76 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    */
   const resolvedAppearance = appearancePreview ?? resolveWorkspaceAppearance(snapshot.preferences);
   const theme = useMemo(() => buildAppearanceTheme(resolvedAppearance), [resolvedAppearance]);
+  /**
+   * The EFFECTIVE color mode (021-R1): "system" resolves against the OS
+   * preference (live, via matchMedia) before it reaches the DOM or any
+   * library theme attribute. Both themed roots — the desktop and the shared
+   * overlay portal root — always carry the same effective value, so every
+   * portaled overlay subtree inherits exactly one palette. A live OS theme
+   * switch re-renders the shell through the matchMedia listener below.
+   */
+  const systemPrefersLight = useSystemPrefersLight();
+  const effectiveColorMode = useMemo(
+    () => resolveEffectiveColorMode(theme.colorMode, systemPrefersLight),
+    [theme.colorMode, systemPrefersLight],
+  );
+
+  /**
+   * The effective wallpaper of the VISIBLE section (023-C.4): resolved
+   * through the ONE canonical resolver with the Settings draft layers
+   * substituted per scope (a workspace draft never masks a saved section
+   * override). Bound to the machine-visible destination — never an early
+   * requested id that has not become a visible page.
+   */
+  const visibleSectionId = visibleActiveIdOf(sectionNavMachine, effectiveActivePageId);
+  const effectiveWallpaper = useMemo(() => {
+    const page =
+      visibleSectionId === null
+        ? undefined
+        : renderedSnapshot.pages.find((candidate) => candidate.id === visibleSectionId);
+    const pageDraftActive =
+      backgroundPreview !== null &&
+      backgroundPreview.scope === visibleSectionId &&
+      !backgroundPreview.explicitlyInherits;
+    return resolveEffectiveWallpaper({
+      page,
+      pageWallpaperDraft: pageDraftActive ? backgroundPreview.config : undefined,
+      pageWallpaperExplicitlyInherits:
+        backgroundPreview !== null &&
+        backgroundPreview.scope === visibleSectionId &&
+        backgroundPreview.explicitlyInherits,
+      workspaceWallpaper: resolvedAppearance.wallpaper,
+      workspaceDraft:
+        backgroundPreview !== null && backgroundPreview.scope === "workspace"
+          ? { config: backgroundPreview.config }
+          : undefined,
+      legacyWorkspacePreset: resolvedAppearance.wallpaperPreset,
+    });
+  }, [renderedSnapshot.pages, visibleSectionId, backgroundPreview, resolvedAppearance]);
+
+  /** Resolves asset-backed wallpapers through the existing asset runtime. */
+  const loadWallpaperAsset = useCallback(async (assetId: string) => {
+    try {
+      const runtime = await getBrowserAssetRuntime();
+      const result = await runtime.loadAsset(assetId);
+      if (result.ok && "blob" in result && result.blob instanceof Blob) {
+        return { ok: true, url: URL.createObjectURL(result.blob) };
+      }
+      return { ok: false, url: null };
+    } catch {
+      return { ok: false, url: null };
+    }
+  }, []);
+  const wallpaperAssetId =
+    effectiveWallpaper.config.kind === "asset" ? effectiveWallpaper.config.assetId : null;
+  const resolvedWallpaperUrl = useWallpaperAssetUrl(wallpaperAssetId, loadWallpaperAsset);
+  // A pending (not-yet-staged) image previews through its own object URL.
+  const wallpaperAssetUrl =
+    backgroundPreview?.pendingAssetId !== undefined &&
+    backgroundPreview.pendingAssetId === wallpaperAssetId &&
+    backgroundPreview.previewUrl !== undefined
+      ? backgroundPreview.previewUrl
+      : resolvedWallpaperUrl;
 
   /** The persisted gap, resolved for legacy snapshots. */
   const persistedGapPx = useMemo(() => resolveGridGapPx(snapshot.preferences), [snapshot.preferences]);
@@ -340,6 +550,18 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     [snapshot, effectiveActivePageId, mode, workspace.syncState, locale],
   );
 
+  // The launcher renders app icons through the SHARED renderer, so it needs
+  // the live entities — same lifecycle as the entries above.
+  const launcherAppsById = useMemo(() => {
+    const apps = new Map<EntityId, AppShortcut>();
+    for (const entity of snapshot.entities) {
+      if (entity.kind === "app") {
+        apps.set(entity.id, entity);
+      }
+    }
+    return apps;
+  }, [snapshot.entities]);
+
   const hasDock = useMemo(() => resolveDockEntities(snapshot).length > 0, [snapshot]);
 
   // Latest-value mirrors for async/session callbacks (drag commit, keyboard
@@ -364,14 +586,89 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    * and read this ref, so a session started mid-render still blocks them.
    */
   const resizeLockRef = useRef(false);
-  /** Per-section scroll memory (session only, never persisted). */
-  const scrollMemoryRef = useRef(new SectionScrollMemory());
-  /** The live scroller element of the ACTIVE section view. */
-  const activeScrollerRef = useRef<HTMLDivElement | null>(null);
-  /** Timestamp of the last section switch — rapid input skips exit animations. */
-  const lastSectionSwitchAtRef = useRef(0);
-  /** Generation counter for section exits — a stale timer never clears a newer one. */
-  const sectionExitTokenRef = useRef(0);
+  /**
+   * Per-section scroll memory. Session-shaped as since task 017, but now
+   * SEEDED at boot from the persisted workspace view state (023-A): the
+   * remembered sections restore through the EXISTING SectionView
+   * mount-restore mechanics — no second scroll system, no animated
+   * scrolling, and no scroll-event persistence (entries are captured on
+   * logical boundaries only).
+   */
+  const scrollMemoryRef = useRef<SectionScrollMemory | null>(null);
+  const sectionScrollMemory = useCallback((): SectionScrollMemory => {
+    if (scrollMemoryRef.current === null) {
+      const memory = new SectionScrollMemory();
+      const persisted = bootPersisted().persisted;
+      if (persisted !== null) {
+        for (const [sectionId, scrollTop] of Object.entries(
+          persisted.scrollTopBySectionId,
+        )) {
+          memory.save(sectionId, scrollTop);
+        }
+      }
+      scrollMemoryRef.current = memory;
+    }
+    return scrollMemoryRef.current;
+  }, [bootPersisted]);
+  /**
+   * Imperative mirrors of the navigation machine and the mounted warm set:
+   * event handlers and animation completion callbacks must always read the
+   * freshest state without re-binding (same pattern as the history map).
+   */
+  const navMachineRef = useRef<SectionNavMachine>(IDLE_SECTION_NAV);
+  const mountedIdsRef = useRef<readonly DesktopPageId[]>(mountedSectionIds);
+  /**
+   * Navigation request identity (021-R1): every accepted request (and every
+   * instant/reduced-motion swap) mints the next generation. Animation
+   * completions carry a generation; a completion from a superseded request
+   * can never settle, rotate or cancel the newer one.
+   */
+  const navGenerationRef = useRef(0);
+  /**
+   * A layer REST is pending an idle commit (022-R2). Resting a layer means
+   * normalizing it to the hidden-cache origin (y 0, opacity 1) — legal only
+   * once the commit that retires the machine has ALSO flipped the exited
+   * page's phase to warm-hidden. Every path that idles the machine from a
+   * context whose commit has not landed yet (GSAP completion callbacks,
+   * passive effects) sets this flag instead of writing styles; the
+   * pair-command layout effect below performs the rest pre-paint in the
+   * very commit that hides the exited page, so no painted frame can show
+   * the just-exited page back at the viewport origin.
+   */
+  const restLayersOnIdleRef = useRef(false);
+  /**
+   * The GSAP page-pair coordinator (task 022): ONE timeline owns the
+   * visible page pair for each category transition. Created lazily (this
+   * component only renders client-side); disposed on unmount. The shell
+   * feeds it machine commands from a layout effect and receives exactly
+   * one generation-guarded settle per transition.
+   */
+  const pairCoordinatorRef = useRef<SectionPairCoordinator | null>(null);
+  function pairCoordinator(): SectionPairCoordinator {
+    pairCoordinatorRef.current ??= createSectionPairCoordinator();
+    return pairCoordinatorRef.current;
+  }
+  /** Stable registration identity for the layers' ref callbacks. */
+  const registerSectionLayer = useCallback(
+    (pageId: DesktopPageId, node: HTMLElement | null) => {
+      pairCoordinator().registerLayer(pageId, node);
+    },
+    [],
+  );
+  /**
+   * The scheduled arm frame for a prepared cold target (021-R1): the mount
+   * commit must get one LAYOUT pass — with its ResizeObserver notifications
+   * and adaptive-content settle — before the visible transition starts.
+   * Discrete-event commits flush their effects before the browser paints,
+   * so arming synchronously in the lifecycle effect could reveal the target
+   * inside the very commit that mounted it — the reported stall-then-jump.
+   * A single animation frame guarantees exactly that settle pass (rAF
+   * callbacks run before their frame paints; whether the hidden mount frame
+   * itself reaches the screen depends on when the lifecycle effect ran
+   * relative to that frame's rAF phase — the paint is not the contract, the
+   * layout pass is). Cancelled on supersede and unmount.
+   */
+  const armFrameRef = useRef<number | null>(null);
   /**
    * A section to reveal on the NEXT commit (create section, reorder,
    * delete-active). A ref — handlers set it synchronously around a
@@ -432,13 +729,155 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     }
   }, [effectiveActivePageId]);
 
+  /** Applies the machine state, mirror ref included. */
+  const applySectionNav = useCallback((machine: SectionNavMachine) => {
+    navMachineRef.current = machine;
+    setSectionNavMachine(machine);
+  }, []);
+
+  /** Applies the mounted warm set, mirror ref included. */
+  const applyMountedSections = useCallback((mountedIds: readonly DesktopPageId[]) => {
+    mountedIdsRef.current = mountedIds;
+    setMountedSectionIds(mountedIds);
+  }, []);
+
   /**
-   * Section switching with the whole-page vertical transition.
+   * Warm-set rotation (020-A2 §13): recompute the ±1 window around the
+   * settled active section. Runs ONLY when the machine reaches idle — the
+   * new neighbor mounts hidden and the far section unmounts after the
+   * visible navigation has settled, never inside it (§14).
+   */
+  const rotateWarmSet = useCallback(
+    (activeId: DesktopPageId | null) => {
+      const pageOrder = workspaceRef.current.snapshot.pages.map((page) => page.id);
+      applyMountedSections(resolveWarmSectionIds({ pageOrder, activePageId: activeId }));
+    },
+    [applyMountedSections]
+  );
+
+  /**
+   * Latest-value mirror so the pair-settle callback never closes over a
+   * stale switchSection identity (assigned in an effect below — switchSection
+   * is declared later in this body; a settle can never fire before effects run).
+   */
+  const switchSectionRef = useRef<(pageId: DesktopPageId) => void>(() => {});
+
+  /**
+   * The page pair settled (task 022): the coordinator reports ONE
+   * generation-guarded completion per transition. The shell evaluates it
+   * against the CURRENT machine (a stale generation or an unknown layer is
+   * a no-op there), idles the machine, rotates the warm set, and starts a
+   * parked third-target request immediately — no added settle delay.
    *
-   * Before leaving, the section's scrollTop is remembered; the entering
-   * view restores it on mount. A rapid second switch (before the first
-   * transition settled) unmounts the old view immediately instead of
-   * stacking exits — navigation stays deterministic under burst input.
+   * 022-R2: the completion fires inside the GSAP tick, BEFORE React commits
+   * the machine→idle update — the exited page's DOM still carries its
+   * visible `exit` phase here. The layers are therefore NOT rested
+   * synchronously (that wrote the just-exited page back to the viewport
+   * origin for the frames between this tick and the commit — the reported
+   * "arrives, briefly returns, flashes again" rollback); the rest is
+   * deferred to the idle commit's layout effect, which runs pre-paint with
+   * the exited page already warm-hidden.
+   */
+  const handlePairSettled = useCallback<SectionPairSettledListener>(
+    (pageId) => {
+      const machine = navMachineRef.current;
+      // A parked third destination is read BEFORE the settle report: the
+      // report itself retires the transition state that carries it.
+      const pendingId = machine.kind === "transition" ? machine.pendingId : null;
+      // The report is evaluated against the CURRENT machine: a superseded
+      // generation or an unknown layer is a no-op there.
+      const next = reportLayerSettled(
+        machine,
+        pageId,
+        machine.kind === "idle" ? navGenerationRef.current : machine.generation,
+      );      if (next === machine) {
+        return;
+      }
+      applySectionNav(next);
+      if (next.kind === "idle") {
+        // Final poses → rest — deferred to the idle commit (see the ref
+        // above); the destination layer stays the same mounted node at
+        // y=0/opacity 1 through this boundary. The transitioning attribute
+        // drops with that commit and the glass blur policy restores.
+        restLayersOnIdleRef.current = true;        rotateWarmSet(pageIdRef.current);
+        if (pendingId !== null && pendingId !== pageIdRef.current) {
+          // Bounded latest-target continuation: the newest third
+          // destination starts right now, from the settled boundary.          switchSectionRef.current(pendingId);
+        }
+      }
+    },
+    [applySectionNav, rotateWarmSet],
+  );
+
+  useEffect(() => {
+    switchSectionRef.current = switchSection;
+  });
+
+  /**
+   * Arms a prepared cold target after its hidden mount has had its
+   * preparation LAYOUT pass (§16, re-grounded 021-R1): the lifecycle effect
+   * schedules a single animation frame — the hidden destination's observers
+   * and adaptive layout settle in that pass (see {@link armFrameRef} for
+   * the exact paint-vs-layout semantics), and only then does the visible
+   * transition start. Synchronous arming could run inside the discrete
+   * event's commit, revealing the target before any preparation pass
+   * existed (the reported stall-then-jump on cold switches). The frame is
+   * cancelled on supersede and unmount; a callback whose machine moved on
+   * (newer generation, no longer prepared) is discarded.
+   */
+  function armPreparedSection() {
+    const machine = navMachineRef.current;
+    if (machine.kind !== "prepared") {
+      return;
+    }
+    if (armFrameRef.current !== null) {
+      return;
+    }
+    armFrameRef.current = requestAnimationFrame(() => {
+      armFrameRef.current = null;
+      const current = navMachineRef.current;
+      if (current.kind !== "prepared") {
+        return; // superseded while the preparation frame elapsed
+      }
+      applySectionNav(startPreparedTransition(current));
+    });
+  }
+
+  /**
+   * Structural reconciliation: vanished pages can never report a settle,
+   * so they are pruned from the machine instead of stalling it. Same
+   * plain-helper shape as armPreparedSection.
+   */
+  function pruneNavMachine() {
+    const next = pruneMissingSections(
+      navMachineRef.current,
+      workspaceRef.current.snapshot.pages.map((page) => page.id)
+    );
+    if (next === navMachineRef.current) {
+      return;
+    }
+    applySectionNav(next);
+    if (next.kind === "idle") {
+      pairCoordinator().halt();
+      restLayersOnIdleRef.current = true;      rotateWarmSet(pageIdRef.current);
+    }
+  }
+
+  /**
+   * Section switching with the whole-page vertical transition (018,
+   * re-architected 020-A2).
+   *
+   * The destination is normally ALREADY MOUNTED (the warm ±1 set), so the
+   * machine starts the visible transition without creating a single new
+   * component (§29 — mounted set unchanged on a warm request). A cold
+   * destination mounts hidden first and is revealed one render lifecycle
+   * later (§16). New intent during an in-flight transition retargets every
+   * layer from its current visual position — the latest target always
+   * wins, there is no queue. Instant reveals (structural changes) are a
+   * machine-level no-transition switch: no presence subtree is ever
+   * remounted (§21). The outgoing section's scrollTop is remembered; a
+   * still-mounted warm page keeps its live scroll untouched, and only an
+   * evicted page re-runs the mount-time restore (§30).
    */
   const switchSection = useCallback(
     (pageId: DesktopPageId, options: { readonly animate?: boolean } = {}) => {
@@ -453,49 +892,217 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       }
 
       const pages = workspaceRef.current.snapshot.pages;
-      const currentIndex = pages.findIndex((page) => page.id === currentId);
-      const nextIndex = pages.findIndex((page) => page.id === pageId);
-      if (nextIndex < 0) {
-        return;
-      }
-      const towards: "next" | "prev" = nextIndex > currentIndex ? "next" : "prev";
-
-      // Remember the outgoing section's scroll position (session only).
-      const scroller = activeScrollerRef.current;
-      if (scroller !== null) {
-        scrollMemoryRef.current.save(currentId, scroller.scrollTop);
-      }
-
-      const previousSwitchAt = lastSectionSwitchAtRef.current;
-      lastSectionSwitchAtRef.current = Date.now();
-      setActivePageId(pageId);
-
-      const animate = options.animate !== false;
-      const rapid = Date.now() - previousSwitchAt < SECTION_TRANSITION_MS + 40;
-      if (!animate || rapid) {
-        // Instant swap: drop any exit immediately, no enter animation.
-        sectionExitTokenRef.current += 1;
-        setSectionExit(null);
-        setEnterPhase("active");
+      const pageOrder = pages.map((page) => page.id);
+      // 021-R3: input-handler entry. This is when the handler ran, NOT the
+      // hardware input time.      // One pure direction source for every path (019-E §23), computed
+      // from the VISIBLE section so an interruption animates the way the
+      // user currently sees.
+      const visibleId = visibleActiveIdOf(navMachineRef.current, currentId);
+      const direction = sectionTransitionDirection(
+        visibleId === null ? -1 : pageOrder.indexOf(visibleId),
+        pageOrder.indexOf(pageId)
+      );
+      if (direction === null) {
         return;
       }
 
-      const token = sectionExitTokenRef.current + 1;
-      sectionExitTokenRef.current = token;
-      setEnterPhase(towards === "next" ? "enter-next" : "enter-prev");
-      setSectionExit({ pageId: currentId, token, towards });
-      window.setTimeout(() => {
-        if (sectionExitTokenRef.current === token) {
-          setSectionExit((current) =>
-            current !== null && current.token === token ? null : current
-          );
-          // The transition is over: the surviving view is simply active.
-          setEnterPhase("active");
+      // Remember the OUTGOING (visible) section's scroll position (session
+      // only). Scoped to the VISIBLE page's own layer (021-R1): during an
+      // interrupted transition more than one layer can carry
+      // data-active-section, so the old attribute lookup could save the
+      // wrong page's scrollTop under this page's id.
+      if (visibleId !== null) {
+        const visibleLayer = menuAreaRef.current?.querySelector(
+          scopedToLayer(visibleId, ".vela-section-scroller") ?? ""
+        );
+        if (visibleLayer instanceof HTMLDivElement) {
+          sectionScrollMemory().save(visibleId, visibleLayer.scrollTop);
+          // 023-A: the outgoing section's scrollTop rides the same logical
+          // leave-section boundary into the persisted view state — never a
+          // per-scroll-event write.
+          activeSection.recordScrollTop(visibleId, visibleLayer.scrollTop);
         }
-      }, SECTION_TRANSITION_MS);
-    },
-    []
+      }
+
+    if (options.animate === false || reducedMotion) {
+      // Instant swap: no transition state at all, warm set rotates now.
+      // The generation bump retires any in-flight animation completion —
+      // reduced motion keeps the same visibility invariants (exactly one
+      // painted section at rest) without the animated path.
+      const wasIdle = navMachineRef.current.kind === "idle";
+      navGenerationRef.current += 1;
+      applySectionNav(IDLE_SECTION_NAV);
+      applyMountedSections(resolveWarmSectionIds({ pageOrder, activePageId: pageId }));
+      // Any mid-flight pair pose is retired with the machine (022). Only
+      // the timeline dies here — the layer REST waits for the idle commit
+      // (022-R2): this handler can run in a passive effect (the structural
+      // reveal path), where the DOM still shows the exited page's visible
+      // phase and a synchronous rest would paint it at the origin.
+      pairCoordinator().halt();
+      restLayersOnIdleRef.current = true;
+      if (!wasIdle) {
+        // The transitioning attribute drops: the glass blur policy restores.
+      }
+      // 023-A: continuity records the LOGICAL destination at request time —
+      // a refresh mid-slide reopens on the section the user asked for, and
+      // navigation never waits for the 0.5s pair to finish.
+      activeSection.requestActiveSection(pageId);
+      return;
+    }
+
+    // Direction only: the pair coordinator measures the live viewport
+    // height at command time (task 022 full-height slide).
+    const intent = { direction };
+    const generation = navGenerationRef.current + 1;
+    const outcome = requestSection({
+      machine: navMachineRef.current,
+      mountedIds: mountedIdsRef.current,
+      pageOrder,
+      currentActiveId: currentId,
+      targetId: pageId,
+      intent,
+      generation,
+    });
+    if (outcome === null) {
+      return;
+    }
+    const wasIdle = navMachineRef.current.kind === "idle";
+    // The machine may keep the RUNNING generation (a parked third target
+    // only updates pendingId) — the ref follows the machine, never the
+    // request counter.
+    const outcomeGeneration =
+      outcome.machine.kind === "prepared" || outcome.machine.kind === "transition"
+        ? outcome.machine.generation
+        : generation;
+    navGenerationRef.current = outcomeGeneration;
+    applySectionNav(outcome.machine);
+    if (wasIdle) {
+      // The transitioning attribute rises: the glass blur policy suspends.
+    }
+    applyMountedSections(outcome.mountedIds);
+    // 023-A: accepted navigation — the destination is the user's latest
+    // intent, persisted immediately in memory (disk follows coalesced).
+    activeSection.requestActiveSection(pageId);
+  },
+    [activeSection, applyMountedSections, applySectionNav, reducedMotion, sectionScrollMemory]
   );
+
+  /**
+   * Machine lifecycle, flip 1 of 1 (020-A2 §16, reveal after the
+   * preparation pass, 021-R1): a prepared cold target arms once its hidden
+   * mount has settled — see {@link armPreparedSection}. StrictMode's
+   * setup-cleanup-setup reschedules idempotently; superseded generations
+   * discard their callback.
+   */
+  useEffect(() => {
+    armPreparedSection();
+    return () => {
+      if (armFrameRef.current !== null) {
+        cancelAnimationFrame(armFrameRef.current);
+        armFrameRef.current = null;
+      }
+    };
+  });
+
+  /** Structural reconciliation: prune vanished pages out of the machine. */
+  useEffect(() => {
+    pruneNavMachine();
+  });
+
+  /**
+   * The pair-command effect (task 022): while the machine is in a visible
+   * transition, feed the coordinator ONE command per generation. Everything
+   * else — prepared (a cold target measuring hidden, any superseded exit
+   * still animating), idle — intentionally leaves the coordinator alone:
+   * an in-flight pair keeps running to its boundary, and explicit idle
+   * paths (settle, instant swap, prune) schedule their own rest.
+   * Identical re-applies are skipped inside the coordinator.
+   *
+   * 022-R2: this layout effect is also the REST boundary for the idle
+   * paths. It runs pre-paint in the very commit that flips the exited page
+   * to warm-hidden, so resting there can never paint the exited page back
+   * at the viewport origin; a superseding request in the same window
+   * consumes the flag here too — its command application rests every
+   * non-participant (the previous exit included, hidden by that commit).
+   */
+  useLayoutEffect(() => {
+    const machine = navMachineRef.current;
+    if (machine.kind === "transition" && !reducedMotion) {
+      restLayersOnIdleRef.current = false;
+      const outgoingId = machine.exitingIds[machine.exitingIds.length - 1];
+      if (outgoingId === undefined) {
+        return;
+      }
+      const coordinator = pairCoordinator();
+      const incoming = coordinator.layerElement(machine.toId);
+      const outgoing = coordinator.layerElement(outgoingId);
+      if (incoming === null || outgoing === null) {
+        return; // the pair commits with the next render's layers
+      }
+      coordinator.apply(
+        {
+          generation: machine.generation,
+          incomingId: machine.toId,
+          outgoingId,
+          direction: machine.intent.direction,
+          enterFromOffset: machine.enterFromOffset,
+          viewportHeight: menuAreaRef.current?.clientHeight ?? 480,
+        },
+        handlePairSettled,
+      );
+      return;
+    }
+    if (restLayersOnIdleRef.current) {
+      restLayersOnIdleRef.current = false;
+      pairCoordinator().settleAll();
+    }
+  });
+
+  /**
+   * A reduced-motion preference flipping ON mid-transition settles the
+   * machine immediately: valid product state without waiting out the
+   * interpolation, and the stale completion can never fire afterwards.
+   */
+  useEffect(() => {
+    if (!reducedMotion || navMachineRef.current.kind === "idle") {
+      return;
+    }
+    navGenerationRef.current += 1;    applySectionNav(IDLE_SECTION_NAV);
+    pairCoordinator().halt();
+    restLayersOnIdleRef.current = true;
+    rotateWarmSet(pageIdRef.current);
+  }, [reducedMotion, applySectionNav, rotateWarmSet]);
+
+  // Unmount: the coordinator's GSAP objects die with the shell.
+  useEffect(() => {
+    return () => {
+      pairCoordinatorRef.current?.dispose();
+      pairCoordinatorRef.current = null;
+    };
+  }, []);
+
+  /**
+   * DOM scroll capture for the shared view-state flush boundaries (023-A,
+   * lifted 026 §17): the shared active-section hook owns the controller,
+   * its pagehide/unmount flushes and the disk writes; the DESKTOP-SPECIFIC
+   * half — reading the active scroller's live scrollTop into the session
+   * memory and the persisted view state — happens here, invoked by the
+   * hook right before every synchronous flush.
+   */
+  function captureActiveScroll() {
+    const activeId = pageIdRef.current;
+    if (activeId === null) {
+      return;
+    }
+    const scroller = menuAreaRef.current?.querySelector(
+      scopedToLayer(activeId, ".vela-section-scroller") ?? ""
+    );
+    if (scroller instanceof HTMLDivElement) {
+      sectionScrollMemory().save(activeId, scroller.scrollTop);
+      activeSection.recordScrollTop(activeId, scroller.scrollTop);
+    }
+  }
+  // Keep the hook's latest-value mirror current across renders.
 
   /**
    * Reveal a section right after a structural change (create/reorder/
@@ -510,10 +1117,20 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     switchSection(target, { animate: false });
   }, [switchSection, snapshot.pages]);
 
-  function openFolderOverlay(folderId: EntityId) {
+  /**
+   * Opens a folder overlay. Stable identity: warm section layers receive
+   * it as a prop and must not re-render when the shell does (020-A2 §18).
+   */
+  const openFolderOverlay = useCallback((folderId: EntityId) => {
     setFolderActionError(null);
     setOverlayFolderId(folderId);
-  }
+    // 022: remember the opened entity so the exit animation keeps real
+    // content after the close intent clears the id (batched: one commit).
+    const folder = workspaceRef.current.snapshot.entities.find(
+      (entity): entity is Folder => entity.kind === "folder" && entity.id === folderId
+    );
+    setLastOverlayFolder(folder ?? null);
+  }, []);
 
   function closeFolderOverlay() {
     setFolderActionError(null);
@@ -528,12 +1145,27 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
   function openSettings() {
     setContextMenu(null);
     setAppearancePreview(null);
+    setSettingsBackgroundSection(null);
+    setSettingsOpen(true);
+  }
+
+  /**
+   * Enters Settings through a section's context menu (023-C.2): the SAME
+   * window and shared background editor open with that exact section's
+   * scope preselected — no duplicate editor.
+   */
+  function openSectionBackgroundSettings(pageId: DesktopPageId) {
+    setContextMenu(null);
+    setAppearancePreview(null);
+    setSettingsBackgroundSection(pageId);
     setSettingsOpen(true);
   }
 
   /** Cancel/close: the preview dies with the surface, nothing was staged. */
   function closeSettings() {
     setAppearancePreview(null);
+    setBackgroundPreview(null);
+    setSettingsBackgroundSection(null);
     setSettingsOpen(false);
   }
 
@@ -546,18 +1178,81 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
    * The active section stays untouched: a changed default section only
    * applies to the next session, never yanks the current view.
    */
-  async function handleSettingsSave(draft: WorkspaceSettingsDraft): Promise<SettingsSaveResult> {
-    const preferences = preferencesFromSettingsDraft(draft);
-    const result = replaceWorkspacePreferences(snapshot, preferences);
+  async function handleSettingsSave(
+    draft: WorkspaceSettingsDraft,
+    images: readonly PreparedWallpaperImage[] = [],
+  ): Promise<SettingsSaveResult> {
+    // 023-C.3 transaction: stage the required image ASSETS first (the
+    // asset-before-workspace ordering), then apply ONE workspace edit that
+    // carries the ordinary Settings changes AND every scoped background
+    // patch — the normal result is ONE workspace revision, not one per
+    // field or page. All patches apply to the CURRENT validated snapshot
+    // (never the copy captured when Settings opened).
+    if (images.length > 0) {
+      try {
+        const assetRuntime = await getBrowserAssetRuntime();
+        for (const image of images) {
+          const stagedAsset = await assetRuntime.stageAsset(image.asset.blob);
+          if (!stagedAsset.ok) {
+            return { ok: false, message: t("settings.error.wallpaperStageFailed") };
+          }
+        }
+      } catch (error) {
+        console.error("VelaDesk: wallpaper asset staging failed", error);
+        return { ok: false, message: t("settings.error.wallpaperStageFailed") };
+      }
+    }
+
+    // The workspace wallpaper patch rides the preferences edit; null means
+    // removal (the field is omitted so the legacy preset resolves again).
+    const draftPreferences = preferencesFromSettingsDraft(draft);
+    const baseAppearance: WorkspaceAppearancePreferences =
+      draftPreferences.appearance ?? resolveWorkspaceAppearance(draftPreferences);
+    const appearance: WorkspaceAppearancePreferences =
+      draft.background.workspace === undefined
+        ? baseAppearance
+        : draft.background.workspace === null
+          ? (() => {
+              const { wallpaper: removed, ...rest } = baseAppearance;
+              void removed;
+              return rest;
+            })()
+          : { ...baseAppearance, wallpaper: draft.background.workspace };
+    const preferences: WorkspacePreferences = { ...draftPreferences, appearance };
+
+    let result = replaceWorkspacePreferences(workspaceRef.current.snapshot, preferences);
+    if (result.ok) {
+      for (const [pageId, patch] of Object.entries(draft.background.pages)) {
+        if (patch === undefined) {
+          continue;
+        }
+        const next = replacePageWallpaper(
+          result.workspace,
+          pageId,
+          patch as WallpaperConfig | null,
+        );
+        if (!next.ok) {
+          // A deleted target page: keep the draft and explain — never
+          // recreate a page or reference missing bytes.
+          result = { ok: false, reason: "page-not-found" };
+          break;
+        }
+        result = next;
+      }
+    }
     if (!result.ok) {
       return {
         ok: false,
         message:
-          result.reason === "default-page-not-found"
-            ? t("settings.error.defaultPageGone")
-            : result.reason === "invalid-grid-gap"
-              ? t("settings.error.invalidGridGap")
-              : t("settings.error.invalidAppearance"),
+          result.reason === "page-not-found"
+            ? t("settings.error.backgroundTargetGone")
+            : result.reason === "default-page-not-found"
+              ? t("settings.error.defaultPageGone")
+              : result.reason === "invalid-grid-gap"
+                ? t("settings.error.invalidGridGap")
+                : result.reason === "invalid-wallpaper"
+                  ? t("settings.error.invalidAppearance")
+                  : t("settings.error.invalidAppearance"),
       };
     }
     const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
@@ -565,7 +1260,13 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       console.error(`VelaDesk: settings were not staged (${staged.reason})`);
       return { ok: false, message: t("settings.error.saveFailed") };
     }
+    // Success: both previews clear; the snapshot now carries the same
+    // configs the preview showed, so nothing flashes back. The pending
+    // preview URL stays valid for the rendered draft until React drops it
+    // (the persisted asset resolves to the same content id).
     setAppearancePreview(null);
+    setBackgroundPreview(null);
+    setSettingsBackgroundSection(null);
     setSettingsOpen(false);
     return { ok: true };
   }
@@ -1018,6 +1719,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       ? resolveDisplayPlacement(pendingCanvasHandoff, activePage.id, resolvePagePlacement(activePage))
       : null;
 
+
   // --- Metrics ---------------------------------------------------------------
   // Freeform measures the canvas box; Grid measures the stage width and
   // derives the square cells. Both hooks run unconditionally; their refs
@@ -1057,10 +1759,14 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       []
     ),
     resolveItemElement: useCallback((itemId: LayoutItemId) => {
-      // The section viewport is a normal block; DOM queries work.
-      return (
-        menuAreaRef.current?.querySelector(`[data-item-id="${CSS.escape(itemId)}"]`) ?? null
+      // Scoped to the ACTIVE page's own layer (021-R1): warm layers render
+      // real items with the same data-item-id attributes, and a hidden
+      // page's element must never win a document-wide lookup.
+      const pageId = pageIdRef.current;
+      const scope = menuAreaRef.current?.querySelector(
+        scopedToLayer(pageId, `[data-item-id="${CSS.escape(itemId)}"]`) ?? ""
       );
+      return scope instanceof HTMLElement ? scope : null;
     }, []),
   });
   useEffect(() => {
@@ -1101,6 +1807,20 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       return;
     }
     applySelection(toggle ? toggleSelection(selectionRef.current, entityId) : new Set([entityId]));
+  }, []);
+
+  /**
+   * Layer-stable context-menu entry point for section items: the identity
+   * must never churn (warm layers memoize their props, 020-A2 §18), while
+   * the menu is still built from the freshest render's state via the
+   * latest-value mirror.
+   */
+  const openContextMenuRef = useRef(openContextMenu);
+  useEffect(() => {
+    openContextMenuRef.current = openContextMenu;
+  });
+  const handleEntityContextMenu = useCallback((entityId: EntityId, x: number, y: number) => {
+    openContextMenuRef.current({ kind: "entity", entityId, source: "desktop", x, y });
   }, []);
 
   // --- Arrange marquee (rubber-band) selection, active section only ---------
@@ -1155,9 +1875,19 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         }
         return;
       }
-      const viewport = menuAreaRef.current?.querySelector(
-        '[data-active-section="true"] .vela-grid-stage, [data-active-section="true"] .vela-canvas'
-      );
+      // Scoped to the interactive page's own layer (021-R1) — never a
+      // document-wide attribute lookup that a warm or exiting layer could
+      // win.
+      const marqueePageId = pageIdRef.current;
+      const viewport =
+        marqueePageId === null
+          ? null
+          : menuAreaRef.current?.querySelector(
+              [
+                scopedToLayer(marqueePageId, ".vela-grid-stage"),
+                scopedToLayer(marqueePageId, ".vela-canvas"),
+              ].join(", ")
+            );
       if (viewport === null) {
         return;
       }
@@ -1250,9 +1980,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             }
           },
           onSync: () => void runtime.syncCurrent(),
-          onRefresh: () => void runtime.pullCurrent(),
           onOpenSettings: openSettings,
-          onToggleLocale: () => setLocale(locale === "zh-CN" ? "en-US" : "zh-CN"),
         },
       }),
     });
@@ -1273,7 +2001,16 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         callbacks: {
           onOpen: () => launchApp(entity),
           onEdit: () => openDialog({ kind: "edit-app", entityId: entity.id }),
-          onEditAppearance: () => openDialog({ kind: "edit-visual", entityId: entity.id }),
+          onEditAppearance: () => {
+            // The REAL desktop tile is the preview (019-C): make sure the
+            // owning section is on screen so the edited app is visible.
+            const owningPageId = containerPageId(snapshot, entity.id);
+            if (owningPageId !== null && owningPageId !== effectiveActivePageId) {
+              switchSection(owningPageId, { animate: false });
+            }
+            setAppearanceSession(openAppearanceSession(entity));
+            openDialog({ kind: "edit-visual", entityId: entity.id });
+          },
           onMoveToSection: () => openDialog({ kind: "move-to-section", appId: entity.id }),
           onPinToggle: () =>
             void runDockEdit((input) =>
@@ -1322,6 +2059,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         isEmpty: pageItemIds(page).length === 0,
         callbacks: {
           onRename: () => openDialog({ kind: "rename-section", pageId }),
+          onBackground: () => openSectionBackgroundSettings(pageId),
           onSetDefault: () => void runSectionEdit(setDefaultPage(snapshot, pageId), null),
           onMoveUp: () => void runSectionEdit(movePage(snapshot, pageId, "up"), pageId),
           onMoveDown: () => void runSectionEdit(movePage(snapshot, pageId, "down"), pageId),
@@ -1391,9 +2129,6 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         return;
       case "sync-current":
         void runtime.syncCurrent();
-        return;
-      case "pull-current":
-        void runtime.pullCurrent();
         return;
     }
   }
@@ -1676,6 +2411,12 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     return entity !== undefined && entity.kind === "app" ? new Set([id]) : EMPTY_ID_SET;
   }, [activePage, arrange, handoffLock, selectedItemIds, snapshot.entities]);
 
+  /** The mounted (warm) section pages, in workspace page order. */
+  const mountedSectionLayers = useMemo(
+    () => snapshot.pages.filter((page) => mountedSectionIds.includes(page.id)),
+    [snapshot.pages, mountedSectionIds]
+  );
+
   if (activePage === undefined && pageIds.length === 0) {
     // Invariant violation (a workspace always has pages) — stay calm, stay
     // inspectable, never crash the tab.
@@ -1700,10 +2441,10 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
           (entity): entity is Folder => entity.kind === "folder" && entity.id === overlayFolderId
         )
       : undefined;
-
-  // The exiting view renders read-only from the authoritative placement.
-  const exitPage =
-    sectionExit !== null ? findDesktopPage(snapshot, sectionExit.pageId) : undefined;
+  // During the overlay's EXIT the folder may already be closed: the last
+  // OPENED folder (state, set by the open handler — never written during
+  // render) keeps the fading surface rendering real content.
+  const renderedOverlayFolder = overlayFolder ?? lastOverlayFolder;
 
   // Arrange-toolbar availability (imperative history map, freshest value).
   const toolbarHistoryUsable =
@@ -1718,14 +2459,23 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
     canRedo(arrangeHistoriesRef.current, effectiveActivePageId);
 
   return (
+    <VdPortalContainerProvider value={portalRoot}>
+    <VdHeroOverlayScope>
     <div
       className="vela-desktop"
+      data-vd-ui=""
       data-arrange={arrange ? "true" : "false"}
-      data-vd-color-mode={theme.colorMode}
+      data-vd-color-mode={effectiveColorMode}
       data-vd-wallpaper={theme.wallpaperPreset}
       data-has-dock={hasDock ? "true" : "false"}
       style={theme.style as CSSProperties}
     >
+      {/* The full-desktop background layers (023-C): behind the rail,
+          workspace and dock; pointer-transparent, clipped, at most two
+          prepared surfaces with a restrained accepted-generation crossfade.
+          The ambient drift stays its own decorative layer above it. */}
+      <WorkspaceWallpaperLayers wallpaper={effectiveWallpaper} assetUrl={wallpaperAssetUrl} />
+      <div className="vela-desktop__ambient" aria-hidden="true" ref={desktopAmbientRef} />
       <DragDropProvider
         onDragStart={wrappedHandleDragStart}
         onDragMove={handleDragMove}
@@ -1766,54 +2516,38 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
             ) : null}
 
             {/*
-              The one section viewport: exactly the active section's content
-              scroller (plus a brief exiting twin during transitions). While
-              a modal or a drag is up, data-scroll-locked freezes scrolling
-              without changing scrollTop.
+              The one section viewport (018, warm-layered in 020-A2): every
+              MOUNTED section renders as a stable layer keyed by its page
+              id — the active ±1 warm set. Only the active (and, during a
+              transition, its exiting partner) is visible; hidden warm
+              layers keep real geometry for measurement but never paint,
+              take pointers or duplicate accessibility. A switch starts the
+              pose-driven Motion transition on EXISTING subtrees — the
+              destination is never built inside the transition commit.
+              While a modal or a drag is up, data-scroll-locked freezes the
+              active scroller without changing scrollTop.
             */}
-            <div className="vela-section-viewport" ref={menuAreaRef} onContextMenu={handleAreaContextMenu}>
-              {exitPage !== undefined && sectionExit !== null ? (
-                <SectionView
-                  key={`exit-${sectionExit.token}-${exitPage.id}`}
-                  page={exitPage}
-                  placement={resolvePagePlacement(exitPage)}
-                  workspace={snapshot}
-                  active={false}
-                  phase={sectionExit.towards === "next" ? "exit-next" : "exit-prev"}
-                  arrange={false}
-                  dragEnabled={false}
-                  scrollLocked
-                  initialScrollTop={undefined}
-                  metrics={null}
-                  gridMetrics={null}
-                  selectedIds={EMPTY_SELECTION}
-                  resizableIds={EMPTY_ID_SET}
-                  resizeActiveId={null}
-                  onResizeCommit={commitResizedGeometry}
-                  onResizeSessionChange={handleResizeSessionChange}
-                  onItemSelect={handleItemSelect}
-                  onEntityContextMenu={(entityId, x, y) =>
-                    openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })
-                  }
-                  onOpenFolder={(folderId) => openFolderOverlay(folderId)}
-                />
-              ) : null}
-
-              {activePage !== undefined && displayPlacement !== null ? (
-                <SectionView
-                  key={activePage.id}
-                  page={activePage}
-                  placement={displayPlacement}
-                  workspace={snapshot}
-                  active
-                  phase={enterPhase}
+            <div
+              className="vela-section-viewport"
+              ref={menuAreaRef}
+              data-section-transitioning={
+                sectionNavMachine.kind !== "idle" ? "true" : undefined
+              }
+              onContextMenu={handleAreaContextMenu}
+            >
+              {mountedSectionLayers.map((page) => (
+                <SectionLayerSlot
+                  key={page.id}
+                  page={page}
+                  machine={sectionNavMachine}
+                  activePageId={effectiveActivePageId}
+                  onLayerElement={registerSectionLayer}
+                  displayPlacement={page.id === effectiveActivePageId ? displayPlacement : null}
+                  renderedWorkspace={renderedSnapshot}
                   arrange={arrange}
                   dragEnabled={arrange && !handoffLock && !resizeLock}
                   scrollLocked={scrollLocked}
-                  initialScrollTop={scrollMemoryRef.current.recall(activePage.id)}
-                  onScrollerMount={(node) => {
-                    activeScrollerRef.current = node;
-                  }}
+                  appearanceEditingId={appearanceEditingId}
                   metrics={freeformMetrics}
                   gridMetrics={gridMetrics}
                   canvasRef={canvasRef}
@@ -1821,20 +2555,19 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
                   selectedIds={selectedItemIds}
                   resizableIds={resizableIds}
                   resizeActiveId={resizeActiveId}
+                  gridFeedbackBoxes={gridFeedbackBoxes}
+                  initialScrollTop={sectionScrollMemory().recall(page.id)}
                   onResizeCommit={commitResizedGeometry}
                   onResizeSessionChange={handleResizeSessionChange}
                   onResizePreview={setResizeTargetBox}
-                  gridFeedbackBoxes={gridFeedbackBoxes}
                   onItemSelect={handleItemSelect}
-                  onEntityContextMenu={(entityId, x, y) =>
-                    openContextMenu({ kind: "entity", entityId, source: "desktop", x, y })
-                  }
-                  onOpenFolder={(folderId) => openFolderOverlay(folderId)}
+                  onEntityContextMenu={handleEntityContextMenu}
+                  onOpenFolder={openFolderOverlay}
                   onCanvasPointerDown={handleViewportPointerDown}
                   onCanvasPointerMove={handleViewportPointerMove}
                   onCanvasPointerUp={handleViewportPointerUp}
                 />
-              ) : null}
+              ))}
             </div>
 
             {/*
@@ -1859,7 +2592,7 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       ) : null}
 
       <Dock
-        workspace={snapshot}
+        workspace={renderedSnapshot}
         onOpenFolder={(folderId) => openFolderOverlay(folderId)}
         onEntityContextMenu={(entityId, x, y) =>
           openContextMenu({ kind: "entity", entityId, source: "dock", x, y })
@@ -1867,10 +2600,11 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         onDesktopContextMenu={(x, y) => openContextMenu({ kind: "desktop", x, y })}
       />
 
-      {overlayFolder !== undefined ? (
+      {renderedOverlayFolder !== null ? (
         <FolderOverlay
-          folder={overlayFolder}
-          workspace={snapshot}
+          open={overlayFolder !== undefined}
+          folder={renderedOverlayFolder}
+          workspace={renderedSnapshot}
           error={folderActionError ?? undefined}
           onClose={closeFolderOverlay}
           onLaunchApp={launchApp}
@@ -1890,8 +2624,30 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
       {dialog !== null && dialog.kind === "edit-app" ? (
         <EditAppDialog workspace={snapshot} appId={dialog.entityId} onClose={closeDialog} />
       ) : null}
-      {dialog !== null && dialog.kind === "edit-visual" ? (
-        <AppVisualEditor workspace={snapshot} appId={dialog.entityId} onClose={closeDialog} />
+      {appearanceSession !== null ? (
+        <AppAppearanceInspector
+          open={
+            dialog !== null &&
+            dialog.kind === "edit-visual" &&
+            dialog.entityId === appearanceSession.appId
+          }
+          workspace={snapshot}
+          appId={appearanceSession.appId}
+          draft={appearanceSession.draft}
+          onDraftChange={(draft) =>
+            setAppearanceSession((current) => (current === null ? current : { ...current, draft }))
+          }
+          onCancel={() => {
+            closeDialog();
+            setAppearanceSession(null);
+          }}
+          onSaved={() => {
+            // Panel exits; the session STAYS until the staged snapshot
+            // carries the same projected app (handoff effect below) — the
+            // desktop must never flash the pre-save appearance.
+            closeDialog();
+          }}
+        />
       ) : null}
       {dialog !== null && dialog.kind === "delete-app" ? (
         <DeleteAppConfirm
@@ -1956,23 +2712,49 @@ export function DesktopShell({ workspace, lastRemoteResult }: DesktopShellProps)
         <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />
       ) : null}
 
-      {launcherOpen ? (
-        <Launcher
-          entries={launcherEntries}
-          onActivate={activateLauncherEntry}
-          onClose={() => setLauncherOpen(false)}
-        />
-      ) : null}
+      {/*
+        Open-driven overlay surfaces (022): the Launcher, Settings window
+        and App Inspector stay mounted and own their presence, so a close
+        intent plays the exit animation while focus/scroll semantics stand
+        down coherently, reopening mid-exit retargets, and the subtree
+        releases exactly once.
+      */}
+      <Launcher
+        open={launcherOpen}
+        entries={launcherEntries}
+        appsById={launcherAppsById}
+        onActivate={activateLauncherEntry}
+        onClose={() => setLauncherOpen(false)}
+      />
 
-      {settingsOpen ? (
-        <SettingsCenter
-          workspace={snapshot}
-          onPreviewAppearance={setAppearancePreview}
-          onSave={handleSettingsSave}
-          onClose={closeSettings}
-        />
-      ) : null}
-    </div>
+      <SettingsCenter
+        open={settingsOpen}
+        workspace={snapshot}
+        onPreviewAppearance={setAppearancePreview}
+        onSave={handleSettingsSave}
+        onClose={closeSettings}
+        backgroundEntrySectionId={settingsBackgroundSection}
+        activeSectionId={effectiveActivePageId}
+        onPreviewBackground={setBackgroundPreview}
+      />
+      </div>
+    {/*
+      The shared overlay portal root (018, 021-R1): a themed sibling of the
+      desktop element — the same EFFECTIVE color mode and --vd-* variables —
+      so every overlay portal (Radix dialogs/popovers/tooltips AND the
+      HeroUI/React-Aria Select popup, routed here by VdHeroOverlayScope)
+      inherits the workspace theme without a second provider. Empty and
+      unpositioned; portalled overlays position themselves.
+    */}
+    <div
+      ref={setPortalRoot}
+      data-vd-ui=""
+      data-vd-portal-root=""
+      data-vd-color-mode={effectiveColorMode}
+      style={theme.style as CSSProperties}
+    />
+    </VdHeroOverlayScope>
+    </VdPortalContainerProvider>
   );
 }
 
@@ -1991,6 +2773,120 @@ function StaticDropFeedback() {
   }, [manager]);
   return null;
 }
+
+interface SectionLayerSlotProps {
+  readonly page: DesktopPage;
+  readonly machine: SectionNavMachine;
+  readonly activePageId: DesktopPageId | null;
+  /** Handoff-aware placement, passed ONLY for the logical active page. */
+  readonly displayPlacement: PagePlacement | null;
+  readonly renderedWorkspace: WorkspaceSnapshot;
+  readonly arrange: boolean;
+  readonly dragEnabled: boolean;
+  readonly scrollLocked: boolean;
+  readonly appearanceEditingId: EntityId | null;
+  readonly metrics: CanvasPixelMetrics | null;
+  readonly gridMetrics: SquareGridMetrics | null;
+  readonly canvasRef: ((node: HTMLDivElement | null) => void) | undefined;
+  readonly gridStageRef: ((node: HTMLDivElement | null) => void) | undefined;
+  readonly selectedIds: ReadonlySet<EntityId>;
+  readonly resizableIds: ReadonlySet<EntityId>;
+  readonly resizeActiveId: EntityId | null;
+  readonly gridFeedbackBoxes: readonly GridItemGeometry[] | undefined;
+  readonly initialScrollTop: number | undefined;
+  readonly onResizeCommit: (entityId: EntityId, geometry: ResizeCommitGeometry) => void;
+  readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
+  readonly onResizePreview: ((geometry: GridItemGeometry | null) => void) | undefined;
+  readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
+  readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
+  readonly onOpenFolder: (folderId: EntityId) => void;
+  readonly onCanvasPointerDown?: ((event: ReactPointerEvent<HTMLDivElement>) => void) | undefined;
+  readonly onCanvasPointerMove?: ((event: ReactPointerEvent<HTMLDivElement>) => void) | undefined;
+  readonly onCanvasPointerUp?: ((event: ReactPointerEvent<HTMLDivElement>) => void) | undefined;
+  /** Layer registration for the GSAP pair coordinator (task 022). */
+  readonly onLayerElement: (pageId: DesktopPageId, node: HTMLElement | null) => void;
+}
+
+/**
+ * One mounted section layer (020-A2): derives the layer's visual phase
+ * from the pure navigation machine and gates the interactive surface
+ * (measurement refs, gestures, selection, feedback) to the INTERACTIVE
+ * section only — during a cold preparation the still-visible section stays
+ * interactive while the hidden target measures. Memoized so a shell
+ * re-render skips warm layers entirely; only machine events and this
+ * page's own data re-render it (§18).
+ */
+const SectionLayerSlot = memo(function SectionLayerSlot({
+  page,
+  machine,
+  activePageId,
+  displayPlacement,
+  renderedWorkspace,
+  arrange,
+  dragEnabled,
+  scrollLocked,
+  appearanceEditingId,
+  metrics,
+  gridMetrics,
+  canvasRef,
+  gridStageRef,
+  selectedIds,
+  resizableIds,
+  resizeActiveId,
+  gridFeedbackBoxes,
+  initialScrollTop,
+  onResizeCommit,
+  onResizeSessionChange,
+  onResizePreview,
+  onItemSelect,
+  onEntityContextMenu,
+  onOpenFolder,
+  onCanvasPointerDown,
+  onCanvasPointerMove,
+  onCanvasPointerUp,
+  onLayerElement,
+}: SectionLayerSlotProps) {
+  const phase = deriveLayerPhase(machine, page.id, activePageId);
+  const interactive = page.id === interactiveActiveIdOf(machine, activePageId);
+  const ownPlacement = useMemo(() => resolvePagePlacement(page), [page]);
+  const placement =
+    page.id === activePageId && displayPlacement !== null ? displayPlacement : ownPlacement;
+  return (
+    <SectionLayer
+      page={page}
+      phase={phase}
+      onLayerElement={onLayerElement}
+    >
+      <SectionView
+        placement={placement}
+        workspace={renderedWorkspace}
+        active={interactive}
+        appearanceEditingId={interactive ? appearanceEditingId : null}
+        arrange={arrange}
+        dragEnabled={dragEnabled}
+        scrollLocked={scrollLocked}
+        initialScrollTop={initialScrollTop}
+        metrics={metrics}
+        gridMetrics={gridMetrics}
+        canvasRef={interactive ? canvasRef : undefined}
+        gridStageRef={interactive ? gridStageRef : undefined}
+        selectedIds={interactive ? selectedIds : EMPTY_ID_SET}
+        resizableIds={interactive ? resizableIds : EMPTY_ID_SET}
+        resizeActiveId={interactive ? resizeActiveId : null}
+        onResizeCommit={onResizeCommit}
+        onResizeSessionChange={onResizeSessionChange}
+        onResizePreview={interactive ? onResizePreview : undefined}
+        gridFeedbackBoxes={interactive ? gridFeedbackBoxes : undefined}
+        onItemSelect={onItemSelect}
+        onEntityContextMenu={onEntityContextMenu}
+        onOpenFolder={onOpenFolder}
+        onCanvasPointerDown={interactive ? onCanvasPointerDown : undefined}
+        onCanvasPointerMove={interactive ? onCanvasPointerMove : undefined}
+        onCanvasPointerUp={interactive ? onCanvasPointerUp : undefined}
+      />
+    </SectionLayer>
+  );
+});
 
 function findFolderEntity(workspace: WorkspaceSnapshot, folderId: EntityId): Folder | undefined {
   const entity = workspace.entities.find((candidate) => candidate.id === folderId);

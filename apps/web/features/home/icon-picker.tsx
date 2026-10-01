@@ -5,7 +5,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findIconCollection } from "@veladesk/icon-catalog/meta";
 import type { IconCollectionId, IconSearchScope } from "@veladesk/icon-catalog/meta";
 
+import {
+  Input,
+  Label,
+  ListBox,
+  Select,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+} from "@heroui/react";
+
 import { useI18n } from "../i18n/use-i18n";
+import { VdScrollArea } from "@components/vd/scroll-area";
 import {
   ICON_PICKER_DEBOUNCE_MS,
   ICON_PICKER_SCOPES,
@@ -188,48 +199,68 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
 
   return (
     <div className="vela-icon-picker" data-testid="icon-picker">
-      <input
-        ref={inputRef}
-        className="vela-input vela-icon-picker__search"
-        type="text"
-        value={rawQuery}
-        maxLength={100}
-        placeholder={t("iconPicker.searchPlaceholder")}
-        aria-label={t("iconPicker.searchLabel")}
-        onChange={(event) => setRawQuery(event.target.value)}
-      />
-      <div className="vela-icon-picker__tabs" role="tablist" aria-label={t("iconPicker.collections")}>
+      <TextField value={rawQuery} onChange={setRawQuery} aria-label={t("iconPicker.searchLabel")}>
+        <Label className="sr-only">{t("iconPicker.searchLabel")}</Label>
+        <Input
+          ref={inputRef}
+          className="h-10"
+          type="text"
+          maxLength={100}
+          autoComplete="off"
+          placeholder={t("iconPicker.searchPlaceholder")}
+        />
+      </TextField>
+      <ToggleButtonGroup
+        selectionMode="single"
+        selectedKeys={new Set([scope])}
+        onSelectionChange={(keys) => {
+          const value = [...keys][0];
+          if (typeof value === "string") {
+            chooseScope(value as IconSearchScope);
+          }
+        }}
+        aria-label={t("iconPicker.collections")}
+      >
         {ICON_PICKER_SCOPES.map((candidate) => (
-          <button
-            key={candidate}
-            type="button"
-            role="tab"
-            aria-selected={candidate === scope}
-            className="vela-icon-picker__tab"
-            onClick={() => chooseScope(candidate)}
-          >
+          <ToggleButton key={candidate} id={candidate}>
             {t(scopeMessageKey(candidate))}
-          </button>
+          </ToggleButton>
         ))}
-      </div>
+      </ToggleButtonGroup>
       <div className="vela-icon-picker__filters">
-        <label className="vela-icon-picker__source">
-          <span className="vela-icon-picker__source-label">{t("iconPicker.sourceLabel")}</span>
-          <select
-            className="vela-input vela-icon-picker__source-select"
-            value={collection ?? ""}
-            onChange={(event) =>
-              setCollection(event.target.value === "" ? null : (event.target.value as IconCollectionId))
+        <Select
+          value={collection ?? "all"}
+          onChange={(value) => {
+            if (value === null || value === "all") {
+              setCollection(null);
+            } else if (typeof value === "string") {
+              setCollection(value as IconCollectionId);
             }
-          >
-            <option value="">{t("iconPicker.sourceAll")}</option>
-            {sourceOptions.map((info) => (
-              <option key={info.id} value={info.id}>
-                {info.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          }}
+          aria-label={t("iconPicker.sourceLabel")}
+          variant="secondary"
+          className="w-[180px]"
+        >
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              <ListBox.Item id="all" textValue={t("iconPicker.sourceAll")}>
+                {t("iconPicker.sourceAll")}
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+              {sourceOptions.map((info) => (
+                <ListBox.Item key={info.id} id={info.id} textValue={info.label}>
+                  {info.label}
+                  {/* Meaningful selected state (021-R1): see settings-center. */}
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
         {current !== null && !failed ? (
           <span className="vela-icon-picker__count">
             {t("iconPicker.loadedCount", { loaded: entries.length, total: current.total })}
@@ -244,21 +275,30 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
           {t("iconPicker.loadFailed")}
         </p>
       ) : null}
-      <div className="vela-icon-picker__grid" data-vd-wheel-scope="local">
-        {entries.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className="vela-icon-picker__cell"
-            data-selected={entry.id === selectedId ? "true" : undefined}
-            aria-label={`${entry.label} · ${findIconCollection(entry.collection)?.label ?? entry.collection}`}
-            title={entry.label}
-            onClick={() => onSelect(entry.id)}
-          >
-            <IconPreview iconId={entry.id} />
-          </button>
-        ))}
-      </div>
+      {/* The scroll owner (VdScrollArea, 021-A): wheeling through icons
+          never pages the section stack, and the framed well carries the
+          shared quiet scrollbar. */}
+      <VdScrollArea
+        axis="y"
+        className="vela-icon-picker__scroll"
+        data-vd-wheel-scope="local"
+      >
+        <div className="vela-icon-picker__grid">
+          {entries.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              className="vela-icon-picker__cell"
+              data-selected={entry.id === selectedId ? "true" : undefined}
+              aria-label={`${entry.label} · ${findIconCollection(entry.collection)?.label ?? entry.collection}`}
+              title={entry.label}
+              onClick={() => onSelect(entry.id)}
+            >
+              <IconPreview iconId={entry.id} />
+            </button>
+          ))}
+        </div>
+      </VdScrollArea>
       <div className="vela-icon-picker__footer">
         {visible && entries.length === 0 ? (
           <span className="vela-icon-picker__note">{t("iconPicker.noResults")}</span>

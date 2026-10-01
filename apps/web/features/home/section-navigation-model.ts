@@ -57,6 +57,25 @@ export function resolveSectionAfterDelete(
 export type SectionNavDirection = "prev" | "next";
 
 /**
+ * The transition direction between two section POSITIONS (019-E §23): the
+ * pure counterpart of the shell's switch — "next" when the destination
+ * sits after the source in `workspace.pages` order, "prev" before it, and
+ * null for a same-position or out-of-range request (nothing to play). The
+ * shell consumes this so the wheel path, click path and keyboard path all
+ * share one direction source; there is deliberately NO queue here — the
+ * shell holds exactly one destination and the latest call wins.
+ */
+export function sectionTransitionDirection(
+  currentIndex: number,
+  nextIndex: number
+): SectionNavDirection | null {
+  if (currentIndex < 0 || nextIndex < 0 || currentIndex === nextIndex) {
+    return null;
+  }
+  return nextIndex > currentIndex ? "next" : "prev";
+}
+
+/**
  * Which direction a key requests, or null when the key is not a section
  * navigation key. ArrowUp/PageUp go back, ArrowDown/PageDown go forward —
  * the routing is pure so the no-wrap adjacency tests and the shell share

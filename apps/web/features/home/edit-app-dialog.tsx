@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import type { AppOpenMode, AppShortcut, WorkspaceSnapshot } from "@veladesk/domain";
 
 import { replaceApp } from "@veladesk/domain";
@@ -12,6 +12,15 @@ import type { TranslateFn } from "../i18n/use-i18n";
 import { generatedIconFollowsName } from "./app-icon";
 import { generatedIconText } from "./generated-icon";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
+import { VdFormDialog } from "@components/vd/form-dialog";
+import { Input } from "@components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@components/ui/select";
 import "./home-shell.css";
 
 const OPEN_MODES: readonly AppOpenMode[] = ["new-tab", "same-tab", "new-window", "popup"];
@@ -23,7 +32,7 @@ interface EditAppDialogProps {
 }
 
 /**
- * Edit App dialog: name, URL and open mode.
+ * Edit App dialog (018 designed shell): name, URL and open mode.
  *
  * Values are stored verbatim (custom protocols stay valid). Identity,
  * description, category, tags and container/dock placement are preserved;
@@ -41,16 +50,6 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
   const [openMode, setOpenMode] = useState<AppOpenMode>(existing?.openMode ?? "new-tab");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
 
   if (existing === undefined) {
     return null;
@@ -119,80 +118,65 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
   }
 
   return (
-    <div
-      className="vela-dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
+    <VdFormDialog
+      title={t("dialog.editApp.title")}
+      submitLabel={busy ? t("dialog.editApp.saving") : t("dialog.editApp.saveChanges")}
+      busy={busy}
+      error={error}
+      cancelLabel={t("common.cancel")}
+      onCancel={onClose}
+      onSubmit={handleSubmit}
     >
-      <div className="vela-dialog" role="dialog" aria-modal="true" aria-labelledby="vela-edit-app-title">
-        <h2 id="vela-edit-app-title" className="vela-dialog__title">
-          {t("dialog.editApp.title")}
-        </h2>
-        <form className="vela-form" onSubmit={handleSubmit}>
-          <label className="vela-form__label" htmlFor="vela-edit-app-name">
-            {t("dialog.nameLabel")}
-          </label>
-          <input
-            id="vela-edit-app-name"
-            className="vela-input"
-            type="text"
-            value={name}
-            maxLength={80}
-            autoFocus
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <label className="vela-form__label" htmlFor="vela-edit-app-url">
-            {t("dialog.urlLabel")}
-          </label>
-          <input
-            id="vela-edit-app-url"
-            className="vela-input"
-            type="text"
-            inputMode="url"
-            value={url}
-            maxLength={2048}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="https://… or obsidian://…"
-            onChange={(event) => setUrl(event.target.value)}
-            aria-describedby={error !== null ? "vela-edit-app-error" : undefined}
-          />
-          <label className="vela-form__label" htmlFor="vela-edit-app-mode">
-            {t("dialog.editApp.openMode")}
-          </label>
-          <select
-            id="vela-edit-app-mode"
-            className="vela-input"
-            value={openMode}
-            onChange={(event) => setOpenMode(event.target.value as AppOpenMode)}
-          >
-            {OPEN_MODES.map((mode) => (
-              <option key={mode} value={mode}>
-                {describeOpenMode(mode)}
-              </option>
-            ))}
-          </select>
-          {error !== null ? (
-            <p id="vela-edit-app-error" className="vela-form__error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <div className="vela-dialog__actions">
-            <button type="button" className="vela-button" onClick={onClose} disabled={busy}>
-              {t("common.cancel")}
-            </button>
-            <button type="submit" className="vela-button vela-button--primary" disabled={busy}>
-              {busy ? t("dialog.editApp.saving") : t("dialog.editApp.saveChanges")}
-            </button>
-          </div>
-        </form>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-edit-app-name">
+          {t("dialog.nameLabel")}
+        </label>
+        <Input
+          id="vela-edit-app-name"
+          type="text"
+          value={name}
+          maxLength={80}
+          autoFocus
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(event) => setName(event.target.value)}
+        />
       </div>
-    </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-edit-app-url">
+          {t("dialog.urlLabel")}
+        </label>
+        <Input
+          id="vela-edit-app-url"
+          type="text"
+          inputMode="url"
+          value={url}
+          maxLength={2048}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="https://… or obsidian://…"
+          onChange={(event) => setUrl(event.target.value)}
+          aria-describedby={error !== null ? "vela-edit-app-error" : undefined}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-edit-app-mode">
+          {t("dialog.editApp.openMode")}
+        </label>
+        <Select value={openMode} onValueChange={(value) => setOpenMode(value as AppOpenMode)}>
+          <SelectTrigger id="vela-edit-app-mode" className="max-w-[280px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {OPEN_MODES.map((mode) => (
+              <SelectItem key={mode} value={mode}>
+                {describeOpenMode(mode)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </VdFormDialog>
   );
 }
 

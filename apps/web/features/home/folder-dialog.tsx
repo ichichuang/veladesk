@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import type { EntityId, Folder, WorkspaceSnapshot } from "@veladesk/domain";
 
 import {
@@ -14,6 +14,8 @@ import { useI18n } from "../i18n/use-i18n";
 import type { TranslateFn } from "../i18n/use-i18n";
 import { createBrowserId } from "./browser-id";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
+import { VdFormDialog } from "@components/vd/form-dialog";
+import { Input } from "@components/ui/input";
 import "./home-shell.css";
 
 interface FolderDialogProps {
@@ -25,8 +27,9 @@ interface FolderDialogProps {
 }
 
 /**
- * Folder name dialog — create (adds an empty folder to the page) and
- * rename share one surface. The stored name is the user's verbatim string.
+ * Folder name dialog (018 designed shell) — create (adds an empty folder
+ * to the page) and rename share one surface. The stored name is the
+ * user's verbatim string.
  */
 export function FolderDialog({ workspace, pageId, folder, onClose }: FolderDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
@@ -37,16 +40,6 @@ export function FolderDialog({ workspace, pageId, folder, onClose }: FolderDialo
   const name = nameInput ?? (folder !== undefined ? folder.name : t("dialog.folder.defaultName"));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
 
   const renaming = folder !== undefined;
 
@@ -91,50 +84,34 @@ export function FolderDialog({ workspace, pageId, folder, onClose }: FolderDialo
   }
 
   return (
-    <div
-      className="vela-dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
+    <VdFormDialog
+      title={renaming ? t("dialog.folder.renameTitle") : t("dialog.folder.newTitle")}
+      submitLabel={
+        busy ? t("dialog.folder.saving") : renaming ? t("dialog.folder.rename") : t("dialog.folder.create")
+      }
+      busy={busy}
+      error={error}
+      cancelLabel={t("common.cancel")}
+      onCancel={onClose}
+      onSubmit={handleSubmit}
     >
-      <div className="vela-dialog" role="dialog" aria-modal="true" aria-labelledby="vela-folder-title">
-        <h2 id="vela-folder-title" className="vela-dialog__title">
-          {renaming ? t("dialog.folder.renameTitle") : t("dialog.folder.newTitle")}
-        </h2>
-        <form className="vela-form" onSubmit={handleSubmit}>
-          <label className="vela-form__label" htmlFor="vela-folder-name">
-            {t("dialog.folder.nameLabel")}
-          </label>
-          <input
-            id="vela-folder-name"
-            className="vela-input"
-            type="text"
-            value={name}
-            maxLength={80}
-            autoFocus
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setNameInput(event.target.value)}
-            aria-describedby={error !== null ? "vela-folder-error" : undefined}
-          />
-          {error !== null ? (
-            <p id="vela-folder-error" className="vela-form__error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <div className="vela-dialog__actions">
-            <button type="button" className="vela-button" onClick={onClose} disabled={busy}>
-              {t("common.cancel")}
-            </button>
-            <button type="submit" className="vela-button vela-button--primary" disabled={busy}>
-              {busy ? t("dialog.folder.saving") : renaming ? t("dialog.folder.rename") : t("dialog.folder.create")}
-            </button>
-          </div>
-        </form>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-folder-name">
+          {t("dialog.folder.nameLabel")}
+        </label>
+        <Input
+          id="vela-folder-name"
+          type="text"
+          value={name}
+          maxLength={80}
+          autoFocus
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(event) => setNameInput(event.target.value)}
+          aria-describedby={error !== null ? "vela-folder-error" : undefined}
+        />
       </div>
-    </div>
+    </VdFormDialog>
   );
 }
 

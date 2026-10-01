@@ -41,3 +41,9 @@ tmp/
 
 # Local server data (SQLite/WAL)
 .veladesk-data/
+
+# Task 018 browser-test evidence (screenshots, videos, traces, reports)
+artifacts/
+
+# Local GUI-test screenshots (task 018 debugging) — never released.
+gui-test-screenshots/

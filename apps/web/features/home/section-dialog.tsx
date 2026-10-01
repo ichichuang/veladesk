@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import type { DesktopPage, WorkspaceSnapshot } from "@veladesk/domain";
 import { addPage, renamePage } from "@veladesk/domain";
 import type { WorkspaceEditFailureReason } from "@veladesk/domain";
@@ -10,6 +10,8 @@ import { useI18n } from "../i18n/use-i18n";
 import type { TranslateFn } from "../i18n/use-i18n";
 import { createBrowserId } from "./browser-id";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
+import { VdFormDialog } from "@components/vd/form-dialog";
+import { Input } from "@components/ui/input";
 import "./home-shell.css";
 
 interface SectionDialogProps {
@@ -24,7 +26,8 @@ interface SectionDialogProps {
 }
 
 /**
- * Section name dialog (task 015): create and rename share one surface.
+ * Section name dialog (task 015, 018 designed shell): create and rename
+ * share one surface.
  *
  * A new section copies the CURRENT section's grid as its snap lattice,
  * starts as a placement-native v2 Grid page (empty canvas, empty legacy
@@ -40,16 +43,6 @@ export function SectionDialog({ workspace, gridSourcePage, section, onClose, onC
   const name = nameInput ?? (section !== undefined ? section.name : t("dialog.section.defaultName"));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
 
   const renaming = section !== undefined;
 
@@ -110,50 +103,34 @@ export function SectionDialog({ workspace, gridSourcePage, section, onClose, onC
   }
 
   return (
-    <div
-      className="vela-dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
+    <VdFormDialog
+      title={renaming ? t("dialog.section.renameTitle") : t("dialog.section.createTitle")}
+      submitLabel={
+        busy ? t("dialog.section.saving") : renaming ? t("dialog.section.rename") : t("dialog.section.create")
+      }
+      busy={busy}
+      error={error}
+      cancelLabel={t("common.cancel")}
+      onCancel={onClose}
+      onSubmit={handleSubmit}
     >
-      <div className="vela-dialog" role="dialog" aria-modal="true" aria-labelledby="vela-section-title">
-        <h2 id="vela-section-title" className="vela-dialog__title">
-          {renaming ? t("dialog.section.renameTitle") : t("dialog.section.createTitle")}
-        </h2>
-        <form className="vela-form" onSubmit={handleSubmit}>
-          <label className="vela-form__label" htmlFor="vela-section-name">
-            {t("dialog.section.nameLabel")}
-          </label>
-          <input
-            id="vela-section-name"
-            className="vela-input"
-            type="text"
-            value={name}
-            maxLength={80}
-            autoFocus
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setNameInput(event.target.value)}
-            aria-describedby={error !== null ? "vela-section-error" : undefined}
-          />
-          {error !== null ? (
-            <p id="vela-section-error" className="vela-form__error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <div className="vela-dialog__actions">
-            <button type="button" className="vela-button" onClick={onClose} disabled={busy}>
-              {t("common.cancel")}
-            </button>
-            <button type="submit" className="vela-button vela-button--primary" disabled={busy}>
-              {busy ? t("dialog.section.saving") : renaming ? t("dialog.section.rename") : t("dialog.section.create")}
-            </button>
-          </div>
-        </form>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-section-name">
+          {t("dialog.section.nameLabel")}
+        </label>
+        <Input
+          id="vela-section-name"
+          type="text"
+          value={name}
+          maxLength={80}
+          autoFocus
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(event) => setNameInput(event.target.value)}
+          aria-describedby={error !== null ? "vela-section-error" : undefined}
+        />
       </div>
-    </div>
+    </VdFormDialog>
   );
 }
 

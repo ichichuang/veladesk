@@ -343,6 +343,27 @@ describe("decodeWorkspaceSnapshot — appearance preferences", () => {
     }
   });
 
+  it("decodes a pre-019-D appearance with no interfaceStyle; the field stays undefined", () => {
+    const decoded = decodeWorkspaceSnapshot(withAppearance(validAppearance));
+
+    expect(decoded).toBeDefined();
+    expect(decoded?.preferences.appearance?.interfaceStyle).toBeUndefined();
+  });
+
+  it("decodes every interface style", () => {
+    for (const interfaceStyle of ["clean", "soft", "glass"]) {
+      expect(
+        decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, interfaceStyle }))
+      ).toBeDefined();
+    }
+  });
+
+  it("rejects an unknown interface style structurally", () => {
+    expect(
+      decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, interfaceStyle: "frosted" }))
+    ).toBeUndefined();
+  });
+
   it("rejects an unknown color mode structurally", () => {
     expect(
       decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, colorMode: "sepia" }))

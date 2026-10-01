@@ -17,27 +17,61 @@ Create your own workspace with apps, folders, widgets, multiple desktop pages, a
 - 🧩 **Widgets & plugins** — extensible through `@veladesk/plugin-sdk`
 - 🎨 **Themes & animated wallpapers** — colors, icons, fonts, and custom CSS/JS
 - ✨ **Silky-smooth interactions** — a desktop-grade motion experience in the browser
-- 🐳 **Self-hosted** — run it on your own machine or homelab with Docker
+- 🏠 **Self-hosted** — run it on your own machine or homelab, data stays local
 
 ## 🚧 Status
 
-VelaDesk is in early development (`v0.1.0`). The repository scaffolding is landing now — code is on the way.
-
-Planned internal packages:
+VelaDesk is in early development. Internal packages:
 
 | Package | Purpose |
 | --- | --- |
-| `@veladesk/ui` | Shared UI components |
-| `@veladesk/desktop-engine` | Desktop grid, layout, and drag-and-drop core (used by the interaction lab) |
+| `@veladesk/desktop-engine` | Desktop grid, layout, collision and selection logic |
 | `@veladesk/canvas-engine` | Continuous canvas geometry: rects, snap lattice, resize math, history |
 | `@veladesk/domain` | Workspace, entity, page, dock and folder domain contracts |
-| `@veladesk/animation-engine` | Motion and interaction effects |
-| `@veladesk/wallpaper-engine` | Static and animated wallpapers |
-| `@veladesk/plugin-sdk` | Plugin and widget development kit |
-| `@veladesk/database` | Storage and persistence |
+| `@veladesk/assets` | Content-addressed image asset pipeline |
+| `@veladesk/icon-catalog` | Bundled offline icon catalog (Iconify collections) |
+| `@veladesk/database` | SQLite persistence (Drizzle migrations) |
 | `@veladesk/local-store` | IndexedDB working copy, outbox and local-first sync state |
 | `@veladesk/sync` | HTTP workspace synchronization and outbox coordination |
 | `@veladesk/client-runtime` | Browser workspace bootstrap and local-first session runtime |
+
+The product version lives in exactly one place — the root `package.json` —
+and everything else (Settings display, release archives, git tags, GitHub
+Releases) derives from it.
+
+## Download
+
+Official releases:
+
+https://github.com/ichichuang/veladesk/releases/latest
+
+Each release ships a ready-to-run bundle for Windows, Linux and macOS
+(the bundle requires Node.js — it is a Next.js standalone server, not a
+native installer).
+
+### Quick Start
+
+1. Download the package for your operating system.
+2. Extract it.
+3. Install [Node.js 24 LTS](https://nodejs.org/).
+4. Run `start-veladesk.cmd` (Windows) or `./start-veladesk.sh` (macOS/Linux).
+5. Open http://127.0.0.1:3000
+
+By default VelaDesk listens on `127.0.0.1:3000` only. Your workspace data
+(SQLite database and uploaded assets) lives in a per-user data directory —
+never inside the app folder:
+
+- Windows: `%LOCALAPPDATA%\VelaDesk`
+- macOS: `~/Library/Application Support/VelaDesk`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/veladesk`
+
+### Updating
+
+1. Download the new release.
+2. Extract it and replace your VelaDesk app folder.
+3. Keep using the same user data directory — your workspaces are untouched.
+
+No reinstall, no pnpm, no migration steps needed.
 
 ## Development
 

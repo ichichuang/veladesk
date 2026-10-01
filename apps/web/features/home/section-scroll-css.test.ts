@@ -91,48 +91,56 @@ describe("home-shell.css right-side scroll ownership (task 017)", () => {
     expect(css).not.toMatch(/\.vela-desktop__lattice/);
   });
 
-  it("fades the visible grid in by opacity only, removed under reduced motion", () => {
+  it("the grid guides fade in via GSAP, opacity only (022)", () => {
+    // The stylesheet keyframes are gone; the overlay owns a one-shot GSAP
+    // fade to its resting 0.55 opacity. No transform, ever.
     const slots = ruleBlock(".vela-grid-slots");
-    expect(slots).toMatch(/animation:\s*vela-guides-in\s+140ms/);
-    const keyframes = css.match(/@keyframes vela-guides-in\s*\{([\s\S]*?)\n\}/);
-    expect(keyframes).not.toBeNull();
-    expect(keyframes![1]!).not.toMatch(/transform/);
-
-    const start = css.indexOf("@media (prefers-reduced-motion: reduce)");
-    const end = css.indexOf("@media", start + 1);
-    const reduced = css.slice(start, end === -1 ? undefined : end);
-    expect(reduced).toContain(".vela-grid-slots");
-    expect(reduced).toMatch(/animation:\s*none/);
+    expect(slots).not.toMatch(/animation:/);
+    expect(slots).toMatch(/opacity:\s*0\.55/);
+    const overlay = readSource("./grid-slot-overlay.tsx");
+    expect(overlay).toMatch(/gsap\.fromTo/);
+    expect(overlay).toMatch(/\{ opacity: 0\.55, duration: 0\.14/);
   });
 
-  it("plays the section transition as a whole-page vertical movement", () => {
-    const escapeRe = (value: string) => value.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
-    for (const phase of ["enter-next", "enter-prev", "exit-next", "exit-prev"]) {
-      const pattern =
-        escapeRe(`.vela-section-view[data-phase="${phase}"]`) +
-        "\\s*\\{[\\s\\S]*?animation:\\s*vela-section-" +
-        escapeRe(phase);
-      expect(css, phase).toMatch(new RegExp(pattern));
-    }
-    const enterNext = css.match(/@keyframes vela-section-enter-next\s*\{([\s\S]*?)\n\}/);
-    expect(enterNext).not.toBeNull();
-    expect(enterNext![1]!).toMatch(/translateY\(28px\)/);
+  it("hands the section page transition to the GSAP pair coordinator, viewport-sized (018/020-A2, 022)", () => {
+    // The CSS phase keyframes are gone — GSAP owns the page transition.
+    expect(css).not.toMatch(/vela-section-enter-next/);
+    // data-phase is a DOM debug attribute only — no CSS keyframe phases.
+    expect(css).not.toMatch(/data-phase/);
+    // The moving node stays the warm section LAYER; .vela-item transforms
+    // are untouched (dnd-kit hard-snap contract).
+    expect(css).toMatch(/\.vela-section-layer\s*\{/);
 
-    const start = css.indexOf("@media (prefers-reduced-motion: reduce)");
-    const end = css.indexOf("@media", start + 1);
-    const reduced = css.slice(start, end === -1 ? undefined : end);
-    expect(reduced).toContain(".vela-section-view");
+    const coordinator = readSource("./section-pair-animator.ts");
+    // Travel is the MEASURED section viewport height, never the content
+    // height: the shell passes clientHeight per command.
+    const shell = readSource("./desktop-shell.tsx");
+    expect(shell).toMatch(/clientHeight \?\? 480/);
+    expect(shell).toMatch(/createSectionPairCoordinator/);
+    // One shared playhead: both layers are tweens of ONE pair timeline.
+    expect(coordinator).toMatch(/gsap\.timeline\(/);
+    expect(coordinator).toMatch(/pair\.to\(outgoing/);
+    // Reduced motion settles instantly via the shared bridge: instant
+    // swaps, no transform animation.
+    expect(shell).toMatch(/useVdReducedMotion/);
   });
 });
 
-describe("left rail wheel navigation (task 017)", () => {
-  it("registers one deliberate non-passive wheel listener on the rail list", () => {
+describe("left rail wheel navigation (task 017, rebuilt 018)", () => {
+  it("binds one stable non-passive wheel listener to the full rail root", () => {
     const rail = readSource("./section-rail.tsx");
-    expect(rail).toMatch(/addEventListener\(\s*["']wheel["'],\s*onWheel,\s*\{\s*passive:\s*false\s*\}/);
+    expect(rail).toMatch(/addEventListener\(\s*["']wheel["'],\s*onWheel,\s*\{\s*passive:\s*false\s*\}\)/);
     expect(rail).toContain("event.preventDefault();");
-    // The accumulator is the pure module — no inline delta math.
+    // The intent model is the pure module — no inline delta math, and the
+    // 320ms lock-unlock contract is gone with it. 019-E routes the
+    // normalization through the event-facing helper (ctrl zoom excluded).
     expect(rail).toContain("advanceWheelNav(");
-    expect(rail).toContain("unlockWheelNav");
+    expect(rail).toContain("normalizeWheelEvent(");
+    expect(rail).toContain("stepSectionIndex");
+    expect(rail).toContain("resetWheelNav");
+    expect(rail).not.toContain("unlockWheelNav");
+    // The listener rides the full-height rail root (railRef), not the list.
+    expect(rail).toMatch(/ref=\{railRef\}/);
   });
 
   it("never mounts onWheel React props on the content scroll path", () => {

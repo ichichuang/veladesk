@@ -37,9 +37,7 @@ export interface DesktopCommandCallbacks {
   readonly onUndo: () => void;
   readonly onRedo: () => void;
   readonly onSync: () => void;
-  readonly onRefresh: () => void;
   readonly onOpenSettings: () => void;
-  readonly onToggleLocale: () => void;
 }
 
 export interface DesktopCommandInput {
@@ -66,11 +64,14 @@ export interface DesktopCommandInput {
  *   1. add app / new section / search
  *   2. arrange toggle (+ undo/redo only while arranging AND available)
  *   3. placement mode of the active section (arrange only)
- *   4. the one meaningful remote action, settings, language toggle
+ *   4. the one meaningful remote action (while dirty) and settings
  *
  * Unavailable actions are HIDDEN, never stacked up disabled: view mode has
  * no undo/redo and no placement controls, missing history hides the
  * corresponding entry, and a conflict offers no remote action at all.
+ * Administrative refresh-from-server and language toggling deliberately
+ * live outside this user surface (023-B.2): language belongs to Settings,
+ * and server reconciliation stays on the sync/error paths.
  */
 export function buildDesktopCommandEntries(
   input: DesktopCommandInput
@@ -126,23 +127,12 @@ export function buildDesktopCommandEntries(
   if (syncState === "dirty") {
     entries.push({ kind: "action", id: "sync", label: t("menu.syncNow"), onSelect: callbacks.onSync });
   }
-  if (syncState === "clean") {
-    entries.push({
-      kind: "action",
-      id: "refresh",
-      label: t("menu.refreshFromServer"),
-      onSelect: callbacks.onRefresh,
-    });
-  }
-  entries.push(
-    { kind: "action", id: "open-settings", label: t("menu.settings"), onSelect: callbacks.onOpenSettings },
-    {
-      kind: "action",
-      id: "toggle-locale",
-      label: t("menu.otherLocale"),
-      onSelect: callbacks.onToggleLocale,
-    }
-  );
+  entries.push({
+    kind: "action",
+    id: "open-settings",
+    label: t("menu.settings"),
+    onSelect: callbacks.onOpenSettings,
+  });
 
   return entries;
 }
@@ -200,6 +190,8 @@ export interface SectionMenuInput {
   readonly isEmpty: boolean;
   readonly callbacks: {
     readonly onRename: () => void;
+    /** Opens Settings on this section's background scope (023-C.2). */
+    readonly onBackground: () => void;
     readonly onSetDefault: () => void;
     readonly onMoveUp: () => void;
     readonly onMoveDown: () => void;
@@ -217,6 +209,12 @@ export function buildSectionMenuEntries(input: SectionMenuInput): readonly Deskt
   const { t, isDefault, isFirst, isLast, isEmpty, callbacks } = input;
   const entries: DesktopMenuEntry[] = [
     { kind: "action", id: "rename-section", label: t("menu.renameSection"), onSelect: callbacks.onRename },
+    {
+      kind: "action",
+      id: "section-background",
+      label: t("menu.sectionBackground"),
+      onSelect: callbacks.onBackground,
+    },
   ];
   if (!isDefault) {
     entries.push({

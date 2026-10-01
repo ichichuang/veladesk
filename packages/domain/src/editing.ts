@@ -4,6 +4,8 @@ import {
   removeCanvasItem,
   validateCanvasLayout,
 } from "@veladesk/canvas-engine";
+import { isWallpaperConfig } from "./wallpaper";
+import type { WallpaperConfig } from "./wallpaper";
 import type { CanvasLayout, CanvasRect } from "@veladesk/canvas-engine";
 import { validatePageLayout } from "@veladesk/desktop-engine";
 
@@ -57,6 +59,7 @@ export type WorkspaceEditFailureReason =
   | "default-page-not-found"
   | "invalid-appearance"
   | "invalid-grid-gap"
+  | "invalid-wallpaper"
   | "duplicate-page-id"
   | "invalid-page-name"
   | "page-layout-id-mismatch"
@@ -684,6 +687,44 @@ export function renamePage(
       pages: workspace.pages.map((candidate) =>
         candidate === page ? { ...page, name: nextName } : candidate
       ),
+    },
+  };
+}
+
+/**
+ * Sets or clears one page's background override (023-C.1), immutably.
+ * `null` REMOVES the override — the section immediately follows the
+ * workspace background again. Never touches membership, geometry, order or
+ * any other page; the config is validated by the same structural guard the
+ * decoder uses.
+ */
+export function replacePageWallpaper(
+  workspace: WorkspaceSnapshot,
+  pageId: DesktopPageId,
+  wallpaper: WallpaperConfig | null
+): WorkspaceEditResult {
+  const page = findDesktopPage(workspace, pageId);
+  if (page === undefined) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  if (wallpaper !== null && !isWallpaperConfig(wallpaper)) {
+    return { ok: false, reason: "invalid-wallpaper" };
+  }
+  return {
+    ok: true,
+    workspace: {
+      ...workspace,
+      pages: workspace.pages.map((candidate) => {
+        if (candidate !== page) {
+          return candidate;
+        }
+        if (wallpaper === null) {
+          const { wallpaper: removed, ...cleared } = page;
+          void removed;
+          return cleared;
+        }
+        return { ...page, wallpaper };
+      }),
     },
   };
 }

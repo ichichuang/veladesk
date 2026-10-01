@@ -32,6 +32,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Version gate (task 025): the root package.json is the single
+      # version source; any drifted workspace manifest fails the PR.
+      - name: Version check
+        run: pnpm version:check
+
       - name: Typecheck
         run: pnpm typecheck
 

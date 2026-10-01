@@ -58,7 +58,6 @@
   font-family: var(--vd-font);
   font-size: 13.5px;
   cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease;
 }
 
 .vela-button:hover:not(:disabled) {
@@ -115,18 +114,10 @@
     radial-gradient(38% 32% at 28% 34%, oklch(0.55 0.12 265 / 0.16), transparent 70%),
     radial-gradient(34% 30% at 74% 62%, oklch(0.5 0.11 195 / 0.14), transparent 70%);
   filter: blur(42px);
-  animation: vela-ambient 26s ease-in-out infinite alternate;
 }
 
-@keyframes vela-ambient {
-  from {
-    transform: translate3d(-1.5%, -1%, 0) scale(1);
-    opacity: 0.85;
-  }
-  to {
-    transform: translate3d(1.5%, 1.2%, 0) scale(1.06);
-    opacity: 1;
-  }
+.vela-boot__logo {
+  margin: 0 0 18px;
 }
 
 .vela-boot__content {
@@ -152,23 +143,14 @@
   position: relative;
 }
 
-.vela-boot__pulse::after {
-  content: "";
+/* 022: the sweep thumb is a real element; its sweep is an owned GSAP
+   tween (the vela-pulse keyframes are gone). */
+.vela-boot__pulse-thumb {
   position: absolute;
   inset: 0;
   width: 38%;
   border-radius: 1px;
   background: var(--vd-accent);
-  animation: vela-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes vela-pulse {
-  from {
-    transform: translateX(-110%);
-  }
-  to {
-    transform: translateX(370%);
-  }
 }
 
 .vela-screen__panel {
@@ -256,7 +238,6 @@
   color: var(--vd-text);
   font-family: var(--vd-font);
   font-size: 14px;
-  transition: border-color 140ms ease;
 }
 
 .vela-input:focus {
@@ -302,7 +283,6 @@
   font-size: 14px;
   text-align: left;
   cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease;
 }
 
 .vela-picker__item:hover:not(:disabled) {
@@ -389,6 +369,10 @@
   --vd-blur: 18px;
   --vd-radius: 14px;
   --vd-icon-size: 62px;
+  /* Interface style (019-D): the floating surfaces take their border from
+     the resolved border-strength token; strength 1 must equal the legacy
+     --vd-border look exactly. */
+  --vd-surface-border: oklch(0.9 0.02 264 / calc(0.14 * var(--vd-surface-border-strength, 1)));
   /* Snap-lattice hint color: a tiny 4px dot can afford a higher alpha than
      tile borders would — presence stays whisper-low. */
   --vd-grid-line: oklch(0.92 0.03 260 / 0.38);
@@ -401,14 +385,26 @@
 
   position: fixed;
   inset: 0;
-  overflow: hidden;
+  /*
+   * clip, NOT hidden (task 019-A): an overflow:hidden box is still a
+   * programmatically scrollable container, and the ambient ::before layer
+   * (inset:-20% + blur) permanently extends the scrollable overflow to
+   * ~(-288px, -183px) past the viewport. Any native ancestor scroll —
+   * focus() restoration, scrollIntoView, actionability scroll-into-view —
+   * then LATCHES scrollLeft/Top on the desktop with no user gesture able
+   * to scroll it back, displacing the in-flow workbench (rail + workspace)
+   * by exactly the latched amount, accumulating across overlay sessions.
+   * overflow:clip is not a scroll container: scroll setters no-op and
+   * scroll-into-view skips it, while clipping the wallpaper bleed exactly
+   * like hidden did.
+   */
+  overflow: clip;
   font-family: var(--vd-font);
   color: var(--vd-text);
-  background:
-    radial-gradient(120% 90% at 12% 8%, var(--vd-wall-1), transparent 62%),
-    radial-gradient(110% 85% at 88% 16%, var(--vd-wall-2), transparent 58%),
-    radial-gradient(130% 110% at 50% 112%, var(--vd-wall-3), transparent 60%),
-    var(--vd-bg);
+  /* 023-C: the neutral base only — the wallpaper blobs/images render on
+     the dedicated background layers (see .vela-desktop__wallpaper), one
+     definition shared with the Settings thumbnails. */
+  background: var(--vd-bg);
 }
 
 /* Explicit light palette — complete, not just a white background. */
@@ -427,6 +423,7 @@
   --vd-surface: oklch(1 0 0 / var(--vd-surface-opacity));
   --vd-surface-strong: oklch(1 0 0 / var(--vd-surface-strong-opacity));
   --vd-border: oklch(0.35 0.02 264 / 0.18);
+  --vd-surface-border: oklch(0.35 0.02 264 / calc(0.18 * var(--vd-surface-border-strength, 1)));
   --vd-text: oklch(0.24 0.02 264);
   --vd-text-muted: oklch(0.42 0.02 264);
   --vd-accent: oklch(0.56 0.16 var(--vd-accent-hue));
@@ -440,36 +437,14 @@
   --vd-label-shadow: none;
 }
 
-/* System mode follows the OS preference via CSS only — no JS matchMedia. */
-@media (prefers-color-scheme: light) {
-  .vela-desktop[data-vd-color-mode="system"] {
-    --vd-wall-l1: 0.85;
-    --vd-wall-c1: 0.06;
-    --vd-wall-a1: 0.55;
-    --vd-wall-l2: 0.8;
-    --vd-wall-c2: 0.06;
-    --vd-wall-a2: 0.5;
-    --vd-wall-l3: 0.88;
-    --vd-wall-c3: 0.05;
-    --vd-wall-a3: 0.5;
-
-    --vd-bg: oklch(0.96 0.008 264);
-    --vd-surface: oklch(1 0 0 / var(--vd-surface-opacity));
-    --vd-surface-strong: oklch(1 0 0 / var(--vd-surface-strong-opacity));
-    --vd-border: oklch(0.35 0.02 264 / 0.18);
-    --vd-text: oklch(0.24 0.02 264);
-    --vd-text-muted: oklch(0.42 0.02 264);
-    --vd-accent: oklch(0.56 0.16 var(--vd-accent-hue));
-    --vd-accent-strong: oklch(0.56 0.14 var(--vd-accent-hue) / 0.92);
-    --vd-accent-strong-hover: oklch(0.6 0.15 var(--vd-accent-hue) / 0.95);
-    --vd-accent-contrast: oklch(0.99 0.005 264);
-    --vd-accent-wash: oklch(0.56 0.14 var(--vd-accent-hue) / 0.16);
-    --vd-field: oklch(1 0 0 / 0.85);
-    --vd-chip: oklch(0.55 0.02 264 / 0.12);
-    --vd-grid-line: oklch(0.25 0.02 264 / 0.32);
-    --vd-label-shadow: none;
-  }
-}
+/*
+ * The former `@media (prefers-color-scheme: light)` branch for
+ * `[data-vd-color-mode="system"]` is superseded (021-R1): the shell
+ * resolves "system" to an effective light/dark value in JS
+ * (resolveEffectiveColorMode + matchMedia) and emits that value on
+ * `data-vd-color-mode`, so the explicit light palette above applies
+ * everywhere — desktop root and portal root alike.
+ */
 
 /* Wallpaper presets — hue/chroma variants of the shared blob geometry. */
 .vela-desktop[data-vd-wallpaper="midnight"] {
@@ -499,9 +474,174 @@
   --vd-wall-cf3: 0.32;
 }
 
-/* The single ambient pseudo layer — a slow, soft drift behind everything. */
-.vela-desktop::before {
-  content: "";
+/*
+ * The wallpaper background layers (task 023-C): full-desktop, behind the
+ * rail, workspace and dock, pointer-transparent and clipped. At most two
+ * surfaces exist (settled + incoming crossfade); identical configs keep
+ * the same node with no transition. Preset geometry is the SAME blob
+ * definition that used to sit on the desktop root, scoped to the surface
+ * so Settings thumbnails render from one source with the desktop.
+ */
+.vela-desktop__wallpaper {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: clip;
+  pointer-events: none;
+}
+
+.vela-desktop__wallpaper-settled,
+.vela-desktop__wallpaper-incoming {
+  position: absolute;
+  inset: 0;
+}
+
+.vela-wallpaper-surface {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/*
+ * Compact preview art (023-R1 Stage B): the shared surface painted inside
+ * a preview-owned, size-constrained relative box — a fixed-height art band
+ * (64–80px target), never a full-desktop 16:9 preview whose height expands
+ * with the card width. Static and pointer-transparent inside the accessible
+ * selection button; no desktop-only fixed positioning, viewport dimensions
+ * or animation styles leak into thumbnail use.
+ */
+.vela-wallpaper-surface--thumb-art {
+  position: relative;
+  inset: auto;
+  height: 72px;
+  border-radius: 8px;
+  overflow: clip;
+}
+
+/*
+ * The preset choices: compact cards that reflow by the settings content
+ * pane's OWN width (the pane is a size container) — four columns from
+ * 560px, two below. No viewport-sized thumbnails, no per-card JavaScript
+ * measurement, no React state.
+ */
+.vela-wallpaper-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@container (min-width: 560px) {
+  .vela-wallpaper-choices {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.vela-wallpaper-choice {
+  min-width: 0;
+}
+
+.vela-wallpaper-surface--preset {
+  --vds-wall-l1: 0.3;
+  --vds-wall-c1: 0.08;
+  --vds-wall-a1: 0.5;
+  --vds-wall-l2: 0.27;
+  --vds-wall-c2: 0.08;
+  --vds-wall-a2: 0.48;
+  --vds-wall-l3: 0.31;
+  --vds-wall-c3: 0.07;
+  --vds-wall-a3: 0.42;
+  --vds-wall-cf1: 1;
+  --vds-wall-cf2: 1;
+  --vds-wall-cf3: 1;
+  --vds-wall-h1: 278;
+  --vds-wall-h2: 218;
+  --vds-wall-h3: 318;
+  background:
+    radial-gradient(
+      120% 90% at 12% 8%,
+      oklch(
+        var(--vds-wall-l1) calc(var(--vds-wall-c1) * var(--vds-wall-cf1)) var(--vds-wall-h1) /
+          var(--vds-wall-a1)
+      ),
+      transparent 62%
+    ),
+    radial-gradient(
+      110% 85% at 88% 16%,
+      oklch(
+        var(--vds-wall-l2) calc(var(--vds-wall-c2) * var(--vds-wall-cf2)) var(--vds-wall-h2) /
+          var(--vds-wall-a2)
+      ),
+      transparent 58%
+    ),
+    radial-gradient(
+      130% 110% at 50% 112%,
+      oklch(
+        var(--vds-wall-l3) calc(var(--vds-wall-c3) * var(--vds-wall-cf3)) var(--vds-wall-h3) /
+          var(--vds-wall-a3)
+      ),
+      transparent 60%
+    ),
+    var(--vd-bg);
+}
+
+.vela-wallpaper-surface--preset[data-wallpaper-preset="midnight"] {
+  --vds-wall-h1: 265;
+  --vds-wall-h2: 292;
+  --vds-wall-h3: 240;
+  --vds-wall-cf1: 1;
+  --vds-wall-cf2: 0.95;
+  --vds-wall-cf3: 1;
+}
+
+.vela-wallpaper-surface--preset[data-wallpaper-preset="dawn"] {
+  --vds-wall-h1: 60;
+  --vds-wall-h2: 35;
+  --vds-wall-h3: 15;
+  --vds-wall-cf1: 0.75;
+  --vds-wall-cf2: 0.85;
+  --vds-wall-cf3: 0.7;
+}
+
+.vela-wallpaper-surface--preset[data-wallpaper-preset="mist"] {
+  --vds-wall-h1: 250;
+  --vds-wall-h2: 230;
+  --vds-wall-h3: 270;
+  --vds-wall-cf1: 0.3;
+  --vds-wall-cf2: 0.28;
+  --vds-wall-cf3: 0.32;
+}
+
+/* Custom image: neutral canvas behind a centered, non-repeating image.
+   cover = fill without distortion; contain = show the entire image. No
+   preset tint/veil is applied — chrome surfaces carry readability. */
+.vela-wallpaper-surface--image {
+  background: var(--vd-bg);
+}
+
+.vela-wallpaper-surface__image,
+.vela-wallpaper-surface__pending {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.vela-wallpaper-surface--image[data-wallpaper-fit="contain"] .vela-wallpaper-surface__image {
+  object-fit: contain;
+  object-position: center;
+  background-repeat: no-repeat;
+}
+
+.vela-wallpaper-surface__image {
+  user-select: none;
+}
+
+/* The ambient wallpaper layer — a slow, soft drift behind everything.
+   022: a REAL element (the desktop root renders .vela-desktop__ambient)
+   so the GSAP ambient drift tween can own its transform — stylesheet
+   keyframes and pseudo-element animation are gone. */
+.vela-desktop__ambient {
   position: absolute;
   inset: -20%;
   pointer-events: none;
@@ -510,7 +650,62 @@
     radial-gradient(36% 30% at 30% 30%, oklch(0.55 0.12 265 / 0.13), transparent 70%),
     radial-gradient(32% 28% at 72% 64%, oklch(0.5 0.11 195 / 0.11), transparent 70%);
   filter: blur(46px);
-  animation: vela-ambient 30s ease-in-out infinite alternate;
+}
+
+/*
+ * The Settings frame's ONE size owner (task 023-R2): the PAINTED window
+ * surface — the node that draws the background, border and radius —
+ * marked `data-settings-surface` by SettingsCenter through the shared
+ * dialog's surfaceProps, and sized HERE and nowhere else.
+ *
+ * The desktop frame is EXACT plain values (880×680): never content-sized,
+ * never min()-derived, never flex-derived. `flex: none` detaches the
+ * surface from the outer positioning node's flex column entirely — its
+ * main size comes from these declarations alone, not from a percentage
+ * flex basis racing the flex algorithm's intrinsic-sizing fallbacks (the
+ * 023-R1 contract left that ambiguity in the chain). The outer node
+ * shrinkwraps this definite box, so the centered translate stays exact
+ * and react-aria overlay measurement sees the real geometry.
+ *
+ * Small viewports clamp the exact frame through max-width/max-height
+ * (16px viewport margins each side); a @supports layer upgrades vh to
+ * dynamic vh. The same rule owns the internal three-row window (52px
+ * header / flexible body / 60px footer — never utility order) and clips
+ * to the rounded corners, so no child can grow, shrink or restyle the
+ * frame: short content leaves the body row's remaining space blank, long
+ * content scrolls inside the pane only.
+ */
+[data-vd-ui] [data-settings-dialog] > [data-settings-surface] {
+  box-sizing: border-box;
+
+  width: 880px;
+  height: 680px;
+
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+
+  flex: none;
+
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr) 60px;
+
+  overflow: hidden;
+}
+
+@supports (height: 100dvh) {
+  [data-vd-ui] [data-settings-dialog] > [data-settings-surface] {
+    max-height: calc(100dvh - 32px);
+  }
+}
+
+/*
+ * The Settings content pane is the ONE ordinary scroll owner, and the
+ * container for the background editor's column layout (023-R1 Stage B):
+ * preset thumbnails reflow 2 ↔ 4 columns by the PANE's width, never by
+ * viewport media queries or per-card measurement.
+ */
+[data-vd-ui] [data-settings-pane] {
+  container-type: inline-size;
 }
 
 /* --- Two-column workspace composition (task 017) ------------------------- */
@@ -549,18 +744,17 @@
 }
 
 .vela-rail__list {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  scrollbar-width: none;
+  /* Scroll styling is owned by the canonical [data-vd-scroll] layer (task
+     021-A) via the attribute on this element: quiet thin scrollbar instead
+     of the old fully-hidden one. The rail's WHEEL is still section
+     navigation (019/020) — the attribute adds no wheel scope, and the
+     full-rail listener keeps swallowing wheel input. */
   padding: 2px;
-}
-
-.vela-rail__list::-webkit-scrollbar {
-  display: none;
 }
 
 .vela-rail__item {
@@ -574,41 +768,43 @@
   font-size: 13.5px;
   text-align: left;
   cursor: pointer;
-  transition: color 140ms ease, background-color 140ms ease;
 }
 
 .vela-rail__item-label {
+  position: relative;
   display: block;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-/* The accent marker: a quiet 2px rail left of the active label. */
-.vela-rail__item::before {
-  content: "";
+/*
+ * The active indicator (022): ONE absolutely-positioned accent bar that
+ * glides between titles (static under reduced motion). Positioning
+ * (top/height in px) is written ONLY by the GSAP indicator
+ * (VdAnimatedIndicator, 022-R2) inside the list; until a valid row box
+ * exists the marker stays hidden (opacity 0) — there is deliberately NO
+ * percent-size fallback, which painted the bar stretched across several
+ * rows whenever inline geometry was absent (first entry / re-entry).
+ */
+.vela-rail__indicator {
   position: absolute;
   left: 0;
-  top: 50%;
-  width: 2px;
-  height: 0;
-  border-radius: 1px;
+  width: 2.5px;
+  border-radius: 2px;
   background: var(--vd-accent);
-  transform: translateY(-50%);
-  transition: height 140ms ease;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .vela-rail__item:hover {
   color: var(--vd-text);
+  background: oklch(1 0 0 / 0.03);
 }
 
 .vela-rail__item[data-active="true"] {
   color: var(--vd-text);
   background: oklch(1 0 0 / 0.06);
-}
-
-.vela-rail__item[data-active="true"]::before {
-  height: 60%;
 }
 
 .vela-rail__item:focus-visible {
@@ -664,9 +860,12 @@
 }
 
 /*
- * The section viewport holds exactly the ACTIVE section's view (plus a
- * brief exiting twin during transitions). Padding reserves the chrome
- * bands; the dock reserve only grows when a dock actually exists.
+ * The section viewport holds the MOUNTED warm layers (020-A2): the active
+ * section, its ±1 hidden neighbors and any in-flight transition partner.
+ * It is a static clip box — never a scroll or animated node. `overflow:
+ * clip` (019-A lineage): the viewport must never become a scroll container.
+ * Padding reserves the chrome bands; the dock reserve only grows when a
+ * dock actually exists.
  */
 .vela-section-viewport {
   --vd-section-padding-right: 34px;
@@ -676,7 +875,7 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 
 .vela-desktop[data-has-dock="true"] .vela-section-viewport {
@@ -684,90 +883,64 @@
 }
 
 /*
- * One mounted section view. The transition phases animate the whole-page
- * vertical movement (next: exit up / enter from below; previous: mirrored).
- * Both pages unmount/resolve when the transition completes; rapid input
- * swaps instantly (the shell decides — CSS only defines the animation).
+ * One mounted section LAYER (020-A2): the whole-page vertical transition
+ * is pose-driven by the shell's navigation machine (section-view.tsx) and
+ * rides on this wrapper ONLY — never on .vela-item (the dnd-kit
+ * hard-snap contract). Warm sections stay mounted here: hidden neighbors
+ * keep real geometry for measurement but never paint, never take
+ * pointers, never take focus.
+ *
+ * Compositing contract (task 020-A1 §26–§27, scoped 020-A2 §24): the
+ * wrapper carries `contain: layout paint` — the invalidation boundary is
+ * the wrapper box, exactly the region the viewport clips. will-change is
+ * NOT permanent: only layers actually animating a transition are promoted
+ * ([data-transitioning]), so hidden warm pages hold no compositor
+ * layers.
  */
-.vela-section-view {
+.vela-section-layer {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  contain: layout paint;
 }
 
-.vela-section-view[data-phase="enter-next"] {
-  animation: vela-section-enter-next 190ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-.vela-section-view[data-phase="enter-prev"] {
-  animation: vela-section-enter-prev 190ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-/* Exiting views render below the entering one and never take pointers. */
-.vela-section-view[data-phase="exit-next"],
-.vela-section-view[data-phase="exit-prev"] {
+/*
+ * A prewarmed neighbor: fully laid out (real geometry, measurable by the
+ * ResizeObservers that feed the adaptive app content) but invisible,
+ * pointer-inert, non-focusable (the element also carries inert +
+ * aria-hidden). NEVER display:none — that would drop the geometry the
+ * warm set exists to prewarm. Never opacity:0 — that would still paint
+ * the expensive descendants.
+ */
+.vela-section-layer[data-warm-hidden="true"] {
+  visibility: hidden;
   pointer-events: none;
-  z-index: 0;
 }
 
-.vela-section-view[data-phase="enter-next"],
-.vela-section-view[data-phase="enter-prev"],
-.vela-section-view[data-phase="active"] {
-  z-index: 1;
+/*
+ * Only the two visible transition partners are promoted while the motion
+ * runs — the machine drives the attribute for exactly the transition
+ * window (entering + exiting layers, cleared when the last exit settles).
+ */
+.vela-section-layer[data-transitioning="true"] {
+  will-change: transform, opacity;
 }
 
-.vela-section-view[data-phase="exit-next"] {
-  animation: vela-section-exit-next 190ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-.vela-section-view[data-phase="exit-prev"] {
-  animation: vela-section-exit-prev 190ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-@keyframes vela-section-enter-next {
-  from {
-    opacity: 0;
-    transform: translateY(28px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes vela-section-enter-prev {
-  from {
-    opacity: 0;
-    transform: translateY(-28px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes vela-section-exit-next {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-28px);
-  }
-}
-
-@keyframes vela-section-exit-prev {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(28px);
-  }
+/*
+ * Task 020-A1 §24: glass tiles blur their BACKDROP, and a backdrop filter
+ * inside a MOVING subtree must re-sample the backdrop every animation
+ * frame — the single most expensive thing a section switch can do. The
+ * wallpaper behind the moving page is static, so while a transition is in
+ * flight the glass tiles in BOTH partners render as their translucent tint
+ * without the live blur, and the blur returns the moment the last exit
+ * settles (the machine idles and data-section-transitioning drops). Scoped to the transition window — never removed
+ * globally.
+ */
+.vela-section-viewport[data-section-transitioning="true"] .vela-app-icon[data-decoration="glass"] {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /*
@@ -851,16 +1024,6 @@
   display: block;
   pointer-events: none;
   opacity: 0.55;
-  animation: vela-guides-in 140ms ease;
-}
-
-@keyframes vela-guides-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 0.55;
-  }
 }
 
 /*
@@ -924,12 +1087,12 @@
   align-items: center;
   gap: 10px;
   padding: 5px 8px;
-  border: 1px solid var(--vd-border);
+  border: 1px solid var(--vd-surface-border, var(--vd-border));
   border-radius: 999px;
   background: var(--vd-surface);
   backdrop-filter: blur(var(--vd-blur));
   -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: 0 8px 24px oklch(0 0 0 / 0.22);
+  box-shadow: var(--vd-surface-shadow, 0 8px 24px oklch(0 0 0 / 0.22));
 }
 
 .vela-arrange-bar__modes {
@@ -950,7 +1113,6 @@
   font-size: 12.5px;
   line-height: 1.2;
   cursor: pointer;
-  transition: color 140ms ease, background-color 140ms ease;
 }
 
 .vela-segmented__option:hover:not(:disabled) {
@@ -994,7 +1156,6 @@
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
-  transition: background-color 140ms ease;
 }
 
 .vela-arrange-bar__gap-step:hover:not(:disabled) {
@@ -1037,7 +1198,6 @@
   background: transparent;
   color: var(--vd-text-muted);
   cursor: pointer;
-  transition: color 140ms ease, background-color 140ms ease;
 }
 
 .vela-arrange-bar__history svg {
@@ -1109,20 +1269,9 @@ button.vela-sync-status:focus-visible {
 }
 
 /* --- Move-to-section dialog list ------------------------------------------ */
-
-.vela-move-section__list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 40vh;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-}
-
-.vela-move-section__option {
-  text-align: left;
-}
-
+/* The old .vela-move-section__list/.vela-move-section__option rules are
+   gone (task 021-A): the rebuilt dialog scrolls through the canonical
+   VdScrollArea and styles rows with the shared designed-control classes. */
 /* --- Desktop items ------------------------------------------------------- */
 
 /*
@@ -1158,34 +1307,74 @@ button.vela-sync-status:focus-visible {
   position: absolute;
   inset: 0;
   display: block;
-  /* 017-C: the body is the query container for the LABEL — the label's
-     cqmin must resolve against the item box, not fall back to the viewport.
-     The glyph keeps its own, closer container (.vela-item__icon-wrap). */
+  /* Query container for the folder glyph's cqmin and the app surface's
+     cqmin radius (019-B: the adaptive app content itself sizes from the
+     resolver vars, not container units). */
   container-type: size;
   transform: var(--vd-canvas-drag-preview, none);
 }
 
-/* The decoration surface fills the WHOLE rect: a landscape rect paints a
-   landscape tile, never a square scaled up inside a transparent wrapper.
-   The wrapper is the QUERY CONTAINER of the tile's internal sizes: container
-   units used by the tile itself would otherwise resolve against the viewport
-   (an element is never its own container). */
-.vela-item__icon-wrap {
+/*
+ * 019-B adaptive app content: ONE composition contract for the desktop
+ * Grid host, the freeform canvas and the visual-editor preview. The
+ * resolver (app-content-layout.ts) writes the --vd-app-* vars on the item
+ * button from its RENDERED box; this layer only arranges:
+ *
+ *   [ icon box ]  gap  [ title ]   — column (stack) or row (inline),
+ *                                    the whole group centered;
+ *   [ icon box ]               — solo (labelVisible=false), no title
+ *                                 strip, no empty label node.
+ *
+ * The decoration surface (.vela-app-icon--surface below) stays a SIBLING
+ * filling the entire outer geometry; the content never sizes grid tracks
+ * or freeform rects (it is absolutely positioned inside the box).
+ */
+.vela-app-content {
   position: absolute;
   inset: 0;
-  display: block;
-  container-type: size;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--vd-app-content-padding, 8px);
+  gap: var(--vd-app-content-gap, 6px);
+  pointer-events: none;
 }
 
-/* View mode only: the hover lift is decorative, so it may ease. Arrange mode
-   never eases item transforms — drag and hover transforms must not compete. */
-.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"] .vela-item__body {
-  transition: transform 160ms ease;
+.vela-app-content[data-layout="inline"] {
+  flex-direction: row;
 }
 
-.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"]:hover:not([data-dragging="true"]) .vela-item__body {
-  transform: translateY(-2px);
+/* The composed icon box: glyph bounds for library SVGs, uploaded images
+   and generated text alike. Grid centering keeps every glyph optically
+   centered without stretching. */
+.vela-app-content__icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: var(--vd-app-icon-box, 48px);
+  height: var(--vd-app-icon-box, 48px);
 }
+
+/* The app title INSIDE the adaptive content: static flow (never the
+   legacy bottom-anchored strip), sized entirely by the resolver vars.
+   The base .vela-item__label rule below still serves folders and the
+   folder overlay, which keep their legacy composition (019-B §14). */
+.vela-app-content .vela-item__label {
+  position: static;
+  max-width: var(--vd-app-label-max-width, 120px);
+  overflow: hidden;
+  font-size: var(--vd-app-label-size, 12.5px);
+  line-height: var(--vd-app-label-line-height, 15.5px);
+  text-align: center;
+  text-shadow: var(--vd-label-shadow);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* View-mode hover lift is GSAP-owned (useVdHoverLift on .vela-item__body,
+   task 022); arrange mode never lifts — drag and hover transforms must not
+   compete. */
 
 .vela-item:focus-visible {
   outline: 2px solid var(--vd-accent);
@@ -1198,13 +1387,14 @@ button.vela-sync-status:focus-visible {
   cursor: grabbing;
 }
 
+/* The fixed-slot tile base (019-B): folder-overlay tiles (AppIconTile)
+   and the folder glyph. Desktop apps left this path — they render the
+   full-geometry surface + adaptive content instead. */
 .vela-item__icon {
   display: grid;
   place-items: center;
-  /* The shared slot variable (not --vd-icon-size directly) so the editor
-     preview and the dock stay in lockstep with the responsive shrink. Both
-     desktop geometry hosts (.vela-canvas, .vela-grid-host) override this
-     box to fill the placement box instead (below). */
+  /* The shared slot variable (not --vd-icon-size directly) so the dock
+     stays in lockstep with the responsive shrink. */
   width: var(--vd-slot-icon-size);
   height: var(--vd-slot-icon-size);
   border-radius: calc(var(--vd-slot-icon-size) * 0.26);
@@ -1226,9 +1416,9 @@ button.vela-sync-status:focus-visible {
 /* On the DESKTOP (freeform canvas AND grid host) a folder tile is a
    surface too: it fills the placement box and keeps its glyph centered
    and proportional. The tile is also the QUERY CONTAINER for its svg —
-   apps get one from .vela-item__icon-wrap, but the folder branch has no
-   wrap, so without container-type here the cqmin below would fall back
-   to the viewport and always sit at the 180px cap. */
+   the folder branch has no other container, so without container-type
+   here the cqmin below would fall back to the viewport and always sit at
+   the 180px cap. */
 .vela-canvas .vela-item__icon--folder,
 .vela-grid-host .vela-item__icon--folder {
   position: absolute;
@@ -1245,15 +1435,10 @@ button.vela-sync-status:focus-visible {
 }
 
 /*
- * The label follows the tile's bottom center and never influences the rect:
- * a wide tile centers it, a narrow one ellipsizes it, a short one lets it
- * overlap the glyph's baseline rather than shrinking the geometry.
- *
- * 017-C: the size is presentation — the fixed 12.5px baseline × per-app
- * --vd-app-label-scale, safety-clamped (9px floor keeps 75% readable in
- * container-less contexts). This base rule serves every context WITHOUT a
- * query container (folder overlay, preview name); the desktop hosts
- * upgrade it to a responsive baseline below.
+ * LEGACY composition, folders + folder overlay only (019-B): desktop APPS
+ * compose adaptively (.vela-app-content above) and never paint the label
+ * as a bottom-anchored strip. Folders keep this look — the label follows
+ * the tile's bottom center and never influences the rect.
  */
 .vela-item__label {
   position: absolute;
@@ -1263,7 +1448,7 @@ button.vela-sync-status:focus-visible {
   max-width: 100%;
   padding: 0 6px;
   overflow: hidden;
-  font-size: clamp(9px, calc(12.5px * var(--vd-app-label-scale, 1)), 24px);
+  font-size: 12.5px;
   line-height: 1.25;
   text-align: center;
   text-shadow: var(--vd-label-shadow);
@@ -1271,37 +1456,33 @@ button.vela-sync-status:focus-visible {
   text-overflow: ellipsis;
 }
 
-/* On the DESKTOP hosts (017-C) the label responds to the item box like the
-   glyph does: cqmin against .vela-item__body = the item's smaller side, ×
-   per-app scale, clamped so tiny cells stay readable and huge tiles stay
-   bounded. The 14cqmin share puts a default 1×1 cell (≈90px) right at the
-   historical 12.5px look. Purely presentational — a label never sizes a
+/* Folder tiles on the DESKTOP hosts keep the responsive cqmin upgrade of
+   the legacy baseline. Purely presentational — a label never sizes a
    track or a rect. */
 .vela-canvas .vela-item__label,
 .vela-grid-host .vela-item__label {
-  font-size: clamp(9px, calc(14cqmin * var(--vd-app-label-scale, 1)), 24px);
+  font-size: clamp(9px, 14cqmin, 24px);
 }
 
 /* --- App icon renderer (016-A) ------------------------------------------
-   One decoration model for every app icon: the desktop tile (.vela-app-icon
-   on .vela-item__icon) and the dock button (which IS the tile) both key off
-   the same data-decoration attribute and the same inline vars:
-   --vd-app-icon-scale (visual multiplier, never a layout size),
+   One decoration model for every app icon: the adaptive desktop surface
+   (.vela-app-icon--surface), the fixed-slot tile (.vela-app-icon, dock +
+   folder overlay) and the dock button all key off the same
+   data-decoration attribute and the same inline vars:
    --vd-app-icon-bg (only set for a custom decoration color; the fallback
    inside var() IS the "Auto" look), --vd-app-icon-fg (only set for a
    custom foreground color). All var values are composed in app-icon.ts
-   from validated #RRGGBB — user strings never reach CSS raw. */
+   from validated #RRGGBB — user strings never reach CSS raw.
+   019-B: the per-app --vd-app-icon-scale/--vd-app-label-scale
+   multipliers are gone (never emitted); sizing is adaptive. */
 
 .vela-app-icon {
-  --vd-app-icon-effective-scale: var(--vd-app-icon-scale, 1);
-  /* Shared tile geometry (dock, folder overlay, visual editor preview): the
-     icon box = base slot size × per-app scale. On the desktop canvas the
-     rect owns the tile box instead, so this rule only sizes the glyph. */
+  /* Shared tile geometry (dock, folder overlay): the fixed slot size. */
   flex-shrink: 0;
-  width: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-effective-scale));
-  height: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-effective-scale));
-  border-radius: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-effective-scale) * 0.26);
-  font-size: calc(var(--vd-slot-icon-size) * var(--vd-app-icon-effective-scale) * 0.34);
+  width: var(--vd-slot-icon-size);
+  height: var(--vd-slot-icon-size);
+  border-radius: calc(var(--vd-slot-icon-size) * 0.26);
+  font-size: calc(var(--vd-slot-icon-size) * 0.34);
   color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
 }
 
@@ -1335,48 +1516,39 @@ button.vela-sync-status:focus-visible {
 }
 
 /*
- * On the DESKTOP (task 017-B: freeform canvas AND grid host) the tile IS
- * the placement box: it fills the item element, and every internal
- * dimension is measured against the SMALLER side of that box (cqmin), so
- * a wide, tall or multi-cell rect keeps a centered, proportional glyph
- * instead of a stretched one. The glyph itself is capped — a full-canvas
- * tile should not paint a 500px logo — but the TILE has no size cap: the
- * box is whatever geometry the user gave it (rect or CSS Grid span).
- * `iconScale` stays exactly what it always was for legacy data: a
- * multiplier for the glyph inside the tile, never tile geometry — the
- * outer box here is `inset: 0`, never --vd-slot-icon-size.
+ * 019-B adaptive surface: the decoration fills the ENTIRE outer geometry
+ * (grid span box / freeform rect) — gradient, solid,
+ * glass or none paint the exact user-owned box and never shrink to the
+ * icon size. The icon + title compose in the sibling .vela-app-content.
  */
-.vela-canvas .vela-app-icon,
-.vela-grid-host .vela-app-icon {
+.vela-canvas .vela-app-icon--surface,
+.vela-grid-host .vela-app-icon--surface {
   position: absolute;
   inset: 0;
   width: auto;
   height: auto;
   border-radius: clamp(8px, 22cqmin, 26px);
-  font-size: max(11px, min(calc(34cqmin * var(--vd-app-icon-scale, 1)), 96px));
 }
 
-.vela-canvas .vela-app-icon__glyph,
-.vela-grid-host .vela-app-icon__glyph {
-  width: min(calc(62cqmin * var(--vd-app-icon-scale, 1)), 192px);
-  height: min(calc(62cqmin * var(--vd-app-icon-scale, 1)), 192px);
-}
-
-/* An uploaded image keeps its own aspect ratio inside the placement box:
-   contain, never cropped, never stretched. It stays OUT OF FLOW (an in-flow
-   image could push the tile past its box) and centers via inset+margin so
-   the item box remains the layout authority.
-   017-C: the image IS the glyph, so it follows the same responsive box as
-   the library glyphs — 62cqmin × iconScale, capped — instead of silently
-   filling the whole tile and ignoring the per-app icon size. */
-.vela-canvas .vela-app-icon__image,
-.vela-grid-host .vela-app-icon__image {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: min(calc(62cqmin * var(--vd-app-icon-scale, 1)), 192px);
-  height: min(calc(62cqmin * var(--vd-app-icon-scale, 1)), 192px);
+/*
+ * Adaptive glyph bounds (019-B): library SVGs, uploaded images and
+ * generated text all fill the resolver's icon box — contain, centered,
+ * never distorted. Scoped to the adaptive content contexts (desktop
+ * hosts + preview); dock and folder overlay keep the fixed-slot rules
+ * above.
+ */
+.vela-app-content__icon .vela-app-icon__glyph,
+.vela-app-content__icon .vela-app-icon__image {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
+}
+
+/* Generated text: the resolver's optical size (code-point aware). The
+   fallback also sizes a library icon's initials fallback sensibly. */
+.vela-app-content__icon .vela-app-icon__text {
+  font-size: var(--vd-app-generated-text-size, calc(var(--vd-app-icon-box, 48px) * 0.3));
+  line-height: 1;
 }
 
 /* Library glyph: self-hosted SVG through a CSS mask, tinted via the
@@ -1408,17 +1580,19 @@ button.vela-sync-status:focus-visible {
 }
 
 /* Dock: the button itself is the tile — same decoration contract, dock-
-   tuned Auto fallbacks that reproduce the pre-016 dock look. */
+   tuned Auto fallbacks that reproduce the pre-016 dock look. 019-B: the
+   dock keeps its compact FIXED geometry; the deprecated per-app scale
+   multiplier no longer applies (never emitted). */
 .vela-dock__item[data-decoration="gradient"] {
   background: var(--vd-app-icon-bg, linear-gradient(150deg, oklch(0.5 0.08 250 / 0.85), oklch(0.36 0.06 300 / 0.85)));
   color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
-  font-size: calc(15px * var(--vd-app-icon-scale, 1));
+  font-size: 15px;
 }
 
 .vela-dock__item[data-decoration="solid"] {
   background: var(--vd-app-icon-bg, oklch(0.43 0.07 275 / 0.88));
   color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
-  font-size: calc(15px * var(--vd-app-icon-scale, 1));
+  font-size: 15px;
 }
 
 .vela-dock__item[data-decoration="glass"] {
@@ -1426,7 +1600,7 @@ button.vela-sync-status:focus-visible {
   backdrop-filter: blur(var(--vd-blur));
   -webkit-backdrop-filter: blur(var(--vd-blur));
   color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
-  font-size: calc(15px * var(--vd-app-icon-scale, 1));
+  font-size: 15px;
 }
 
 .vela-dock__item[data-decoration="none"] {
@@ -1434,18 +1608,15 @@ button.vela-sync-status:focus-visible {
   border-color: transparent;
   box-shadow: none;
   color: var(--vd-app-icon-fg, var(--vd-text));
-  font-size: calc(15px * var(--vd-app-icon-scale, 1));
+  font-size: 15px;
 }
 
-/* 017-C dock audit: EVERY glyph source responds to the per-app icon size —
-   the library glyph box and the uploaded image used to be hard-coded and
-   ignore iconScale while generated text scaled. The 44px BUTTON is the
-   outer geometry and never changes; 40px keeps a scale-2 glyph inside the
-   button's content box. */
+/* Every glyph source shares one fixed dock glyph box (019-B): the 44px
+   BUTTON is the outer geometry and never changes. */
 .vela-dock__item .vela-app-icon__glyph,
 .vela-dock__item .vela-app-icon__image {
-  width: min(calc(24px * var(--vd-app-icon-scale, 1)), 40px);
-  height: min(calc(24px * var(--vd-app-icon-scale, 1)), 40px);
+  width: 24px;
+  height: 24px;
 }
 
 /* The widget is the one entity rendered as a surface, filling its rect. */
@@ -1492,13 +1663,14 @@ button.vela-sync-status:focus-visible {
   gap: 10px;
   max-width: min(92vw, 860px);
   padding: 9px 12px;
-  border: 1px solid var(--vd-border);
+  border: 1px solid var(--vd-surface-border, var(--vd-border));
   border-radius: 20px;
   background: var(--vd-surface-strong);
   backdrop-filter: blur(var(--vd-blur));
   -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: 0 18px 44px oklch(0 0 0 / 0.4);
-  overflow-x: auto;
+  box-shadow: var(--vd-surface-shadow, 0 18px 44px oklch(0 0 0 / 0.4));
+  /* Horizontal overflow is owned by [data-vd-scroll="x"] on the element
+     (task 021-A): the quiet shared scrollbar replaces the native slab. */
 }
 
 .vela-dock__item,
@@ -1518,7 +1690,6 @@ button.vela-sync-status:focus-visible {
   font-weight: 650;
   color: oklch(0.97 0.01 260);
   cursor: pointer;
-  transition: transform 160ms ease, border-color 140ms ease;
 }
 
 .vela-dock__item--folder {
@@ -1526,9 +1697,8 @@ button.vela-sync-status:focus-visible {
   color: oklch(0.85 0.09 85);
 }
 
-.vela-dock__item:hover:not(:disabled) {
-  transform: translateY(-3px);
-}
+/* Dock hover lift is GSAP-owned (useVdHoverLift on the inner
+   .vela-dock__item-visual node, task 022) — dock spacing never changes. */
 
 .vela-dock__item:focus-visible,
 .vela-dock__utility:focus-visible {
@@ -1556,7 +1726,10 @@ button.vela-sync-status:focus-visible {
 /* --- Arrange session: selection, marquee, history controls -------------- */
 
 /* The frame follows the REAL rect — the item box, never just the glyph — so
-   a landscape app gets a landscape frame. */
+   a landscape app gets a landscape frame. 019-B: desktop apps paint their
+   decoration on the full-geometry surface; folders and overlay tiles keep
+   the icon-tile path. */
+.vela-item[data-selected="true"] .vela-app-icon--surface,
 .vela-item[data-selected="true"] .vela-item__icon,
 .vela-item--widget[data-selected="true"] {
   box-shadow:
@@ -1677,7 +1850,6 @@ button.vela-sync-status:focus-visible {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scrollbar-width: none;
-  animation: vela-menu-in 120ms ease;
 }
 
 .vela-context-menu::-webkit-scrollbar {
@@ -1689,17 +1861,6 @@ button.vela-sync-status:focus-visible {
   height: 1px;
   margin: 4px 8px;
   background: var(--vd-border);
-}
-
-@keyframes vela-menu-in {
-  from {
-    opacity: 0;
-    transform: translateY(-2px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 .vela-context-menu__item {
@@ -1715,7 +1876,6 @@ button.vela-sync-status:focus-visible {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background-color 100ms ease;
 }
 
 /* Check gutter of a mutually exclusive choice (placement mode). */
@@ -1752,23 +1912,29 @@ button.vela-sync-status:focus-visible {
   display: grid;
   place-items: center;
   background: oklch(0 0 0 / 0.45);
-  animation: vela-fade 200ms ease;
 }
 
+/* The panel surface is the GSAP-animated node (VdAnimatedSurface, 022);
+   the visual window styles live on __panel-inner. */
 .vela-folder-overlay__panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.vela-folder-overlay__panel-inner {
   display: flex;
   flex-direction: column;
   gap: 14px;
   width: min(600px, calc(100vw - 64px));
   max-height: min(70vh, 640px);
   padding: 20px 22px;
-  border: 1px solid var(--vd-border);
+  border: 1px solid var(--vd-surface-border, var(--vd-border));
   border-radius: calc(var(--vd-radius) + 6px);
   background: var(--vd-surface-strong);
   backdrop-filter: blur(var(--vd-blur));
   -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: 0 24px 70px oklch(0 0 0 / 0.45);
-  animation: vela-rise 220ms ease;
+  box-shadow: var(--vd-surface-shadow, 0 24px 70px oklch(0 0 0 / 0.45));
 }
 
 .vela-folder-overlay__header {
@@ -1804,12 +1970,16 @@ button.vela-sync-status:focus-visible {
   color: oklch(0.85 0.1 25);
 }
 
+/* The scroll owner (VdScrollArea, task 021-A); the grid inside is layout
+   only. min-height keeps the empty overlay panel from collapsing. */
+.vela-folder-overlay__scroll {
+  min-height: 96px;
+}
+
 .vela-folder-overlay__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 8px;
-  overflow-y: auto;
-  min-height: 96px;
   padding: 4px;
 }
 
@@ -1842,7 +2012,6 @@ button.vela-sync-status:focus-visible {
   display: grid;
   place-items: center;
   background: oklch(0 0 0 / 0.45);
-  animation: vela-fade 180ms ease;
 }
 
 .vela-dialog {
@@ -1854,7 +2023,6 @@ button.vela-sync-status:focus-visible {
   backdrop-filter: blur(var(--vd-blur));
   -webkit-backdrop-filter: blur(var(--vd-blur));
   box-shadow: 0 24px 70px oklch(0 0 0 / 0.45);
-  animation: vela-rise 200ms ease;
 }
 
 .vela-dialog__title {
@@ -1898,7 +2066,6 @@ button.vela-sync-status:focus-visible {
   place-items: start center;
   padding-top: 16vh;
   background: oklch(0 0 0 / 0.45);
-  animation: vela-fade 160ms ease;
 }
 
 .vela-launcher {
@@ -1907,13 +2074,14 @@ button.vela-sync-status:focus-visible {
   width: min(680px, calc(100vw - 32px));
   max-height: min(70vh, 560px);
   padding: 14px;
-  border: 1px solid var(--vd-border);
+  border: 1px solid var(--vd-surface-border, var(--vd-border));
   border-radius: calc(var(--vd-radius) + 6px);
   background: var(--vd-surface-strong);
   backdrop-filter: blur(var(--vd-blur));
   -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: 0 24px 70px oklch(0 0 0 / 0.5);
-  animation: vela-rise 180ms ease;
+  box-shadow: var(--vd-surface-shadow, 0 24px 70px oklch(0 0 0 / 0.5));
+  /* Dialog/popover band (019-D tokens): opacity + 6px rise + subtle scale.
+     No spring, no bounce; reduced motion kills it below. */
 }
 
 .vela-launcher__input {
@@ -1925,7 +2093,6 @@ button.vela-sync-status:focus-visible {
   color: var(--vd-text);
   font-family: var(--vd-font);
   font-size: 15px;
-  transition: border-color 140ms ease;
 }
 
 .vela-launcher__input:focus {
@@ -1933,22 +2100,47 @@ button.vela-sync-status:focus-visible {
   border-color: var(--vd-accent);
 }
 
+/* The scroll OWNER (VdScrollArea, task 021-A): only the results scroll —
+   the search field above and the hint footer below stay fixed. */
+.vela-launcher__results-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 10px;
+  padding: 2px;
+}
+
 .vela-launcher__results {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 10px;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 2px;
+}
+
+.vela-launcher__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vela-launcher__group-label {
+  padding: 10px 12px 4px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vdu-fg-muted, var(--vd-text-muted));
+  user-select: none;
+}
+
+.vela-launcher__group:first-child .vela-launcher__group-label {
+  padding-top: 4px;
 }
 
 .vela-launcher__option {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 9px 12px;
+  padding: 8px 12px;
   border: none;
   border-radius: 9px;
   background: transparent;
@@ -1957,12 +2149,27 @@ button.vela-sync-status:focus-visible {
   font-size: 13.5px;
   text-align: left;
   cursor: pointer;
-  transition: background-color 120ms ease;
 }
 
-.vela-launcher__option:hover,
+.vela-launcher__option:hover {
+  background: var(--vdu-bg-hover, var(--vd-accent-wash));
+}
+
+/* Selected (§19): surface-selected + a quiet 2px accent bar + stronger
+   text — never a saturated filled slab. */
 .vela-launcher__option[data-active="true"] {
-  background: var(--vd-accent-wash);
+  background: var(--vdu-bg-active, var(--vd-accent-wash));
+}
+
+.vela-launcher__option[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--vdu-accent, var(--vd-accent));
 }
 
 .vela-launcher__option:focus-visible {
@@ -1970,361 +2177,85 @@ button.vela-sync-status:focus-visible {
   outline-offset: -1px;
 }
 
+/* Compact variant of the SHARED app-icon tile: `.vela-app-icon` derives
+   its width, radius and glyph size from this one slot variable, so icon
+   source resolution stays the desktop's (catalog / generated / asset). */
+.vela-launcher__icon {
+  --vd-slot-icon-size: 26px;
+  /* A 26px tile cannot carry the desktop tile's deep shadow. */
+  box-shadow:
+    0 2px 6px oklch(0 0 0 / 0.25),
+    inset 0 1px 0 oklch(0.95 0.02 260 / 0.18);
+}
+
+.vela-launcher__icon[data-decoration="none"] {
+  box-shadow: none;
+}
+
+/* Quiet leading identity for command / section / folder rows. */
+.vela-launcher__symbol {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--vdu-fg-muted, var(--vd-text-muted));
+}
+
 .vela-launcher__label {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.vela-launcher__option[data-active="true"] .vela-launcher__label {
+  color: var(--vdu-fg, var(--vd-text));
+  font-weight: 600;
+}
+
+/* Quiet right-aligned type metadata (§16): small muted text — the old
+   bordered capsule is gone. */
 .vela-launcher__kind {
   flex: 0 0 auto;
-  padding: 2px 8px;
-  border: 1px solid var(--vd-border);
-  border-radius: 999px;
+  margin-left: auto;
   font-size: 11px;
-  color: var(--vd-text-muted);
+  color: var(--vdu-fg-muted, var(--vd-text-muted));
 }
 
 .vela-launcher__empty {
   margin: 18px 0;
   text-align: center;
   font-size: 13px;
-  color: var(--vd-text-muted);
+  color: var(--vdu-fg-muted, var(--vd-text-muted));
 }
 
 .vela-launcher__footer {
+  flex: 0 0 auto;
   display: flex;
   gap: 14px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--vd-border);
   font-size: 11.5px;
-  color: var(--vd-text-muted);
+  color: var(--vdu-fg-muted, var(--vd-text-muted));
 }
 
-/* ---------------------------------------------------------------------------
- * Settings Center
- * ------------------------------------------------------------------------- */
-
-.vela-settings-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 48;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: oklch(0 0 0 / 0.5);
-  animation: vela-fade 160ms ease;
-}
-
-.vela-settings {
-  display: flex;
-  flex-direction: column;
-  width: min(740px, 100%);
-  max-height: min(72vh, 620px);
-  border: 1px solid var(--vd-border);
-  border-radius: calc(var(--vd-radius) + 6px);
-  background: var(--vd-surface-strong);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: 0 24px 70px oklch(0 0 0 / 0.5);
-  /* V2 motion: opacity plus a small translateY/scale entrance. */
-  animation: vela-settings-in 180ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-@keyframes vela-settings-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.vela-settings__header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid var(--vd-border);
-}
-
-.vela-settings__title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 650;
-  outline: none;
-}
-
-.vela-settings__spacer {
-  flex: 1;
-}
-
-.vela-settings__close {
-  padding: 4px 12px;
-  font-size: 15px;
-}
-
-.vela-settings__body {
-  display: grid;
-  grid-template-columns: 152px minmax(0, 1fr);
-  flex: 1;
-  min-height: 0;
-}
-
-.vela-settings__nav {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px 10px;
-  border-right: 1px solid var(--vd-border);
-}
-
-.vela-settings__nav-button {
-  padding: 8px 12px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--vd-text-muted);
-  font-family: var(--vd-font);
-  font-size: 13.5px;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
-}
-
-.vela-settings__nav-button:hover {
-  color: var(--vd-text);
-}
-
-.vela-settings__nav-button[aria-current="true"] {
-  background: var(--vd-accent-wash);
-  color: var(--vd-text);
-}
-
-.vela-settings__nav-button:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: -1px;
-}
-
-.vela-settings__content {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 18px 22px;
-}
-
-.vela-settings__section {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.vela-settings__field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.vela-settings__field-label {
-  margin: 0;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--vd-text-muted);
-}
-
-.vela-settings__row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.vela-settings__range {
-  flex: 1;
-  accent-color: var(--vd-accent);
-}
-
-.vela-settings__range:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: 2px;
-}
-
-.vela-settings__value {
-  min-width: 48px;
-  text-align: right;
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-  color: var(--vd-text-muted);
-}
-
-.vela-settings__radio-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-}
-
-.vela-settings__radio {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13.5px;
-  color: var(--vd-text);
-}
-
-.vela-settings__radio input {
-  accent-color: var(--vd-accent);
-  width: 15px;
-  height: 15px;
-}
-
-.vela-settings__hint {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--vd-text-muted);
-}
-
-.vela-settings__swatches {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-  gap: 8px;
-}
-
-.vela-settings__swatch {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--vd-border);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--vd-text);
-  font-family: var(--vd-font);
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: border-color 120ms ease;
-}
-
-.vela-settings__swatch[aria-pressed="true"] {
-  border-color: var(--vd-accent);
-  box-shadow: 0 0 0 1px var(--vd-accent);
-}
-
-.vela-settings__swatch:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: 2px;
-}
-
-.vela-settings__swatch-preview {
-  height: 40px;
-  border-radius: 6px;
-}
-
-/* Miniature gradients mirror the wallpaper presets (static swatches). */
-.vela-settings__swatch-preview[data-wallpaper="aurora"] {
-  background:
-    radial-gradient(90% 90% at 20% 20%, oklch(0.45 0.09 278 / 0.8), transparent 70%),
-    radial-gradient(80% 80% at 80% 30%, oklch(0.4 0.09 218 / 0.7), transparent 70%),
-    radial-gradient(90% 90% at 50% 100%, oklch(0.45 0.08 318 / 0.6), transparent 70%),
-    oklch(0.17 0.02 264);
-}
-
-.vela-settings__swatch-preview[data-wallpaper="midnight"] {
-  background:
-    radial-gradient(90% 90% at 20% 20%, oklch(0.32 0.08 265 / 0.9), transparent 70%),
-    radial-gradient(80% 80% at 80% 30%, oklch(0.3 0.07 292 / 0.8), transparent 70%),
-    radial-gradient(90% 90% at 50% 100%, oklch(0.3 0.07 240 / 0.8), transparent 70%),
-    oklch(0.13 0.02 264);
-}
-
-.vela-settings__swatch-preview[data-wallpaper="dawn"] {
-  background:
-    radial-gradient(90% 90% at 20% 20%, oklch(0.68 0.08 60 / 0.75), transparent 70%),
-    radial-gradient(80% 80% at 80% 30%, oklch(0.62 0.09 35 / 0.7), transparent 70%),
-    radial-gradient(90% 90% at 50% 100%, oklch(0.58 0.07 15 / 0.65), transparent 70%),
-    oklch(0.32 0.03 50);
-}
-
-.vela-settings__swatch-preview[data-wallpaper="mist"] {
-  background:
-    radial-gradient(90% 90% at 20% 20%, oklch(0.55 0.02 250 / 0.8), transparent 70%),
-    radial-gradient(80% 80% at 80% 30%, oklch(0.5 0.02 230 / 0.7), transparent 70%),
-    radial-gradient(90% 90% at 50% 100%, oklch(0.55 0.018 270 / 0.7), transparent 70%),
-    oklch(0.3 0.008 264);
-}
-
-.vela-select {
-  padding: 8px 10px;
-  border: 1px solid var(--vd-border);
-  border-radius: 10px;
-  background: var(--vd-field);
-  color: var(--vd-text);
-  font-family: var(--vd-font);
-  font-size: 13.5px;
-  max-width: 280px;
-}
-
-.vela-select:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: 1px;
-}
-
-.vela-settings__footer {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 20px 14px;
-  border-top: 1px solid var(--vd-border);
-}
-
-.vela-settings__error {
-  flex: 1;
-  margin: 0;
-  font-size: 12.5px;
-  color: oklch(0.72 0.16 25);
-}
-
-.vela-settings__dirty {
-  flex: 1;
-  margin: 0;
-  font-size: 12px;
-  color: var(--vd-text-muted);
-}
-
-@keyframes vela-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes vela-rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ---------------------------------------------------------------------------
- * Reduced motion — stop all looping and moving transitions.
- * ------------------------------------------------------------------------- */
-
+/*
+ * Reduced motion (022): the GSAP owners (ambient drift, pulse sweep,
+ * section slides, lifts, surfaces) check the shared reduced-motion bridge
+ * themselves and render static state; the rules below are the stylesheet
+ * belt-and-braces for anything that could ever animate again.
+ */
 @media (prefers-reduced-motion: reduce) {
   .vela-boot__ambient,
   .vela-screen__ambient,
-  .vela-desktop::before {
+  .vela-desktop__ambient {
     animation: none;
   }
 
-  .vela-boot__pulse::after {
+  .vela-boot__pulse-thumb {
     animation: none;
     transform: translateX(0);
   }
@@ -2332,14 +2263,9 @@ button.vela-sync-status:focus-visible {
   .vela-grid-slots,
   .vela-rail__item,
   .vela-rail__item::before,
-  .vela-section-view,
+  .vela-section-layer,
   .vela-arrange-bar__history,
   .vela-arrange-bar__gap-step,
-  .vela-segmented__option,
-  .vela-switch,
-  .vela-switch__knob,
-  .vela-settings__advanced-panel,
-  .vela-settings__advanced-chevron,
   .vela-item,
   .vela-dock__item,
   .vela-button,
@@ -2352,160 +2278,9 @@ button.vela-sync-status:focus-visible {
   .vela-folder-overlay__panel,
   .vela-launcher-backdrop,
   .vela-launcher,
-  .vela-launcher__option,
-  .vela-settings-backdrop,
-  .vela-settings,
-  .vela-settings__nav-button,
-  .vela-settings__swatch {
+  .vela-launcher__option {
     transition: none;
     animation: none;
-  }
-}
-
-/*
- * Section content transition (V2): the panel remounts on section switch
- * (keyed in React), so a mount animation with a small directional movement
- * is all the motion there is — 8-12px, opacity combined.
- */
-.vela-settings__content {
-  animation: vela-settings-section-in 160ms ease;
-}
-
-@keyframes vela-settings-section-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* --- Advanced appearance group ------------------------------------------------
-   Collapsed by default; expanding animates the panel height via grid rows
-   (content never has to be re-measured). */
-.vela-settings__advanced {
-  margin-top: 4px;
-  border-top: 1px solid var(--vd-border);
-  padding-top: 10px;
-}
-
-.vela-settings__advanced-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 2px;
-  border: none;
-  background: transparent;
-  color: var(--vd-text-muted);
-  font-family: var(--vd-font);
-  font-size: 13px;
-  cursor: pointer;
-  transition: color 140ms ease;
-}
-
-.vela-settings__advanced-toggle:hover {
-  color: var(--vd-text);
-}
-
-.vela-settings__advanced-toggle:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-
-.vela-settings__advanced-chevron {
-  display: inline-block;
-  font-size: 15px;
-  line-height: 1;
-  transform: rotate(0deg);
-  transition: transform 150ms ease;
-}
-
-.vela-settings__advanced-chevron[data-open="true"] {
-  transform: rotate(90deg);
-}
-
-.vela-settings__advanced-panel {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 180ms ease;
-}
-
-.vela-settings__advanced-panel[data-open="true"] {
-  grid-template-rows: 1fr;
-}
-
-.vela-settings__advanced-inner {
-  overflow: hidden;
-  min-height: 0;
-  padding: 0 2px;
-}
-
-.vela-settings__advanced-panel[data-open="true"] .vela-settings__advanced-inner {
-  padding-top: 8px;
-}
-
-/* --- Switch (booleans) --------------------------------------------------------- */
-.vela-settings__field--row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.vela-switch {
-  position: relative;
-  flex: 0 0 auto;
-  width: 40px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 999px;
-  background: oklch(0.5 0.02 264 / 0.4);
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-
-.vela-switch[aria-checked="true"] {
-  background: var(--vd-accent-strong);
-}
-
-.vela-switch:focus-visible {
-  outline: 2px solid var(--vd-accent);
-  outline-offset: 2px;
-}
-
-.vela-switch__knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: oklch(0.98 0.005 260);
-  box-shadow: 0 1px 3px oklch(0 0 0 / 0.35);
-  transition: transform 150ms ease;
-}
-
-.vela-switch[aria-checked="true"] .vela-switch__knob {
-  transform: translateX(18px);
-}
-
-/* Settings small-screen adaptation: navigation turns horizontal, content
-   scrolls locally, body never scrolls. */
-@media (max-width: 719px) {
-  .vela-settings__body {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .vela-settings__nav {
-    flex-direction: row;
-    padding: 10px 12px;
-    border-right: none;
-    border-bottom: 1px solid var(--vd-border);
   }
 }
 
@@ -2557,206 +2332,22 @@ button.vela-sync-status:focus-visible {
   }
 }
 
-/* --- Icon catalog picker + visual editor (016-A) --------------------------- */
+/* --- App Appearance Inspector (019-C) ------------------------------------
+   The REAL desktop is the preview: a fixed right-side panel over the
+   workspace (Dialog variant="panel"). It never participates in workbench
+   or grid layout — opening it cannot change cell sizes, spans or rects.
+   Flat label/control rows only; the body is its own scroll scope. */
 
-/* The visual editor is a FIXED SHELL. The dialog never scrolls: the header
-   (title + live preview + resize hint) and the footer (Cancel/Save) are grid
-   rows outside the one scrolling body, so editing a property at the bottom of
-   the form can never push the preview or the actions out of view. */
-.vela-visual-editor {
-  width: min(760px, calc(100vw - 32px));
-  height: min(86vh, 820px);
-  max-height: min(86vh, 820px);
-  padding: 0;
-  overflow: hidden;
+/* The quiet editing affordance on the inspected desktop app: an accent
+   halo, never resize handles, never drag changes. */
+.vela-item[data-inspector-editing="true"] {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: 3px;
+  border-radius: 12px;
 }
 
-.vela-visual-editor__form {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  height: 100%;
-  min-height: 0;
-}
-
-.vela-visual-editor__header {
-  display: flex;
-  flex-direction: column;
-  padding: 20px 24px 12px;
-  border-bottom: 1px solid var(--vd-border);
-}
-
-.vela-visual-editor__body {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: 14px 24px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  /* Restrained but visible: the shell must read as scrollable. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--vd-border) transparent;
-}
-
-.vela-visual-editor__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 24px;
-  border-top: 1px solid var(--vd-border);
-}
-
-.vela-visual-editor__preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 0 6px;
-  /* A larger preview slot: AppIconTile scales off --vd-slot-icon-size. */
-  --vd-slot-icon-size: 84px;
-}
-
-/* 017-C: the preview is a FAITHFUL presentation preview on a FIXED tile —
-   the outer tile never grows with the draft's icon size (the desktop
-   contract), only the glyph inside does. The presentation vars come from
-   buildAppIconStyleVars on the preview box itself. */
-.vela-visual-editor__preview .vela-app-icon {
-  width: var(--vd-slot-icon-size);
-  height: var(--vd-slot-icon-size);
-}
-
-.vela-visual-editor__preview .vela-app-icon__glyph,
-.vela-visual-editor__preview .vela-app-icon__image {
-  width: min(calc(62% * var(--vd-app-icon-scale, 1)), 92%);
-  height: min(calc(62% * var(--vd-app-icon-scale, 1)), 92%);
-}
-
-.vela-visual-editor__resize-hint {
-  margin: 0;
-  text-align: center;
-}
-
-.vela-visual-editor__preview-name {
-  max-width: 220px;
-  overflow: hidden;
-  /* Same presentation formula as the desktop label base (017-C): baseline ×
-     per-app scale, clamped — the preview title tracks the Title controls. */
-  font-size: clamp(9px, calc(12.5px * var(--vd-app-label-scale, 1)), 24px);
-  color: var(--vd-text-muted);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* 017-C body sections: Icon / Title / Appearance. */
-.vela-visual-editor__section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0 0 16px;
-  padding: 0 0 14px;
-  border-bottom: 1px solid var(--vd-border);
-}
-
-.vela-visual-editor__section:last-of-type {
-  border-bottom: none;
-  margin-bottom: 0;
-}
-
-.vela-visual-editor__section-title {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--vd-text-muted);
-}
-
-.vela-visual-editor__control {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.vela-visual-editor__control[data-disabled="true"] {
-  opacity: 0.45;
-}
-
-.vela-visual-editor__scale-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.vela-visual-editor__range {
-  flex: 1;
-  accent-color: var(--vd-accent);
-}
-
-.vela-visual-editor__range-value {
-  min-width: 44px;
-  font-size: 12.5px;
-  color: var(--vd-text-muted);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.vela-visual-editor__switch-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.vela-visual-editor__switch {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--vd-accent);
-}
-
-.vela-visual-editor__tabs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.vela-visual-editor__tab {
-  padding: 6px 12px;
-  border: 1px solid var(--vd-border);
-  border-radius: 999px;
-  background: transparent;
-  font-family: var(--vd-font);
-  font-size: 12.5px;
-  color: var(--vd-text-muted);
-  cursor: pointer;
-}
-
-.vela-visual-editor__tab[aria-selected="true"] {
-  background: var(--vd-accent-wash);
-  border-color: var(--vd-accent);
-  color: var(--vd-text);
-}
-
-.vela-visual-editor__tab:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.vela-visual-editor__text {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.vela-visual-editor__hint {
-  font-size: 12px;
-  color: var(--vd-text-muted);
-}
-
-.vela-visual-editor__decorations {
-  display: flex;
-  gap: 10px;
-  margin: 6px 0 12px;
-}
-
-.vela-visual-editor__decoration {
+/* Decoration style picks (shared swatch model). */
+.vela-appearance-inspector__decoration {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2771,13 +2362,19 @@ button.vela-sync-status:focus-visible {
   cursor: pointer;
 }
 
-.vela-visual-editor__decoration[data-selected="true"] {
+.vela-appearance-inspector__decoration:focus-visible {
+  outline: 2px solid var(--vdu-focus, var(--vd-accent));
+  outline-offset: 2px;
+}
+
+.vela-appearance-inspector__decoration[data-selected="true"] {
   border-color: var(--vd-accent);
+  box-shadow: 0 0 0 1px var(--vd-accent);
   background: var(--vd-accent-wash);
   color: var(--vd-text);
 }
 
-.vela-visual-editor__decoration-tile {
+.vela-appearance-inspector__decoration-tile {
   width: 34px;
   height: 34px;
   border-radius: 9px;
@@ -2785,11 +2382,11 @@ button.vela-sync-status:focus-visible {
   box-shadow: 0 6px 14px oklch(0 0 0 / 0.3);
 }
 
-.vela-visual-editor__decoration-tile[data-style="solid"] {
+.vela-appearance-inspector__decoration-tile[data-style="solid"] {
   background: oklch(0.45 0.08 275 / 0.92);
 }
 
-.vela-visual-editor__decoration-tile[data-style="glass"] {
+.vela-appearance-inspector__decoration-tile[data-style="glass"] {
   background: oklch(0.62 0.02 264 / 0.34);
   border: 1px solid var(--vd-border);
   backdrop-filter: blur(6px);
@@ -2797,68 +2394,34 @@ button.vela-sync-status:focus-visible {
   box-shadow: 0 6px 14px oklch(0 0 0 / 0.2);
 }
 
-.vela-visual-editor__decoration-tile[data-style="none"] {
+.vela-appearance-inspector__decoration-tile[data-style="none"] {
   background: transparent;
   border: 1px dashed var(--vd-border);
   box-shadow: none;
 }
 
-.vela-visual-editor__color-row {
+/* The bounded icon grid inside the secondary picker (019-C §9): the
+   catalog never pushes the source controls below the fold — its grid is
+   its own local wheel scope. */
+.vela-visual-editor__picker-bound {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.vela-visual-editor__auto[data-active="true"] {
-  border-color: var(--vd-accent);
-  background: var(--vd-accent-wash);
-}
-
-.vela-visual-editor__color {
-  width: 44px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid var(--vd-border);
-  border-radius: 8px;
-  background: transparent;
-  cursor: pointer;
-}
-
-/* Picker -------------------------------------------------------------- */
+/* Picker (019-D §10): HeroUI owns the search, scope tabs and source
+   select; the styles below are only the layout scaffolding and the icon
+   grid itself. The search area is sticky at the top, and the grid is a
+   bounded flex region — never an unbounded dialog-height consumer. */
 
 .vela-icon-picker {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.vela-icon-picker__search {
-  width: 100%;
-}
-
-.vela-icon-picker__tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.vela-icon-picker__tab {
-  padding: 5px 10px;
-  border: 1px solid var(--vd-border);
-  border-radius: 999px;
-  background: transparent;
-  font-family: var(--vd-font);
-  font-size: 12px;
-  color: var(--vd-text-muted);
-  cursor: pointer;
-}
-
-.vela-icon-picker__tab[aria-selected="true"] {
-  background: var(--vd-accent-wash);
-  border-color: var(--vd-accent);
-  color: var(--vd-text);
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 14px 10px;
+  flex: 1;
 }
 
 .vela-icon-picker__note {
@@ -2866,34 +2429,11 @@ button.vela-sync-status:focus-visible {
   color: var(--vd-text-muted);
 }
 
-/* Scope tabs stay in one row; the source filter and the loaded-count share
-   the next row so the grid keeps its width. */
-.vela-icon-picker__tabs {
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
 .vela-icon-picker__filters {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-}
-
-.vela-icon-picker__source {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--vd-text-muted);
-  white-space: nowrap;
-}
-
-.vela-icon-picker__source-select {
-  width: auto;
-  min-width: 128px;
-  padding: 4px 8px;
-  font-size: 12px;
 }
 
 .vela-icon-picker__count {
@@ -2915,16 +2455,108 @@ button.vela-sync-status:focus-visible {
   font-size: 12px;
 }
 
+/* Inspector refinement (019-D §9): the quiet open row pattern — section
+   label above, one full-width row with a thumb, a human-readable primary
+   label and a trailing chevron. */
+.vela-inspector__section-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vdu-fg-muted, var(--vd-text-muted));
+}
+
+.vela-inspector__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--vdu-border, transparent);
+  border-radius: var(--vdu-radius, 9px);
+  background: var(--vdu-bg-raised, transparent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.vela-inspector__row:hover {
+  background: var(--vdu-bg-hover, transparent);
+}
+
+.vela-inspector__row:focus-visible {
+  outline: 2px solid var(--vdu-focus, var(--vd-accent));
+  outline-offset: 2px;
+}
+
+.vela-inspector__row-thumb {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--vdu-bg-active, transparent);
+}
+
+.vela-inspector__row-thumb .vela-icon-picker__preview {
+  width: 22px;
+  height: 22px;
+}
+
+.vela-inspector__row-thumb--text {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--vdu-fg, var(--vd-text));
+}
+
+/* --- Add App recognition panel (020-A) ---------------------------------- */
+
+/* Thumbnail of the detected suggestion inside the recognition status
+   panel — smaller than the icon row's 32px identity slot. */
+.vela-add-recognition__thumb {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--vdu-bg-active, transparent);
+}
+
+.vela-add-recognition__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.vela-add-recognition__thumb .vela-icon-picker__preview {
+  width: 20px;
+  height: 20px;
+}
+
+.vela-add-recognition__thumb--text {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--vdu-fg, var(--vd-text));
+}
+
+/* The scroll owner (VdScrollArea, task 021-A); the grid inside is layout
+   only. The framed well moves to the owner so the scrollbar sits inside it. */
+.vela-icon-picker__scroll {
+  flex: 1;
+  min-height: 120px;
+  border: 1px solid var(--vd-border);
+  border-radius: 12px;
+}
+
 .vela-icon-picker__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
   gap: 6px;
-  max-height: 240px;
+  align-content: start;
   padding: 4px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--vd-border);
-  border-radius: 12px;
 }
 
 .vela-icon-picker__cell {
@@ -2970,14 +2602,7 @@ button.vela-sync-status:focus-visible {
   object-fit: contain;
 }
 
-/* Upload tab (016-B) ------------------------------------------------------ */
-
-.vela-visual-editor__upload {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 10px;
-}
+/* Upload affordance (016-B, in the 019-C picker) -------------------------- */
 
 .vela-upload-dropzone {
   display: grid;

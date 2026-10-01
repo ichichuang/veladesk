@@ -16,6 +16,10 @@ const css = readFileSync(
   "utf8"
 );
 
+function readSource(path: string): string {
+  return readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
+}
+
 function ruleBlock(selector: string): string {
   // Selector groups are written one selector per line in the stylesheet, so
   // each comma-separated part is matched with flexible whitespace.
@@ -39,31 +43,20 @@ describe("home-shell.css transform ownership", () => {
     expect(base![1]!).not.toMatch(/transition:\s*transform/);
   });
 
-  it("scopes a transform easing to view-mode app hover only", () => {
-    const body = ruleBlock(
-      '.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"] .vela-item__body'
-    );
-    expect(body).toMatch(/transition:\s*transform\s+1[4-8]0ms\s+ease/);
-    // Arrange mode must stay un-eased: no easing rule may target the body
-    // without the view-mode scope.
-    const easingRules = css.match(/^[^@\n]*\.vela-item__body\s*\{[^}]*transition[^}]*\}/gm) ?? [];
-    expect(easingRules.length).toBeGreaterThan(0);
-    for (const rule of easingRules) {
-      expect(rule).toContain('[data-arrange="false"]');
-    }
-  });
-
-  it("scopes the hover lift to view mode and excludes dragging items", () => {
-    const hover = ruleBlock(
-      '.vela-desktop[data-arrange="false"] .vela-item[data-kind="app"]:hover:not([data-dragging="true"]) .vela-item__body'
-    );
-    expect(hover).toMatch(/transform:\s*translateY\(-2px\)/);
-    // Arrange mode must never apply a hover transform: the pointer rests on
-    // the just-released item and would lift it 2px off its snapped rect.
-    const unscoped = css.match(/^[^@\n]*\.vela-item[^{]*:hover[^{]*\{/m);
-    if (unscoped !== null) {
-      expect(unscoped[0]).toContain('[data-arrange="false"]');
-    }
+  it("the hover lift is GSAP-owned — no CSS transform easing remains (022)", () => {
+    // The stylesheet hover-lift rules are gone; the shared useVdHoverLift
+    // hook owns the interpolation on the INNER body node, so the CSS never
+    // eases or places a hover transform again.
+    expect(css).not.toMatch(/transition:\s*transform/);
+    expect(css).not.toMatch(/\.vela-item\[data-kind="app"\]:hover/);
+    expect(css).not.toMatch(/\.vela-dock__item:hover[^{]*\{[^}]*transform/);
+    const desktopItem = readSource("./desktop-item.tsx");
+    expect(desktopItem).toMatch(/useVdHoverLift/);
+    // Arrange mode never lifts: the handler guards on the mode (the pointer
+    // rests on the just-released item and must not lift it off its rect).
+    expect(desktopItem).toMatch(/!arrange/);
+    const dock = readSource("./dock.tsx");
+    expect(dock).toMatch(/useVdHoverLift/);
   });
 
   it("keeps the drag preview as a transform of the item body only", () => {
@@ -124,60 +117,95 @@ describe("home-shell.css geometry contract (task 017)", () => {
     expect(body).toMatch(/position:\s*absolute/);
     expect(body).toMatch(/inset:\s*0/);
 
-    const wrap = ruleBlock(".vela-item__icon-wrap");
-    expect(wrap).toMatch(/position:\s*absolute/);
-    expect(wrap).toMatch(/inset:\s*0/);
+    // 019-B: the adaptive content layer replaces the legacy icon-wrap —
+    // one absolute contract inside the body.
+    const content = ruleBlock(".vela-app-content");
+    expect(content).toMatch(/position:\s*absolute/);
+    expect(content).toMatch(/inset:\s*0/);
+    expect(css).not.toMatch(/\.vela-item__icon-wrap/);
   });
 
-  it("anchors the label to the tile bottom without touching the geometry", () => {
-    const label = ruleBlock(".vela-item__label");
-    expect(label).toMatch(/position:\s*absolute/);
-    expect(label).toMatch(/bottom:/);
-    expect(label).toMatch(/text-overflow:\s*ellipsis/);
-    // 017-C: label size is presentation — baseline × per-app scale, clamped.
-    expect(label).toMatch(/clamp\(9px,\s*calc\(12\.5px\s*\*\s*var\(--vd-app-label-scale,\s*1\)\),\s*24px\)/);
+  it("anchors the FOLDER label to the tile bottom without touching geometry", () => {
+    // 019-B: the bottom-anchored label strip is folder/overlay-only;
+    // desktop apps compose the title inside .vela-app-content. Anchor at
+    // line start so the adaptive label rule cannot shadow the base.
+    const label = css.match(/^\.vela-item__label\s*\{([\s\S]*?)\}/m);
+    expect(label).not.toBeNull();
+    expect(label![1]!).toMatch(/position:\s*absolute/);
+    expect(label![1]!).toMatch(/bottom:/);
+    expect(label![1]!).toMatch(/text-overflow:\s*ellipsis/);
+    expect(label![1]!).not.toMatch(/--vd-app-label-scale/);
   });
 
-  it("scales the desktop label off the item box through cqmin (017-C)", () => {
+  it("flows the adaptive app title from resolver vars (019-B)", () => {
+    const contentLabel = ruleBlock(".vela-app-content .vela-item__label");
+    expect(contentLabel).toMatch(/position:\s*static/);
+    expect(contentLabel).toMatch(/font-size:\s*var\(--vd-app-label-size/);
+    expect(contentLabel).toMatch(/line-height:\s*var\(--vd-app-label-line-height/);
+    expect(contentLabel).toMatch(/max-width:\s*var\(--vd-app-label-max-width/);
+    expect(contentLabel).toMatch(/text-overflow:\s*ellipsis/);
+
+    // The composition modes: column for stack (default), row for inline.
+    const content = ruleBlock(".vela-app-content");
+    expect(content).toMatch(/flex-direction:\s*column/);
+    expect(content).toMatch(/padding:\s*var\(--vd-app-content-padding/);
+    expect(content).toMatch(/gap:\s*var\(--vd-app-content-gap/);
+    const inline = ruleBlock('.vela-app-content[data-layout="inline"]');
+    expect(inline).toMatch(/flex-direction:\s*row/);
+  });
+
+  it("scales the desktop FOLDER label off the item box through cqmin", () => {
     const desktop = ruleBlock(".vela-canvas .vela-item__label, .vela-grid-host .vela-item__label");
-    expect(desktop).toMatch(/clamp\(9px,\s*calc\(14cqmin\s*\*\s*var\(--vd-app-label-scale,\s*1\)\),\s*24px\)/);
-    // The body is the label's query container; the glyph keeps its own.
+    expect(desktop).toMatch(/clamp\(9px,\s*14cqmin,\s*24px\)/);
+    // The body is the folder glyph's query container.
     expect(ruleBlock(".vela-item__body")).toMatch(/container-type:\s*size/);
-    // No media override may pin the label font again — that would mute
-    // labelScale and the responsive baseline on small screens.
+    // No media override may pin the label font again on small screens.
     const media = css.match(/@media \(max-width: 1023px\)\s*\{[\s\S]*?\n\}/);
     expect(media).not.toBeNull();
     expect(media![0]!).not.toMatch(/\.vela-item__label[^{]*\{[^}]*font-size/);
   });
 
-  it("fills the tile with the decoration and scales the glyph off the smaller side", () => {
-    const tile = ruleBlock(".vela-canvas .vela-app-icon, .vela-grid-host .vela-app-icon");
+  it("fills the tile with the decoration surface and sizes glyphs from resolver vars", () => {
+    const tile = ruleBlock(".vela-canvas .vela-app-icon--surface, .vela-grid-host .vela-app-icon--surface");
     expect(tile).toMatch(/position:\s*absolute/);
     expect(tile).toMatch(/inset:\s*0/);
     expect(tile).not.toMatch(/container-type/);
-    expect(ruleBlock(".vela-item__icon-wrap")).toMatch(/container-type:\s*size/);
-    expect(tile).toMatch(/cqmin/);
+    expect(tile).not.toMatch(/cqmin\s*\*\s*var\(--vd-app-icon-scale/);
 
-    const glyph = ruleBlock(".vela-canvas .vela-app-icon__glyph, .vela-grid-host .vela-app-icon__glyph");
-    expect(glyph).toMatch(/62cqmin/);
-    expect(glyph).toMatch(/var\(--vd-app-icon-scale,\s*1\)/);
+    // Glyph/image bounds come from the resolver's icon box, never a
+    // cqmin formula or a per-app multiplier.
+    const glyph = ruleBlock(".vela-app-content__icon .vela-app-icon__glyph, .vela-app-content__icon .vela-app-icon__image");
+    expect(glyph).toMatch(/width:\s*100%/);
+    expect(glyph).toMatch(/height:\s*100%/);
+    expect(glyph).toMatch(/object-fit:\s*contain/);
+    // No rule CONSUMES the deprecated scale vars anymore (comments may
+    // still name them as removed).
+    expect(css).not.toMatch(/var\(--vd-app-icon-scale/);
+    expect(css).not.toMatch(/var\(--vd-app-label-scale/);
   });
 
-  it("contains an uploaded image inside the box without cropping it", () => {
-    const image = ruleBlock(".vela-canvas .vela-app-icon__image, .vela-grid-host .vela-app-icon__image");
+  it("contains an uploaded image inside the icon box without cropping it", () => {
+    const image = ruleBlock(".vela-app-content__icon .vela-app-icon__glyph, .vela-app-content__icon .vela-app-icon__image");
     expect(image).toMatch(/object-fit:\s*contain/);
-    // 017-C: the image IS the glyph — it follows the same responsive,
-    // iconScale-aware box as the library glyphs instead of filling the tile.
-    expect(image).toMatch(/62cqmin/);
-    expect(image).toMatch(/var\(--vd-app-icon-scale,\s*1\)/);
-    expect(image).toMatch(/margin:\s*auto/);
+    // The icon box is the bound (fixed size from the resolver), so an
+    // in-flow image can never push past the tile.
+    const iconBox = ruleBlock(".vela-app-content__icon");
+    expect(iconBox).toMatch(/width:\s*var\(--vd-app-icon-box/);
+    expect(iconBox).toMatch(/height:\s*var\(--vd-app-icon-box/);
   });
 
-  it("keeps the dock button fixed while every glyph source scales (017-C)", () => {
+  it("sizes generated text optically from the resolver var (019-B)", () => {
+    const text = ruleBlock(".vela-app-content__icon .vela-app-icon__text");
+    expect(text).toMatch(/font-size:\s*var\(--vd-app-generated-text-size/);
+    expect(text).toMatch(/line-height:\s*1/);
+  });
+
+  it("keeps the dock button fixed with a fixed glyph box (019-B)", () => {
     const glyphs = ruleBlock(
       ".vela-dock__item .vela-app-icon__glyph, .vela-dock__item .vela-app-icon__image"
     );
-    expect(glyphs).toMatch(/min\(calc\(24px\s*\*\s*var\(--vd-app-icon-scale,\s*1\)\),\s*40px\)/);
+    expect(glyphs).toMatch(/width:\s*24px/);
+    expect(glyphs).toMatch(/height:\s*24px/);
     // The button box itself stays presentation-free: no per-app var may
     // size the dock button.
     const dock = ruleBlock(".vela-dock__item, .vela-dock__utility");

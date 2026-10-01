@@ -1,6 +1,9 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
+
+import { gsap } from "@components/vd/gsap";
+import { useVdReducedMotion } from "@components/vd/reduced-motion";
 
 /**
  * The visible task-017A Grid: isolated square slots, never graph paper.
@@ -15,6 +18,10 @@ import { useId } from "react";
  * `calculateSquareGridMetrics` in the shared metrics module. The overlay
  * is `position: absolute; inset: 0` over the grid stage (the CSS class),
  * pointer-transparent, decorative only.
+ *
+ * Task 022: the guides' one-shot fade-in is an owned GSAP tween (the CSS
+ * `vela-guides-in` keyframe is gone); reduced motion renders at full
+ * static opacity.
  */
 export interface GridSlotOverlayProps {
   /** Side of one square cell in CSS pixels (measured, fractional allowed). */
@@ -27,10 +34,31 @@ export function GridSlotOverlay({ cellPx, gapPx }: GridSlotOverlayProps) {
   // Entering/exiting sections can mount two overlays at once; each needs
   // its own pattern or the second svg would paint the first one's geometry.
   const patternId = `vela-grid-slots-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const reducedMotion = useVdReducedMotion();
+  const svgRef = useRef<SVGSVGElement | null>(null);
   const pitchPx = cellPx + gapPx;
 
+  useLayoutEffect(() => {
+    const svg = svgRef.current;
+    if (svg === null) {
+      return;
+    }
+    if (reducedMotion) {
+      gsap.set(svg, { opacity: 0.55 });
+      return;
+    }
+    gsap.fromTo(
+      svg,
+      { opacity: 0 },
+      { opacity: 0.55, duration: 0.14, ease: "power2.out" },
+    );
+    return () => {
+      gsap.killTweensOf(svg);
+    };
+  }, [reducedMotion]);
+
   return (
-    <svg className="vela-grid-slots" aria-hidden="true" focusable="false">
+    <svg ref={svgRef} className="vela-grid-slots" aria-hidden="true" focusable="false">
       <defs>
         <pattern id={patternId} patternUnits="userSpaceOnUse" width={pitchPx} height={pitchPx}>
           <rect width={cellPx} height={cellPx} fill="none" stroke="var(--vd-grid-line)" strokeWidth="1" />
