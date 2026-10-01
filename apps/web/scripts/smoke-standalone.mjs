@@ -203,10 +203,18 @@ export function startServerJs(targets, { dataDir, port }) {
  */
 export function startServerLauncher(targets, { dataDir, port }) {
   if (process.platform === "win32") {
-    const child = spawn(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", targets.launcherPath], {
+    // cmd /s applies its old-behavior quote handling — strip the leading
+    // quote and remove the LAST quote — so a spaced launcher path must be
+    // double-wrapped (""C:\path with spaces\x.cmd"" — run 36880687846 died
+    // as 'D:\a\_temp\VelaDesk' is not recognized when the single pair was
+    // stripped, truncating at the first space). windowsVerbatimArguments
+    // keeps Node from re-quoting the arg we already shaped.
+    const command = windowsLauncherCommand(targets.launcherPath);
+    const child = spawn(process.env.ComSpec ?? "cmd.exe", command.args, {
       cwd: targets.packageDir,
       env: { ...process.env, VELADESK_DATA_DIR: dataDir, VELADESK_PORT: String(port) },
       stdio: ["ignore", "pipe", "pipe"],
+      windowsVerbatimArguments: true,
     });
     return createServerHandle(child);
   }
@@ -216,6 +224,14 @@ export function startServerLauncher(targets, { dataDir, port }) {
     stdio: ["ignore", "pipe", "pipe"],
   });
   return createServerHandle(child);
+}
+
+/**
+ * The cmd.exe argument shape that survives spaced launcher paths. /s strips
+ * the leading quote and the last quote, leaving a fully quoted command.
+ */
+export function windowsLauncherCommand(launcherPath) {
+  return { args: ["/d", "/s", "/c", `""${launcherPath}""`] };
 }
 
 function defaultStartServer(targets, boot) {

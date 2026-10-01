@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { resolveSmokePaths, runStandaloneSmoke } from "./smoke-standalone.mjs";
+import { resolveSmokePaths, runStandaloneSmoke, windowsLauncherCommand } from "./smoke-standalone.mjs";
 import { createServerHandle } from "./smoke-readiness.mjs";
 
 /**
@@ -256,6 +256,17 @@ describe("resolveSmokePaths (the real path selection)", () => {
     expect(targets.packageDir).toBe(packageDir);
     expect(targets.launcherPath).not.toBeNull();
     expect(targets.staticDir.endsWith(path.join(".next", "static"))).toBe(true);
+  });
+
+  it("shapes cmd.exe launcher arguments to survive spaced paths (run 36880687846)", () => {
+    // cmd /s strips the leading quote and the LAST quote; the launcher path
+    // must therefore be double-wrapped so a fully quoted command survives.
+    const { args } = windowsLauncherCommand("D:\\a\\_temp\\VelaDesk 归档校验 6\\pkg\\start-veladesk.cmd");
+    expect(args).toEqual(["/d", "/s", "/c", '""D:\\a\\_temp\\VelaDesk 归档校验 6\\pkg\\start-veladesk.cmd""']);
+    const afterStrip = args[3].slice(1, -1);
+    expect(afterStrip.startsWith('"')).toBe(true);
+    expect(afterStrip.endsWith('"')).toBe(true);
+    expect(afterStrip).toContain(" ");
   });
 });
 
