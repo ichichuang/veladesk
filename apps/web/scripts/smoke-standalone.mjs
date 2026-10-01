@@ -244,22 +244,46 @@ async function stopServer(server, child) {
   if (child.exitCode !== null || child.signalCode !== null) {
     return;
   }
+  if (process.platform === "win32") {
+    // The launcher boots through cmd /c: killing cmd alone leaves the real
+    // server (a grandchild) alive, holding the data-dir SQLite files AND the
+    // inherited stdio pipe write-ends — the run-36883953205 hang (34 minutes
+    // of a live event loop after "smoke passed") plus the EPERM data-dir
+    // cleanup. Kill the whole tree FIRST, while the tree root still owns it;
+    // hard-kill persistence was proven safe by that same run (boots 2 and 3
+    // read back workspace + asset data written by tree-less predecessors).
+    // Runs on disposable runners only; targets solely this job's own child.
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { encoding: "utf8" });
+    const outcome = await Promise.race([exited.then(() => "exited"), sleep(5_000).then(() => "timeout")]);
+    if (outcome === "timeout") {
+      throw new Error(`server process tree (pid ${child.pid}) survived taskkill /T /F`);
+    }
+    return;
+  }
   const exited = new Promise((resolve) => child.once("exit", resolve));
   child.kill("SIGTERM");
   const outcome = await Promise.race([exited.then(() => "exited"), sleep(3_000).then(() => "timeout")]);
   if (outcome === "exited") {
     return;
   }
-  if (process.platform === "win32" && child.pid !== undefined) {
-    // cmd.exe wrappers leave a node grandchild behind; the tree kill targets
-    // ONLY this job's own child pid. This code runs on disposable runners
-    // (the Release workflow) — never as part of local unit tests.
-    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { encoding: "utf8" });
-    await exited;
-    return;
-  }
   child.kill("SIGKILL");
   await exited;
+}
+
+/** Windows releases file handles slightly after process death — retry briefly. */
+async function removeDataDir(dataDir) {
+  let lastError;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      rmSync(dataDir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      await sleep(250);
+    }
+  }
+  throw lastError;
 }
 
 /** Runs a bounded `node -e` probe anchored at VELADESK_PROBE_DIR; returns stdout. */
@@ -534,7 +558,7 @@ export async function runStandaloneSmoke(options) {
     if (server) {
       await stopServer(server, server.child);
     }
-    rmSync(dataDir, { recursive: true, force: true });
+    await removeDataDir(dataDir);
   }
 }
 
@@ -740,8 +764,19 @@ function bytesEqual(a, b) {
 
 const invokedDirectly = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
-  main().catch((error) => {
-    console.error(`standalone smoke failed: ${error.message}`);
-    process.exitCode = 1;
-  });
+  main()
+    .then(() => {
+      process.exitCode = 0;
+    })
+    .catch((error) => {
+      console.error(`standalone smoke failed: ${error.message}`);
+      process.exitCode = 1;
+    })
+    .finally(() => {
+      // Let the loop drain naturally (no log truncation); if some handle
+      // outlives the suite (a lingering pooled socket), force the exit
+      // anyway — a CI step must terminate.
+      const forcedExit = setTimeout(() => process.exit(process.exitCode ?? 0), 5_000);
+      forcedExit.unref();
+    });
 }
