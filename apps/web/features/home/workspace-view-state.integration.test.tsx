@@ -303,10 +303,22 @@ describe("persistence on navigation and exit (023-A §11/§13/§31/§33/§34)", 
   it("rapid A→B→C→D before any flush persists only D (request-time, latest wins)", async () => {
     const view = render(<ShellHost />);
     // Three accepted requests in immediate succession — none of the pair
-    // timelines is driven to completion before the shell goes away.
+    // timelines is driven to completion before the shell goes away. The
+    // playheads are FROZEN after every click: on a slow runner the real
+    // ticker could otherwise settle the B→C pair between clicks (an extra
+    // "left" section in the flushed map — the Release-quality flake), which
+    // a fast machine never interleaves.
+    const freezeTimelines = () => {
+      for (const animation of gsap.globalTimeline.getChildren(false, false, true)) {
+        animation.pause();
+      }
+    };
     await navigateTo("Beta");
+    freezeTimelines();
     await navigateTo("Gamma");
+    freezeTimelines();
     await navigateTo("Delta");
+    freezeTimelines();
     view.unmount();
 
     const stored = storedViewState("ws-1");
