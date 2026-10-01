@@ -1,19 +1,41 @@
 #!/usr/bin/env node
 /**
- * Production standalone API smoke test.
+ * Production standalone smoke test — now with a package mode (task 027-R2).
  *
- * Verifies that the built Next.js standalone bundle actually serves the
- * workspace API v1 in production mode: migration SQL assets traced into the
- * bundle, the native better-sqlite3 binary loading, lazy server runtime
- * initialization and SQLite persistence across a server restart.
+ * Dev mode (default, unchanged behavior for CI's normal production smoke):
+ * verifies the built Next standalone tree under apps/web/.next/standalone —
+ * workspace API v1, migration SQL assets, native better-sqlite3, SQLite
+ * persistence across restarts, the bundled icon catalog and the asset
+ * round-trip, plus a server-rendered home page fetch.
  *
- * Uses only Node standard library. Requires `next build` to have produced
- * apps/web/.next/standalone first.
+ * Package mode (--runtime <package-dir>, used against EXTRACTED release
+ * archives by the Release workflow): the SAME suite, plus the checks that
+ * only make sense at the distribution boundary — packaged CSS/JS and the
+ * public brand asset served byte-exactly, shared React resolution from the
+ * application and renderer contexts resolving inside the package, the native
+ * database binary loading from inside the package, and (with --launcher)
+ * booting through the real platform launcher using only its documented
+ * VELADESK_PORT / VELADESK_DATA_DIR overrides.
+ *
+ * There is NO silent fallback between modes: --runtime derives every path
+ * from the given package directory and fails if any expected piece is
+ * missing; without it the script looks ONLY at apps/web/.next/standalone.
+ *
+ * The orchestration is seam-injectable end to end (spawn/fetch/clock/probe)
+ * so unit tests drive the real suite with fake children — never a server.
  */
 import { createHash } from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
 import { deflateSync } from "node:zlib";
-import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -21,8 +43,7 @@ import { fileURLToPath } from "node:url";
 
 import { createServerHandle, pollUntilReady } from "./smoke-readiness.mjs";
 
-const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const standaloneRoot = path.join(webDir, ".next", "standalone");
+const webDirDefault = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function assert(condition, message) {
   if (!condition) {
@@ -33,18 +54,203 @@ function assert(condition, message) {
 /** Recursively collect paths whose basename matches, skipping node_modules. */
 function findByName(dir, basename, out = []) {
   for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry);
     if (entry === "node_modules") {
       continue;
     }
-    const stats = statSync(full);
-    if (stats.isDirectory()) {
+    const full = path.join(dir, entry);
+    if (statSync(full).isDirectory()) {
       findByName(full, basename, out);
     } else if (entry === basename) {
       out.push(full);
     }
   }
   return out;
+}
+
+/** First file matching a suffix under `dir`, in deterministic sorted order. */
+function firstFileWithSuffix(dir, suffix) {
+  const stack = [dir];
+  while (stack.length > 0) {
+    const current = stack.shift();
+    const entries = readdirSync(current).sort();
+    for (const entry of entries) {
+      const full = path.join(current, entry);
+      if (statSync(full).isDirectory()) {
+        stack.push(full);
+      } else if (entry.endsWith(suffix)) {
+        return full;
+      }
+    }
+    stack.sort();
+  }
+  return null;
+}
+
+/* ───────────────────────────── path selection ─────────────────────────── */
+
+/**
+ * ONE options-object interface for the CLI adapter, the orchestration and
+ * the tests.
+ *
+ * @param {object} options
+ * @param {string} [options.runtimeRoot] Extracted release PACKAGE directory
+ *   (contains runtime/, launcher, VERSION). Package mode — required pieces
+ *   are asserted, never silently derived elsewhere.
+ * @param {string} [options.webDir] Dev mode anchor (defaults to this app).
+ * @returns {{
+ *   mode: "dev" | "package",
+ *   packageDir: string | null,
+ *   serverJs: string,
+ *   migrationsDir: string,
+ *   staticDir: string | null,
+ *   publicDir: string | null,
+ *   launcherPath: string | null,
+ * }}
+ */
+export function resolveSmokePaths({ runtimeRoot, webDir } = {}) {
+  if (runtimeRoot !== undefined) {
+    const packageDir = path.resolve(runtimeRoot);
+    const runtimeDir = path.join(packageDir, "runtime");
+    const serverJs = path.join(runtimeDir, "apps", "web", "server.js");
+    const migrationsDir = path.join(runtimeDir, "packages", "database", "drizzle");
+    const staticDir = path.join(runtimeDir, "apps", "web", ".next", "static");
+    const publicDir = path.join(runtimeDir, "apps", "web", "public");
+    const launcherPath = path.join(
+      packageDir,
+      process.platform === "win32" ? "start-veladesk.cmd" : "start-veladesk.sh",
+    );
+    const required = [
+      ["runtime/apps/web/server.js", serverJs],
+      ["runtime/packages/database/drizzle", migrationsDir],
+      ["runtime/apps/web/.next/static", staticDir],
+      ["runtime/apps/web/public", publicDir],
+      ["platform launcher", launcherPath],
+    ];
+    for (const [label, location] of required) {
+      if (!existsSync(location)) {
+        throw new Error(`--runtime package incomplete: ${label} missing at ${location}`);
+      }
+    }
+    return { mode: "package", packageDir, serverJs, migrationsDir, staticDir, publicDir, launcherPath };
+  }
+
+  const resolvedWebDir = path.resolve(webDir ?? webDirDefault);
+  const standaloneRoot = path.join(resolvedWebDir, ".next", "standalone");
+  assert(existsSync(standaloneRoot), `standalone build missing at ${standaloneRoot}; run next build first`);
+
+  const serverJsFiles = findByName(standaloneRoot, "server.js");
+  assert(serverJsFiles.length > 0, "no server.js found in standalone output");
+  const serverJs = serverJsFiles.find((file) => file.endsWith(path.join("apps", "web", "server.js")));
+  assert(serverJs !== undefined, `expected apps/web/server.js, found: ${serverJsFiles.join(", ")}`);
+
+  const journalFiles = findByName(standaloneRoot, "_journal.json");
+  const migrationsDir = journalFiles
+    .map((file) => path.dirname(path.dirname(file)))
+    .find((dir) => dir.endsWith(path.join("packages", "database", "drizzle")));
+  assert(migrationsDir !== undefined, `migration journal not traced into standalone: ${journalFiles}`);
+  return {
+    mode: "dev",
+    packageDir: null,
+    serverJs,
+    migrationsDir,
+    staticDir: null,
+    publicDir: null,
+    launcherPath: null,
+  };
+}
+
+/* ──────────────────────────── real spawn seams ────────────────────────── */
+
+function buildServerEnv(targets, { dataDir, port }) {
+  return {
+    ...process.env,
+    NODE_ENV: "production",
+    VELADESK_DATA_DIR: dataDir,
+    VELADESK_MIGRATIONS_DIR: targets.migrationsDir,
+    HOSTNAME: "127.0.0.1",
+    PORT: String(port),
+  };
+}
+
+/** Boots the raw server.js (dev mode and package non-launcher mode). */
+export function startServerJs(targets, { dataDir, port }) {
+  const child = spawn(process.execPath, [targets.serverJs], {
+    cwd: path.dirname(targets.serverJs),
+    env: buildServerEnv(targets, { dataDir, port }),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return createServerHandle(child);
+}
+
+/**
+ * Boots through the REAL platform launcher with only the documented user
+ * overrides (test port + isolated data dir) — the path a self-hoster takes.
+ */
+export function startServerLauncher(targets, { dataDir, port }) {
+  if (process.platform === "win32") {
+    const child = spawn(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", targets.launcherPath], {
+      cwd: targets.packageDir,
+      env: { ...process.env, VELADESK_DATA_DIR: dataDir, VELADESK_PORT: String(port) },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return createServerHandle(child);
+  }
+  const child = spawn("sh", [targets.launcherPath], {
+    cwd: targets.packageDir,
+    env: { ...process.env, VELADESK_DATA_DIR: dataDir, VELADESK_PORT: String(port) },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return createServerHandle(child);
+}
+
+function defaultStartServer(targets, boot) {
+  return boot.launcher ? startServerLauncher(targets, boot) : startServerJs(targets, boot);
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function stopServer(server, child) {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill("SIGTERM");
+  const outcome = await Promise.race([exited.then(() => "exited"), sleep(3_000).then(() => "timeout")]);
+  if (outcome === "exited") {
+    return;
+  }
+  if (process.platform === "win32" && child.pid !== undefined) {
+    // cmd.exe wrappers leave a node grandchild behind; the tree kill targets
+    // ONLY this job's own child pid. This code runs on disposable runners
+    // (the Release workflow) — never as part of local unit tests.
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { encoding: "utf8" });
+    await exited;
+    return;
+  }
+  child.kill("SIGKILL");
+  await exited;
+}
+
+/** Runs a bounded `node -e` probe anchored at VELADESK_PROBE_DIR; returns stdout. */
+async function defaultNodeProbe(script, { cwd, probeDir }) {
+  const child = spawn(process.execPath, ["-e", script], {
+    cwd,
+    env: { ...process.env, VELADESK_PROBE_DIR: probeDir },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  const code = await new Promise((resolve) => child.once("exit", (exitCode) => resolve(exitCode)));
+  if (code !== 0) {
+    throw new Error(`node probe failed (exit ${code}): ${stderr.slice(0, 2000)}`);
+  }
+  return stdout.trim();
 }
 
 async function getFreePort() {
@@ -58,52 +264,7 @@ async function getFreePort() {
   });
 }
 
-/**
- * Spawns the standalone server and returns a HANDLE whose log readers
- * stay live for the whole process lifetime (027-R1: the old
- * `child.serverErrorText` snapshot was the stale-empty-string bug that hid
- * the Windows crash output).
- */
-function startServer(serverJs, migrationsDir, dataDir, port) {
-  const child = spawn(
-    process.execPath,
-    [serverJs],
-    {
-      cwd: path.dirname(serverJs),
-      env: {
-        ...process.env,
-        NODE_ENV: "production",
-        VELADESK_DATA_DIR: dataDir,
-        VELADESK_MIGRATIONS_DIR: migrationsDir,
-        HOSTNAME: "127.0.0.1",
-        PORT: String(port),
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  return createServerHandle(child);
-}
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function stopServer(child) {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return;
-  }
-  const exited = new Promise((resolve) => child.once("exit", resolve));
-  child.kill("SIGTERM");
-  const outcome = await Promise.race([
-    exited.then(() => "exited"),
-    sleep(3_000).then(() => "timeout"),
-  ]);
-  if (outcome === "exited") {
-    return;
-  }
-  // A stubborn process gets a final hard stop.
-  child.kill("SIGKILL");
-  await exited;
-}
-
+/* ───────────────────────────── the suite ──────────────────────────────── */
 
 function minimalSnapshot() {
   return {
@@ -113,11 +274,7 @@ function minimalSnapshot() {
       {
         id: "page-1",
         name: "Home",
-        layout: {
-          id: "page-1",
-          grid: { columns: 12, rows: 8 },
-          items: [],
-        },
+        layout: { id: "page-1", grid: { columns: 12, rows: 8 }, items: [] },
       },
     ],
     entities: [],
@@ -127,36 +284,67 @@ function minimalSnapshot() {
   };
 }
 
-async function main() {
-  assert(existsSync(standaloneRoot), `standalone build missing at ${standaloneRoot}; run next build first`);
+/**
+ * The full smoke orchestration. Every effect is a seam: tests drive this
+ * with fake children/fetch/clock; the CLI drives the real ones.
+ *
+ * @param {object} options
+ * @param {ReturnType<typeof resolveSmokePaths>} options.targets
+ * @param {boolean} [options.launcher] Boot through the platform launcher
+ *   (package mode only).
+ * @param {number} [options.deadlineMs] Readiness deadline (kept at 30s).
+ * @param {(targets: object, boot: { dataDir: string, port: number, launcher: boolean }) => object} [options.startServerImpl]
+ * @param {(url: string) => Promise<Response>} [options.fetchImpl]
+ * @param {(ms: number) => Promise<void>} [options.sleepImpl]
+ * @param {() => number} [options.now]
+ * @param {() => Promise<number>} [options.getFreePortImpl]
+ * @param {(script: string, opts: { cwd: string }) => Promise<string>} [options.nodeProbeImpl]
+ */
+export async function runStandaloneSmoke(options) {
+  const {
+    targets,
+    launcher = false,
+    deadlineMs = 30_000,
+    startServerImpl = defaultStartServer,
+    fetchImpl = fetch,
+    sleepImpl = sleep,
+    now = () => Date.now(),
+    getFreePortImpl = getFreePort,
+    nodeProbeImpl = defaultNodeProbe,
+  } = options;
 
-  const serverJsFiles = findByName(standaloneRoot, "server.js");
-  assert(serverJsFiles.length > 0, "no server.js found in standalone output");
-  const serverJs = serverJsFiles.find((file) => file.endsWith(path.join("apps", "web", "server.js")));
-  assert(serverJs !== undefined, `expected apps/web/server.js, found: ${serverJsFiles.join(", ")}`);
-  console.log(`standalone server: ${path.relative(webDir, serverJs)}`);
+  if (launcher && targets.mode !== "package") {
+    throw new Error("--launcher requires --runtime (the launcher lives in the release package)");
+  }
 
-  const journalFiles = findByName(standaloneRoot, "_journal.json");
-  const migrationsDir = journalFiles
-    .map((file) => path.dirname(path.dirname(file)))
-    .find((dir) => dir.endsWith(path.join("packages", "database", "drizzle")));
-  assert(migrationsDir !== undefined, `migration journal not traced into standalone: ${journalFiles}`);
-  const migrationSql = readdirSync(migrationsDir).filter((entry) => entry.endsWith(".sql"));
-  assert(migrationSql.length > 0, `no migration SQL next to ${migrationsDir}`);
-  console.log(`standalone migrations: ${path.relative(webDir, migrationsDir)}`);
-
+  const log = (...args) => console.log(...args);
+  const readiness = { serverPath: targets.serverJs, migrationsPath: targets.migrationsDir };
   const dataDir = mkdtempSync(path.join(tmpdir(), "veladesk-smoke-"));
-  const readiness = { serverPath: path.relative(webDir, serverJs), migrationsPath: path.relative(webDir, migrationsDir) };
   let server;
   try {
-    const port = await getFreePort();
+    const boot = async () => {
+      const port = await getFreePortImpl();
+      server = startServerImpl(targets, { dataDir, port, launcher });
+      await pollUntilReady({
+        server,
+        url: `http://127.0.0.1:${port}/api/v1/workspaces`,
+        deadlineMs,
+        fetchImpl,
+        sleep: sleepImpl,
+        now,
+        diagnostics: readiness,
+      });
+      return port;
+    };
 
-    server = startServer(serverJs, migrationsDir, dataDir, port);
-    const list = await pollUntilReady({ server, url: `http://127.0.0.1:${port}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
+    const port = await boot();
+    const base = `http://127.0.0.1:${port}`;
+
+    const list = await fetchImpl(`${base}/api/v1/workspaces`);
     assert(list.headers.get("cache-control") === "no-store", "list response missing Cache-Control: no-store");
-    console.log("boot 1: GET /api/v1/workspaces -> 200");
+    log("boot 1: GET /api/v1/workspaces -> 200");
 
-    const created = await fetch(`http://127.0.0.1:${port}/api/v1/workspaces`, {
+    const created = await fetchImpl(`${base}/api/v1/workspaces`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ snapshot: minimalSnapshot() }),
@@ -164,61 +352,52 @@ async function main() {
     assert(created.status === 201, `POST workspace expected 201, got ${created.status}`);
     const createdBody = await created.json();
     assert(createdBody.workspace.revision === 1, `expected revision 1, got ${createdBody.workspace.revision}`);
-    console.log("POST workspace -> 201 (revision 1)");
+    log("POST workspace -> 201 (revision 1)");
 
-    const fetched = await fetch(`http://127.0.0.1:${port}/api/v1/workspaces/smoke-workspace`);
+    const fetched = await fetchImpl(`${base}/api/v1/workspaces/smoke-workspace`);
     assert(fetched.status === 200, `GET workspace expected 200, got ${fetched.status}`);
     const fetchedBody = await fetched.json();
     assert(fetchedBody.workspace.revision === 1, `expected revision 1, got ${fetchedBody.workspace.revision}`);
-    console.log("GET workspace -> 200 (revision 1)");
+    log("GET workspace -> 200 (revision 1)");
 
-    await stopServer(server.child);
+    await stopServer(server, server.child);
     server = null;
-    console.log("boot 1: stopped");
+    log("boot 1: stopped");
 
-    const restartPort = await getFreePort();
-    server = startServer(serverJs, migrationsDir, dataDir, restartPort);
-    await pollUntilReady({ server, url: `http://127.0.0.1:${restartPort}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
-    const persisted = await fetch(`http://127.0.0.1:${restartPort}/api/v1/workspaces/smoke-workspace`);
+    // ---- boot 2: SQLite persistence across a real restart ----------------
+    const restartPort = await boot();
+    const restartBase = `http://127.0.0.1:${restartPort}`;
+    const persisted = await fetchImpl(`${restartBase}/api/v1/workspaces/smoke-workspace`);
     assert(persisted.status === 200, `workspace lost after restart (status ${persisted.status})`);
     const persistedBody = await persisted.json();
     assert(persistedBody.workspace.revision === 1, `expected revision 1 after restart, got ${persistedBody.workspace.revision}`);
-    console.log("boot 2: workspace persisted across restart");
+    log("boot 2: workspace persisted across restart");
 
     // --- Bundled icon catalog (tasks 016-A / 016-C) -----------------------
-    // The nine IconifyJSON collections must be TRACED into the standalone
-    // bundle: a missing one surfaces here as a 404 on its SVG route.
-    const iconBase = `http://127.0.0.1:${restartPort}`;
-
-    const recommended = await fetch(`${iconBase}/api/v1/icons/search`);
+    const iconBase = restartBase;
+    const recommended = await fetchImpl(`${iconBase}/api/v1/icons/search`);
     assert(recommended.status === 200, `recommended search expected 200, got ${recommended.status}`);
     const recommendedBody = await recommended.json();
     assert(recommendedBody.icons[0]?.id === "simple-icons:github", "recommended page must lead with a real brand icon");
     assert(recommendedBody.nextOffset === null, "the curated page must fit in one page");
-    console.log(`icon search (recommended) -> ${recommendedBody.icons.length} curated icons`);
+    log(`icon search (recommended) -> ${recommendedBody.icons.length} curated icons`);
 
-    const all = await fetch(`${iconBase}/api/v1/icons/search?scope=all&limit=96`);
+    const all = await fetchImpl(`${iconBase}/api/v1/icons/search?scope=all&limit=96`);
     assert(all.status === 200, `scope=all expected 200, got ${all.status}`);
     const allBody = await all.json();
     assert(allBody.icons.length === 96, `expected 96 icons, got ${allBody.icons.length}`);
     assert(allBody.total > 300, `expected the real catalog, total=${allBody.total}`);
     assert(allBody.nextOffset === 96, `expected nextOffset 96, got ${allBody.nextOffset}`);
-    const page3 = await fetch(`${iconBase}/api/v1/icons/search?scope=all&limit=96&offset=192`);
+    const page3 = await fetchImpl(`${iconBase}/api/v1/icons/search?scope=all&limit=96&offset=192`);
     const page3Body = await page3.json();
     const page1Ids = new Set(allBody.icons.map((icon) => icon.id));
-    assert(
-      page3Body.icons.every((icon) => !page1Ids.has(icon.id)),
-      "paged results must not repeat an earlier page",
-    );
+    assert(page3Body.icons.every((icon) => !page1Ids.has(icon.id)), "paged results must not repeat an earlier page");
     assert(page3Body.total === allBody.total, "total must be page-independent");
-    console.log(`icon search scope=all -> 3 pages of 96 out of ${allBody.total}`);
+    log(`icon search scope=all -> 3 pages of 96 out of ${allBody.total}`);
 
-    const color = await fetch(`${iconBase}/api/v1/icons/search?scope=color&limit=120`);
+    const color = await fetchImpl(`${iconBase}/api/v1/icons/search?scope=color&limit=120`);
     const colorBody = await color.json();
-    assert(
-      colorBody.icons.every((icon) => icon.palette === "multicolor"),
-      "scope=color must only return multicolor palettes",
-    );
+    assert(colorBody.icons.every((icon) => icon.palette === "multicolor"), "scope=color must only return multicolor palettes");
 
     const samples = [
       ["simple-icons", "github", "monochrome"],
@@ -232,7 +411,7 @@ async function main() {
       ["noto", "robot", "multicolor"],
     ];
     for (const [collection, name, palette] of samples) {
-      const response = await fetch(`${iconBase}/api/v1/icons/${collection}/${name}.svg`);
+      const response = await fetchImpl(`${iconBase}/api/v1/icons/${collection}/${name}.svg`);
       assert(response.status === 200, `${collection}:${name} expected 200, got ${response.status}`);
       assert(
         response.headers.get("content-type") === "image/svg+xml; charset=utf-8",
@@ -246,76 +425,224 @@ async function main() {
         assert(svg.includes("currentColor"), `${collection} must stay mask-renderable`);
       }
     }
-    console.log(`icon SVG routes -> all ${samples.length} collections 200 with the right palette`);
-    console.log("boot 2: icon catalog served from the standalone bundle");
+    log(`icon SVG routes -> all ${samples.length} collections 200 with the right palette`);
+    log("boot 2: icon catalog served from the standalone bundle");
 
     // --- Uploaded assets (task 016-B) -------------------------------------
     const png = makePngBytes();
     const assetId = `asset-sha256-${createHash("sha256").update(png).digest("hex")}`;
-    const base3 = `http://127.0.0.1:${restartPort}`;
 
-    const badId = await fetch(`${base3}/api/v1/assets/asset-sha256-not-a-real-id`, { method: "PUT", body: png });
+    const badId = await fetchImpl(`${restartBase}/api/v1/assets/asset-sha256-not-a-real-id`, { method: "PUT", body: png });
     assert(badId.status === 400, `PUT with a path-shaped id expected 400, got ${badId.status}`);
 
-    const mismatch = await fetch(`${base3}/api/v1/assets/asset-sha256-${"0".repeat(64)}`, { method: "PUT", body: png });
+    const mismatch = await fetchImpl(`${restartBase}/api/v1/assets/asset-sha256-${"0".repeat(64)}`, { method: "PUT", body: png });
     assert(mismatch.status === 422, `PUT with a foreign id expected 422, got ${mismatch.status}`);
 
-    const created2 = await fetch(`${base3}/api/v1/assets/${assetId}`, { method: "PUT", body: png });
+    const created2 = await fetchImpl(`${restartBase}/api/v1/assets/${assetId}`, { method: "PUT", body: png });
     assert(created2.status === 201, `first asset PUT expected 201, got ${created2.status}`);
     const created2Body = await created2.json();
     assert(created2Body.asset.id === assetId && created2Body.asset.mediaType === "image/png", "asset envelope mismatch");
-    console.log("asset PUT -> 201 stored");
+    log("asset PUT -> 201 stored");
 
-    const duplicate = await fetch(`${base3}/api/v1/assets/${assetId}`, { method: "PUT", body: png });
+    const duplicate = await fetchImpl(`${restartBase}/api/v1/assets/${assetId}`, { method: "PUT", body: png });
     assert(duplicate.status === 200, `duplicate asset PUT expected 200, got ${duplicate.status}`);
-    console.log("asset PUT -> 200 already existed");
+    log("asset PUT -> 200 already existed");
 
     const oversized = new Uint8Array(4 * 1024 * 1024 + 1);
     oversized.set(png);
-    const tooLarge = await fetch(`${base3}/api/v1/assets/${assetId}`, { method: "PUT", body: oversized });
+    const tooLarge = await fetchImpl(`${restartBase}/api/v1/assets/${assetId}`, { method: "PUT", body: oversized });
     assert(tooLarge.status === 413, `oversized asset PUT expected 413, got ${tooLarge.status}`);
 
-    const readBack = await fetch(`${base3}/api/v1/assets/${assetId}`);
+    const readBack = await fetchImpl(`${restartBase}/api/v1/assets/${assetId}`);
     assert(readBack.status === 200, `asset GET expected 200, got ${readBack.status}`);
     assert(readBack.headers.get("content-type") === "image/png", "asset GET content-type mismatch");
     assert(
       readBack.headers.get("cache-control") === "public, max-age=31536000, immutable",
-      "asset GET cache-control mismatch"
+      "asset GET cache-control mismatch",
     );
     assert(readBack.headers.get("etag") === `"${assetId}"`, "asset GET etag mismatch");
     const readBytes = new Uint8Array(await readBack.arrayBuffer());
     assert(bytesEqual(readBytes, png), "asset GET bytes differ from the PUT body");
-    console.log("asset GET -> exact bytes, type, immutable cache, etag");
+    log("asset GET -> exact bytes, type, immutable cache, etag");
 
-    const head = await fetch(`${base3}/api/v1/assets/${assetId}`, { method: "HEAD" });
-    assert(head.status === 200, `asset HEAD expected 200, got ${head.status}`);
+    const head = await fetchImpl(`${restartBase}/api/v1/assets/${assetId}`, { method: "HEAD" });
+    assert(head.status === 200, "asset HEAD expected 200");
     assert(head.headers.get("content-length") === String(png.byteLength), "asset HEAD content-length mismatch");
     assert((await head.arrayBuffer()).byteLength === 0, "asset HEAD must have no body");
-    console.log("asset HEAD -> metadata only");
+    log("asset HEAD -> metadata only");
 
     // --- Restart: assets live in VELADESK_DATA_DIR/assets -----------------
-    await stopServer(server.child);
+    await stopServer(server, server.child);
     server = null;
 
-    const restartPort2 = await getFreePort();
-    server = startServer(serverJs, migrationsDir, dataDir, restartPort2);
-    await pollUntilReady({ server, url: `http://127.0.0.1:${restartPort2}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
-    const readAfterRestart = await fetch(`http://127.0.0.1:${restartPort2}/api/v1/assets/${assetId}`);
+    const restartPort2 = await boot();
+    const base3 = `http://127.0.0.1:${restartPort2}`;
+    const readAfterRestart = await fetchImpl(`${base3}/api/v1/assets/${assetId}`);
     assert(readAfterRestart.status === 200, `asset GET after restart expected 200, got ${readAfterRestart.status}`);
     const bytesAfterRestart = new Uint8Array(await readAfterRestart.arrayBuffer());
     assert(bytesEqual(bytesAfterRestart, png), "asset bytes lost across restart");
-    const headAfterRestart = await fetch(`http://127.0.0.1:${restartPort2}/api/v1/assets/${assetId}`, { method: "HEAD" });
+    const headAfterRestart = await fetchImpl(`${base3}/api/v1/assets/${assetId}`, { method: "HEAD" });
     assert(headAfterRestart.status === 200, "asset HEAD after restart expected 200");
-    console.log("boot 3: asset persisted across restart (VELADESK_DATA_DIR/assets)");
+    log("boot 3: asset persisted across restart (VELADESK_DATA_DIR/assets)");
 
-    console.log("standalone smoke passed");
+    // --- Home page: server-rendered HTML (every mode) ---------------------
+    const home = await fetchImpl(`${base3}/`);
+    assert(home.status === 200, `GET / expected 200, got ${home.status}`);
+    assert((home.headers.get("content-type") ?? "").includes("text/html"), "home page content-type must be text/html");
+    const homeHtml = await home.text();
+    assert(homeHtml.includes("<html"), "home page did not render an HTML document");
+    log("GET / -> 200 server-rendered HTML");
+
+    if (targets.mode === "package") {
+      await verifyPackagedFrontend({ targets, base: base3, fetchImpl, log });
+      await verifyRuntimeContainment({ targets, nodeProbeImpl, log });
+    }
+
+    log("standalone smoke passed");
   } finally {
     if (server) {
-      await stopServer(server.child);
+      await stopServer(server, server.child);
     }
     rmSync(dataDir, { recursive: true, force: true });
   }
 }
+
+/* ───────────────── package-mode boundary checks ───────────────────────── */
+
+async function verifyPackagedFrontend({ targets, base, fetchImpl, log }) {
+  // A known packaged CSS or JS chunk, served byte-exactly.
+  const cssFile = firstFileWithSuffix(targets.staticDir, ".css") ?? firstFileWithSuffix(targets.staticDir, ".js");
+  assert(cssFile !== null, `no CSS or JS asset found under ${targets.staticDir}`);
+  const relative = path.relative(targets.staticDir, cssFile).split(path.sep).join("/");
+  const assetResponse = await fetchImpl(`${base}/_next/static/${relative}`);
+  assert(assetResponse.status === 200, `packaged asset /_next/static/${relative} expected 200, got ${assetResponse.status}`);
+  const assetBytes = new Uint8Array(await assetResponse.arrayBuffer());
+  assert(bytesEqual(assetBytes, new Uint8Array(readFileSync(cssFile))), `packaged asset /_next/static/${relative} bytes differ from the file in the package`);
+  log(`GET /_next/static/${relative} -> byte-exact packaged asset`);
+
+  // The public brand resource.
+  const publicFile = firstFileWithSuffix(targets.publicDir, "");
+  assert(publicFile !== null, `no public asset found under ${targets.publicDir}`);
+  const publicRelative = path.relative(targets.publicDir, publicFile).split(path.sep).join("/");
+  const brandResponse = await fetchImpl(`${base}/${publicRelative}`);
+  assert(brandResponse.status === 200, `public brand asset /${publicRelative} expected 200, got ${brandResponse.status}`);
+  const brandBytes = new Uint8Array(await brandResponse.arrayBuffer());
+  assert(bytesEqual(brandBytes, new Uint8Array(readFileSync(publicFile))), `public brand asset /${publicRelative} bytes differ from the package`);
+  log(`GET /${publicRelative} -> byte-exact public brand asset`);
+}
+
+async function verifyRuntimeContainment({ targets, nodeProbeImpl, log }) {
+  const packageDir = targets.packageDir;
+  const runtimeDir = realPathOf(path.join(packageDir, "runtime"));
+  const insidePackage = (resolved) => {
+    const real = realPathOf(resolved);
+    return real.startsWith(runtimeDir + path.sep);
+  };
+
+  // Shared React from the application and renderer contexts: same physical
+  // package, resolved inside the extracted runtime. Next's intentional
+  // vendored copies live under next/dist/compiled and are not counted.
+  const contexts = [
+    path.join(runtimeDir, "apps", "web", ".next", "server"),
+    path.join(runtimeDir, "node_modules", "next", "dist"),
+  ];
+  const resolvedReacts = [];
+  for (const context of contexts) {
+    const resolved = await nodeProbeImpl(
+      "console.log(require.resolve('react', { paths: [process.env.VELADESK_PROBE_DIR] }))",
+      { cwd: context, probeDir: context },
+    );
+    assert(insidePackage(resolved), `react resolved OUTSIDE the package from ${context}: ${resolved}`);
+    resolvedReacts.push(realPathOf(resolved));
+  }
+  assert(
+    resolvedReacts[0] === resolvedReacts[1],
+    `React identity split across contexts: ${resolvedReacts[0]} vs ${resolvedReacts[1]}`,
+  );
+  assertPhysicalPackageCount({ runtimeDir, name: "react", expected: 1 });
+  assertPhysicalPackageCount({ runtimeDir, name: "react-dom", expected: 1 });
+  log(`react resolves to one shared physical package inside the runtime (${path.relative(packageDir, resolvedReacts[0])})`);
+
+  // Native database binary loads from the extracted runtime.
+  const serverDir = path.dirname(targets.serverJs);
+  const nativeProbe = await nodeProbeImpl(
+    [
+      "const dir = process.env.VELADESK_PROBE_DIR;",
+      "const p = require.resolve('better-sqlite3', { paths: [dir] });",
+      "const Database = require(p);",
+      "const db = new Database(':memory:');",
+      "db.exec('select 1 as ok');",
+      "console.log(p);",
+    ].join("\n"),
+    { cwd: serverDir, probeDir: serverDir },
+  );
+  assert(insidePackage(nativeProbe), `better-sqlite3 resolved OUTSIDE the package: ${nativeProbe}`);
+  log(`native better-sqlite3 loads from inside the runtime (${path.relative(packageDir, realPathOf(nativeProbe))})`);
+}
+
+/** probeImpl results arrive as plain paths; realpath them for containment. */
+function realPathOf(resolved) {
+  return realpathSync(resolved);
+}
+
+function assertPhysicalPackageCount({ runtimeDir, name, expected }) {
+  const nodeModules = path.join(runtimeDir, "node_modules");
+  const found = [];
+  const scopes = [nodeModules];
+  for (const entry of readdirSync(nodeModules)) {
+    if (entry.startsWith("@")) {
+      scopes.push(path.join(nodeModules, entry));
+    }
+  }
+  for (const scopeDir of scopes) {
+    for (const entry of readdirSync(scopeDir)) {
+      const manifest = path.join(scopeDir, entry, "package.json");
+      if (!existsSync(manifest)) {
+        continue;
+      }
+      const parsed = JSON.parse(readFileSync(manifest, "utf8"));
+      if (parsed.name === name) {
+        found.push(path.join(scopeDir, entry));
+      }
+    }
+  }
+  assert(
+    found.length === expected,
+    `expected exactly ${expected} physical ${name} package(s) in the runtime (found ${found.length}: ${found.join(", ")})` +
+      " — the repair must not duplicate React identities",
+  );
+}
+
+/* ─────────────────────────────── CLI ──────────────────────────────────── */
+
+function parseArgs(argv) {
+  const options = { runtimeRoot: undefined, launcher: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--runtime") {
+      options.runtimeRoot = argv[index + 1];
+      index += 1;
+    } else if (arg === "--launcher") {
+      options.launcher = true;
+    } else {
+      throw new Error(`unknown argument: ${arg}`);
+    }
+  }
+  return options;
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const targets = resolveSmokePaths({ runtimeRoot: options.runtimeRoot });
+  console.log(`standalone server: ${targets.serverJs}`);
+  console.log(`standalone migrations: ${targets.migrationsDir}`);
+  if (targets.mode === "package") {
+    console.log(`package mode: ${targets.packageDir}${options.launcher ? " (via the platform launcher)" : ""}`);
+  }
+  await runStandaloneSmoke({ targets, launcher: options.launcher });
+}
+
+/* ─────────────────────────── PNG fixture utils ────────────────────────── */
 
 const CRC32_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -379,7 +706,10 @@ function bytesEqual(a, b) {
   return a.byteLength === b.byteLength && a.every((byte, index) => byte === b[index]);
 }
 
-main().catch((error) => {
-  console.error(`standalone smoke failed: ${error.message}`);
-  process.exitCode = 1;
-});
+const invokedDirectly = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+  main().catch((error) => {
+    console.error(`standalone smoke failed: ${error.message}`);
+    process.exitCode = 1;
+  });
+}

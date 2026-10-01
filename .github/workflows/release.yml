@@ -208,14 +208,55 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
-      - name: Install dependencies
+      # ── 027-R2 evidence (Windows only, bounded) ─────────────────────────
+      # The first 1.0.0 run (36849597035) crashed on junctions pnpm's
+      # DEFAULT isolated layout creates on Windows. Record that layout's
+      # actual link facts once, descriptively, so the repair decisions stay
+      # evidence-backed on every release.
+      - name: Install dependencies (isolated layout — link evidence baseline)
+        if: matrix.os == 'windows-latest'
         run: pnpm install --frozen-lockfile
+
+      - name: Record the pnpm isolated link layout (descriptive, bounded)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: node apps/web/scripts/inspect-runtime-links.mjs node_modules/.pnpm --describe --limit 20
+
+      # ── 027-R2 portable release install ─────────────────────────────────
+      # Switch the DISPOSABLE runner to pnpm's supported hoisted nodeLinker
+      # (flat, symlink-free node_modules). Next's standalone copy then traces
+      # real paths only — no junction recreation, no checkout-absolute links.
+      # Runner-local config change only: nothing is committed, and the
+      # lockfile must come out byte-identical.
+      - name: Switch to the portable hoisted release layout
+        shell: bash
+        run: |
+          set -eu
+          rm -rf node_modules apps/*/node_modules packages/*/node_modules
+          printf '\n# 027-R2: release-only portable layout (runner-local, never committed)\nnodeLinker: hoisted\n' >> pnpm-workspace.yaml
+
+      - name: Install dependencies (hoisted release layout)
+        run: pnpm install --frozen-lockfile
+
+      - name: Lockfile unchanged by the layout switch
+        shell: bash
+        run: git diff --exit-code pnpm-lock.yaml
 
       - name: Version check
         run: pnpm version:check
 
       - name: Build
         run: pnpm build
+
+      # 027-R2 portability gate: the standalone tree may only contain links
+      # that resolve INSIDE it on every platform (a checkout-absolute
+      # junction is exactly the class that killed run 36849597035). The
+      # stricter per-platform PACKAGE contract — zero links in the Windows
+      # archive, internal-relative on unix — is enforced at staging by
+      # runtime-stage.mjs and re-checked by verify-release-package.mjs.
+      - name: Gate standalone runtime links (internal, in-tree only)
+        shell: bash
+        run: node apps/web/scripts/inspect-runtime-links.mjs apps/web/.next/standalone --expect internal-only
 
       - name: Standalone API smoke (this platform's native bundle)
         run: pnpm --filter @veladesk/web smoke:standalone
@@ -236,19 +277,51 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `archive_format=${m.archiveName.endsWith(".zip") ? "zip" : "tar.gz"}\n`);
           '
 
+      - name: Verify the staged package (static, no server)
+        run: node apps/web/scripts/verify-release-package.mjs "${{ steps.pkg.outputs.package_dir }}"
+
       - name: Archive (tar.gz)
         if: steps.pkg.outputs.archive_format == 'tar.gz'
         run: tar -czf "dist/${{ steps.pkg.outputs.archive_name }}" -C "$(dirname "${{ steps.pkg.outputs.package_dir }}")" "$(basename "${{ steps.pkg.outputs.package_dir }}")"
 
-      - name: Archive (zip)
+      # 027-R2: Compress-Archive has a documented hidden-file exclusion —
+      # the Windows zip is built with the system bsdtar instead, and its
+      # completeness is PROVEN by the round-trip verification below.
+      - name: Archive (zip via bsdtar)
         if: steps.pkg.outputs.archive_format == 'zip'
         shell: pwsh
-        run: Compress-Archive -Path "${{ steps.pkg.outputs.package_dir }}" -DestinationPath "dist/${{ steps.pkg.outputs.archive_name }}"
+        run: |
+          tar -a -cf "dist/${{ steps.pkg.outputs.archive_name }}" -C (Split-Path -Parent "${{ steps.pkg.outputs.package_dir }}") (Split-Path -Leaf "${{ steps.pkg.outputs.package_dir }}")
 
-      - name: Verify the release package (static, no server)
-        run: node apps/web/scripts/verify-release-package.mjs "${{ steps.pkg.outputs.package_dir }}"
+      # 027-R2: verify the ARCHIVE — extract the exact file users download
+      # into a RUNNER_TEMP path that contains spaces AND non-ASCII
+      # characters, then compare every file hash against the staged package
+      # (hidden files and dot-directories included).
+      - name: Verify the archive round-trip (spaces + non-ASCII extract path)
+        id: archive
+        shell: bash
+        env:
+          EXTRACT_ROOT: ${{ runner.temp }}/VelaDesk 归档校验 ${{ github.run_number }}
+        run: node apps/web/scripts/verify-release-archive.mjs "dist/${{ steps.pkg.outputs.archive_name }}" "${{ steps.pkg.outputs.package_dir }}" --extract-root "$EXTRACT_ROOT"
 
-      - name: Upload artifact
+      # 027-R2 relocation isolation: make the checkout's dependency trees
+      # unavailable so the extracted package CANNOT accidentally resolve
+      # against the build environment (containment is proven, not assumed).
+      - name: Relocate the checkout dependency trees aside
+        shell: bash
+        run: |
+          set -eu
+          mv node_modules node_modules.relocated-for-smoke
+          mv apps/web/.next/standalone apps/web/.next/standalone.relocated-for-smoke
+
+      # 027-R2: the distribution boundary itself — boot the EXTRACTED
+      # package through its real launcher (test port/data overrides) and run
+      # the full API/home/asset/React-containment/native smoke against it.
+      - name: Extracted-package launcher smoke
+        shell: bash
+        run: node apps/web/scripts/smoke-standalone.mjs --runtime "${{ steps.archive.outputs.extracted_package_dir }}" --launcher
+
+      - name: Upload artifact (the verified archive only)
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.pkg.outputs.archive_name }}

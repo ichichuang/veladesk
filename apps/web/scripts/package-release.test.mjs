@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -151,6 +151,82 @@ describe("packageRelease (task 025 §24–§33)", () => {
     expect(() => packageRelease({ version: VERSION, webDir, outDir: path.join(rootDir, "dist", "a") })).toThrow(
       /journal/,
     );
+  });
+});
+
+describe("portable runtime staging through packageRelease (task 027-R2)", () => {
+  function addIsolatedLayoutLinks(webDir, rootDir) {
+    const standalone = path.join(webDir, ".next", "standalone");
+    writeFile(path.join(standalone, "node_modules/.pnpm/react@19.3.0/node_modules/react/package.json"), '{"name":"react"}');
+    mkdirSync(path.join(standalone, "node_modules/.pnpm/next@16.3.5_fake/node_modules"), { recursive: true });
+    symlinkSync(
+      "../../react@19.3.0/node_modules/react",
+      path.join(standalone, "node_modules/.pnpm/next@16.3.5_fake/node_modules/react"),
+      "dir",
+    );
+    return { standalone, rootDir };
+  }
+
+  it("keeps a pnpm-style internal relative link in the unix runtime and passes verification", () => {
+    const { rootDir, webDir } = makeBuildFixture();
+    addIsolatedLayoutLinks(webDir, rootDir);
+
+    const outDir = path.join(rootDir, "dist", "pkg");
+    packageRelease({ version: VERSION, webDir, outDir, platform: "linux" });
+    const stagedLink = path.join(outDir, "runtime/node_modules/.pnpm/next@16.3.5_fake/node_modules/react");
+    expect(lstatSync(stagedLink).isSymbolicLink()).toBe(true);
+
+    const result = verifyReleasePackage(outDir, { repoRoot: rootDir, platform: "linux" });
+    expect(result.problems).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("materializes internal links into real directories for the win32 runtime", () => {
+    const { rootDir, webDir } = makeBuildFixture();
+    addIsolatedLayoutLinks(webDir, rootDir);
+
+    const outDir = path.join(rootDir, "dist", "pkg");
+    const manifest = packageRelease({ version: VERSION, webDir, outDir, platform: "win32" });
+    expect(manifest.archiveName).toBe(releaseArchiveName(VERSION, "win32"));
+    expect(existsSync(path.join(outDir, "start-veladesk.cmd"))).toBe(true);
+    const staged = path.join(outDir, "runtime/node_modules/.pnpm/next@16.3.5_fake/node_modules/react");
+    expect(lstatSync(staged).isDirectory()).toBe(true);
+
+    expect(verifyReleasePackage(outDir, { repoRoot: rootDir, platform: "win32" }).ok).toBe(true);
+  });
+
+  it("fails loudly when the standalone tree contains the 027 junction class (absolute checkout link)", () => {
+    const { rootDir, webDir } = makeBuildFixture();
+    const { standalone } = addIsolatedLayoutLinks(webDir, rootDir);
+    rmSync(path.join(standalone, "node_modules/.pnpm/next@16.3.5_fake/node_modules/react"));
+    // Absolute link into a build checkout — the exact class that produced
+    // the Windows EPERM in release run 36849597035.
+    mkdirSync(path.join(rootDir, "checkout/node_modules/.pnpm/react@19.3.0/node_modules/react"), { recursive: true });
+    writeFileSync(path.join(rootDir, "checkout/node_modules/.pnpm/react@19.3.0/node_modules/react/package.json"), '{"name":"react"}', "utf8");
+    symlinkSync(
+      path.join(rootDir, "checkout/node_modules/.pnpm/react@19.3.0/node_modules/react"),
+      path.join(standalone, "node_modules/.pnpm/next@16.3.5_fake/node_modules/react"),
+      "dir",
+    );
+
+    let error;
+    try {
+      packageRelease({ version: VERSION, webDir, outDir: path.join(rootDir, "dist", "pkg"), platform: "win32" });
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/absolute\/escaping link/);
+    expect(error.message).toContain("react");
+  });
+
+  it("marks the unix launcher executable at staging time", () => {
+    const { rootDir, webDir } = makeBuildFixture();
+    const outDir = path.join(rootDir, "dist", "pkg");
+    packageRelease({ version: VERSION, webDir, outDir, platform: "linux" });
+    const launcher = path.join(outDir, "start-veladesk.sh");
+    expect(existsSync(launcher)).toBe(true);
+    expect((lstatSync(launcher).mode & 0o111) !== 0).toBe(true);
   });
 });
 

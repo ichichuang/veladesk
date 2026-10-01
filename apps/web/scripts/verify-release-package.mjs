@@ -20,6 +20,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readRootVersion } from "../../../scripts/version-lib.mjs";
+import { assertRuntimeLinkPolicy, collectTreeInventory } from "./runtime-stage.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "../../..");
@@ -28,11 +29,14 @@ const repoRoot = path.resolve(scriptDir, "../../..");
  * @param {string} packageDir The assembled release directory.
  * @param {object} [options]
  * @param {string} [options.repoRoot] Where the root package.json lives.
+ * @param {string} [options.platform] Link-policy platform (defaults to the
+ *   real process — win32 packages must be link-free, 027-R2).
  * @returns {{ ok: boolean, problems: string[] }}
  */
 export function verifyReleasePackage(packageDir, options = {}) {
   const problems = [];
   const rootDir = options.repoRoot ?? repoRoot;
+  const platform = options.platform ?? process.platform;
 
   const expect = (condition, message) => {
     if (!condition) {
@@ -86,8 +90,16 @@ export function verifyReleasePackage(packageDir, options = {}) {
     expect(sqlCount > 0, "no *.sql migration files in runtime/packages/database/drizzle");
   }
 
-  const launcher = process.platform === "win32" ? "start-veladesk.cmd" : "start-veladesk.sh";
+  const launcher = platform === "win32" ? "start-veladesk.cmd" : "start-veladesk.sh";
   expect(existsSync(path.join(packageDir, launcher)), `${launcher} missing`);
+
+  // Full-tree link policy (027-R2): the runtime must be portable. win32
+  // tolerates ZERO links (end users cannot create junctions at extraction
+  // time); every other platform only the relative, in-tree shape.
+  const inventory = collectTreeInventory(packageDir);
+  for (const problem of assertRuntimeLinkPolicy(inventory, { platform })) {
+    problems.push(problem);
+  }
 
   return { ok: problems.length === 0, problems };
 }

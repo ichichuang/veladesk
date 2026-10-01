@@ -97,6 +97,68 @@ describe("gates before any publish (task 025 §20, §42)", () => {
     expect(workflow).toMatch(/actions\/upload-artifact@v7/);
     expect(workflow).toMatch(/actions\/download-artifact@v8/);
   });
+
+  it("has no continue-on-error anywhere — every gate is load-bearing", () => {
+    expect(workflow).not.toMatch(/continue-on-error/);
+  });
+});
+
+describe("portable Windows bundles (task 027-R2)", () => {
+  it("installs the release build with pnpm's hoisted nodeLinker and proves the lockfile untouched", () => {
+    expect(workflow).toMatch(/nodeLinker:\s*hoisted/);
+    expect(workflow).toMatch(/git diff --exit-code pnpm-lock\.yaml/);
+    expect(workflow).toMatch(/pnpm install --frozen-lockfile/);
+  });
+
+  it("records the pnpm isolated link evidence on Windows (descriptive, bounded)", () => {
+    expect(workflow).toMatch(/inspect-runtime-links\.mjs node_modules\/\.pnpm --describe --limit 20/);
+  });
+
+  it("gates the standalone runtime links to in-tree internals on every platform", () => {
+    expect(workflow).toMatch(/inspect-runtime-links\.mjs apps\/web\/\.next\/standalone --expect internal-only/);
+  });
+
+  it("never builds the Windows zip with Compress-Archive (hidden-file exclusion)", () => {
+    // The tool may be named in comments explaining WHY it is banned; what
+    // must never appear is an invocation of it.
+    expect(workflow).not.toMatch(/Compress-Archive\s+-(?:Path|DestinationPath)/);
+    // bsdtar writes the zip instead.
+    expect(workflow).toMatch(/tar -a -cf/);
+  });
+
+  it("verifies the archive round-trip before publication, into a spaced non-ASCII path", () => {
+    expect(workflow).toMatch(/verify-release-archive\.mjs/);
+    // The extract path deliberately contains spaces AND non-ASCII characters.
+    expect(workflow).toMatch(/VelaDesk 归档校验/);
+    expect(workflow).toMatch(/\$\{\{ runner\.temp \}\}/);
+    // Staged static verification still runs.
+    expect(workflow).toMatch(/verify-release-package\.mjs/);
+  });
+
+  it("makes checkout dependency trees unavailable before the extracted smoke (containment)", () => {
+    expect(workflow).toMatch(/node_modules\.relocated-for-smoke/);
+    expect(workflow).toMatch(/standalone\.relocated-for-smoke/);
+  });
+
+  it("smokes the EXTRACTED package through its launcher at the distribution boundary", () => {
+    expect(workflow).toMatch(/smoke-standalone\.mjs --runtime .* --launcher/);
+  });
+
+  it("uploads only the verified archive as the release asset", () => {
+    expect(workflow).toMatch(/Upload artifact \(the verified archive only\)/);
+    expect(workflow).toMatch(/path: dist\/\$\{\{ steps\.pkg\.outputs\.archive_name \}\}/);
+  });
+
+  it("keeps packaging, archive verification and the extracted smoke ordered before upload", () => {
+    const packageIndex = workflow.indexOf("Package release bundle");
+    const archiveVerifyIndex = workflow.indexOf("Verify the archive round-trip");
+    const extractedSmokeIndex = workflow.indexOf("Extracted-package launcher smoke");
+    const uploadIndex = workflow.indexOf("Upload artifact (the verified archive only)");
+    expect(packageIndex).toBeGreaterThan(-1);
+    expect(archiveVerifyIndex).toBeGreaterThan(packageIndex);
+    expect(extractedSmokeIndex).toBeGreaterThan(archiveVerifyIndex);
+    expect(uploadIndex).toBeGreaterThan(extractedSmokeIndex);
+  });
 });
 
 describe("final job (task 025 §40–§43)", () => {

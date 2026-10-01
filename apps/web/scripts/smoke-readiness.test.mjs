@@ -196,22 +196,28 @@ describe("smoke-standalone wiring contract (call-shape guard)", () => {
     "utf8",
   );
 
-  it("every readiness poll uses the single-object argument shape with the server handle", () => {
+  it("the readiness poll uses the single-object argument shape with the server handle", () => {
+    // 027-R2 folds the three boots into one shared boot() closure, so there
+    // is exactly ONE pollUntilReady call site; the orchestration test in
+    // smoke-standalone.test.mjs proves all THREE boots actually pass through
+    // it with fake children (boots === 3).
     const calls = smokeSource.match(/pollUntilReady\(/g) ?? [];
-    expect(calls.length).toBe(3);
+    expect(calls.length).toBe(1);
     // The R1 wiring bug was `pollUntilReady(server, {...})` — a two-argument
     // call the single-object signature silently destructures into
     // `server: undefined`. The shape is pinned so it cannot come back.
     expect(smokeSource).not.toMatch(/pollUntilReady\(server,/);
-    expect((smokeSource.match(/pollUntilReady\(\{ server, url:/g) ?? []).length).toBe(3);
+    expect(smokeSource).toMatch(/pollUntilReady\(\{\n\s+server,\n\s+url:/);
   });
 
   it("the readiness deadline stays at 30 seconds on every boot poll (027-R1 §1/§5)", () => {
-    expect((smokeSource.match(/deadlineMs: 30_000/g) ?? []).length).toBe(3);
+    // One seam default feeds every boot; no other deadline literal exists.
+    expect(smokeSource).toMatch(/deadlineMs = 30_000/);
+    expect(smokeSource).not.toMatch(/deadlineMs: \d+(?!\d)/);
   });
 
   it("the stale snapshot pattern is gone; teardown keeps receiving the raw child", () => {
     expect(smokeSource).not.toMatch(/serverErrorText\s*=/);
-    expect(smokeSource).toMatch(/stopServer\(server\.child\)/);
+    expect(smokeSource).toMatch(/stopServer\(server, server\.child\)/);
   });
 });

@@ -21,11 +21,12 @@
  * duplicated in the workflow (the archive name is emitted once, here).
  */
 
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readRootVersion } from "../../../scripts/version-lib.mjs";
+import { stageRuntimeTree } from "./runtime-stage.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(scriptDir, "..");
@@ -207,8 +208,10 @@ exec node server.js
  * @param {string} args.webDir The apps/web directory (build tree owner).
  * @param {string} args.outDir Destination root; the staging directory is
  *   created inside it.
+ * @param {string} [args.platform] Link policy selector for the runtime copy
+ *   (win32 packages must be link-free; defaults to the real process).
  */
-export function packageRelease({ version, webDir = webDirDefault(), outDir }) {
+export function packageRelease({ version, webDir = webDirDefault(), outDir, platform = process.platform }) {
   const standaloneRoot = path.join(webDir, ".next", "standalone");
   const staticDir = path.join(webDir, ".next", "static");
   const publicDir = path.join(webDir, "public");
@@ -223,10 +226,16 @@ export function packageRelease({ version, webDir = webDirDefault(), outDir }) {
   const serverDir = path.dirname(serverJs);
   const runtimeServerDir = path.join(outDir, "runtime", path.relative(standaloneRoot, serverDir));
 
-  // runtime/ = the complete standalone tree.
+  // runtime/ = the complete standalone tree, staged through the portable
+  // link policy (027-R2): cpSync's dereference:false would have carried
+  // pnpm's checkout-pointing junctions straight into the Windows zip.
   rmSync(path.join(outDir, "runtime"), { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
-  cpSync(standaloneRoot, path.join(outDir, "runtime"), { recursive: true });
+  const stagedRuntime = stageRuntimeTree({
+    source: standaloneRoot,
+    destination: path.join(outDir, "runtime"),
+    platform,
+  });
 
   // Next standalone never guarantees these two — copy them beside server.js.
   cpSync(staticDir, path.join(runtimeServerDir, ".next", "static"), { recursive: true });
@@ -248,16 +257,23 @@ export function packageRelease({ version, webDir = webDirDefault(), outDir }) {
   }
   cpSync(license, path.join(outDir, "LICENSE"));
   writeFileSync(path.join(outDir, "START.md"), START_MD(version), "utf8");
-  const launcherName = process.platform === "win32" ? "start-veladesk.cmd" : "start-veladesk.sh";
-  const launcherSource = process.platform === "win32" ? CMD_LAUNCHER : SH_LAUNCHER;
-  writeFileSync(path.join(outDir, launcherName), launcherSource, "utf8");
+  const launcherName = platform === "win32" ? "start-veladesk.cmd" : "start-veladesk.sh";
+  const launcherSource = platform === "win32" ? CMD_LAUNCHER : SH_LAUNCHER;
+  const launcherPath = path.join(outDir, launcherName);
+  writeFileSync(launcherPath, launcherSource, "utf8");
+  if (platform !== "win32") {
+    // The unix launcher must be executable straight out of the archive —
+    // tar preserves the bit, but only if it is set at staging time.
+    chmodSync(launcherPath, 0o755);
+  }
 
   return {
     version,
     directory: outDir,
-    platform: platformLabel(),
+    platform: platformLabel(platform),
     arch: process.arch,
-    archiveName: releaseArchiveName(version),
+    archiveName: releaseArchiveName(version, platform),
+    stagedRuntime,
   };
 }
 
