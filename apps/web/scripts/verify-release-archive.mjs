@@ -25,7 +25,7 @@
  * runners). NEVER starts a server.
  */
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -87,7 +87,23 @@ export function verifyReleaseArchive({
   rmSync(extractPath, { recursive: true, force: true });
   mkdirSync(extractPath, { recursive: true });
 
-  const extraction = spawnSync(tarCommand, ["-xf", archivePath, "-C", extractPath], {
+  // bsdtar.exe takes argv through the ANSI code page: a non-ASCII -C path
+  // arrives as '????' and extraction fails (run 36874551422). On win32 the
+  // archive is therefore extracted into an ASCII staging directory first
+  // and the extracted package is then MOVED — Node's UTF-16 filesystem API
+  // — to the caller's spaced, non-ASCII extract root; every later step
+  // (inventory, policy, the extracted-package smoke in the workflow) runs
+  // against that final path.
+  let tarExtractDir = extractPath;
+  let packageDirNeedsMove = false;
+  if (platform === "win32") {
+    tarExtractDir = path.join(path.dirname(extractPath), `veladesk-archive-verify-${process.pid}`);
+    rmSync(tarExtractDir, { recursive: true, force: true });
+    mkdirSync(tarExtractDir, { recursive: true });
+    packageDirNeedsMove = true;
+  }
+
+  const extraction = spawnSync(tarCommand, ["-xf", archivePath, "-C", tarExtractDir], {
     encoding: "utf8",
     shell,
     maxBuffer: 4 * 1024 * 1024,
@@ -103,7 +119,7 @@ export function verifyReleaseArchive({
     };
   }
 
-  const topEntries = readdirSync(extractPath);
+  const topEntries = readdirSync(tarExtractDir);
   const expectedRootName = path.basename(stagedPath);
   if (topEntries.length !== 1 || topEntries[0] !== expectedRootName) {
     return {
@@ -116,7 +132,13 @@ export function verifyReleaseArchive({
       linkCount: 0,
     };
   }
-  const extractedPackageDir = path.join(extractPath, expectedRootName);
+  let extractedPackageDir = path.join(tarExtractDir, expectedRootName);
+  if (packageDirNeedsMove) {
+    const finalDir = path.join(extractPath, expectedRootName);
+    renameSync(extractedPackageDir, finalDir);
+    rmSync(tarExtractDir, { recursive: true, force: true });
+    extractedPackageDir = finalDir;
+  }
 
   const stagedInventory = collectTreeInventory(stagedPath);
   const extractedInventory = collectTreeInventory(extractedPackageDir);

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -176,5 +176,24 @@ describe("verifyReleaseArchive — zip round-trip (bsdtar)", () => {
     expect(result.problems).toEqual([]);
     expect(result.ok).toBe(true);
     expect(archiveFile.endsWith(".zip")).toBe(true);
+  });
+});
+
+describe("verifyReleaseArchive — win32 extraction staging (bsdtar ANSI argv workaround)", () => {
+  it("extracts via an ASCII staging dir and moves the package to the spaced, non-ASCII root", () => {
+    const { stagedDir } = makeStagedPackage("win32");
+    const archiveFile = path.join(path.dirname(stagedDir), "pkg.tar.gz");
+    createTarball(stagedDir, archiveFile, "tar.gz");
+    const extractRoot = path.join(makeTempDir("veladesk-x "), "VelaDesk 归档校验 win32");
+
+    const result = verifyReleaseArchive({ archive: archiveFile, stagedDir, extractRoot, platform: "win32" });
+    expect(result.problems).toEqual([]);
+    expect(result.ok).toBe(true);
+    // The package lives at the FINAL spaced + non-ASCII location.
+    expect(result.extractedPackageDir.startsWith(extractRoot)).toBe(true);
+    expect(existsSync(path.join(result.extractedPackageDir, "start-veladesk.cmd"))).toBe(true);
+    // The ASCII staging dir is cleaned up behind the move.
+    const leftovers = readdirSync(path.dirname(extractRoot)).filter((entry) => entry.startsWith("veladesk-archive-verify-"));
+    expect(leftovers).toEqual([]);
   });
 });
