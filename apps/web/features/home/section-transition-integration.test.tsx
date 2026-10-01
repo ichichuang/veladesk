@@ -395,12 +395,14 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
 
     await navigateTo("Beta");
     await act(async () => {
-      livePairTimeline().progress(0.3);
+      const timeline = livePairTimeline();
+      timeline.progress(0.3);
+      // Pause in the SAME synchronous block as the playhead write: leaving
+      // the timeline playing across the act boundary lets a real ticker
+      // tick slip in on slower machines (CI) and drift the 0.3 read below.
+      timeline.pause();
     });
     const timeline = livePairTimeline();
-    // The pair is a real auto-playing timeline: pause it so the playhead
-    // reading below is deterministic against wall-clock ticks.
-    timeline.pause();
     const layerA = layerOf("page-a");
 
     // A same-workspace snapshot replacement (sync notification shape).
