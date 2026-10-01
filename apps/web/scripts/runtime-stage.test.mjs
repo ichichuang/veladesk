@@ -241,6 +241,98 @@ describe("stageRuntimeTree — win32 policy (no links in the final package)", ()
   });
 });
 
+describe("stageRuntimeTree — verified-twin reconstruction of out-of-tree links (turbopack marker class)", () => {
+  /**
+   * The shape seen on the Windows runner: an ABSOLUTE junction at
+   * apps/web/.next/node_modules/<marker> -> <checkout>/node_modules/<pkg>,
+   * while the SAME package is traced into the tree as a real directory. The
+   * standalone source is nested at its real tracing position inside a
+   * dedicated checkout root so the mapping geometry is the runner's.
+   */
+  function makeMarkerFixture() {
+    const holder = makeTempDir("veladesk-recon-");
+    const checkoutRoot = path.join(holder, "checkout");
+    const source = path.join(checkoutRoot, "apps", "web", ".next", "standalone");
+    writeFile(path.join(source, "apps/web/server.js"), "// server\n");
+    writeFile(path.join(source, "node_modules/better-sqlite3/package.json"), '{"name":"better-sqlite3"}');
+    writeFile(path.join(source, "node_modules/better-sqlite3/build/Release/better_sqlite3.node"), "\0node\0");
+    const checkoutPackage = path.join(checkoutRoot, "node_modules", "better-sqlite3");
+    writeFile(path.join(checkoutPackage, "package.json"), '{"name":"better-sqlite3"}');
+    writeFile(path.join(checkoutPackage, "build/Release/better_sqlite3.node"), "\0node\0");
+    mkdirSync(path.join(source, "apps/web/.next/node_modules"), { recursive: true });
+    symlinkSync(checkoutPackage, path.join(source, "apps/web/.next/node_modules/better-sqlite3-90e2652d1716b047"), "dir");
+    return { source, checkoutRoot };
+  }
+
+  it("unix: rewrites the marker as a RELATIVE link to the in-bundle twin", () => {
+    const { source, checkoutRoot } = makeMarkerFixture();
+    const parent = makeTempDir("veladesk-stage-dst-");
+    const destination = path.join(parent, "runtime");
+    const result = stageRuntimeTree({ source, destination, platform: "linux", allowedExternalRoot: checkoutRoot });
+
+    const marker = path.join(destination, "apps/web/.next/node_modules/better-sqlite3-90e2652d1716b047");
+    expect(lstatSync(marker).isSymbolicLink()).toBe(true);
+    const rewritten = readlinkSync(marker);
+    expect(path.isAbsolute(rewritten)).toBe(false);
+    // …and it resolves INSIDE the staged tree (to the traced twin).
+    expect(existsSync(path.join(marker, "package.json"))).toBe(true);
+    const reconstruction = result.links.find((link) => link.action === "reconstructed");
+    expect(reconstruction?.path.endsWith("better-sqlite3-90e2652d1716b047")).toBe(true);
+  });
+
+  it("win32: materializes the marker from the in-bundle twin (package stays link-free)", () => {
+    const { source, checkoutRoot } = makeMarkerFixture();
+    const parent = makeTempDir("veladesk-stage-dst-");
+    const destination = path.join(parent, "runtime");
+    stageRuntimeTree({ source, destination, platform: "win32", allowedExternalRoot: checkoutRoot });
+
+    const marker = path.join(destination, "apps/web/.next/node_modules/better-sqlite3-90e2652d1716b047");
+    expect(lstatSync(marker).isSymbolicLink()).toBe(false);
+    expect(existsSync(path.join(marker, "build", "Release", "better_sqlite3.node"))).toBe(true);
+    expect(collectTreeInventory(destination).links.size).toBe(0);
+  });
+
+  it("still rejects an out-of-tree link with NO verifiable in-bundle twin (no name guessing)", () => {
+    const holder = makeTempDir("veladesk-recon-");
+    const checkoutRoot = path.join(holder, "checkout");
+    const source = path.join(checkoutRoot, "apps", "web", ".next", "standalone");
+    writeFile(path.join(source, "apps/web/server.js"), "// server\n");
+    // Present in the checkout, ABSENT from the bundle: the mapping cannot be
+    // verified, so it must fail with the exact path.
+    writeFile(path.join(checkoutRoot, "node_modules/untraced-pkg/index.js"), "x");
+    mkdirSync(path.join(source, "apps/web/.next/node_modules"), { recursive: true });
+    symlinkSync(
+      path.join(checkoutRoot, "node_modules", "untraced-pkg"),
+      path.join(source, "apps/web/.next/node_modules/untraced-pkg-marker"),
+      "dir",
+    );
+    const destination = path.join(makeTempDir("veladesk-stage-dst-"), "runtime");
+
+    let error;
+    try {
+      stageRuntimeTree({ source, destination, platform: "linux", allowedExternalRoot: checkoutRoot });
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/absolute\/escaping link rejected/);
+    expect(error.message).toContain("untraced-pkg-marker");
+  });
+
+  it("still rejects out-of-tree links entirely when no external root is trusted", () => {
+    const { source } = makeMarkerFixture();
+    const destination = path.join(makeTempDir("veladesk-stage-dst-"), "runtime");
+    let error;
+    try {
+      stageRuntimeTree({ source, destination, platform: "linux" });
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/absolute\/escaping link rejected/);
+  });
+});
+
 describe("inventory, policy and comparison", () => {
   it("collects files with sha256 hashes, links with raw targets, and directories", () => {
     const source = makeStandaloneFixture();

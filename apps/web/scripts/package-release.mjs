@@ -228,13 +228,16 @@ export function packageRelease({ version, webDir = webDirDefault(), outDir, plat
 
   // runtime/ = the complete standalone tree, staged through the portable
   // link policy (027-R2): cpSync's dereference:false would have carried
-  // pnpm's checkout-pointing junctions straight into the Windows zip.
+  // pnpm's checkout-pointing junctions straight into the Windows zip. The
+  // checkout root enables the verified-twin reconstruction for turbopack's
+  // Windows native-external marker junction.
   rmSync(path.join(outDir, "runtime"), { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
   const stagedRuntime = stageRuntimeTree({
     source: standaloneRoot,
     destination: path.join(outDir, "runtime"),
     platform,
+    allowedExternalRoot: repoRootOf(webDir),
   });
 
   // Next standalone never guarantees these two — copy them beside server.js.

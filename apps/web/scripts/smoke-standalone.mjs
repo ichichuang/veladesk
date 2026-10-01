@@ -69,6 +69,21 @@ function findByName(dir, basename, out = []) {
 
 /** First file matching a suffix under `dir`, in deterministic sorted order. */
 function firstFileWithSuffix(dir, suffix) {
+  const found = firstFileMatching(dir, (name) => name.endsWith(suffix));
+  return found;
+}
+
+/** First non-hidden IMAGE file under `dir` — a real servable brand asset. */
+function firstPublicImage(dir) {
+  return firstFileMatching(dir, (name) => {
+    if (name.startsWith(".")) {
+      return false;
+    }
+    return /\.(png|jpe?g|webp|svg|ico|avif)$/i.test(name);
+  });
+}
+
+function firstFileMatching(dir, predicate) {
   const stack = [dir];
   while (stack.length > 0) {
     const current = stack.shift();
@@ -77,7 +92,7 @@ function firstFileWithSuffix(dir, suffix) {
       const full = path.join(current, entry);
       if (statSync(full).isDirectory()) {
         stack.push(full);
-      } else if (entry.endsWith(suffix)) {
+      } else if (predicate(entry)) {
         return full;
       }
     }
@@ -520,9 +535,10 @@ async function verifyPackagedFrontend({ targets, base, fetchImpl, log }) {
   assert(bytesEqual(assetBytes, new Uint8Array(readFileSync(cssFile))), `packaged asset /_next/static/${relative} bytes differ from the file in the package`);
   log(`GET /_next/static/${relative} -> byte-exact packaged asset`);
 
-  // The public brand resource.
-  const publicFile = firstFileWithSuffix(targets.publicDir, "");
-  assert(publicFile !== null, `no public asset found under ${targets.publicDir}`);
+  // The public brand resource — a real image, never repo hygiene files
+  // like public/.gitkeep (dot-files are skipped on purpose).
+  const publicFile = firstPublicImage(targets.publicDir);
+  assert(publicFile !== null, `no public image asset found under ${targets.publicDir}`);
   const publicRelative = path.relative(targets.publicDir, publicFile).split(path.sep).join("/");
   const brandResponse = await fetchImpl(`${base}/${publicRelative}`);
   assert(brandResponse.status === 200, `public brand asset /${publicRelative} expected 200, got ${brandResponse.status}`);

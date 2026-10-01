@@ -100,6 +100,9 @@ function makePackageTargets() {
   writeFile(path.join(runtime, "packages", "database", "drizzle", "meta", "_journal.json"), "[]");
   writeFile(path.join(runtime, "packages", "database", "drizzle", "0000_init.sql"), "-- init\n");
   writeFile(path.join(runtime, "apps", "web", ".next", "static", "chunk-abc.css"), "body{background:#000}\n");
+  // Repo hygiene file FIRST in sorted order: the public-asset picker must
+  // skip dot-files and choose the real brand image (run 36871010092).
+  writeFile(path.join(runtime, "apps", "web", "public", ".gitkeep"), "");
   writeFile(path.join(runtime, "apps", "web", "public", "brand", "veladesk-logo.png"), "png-bytes");
   writeFile(path.join(runtime, "node_modules", "react", "package.json"), '{"name":"react","version":"19.3.0"}');
   writeFile(path.join(runtime, "node_modules", "react", "index.js"), "module.exports = {}\n");

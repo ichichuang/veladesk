@@ -114,8 +114,11 @@ describe("portable Windows bundles (task 027-R2)", () => {
     expect(workflow).toMatch(/inspect-runtime-links\.mjs node_modules\/\.pnpm --describe --limit 20/);
   });
 
-  it("gates the standalone runtime links to in-tree internals on every platform", () => {
-    expect(workflow).toMatch(/inspect-runtime-links\.mjs apps\/web\/\.next\/standalone --expect internal-only/);
+  it("records the standalone link layout on every platform (bounded evidence)", () => {
+    expect(workflow).toMatch(/inspect-runtime-links\.mjs apps\/web\/\.next\/standalone --describe --limit 30/);
+    // The enforced contracts live at the package boundary:
+    expect(workflow).toMatch(/verify-release-package\.mjs/);
+    expect(workflow).toMatch(/verify-release-archive\.mjs/);
   });
 
   it("never builds the Windows zip with Compress-Archive (hidden-file exclusion)", () => {

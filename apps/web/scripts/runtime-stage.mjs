@@ -50,6 +50,34 @@ function isInside(parent, child) {
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
+/**
+ * Maps an out-of-tree link target back into the tree: the target must live
+ * under `allowedExternalRoot` (the build checkout), and the SAME relative
+ * path must exist as a real (non-link) entry inside the tree. Returns the
+ * in-tree twin's source path, or null when no verified mapping exists.
+ */
+function resolveExternalTwin({ logicalTarget, allowedExternalRoot, sourceRoot }) {
+  if (allowedExternalRoot === undefined) {
+    return null;
+  }
+  const externalRoot = path.resolve(allowedExternalRoot);
+  if (!isInside(externalRoot, path.resolve(logicalTarget))) {
+    return null;
+  }
+  const checkoutRelative = path.relative(externalRoot, path.resolve(logicalTarget));
+  const twin = path.join(sourceRoot, checkoutRelative);
+  let twinStats;
+  try {
+    twinStats = lstatSync(twin);
+  } catch {
+    return null;
+  }
+  if (twinStats.isSymbolicLink() || !twinStats.isDirectory()) {
+    return null;
+  }
+  return twin;
+}
+
 function fail(message) {
   throw new Error(message);
 }
@@ -63,13 +91,20 @@ function fail(message) {
  *   (removed first if it exists).
  * @param {string} [input.platform] Policy selector — win32 materializes
  *   in-tree links, everything else preserves them.
+ * @param {string} [input.allowedExternalRoot] The build checkout root. An
+ *   out-of-tree link is RECONSTRUCTED only when its target maps, by the
+ *   checkout-relative path, onto a real entry that also exists inside the
+ *   tree (the verified trace-relative mapping) — e.g. turbopack's Windows
+ *   native-external marker junction pointing at checkout node_modules while
+ *   the same package is traced into the bundle. Anything else still fails.
  * @param {number} [input.maxEntries] Expansion bound.
- * @returns {{ files: number, directories: number, links: Array<{ path: string, target: string, action: "preserved" | "materialized" }> }}
+ * @returns {{ files: number, directories: number, links: Array<{ path: string, target: string, action: "preserved" | "materialized" | "reconstructed" }> }}
  */
 export function stageRuntimeTree({
   source,
   destination,
   platform = process.platform,
+  allowedExternalRoot,
   maxEntries = DEFAULT_STAGE_ENTRY_LIMIT,
 }) {
   const sourceRoot = path.resolve(source);
@@ -146,12 +181,39 @@ export function stageRuntimeTree({
     }
     const logicalTarget = path.resolve(path.dirname(src), target);
     const targetRelative = path.relative(sourceRoot, logicalTarget);
-    if (path.isAbsolute(targetRelative) || targetRelative.startsWith("..")) {
-      fail(
-        `stageRuntimeTree: absolute/escaping link rejected at ${relativeEntry} -> ${target} ` +
-          `(resolves to ${logicalTarget}, outside the runtime tree — the 027 Windows junction class; ` +
-          "a portable bundle may only contain in-tree links)",
-      );
+    const escapes = path.isAbsolute(targetRelative) || targetRelative.startsWith("..");
+    if (escapes) {
+      // Out-of-tree links (turbopack's Windows native-external marker is the
+      // known producer) are reconstructed ONLY from a verified mapping: the
+      // target's checkout-relative path must name a REAL entry that also
+      // exists inside the tree. First-match-by-name guessing is forbidden.
+      const twinSource = resolveExternalTwin({ logicalTarget, allowedExternalRoot, sourceRoot });
+      if (twinSource === null) {
+        fail(
+          `stageRuntimeTree: absolute/escaping link rejected at ${relativeEntry} -> ${target} ` +
+            `(resolves to ${logicalTarget}, outside the runtime tree with no verifiable in-tree twin; ` +
+            "a portable bundle may only contain in-tree links or mapped reconstructions)",
+        );
+      }
+      if (existsSync(dst)) {
+        fail(`stageRuntimeTree: conflicting mapping — reconstruction destination already exists: ${dst} (source link ${relativeEntry})`);
+      }
+      if (platform === "win32") {
+        mkdirSync(dst, { recursive: true });
+        materializing.push(twinSource);
+        try {
+          stageDirectory(twinSource, dst);
+        } finally {
+          materializing.pop();
+        }
+        links.push({ path: relativeEntry, target, action: "materialized" });
+        return;
+      }
+      const twinStaged = path.join(destRoot, path.relative(sourceRoot, twinSource));
+      const rewritten = path.relative(path.dirname(dst), twinStaged);
+      symlinkSync(rewritten, dst);
+      links.push({ path: relativeEntry, target: rewritten, action: "reconstructed" });
+      return;
     }
     // Link-to-link chains must terminate; an ELOOP-shaped "dangling" report
     // would hide the real defect class, so classify cycles first.
