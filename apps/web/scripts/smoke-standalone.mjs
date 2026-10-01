@@ -152,7 +152,7 @@ async function main() {
     const port = await getFreePort();
 
     server = startServer(serverJs, migrationsDir, dataDir, port);
-    const list = await pollUntilReady(server, { url: `http://127.0.0.1:${port}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
+    const list = await pollUntilReady({ server, url: `http://127.0.0.1:${port}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
     assert(list.headers.get("cache-control") === "no-store", "list response missing Cache-Control: no-store");
     console.log("boot 1: GET /api/v1/workspaces -> 200");
 
@@ -178,7 +178,7 @@ async function main() {
 
     const restartPort = await getFreePort();
     server = startServer(serverJs, migrationsDir, dataDir, restartPort);
-    await pollUntilReady(server, { url: `http://127.0.0.1:${restartPort}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
+    await pollUntilReady({ server, url: `http://127.0.0.1:${restartPort}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
     const persisted = await fetch(`http://127.0.0.1:${restartPort}/api/v1/workspaces/smoke-workspace`);
     assert(persisted.status === 200, `workspace lost after restart (status ${persisted.status})`);
     const persistedBody = await persisted.json();
@@ -299,7 +299,7 @@ async function main() {
 
     const restartPort2 = await getFreePort();
     server = startServer(serverJs, migrationsDir, dataDir, restartPort2);
-    await pollUntilReady(server, { url: `http://127.0.0.1:${restartPort2}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
+    await pollUntilReady({ server, url: `http://127.0.0.1:${restartPort2}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
     const readAfterRestart = await fetch(`http://127.0.0.1:${restartPort2}/api/v1/assets/${assetId}`);
     assert(readAfterRestart.status === 200, `asset GET after restart expected 200, got ${readAfterRestart.status}`);
     const bytesAfterRestart = new Uint8Array(await readAfterRestart.arrayBuffer());

@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -185,5 +187,31 @@ describe("formatFetchCause (§4)", () => {
 
   it("a plain error without cause degrades to just its message", () => {
     expect(formatFetchCause(new Error("readiness probe status 500"))).toBe("message: readiness probe status 500");
+  });
+});
+
+describe("smoke-standalone wiring contract (call-shape guard)", () => {
+  const smokeSource = readFileSync(
+    fileURLToPath(new URL("./smoke-standalone.mjs", import.meta.url)),
+    "utf8",
+  );
+
+  it("every readiness poll uses the single-object argument shape with the server handle", () => {
+    const calls = smokeSource.match(/pollUntilReady\(/g) ?? [];
+    expect(calls.length).toBe(3);
+    // The R1 wiring bug was `pollUntilReady(server, {...})` — a two-argument
+    // call the single-object signature silently destructures into
+    // `server: undefined`. The shape is pinned so it cannot come back.
+    expect(smokeSource).not.toMatch(/pollUntilReady\(server,/);
+    expect((smokeSource.match(/pollUntilReady\(\{ server, url:/g) ?? []).length).toBe(3);
+  });
+
+  it("the readiness deadline stays at 30 seconds on every boot poll (027-R1 §1/§5)", () => {
+    expect((smokeSource.match(/deadlineMs: 30_000/g) ?? []).length).toBe(3);
+  });
+
+  it("the stale snapshot pattern is gone; teardown keeps receiving the raw child", () => {
+    expect(smokeSource).not.toMatch(/serverErrorText\s*=/);
+    expect(smokeSource).toMatch(/stopServer\(server\.child\)/);
   });
 });
