@@ -13,18 +13,35 @@ const workflow = readFileSync(
   "utf8",
 );
 
-describe("release trigger (task 025 §14–§15)", () => {
+describe("release trigger (task 025 §14–§15; dispatch 027-R1)", () => {
   it("triggers on main pushes that touch package.json", () => {
     expect(workflow).toMatch(/push:\s*\n\s*branches:\s*\n\s*-\s*main/);
     expect(workflow).toMatch(/paths:\s*\n\s*-\s*package\.json/);
   });
 
-  it("has NO manual version/tag input of any kind", () => {
-    expect(workflow).not.toMatch(/workflow_dispatch/);
-    expect(workflow).not.toMatch(/release_version/);
+  it("has an input-less workflow_dispatch recovery entry (027-R1 §8)", () => {
+    expect(workflow).toMatch(/^\s*workflow_dispatch:\s*$/m);
+    // The dispatch entry carries NO inputs — no human-supplied version of
+    // any kind reaches the pipeline.
+    expect(workflow).not.toMatch(/workflow_dispatch:\s*\n\s+inputs:/);
     for (const forbidden of [/inputs:/, /\brelease_version\b/, /tag_name:/]) {
       expect(workflow).not.toMatch(forbidden);
     }
+  });
+
+  it("dispatch decides through the same script in dispatch mode (027-R1 §9)", () => {
+    expect(workflow).toMatch(/github\.event_name.*"workflow_dispatch"/);
+    expect(workflow).toMatch(/release-version\.mjs \\\n\s+dispatch/);
+    // Both protection checks feed the dispatch decision.
+    expect(workflow).toMatch(/steps\.exists\.outputs\.tag_exists/);
+    expect(workflow).toMatch(/steps\.exists\.outputs\.release_exists/);
+  });
+
+  it("normal pushes keep the previous-vs-current comparison (027-R1 §10)", () => {
+    expect(workflow).toMatch(/github\.event\.before/);
+    expect(workflow).toMatch(/steps\.previous\.outputs\.previous/);
+    // Either an existing tag OR an existing release blocks a push release.
+    expect(workflow).toMatch(/EITHER_EXISTS/);
   });
 });
 

@@ -19,6 +19,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { createServerHandle, pollUntilReady } from "./smoke-readiness.mjs";
+
 const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const standaloneRoot = path.join(webDir, ".next", "standalone");
 
@@ -56,6 +58,12 @@ async function getFreePort() {
   });
 }
 
+/**
+ * Spawns the standalone server and returns a HANDLE whose log readers
+ * stay live for the whole process lifetime (027-R1: the old
+ * `child.serverErrorText` snapshot was the stale-empty-string bug that hid
+ * the Windows crash output).
+ */
 function startServer(serverJs, migrationsDir, dataDir, port) {
   const child = spawn(
     process.execPath,
@@ -73,12 +81,7 @@ function startServer(serverJs, migrationsDir, dataDir, port) {
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
-  let stderr = "";
-  child.stderr.on("data", (chunk) => {
-    stderr += chunk.toString();
-  });
-  child.serverErrorText = stderr;
-  return child;
+  return createServerHandle(child);
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -101,23 +104,6 @@ async function stopServer(child) {
   await exited;
 }
 
-async function pollUntilReady(port, deadlineMs) {
-  const deadline = Date.now() + deadlineMs;
-  let lastError;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/v1/workspaces`);
-      if (response.ok) {
-        return response;
-      }
-      lastError = new Error(`readiness probe status ${response.status}`);
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`server did not become ready: ${lastError?.message ?? "timeout"}`);
-}
 
 function minimalSnapshot() {
   return {
@@ -160,12 +146,13 @@ async function main() {
   console.log(`standalone migrations: ${path.relative(webDir, migrationsDir)}`);
 
   const dataDir = mkdtempSync(path.join(tmpdir(), "veladesk-smoke-"));
-  let child;
+  const readiness = { serverPath: path.relative(webDir, serverJs), migrationsPath: path.relative(webDir, migrationsDir) };
+  let server;
   try {
     const port = await getFreePort();
 
-    child = startServer(serverJs, migrationsDir, dataDir, port);
-    const list = await pollUntilReady(port, 30_000);
+    server = startServer(serverJs, migrationsDir, dataDir, port);
+    const list = await pollUntilReady(server, { url: `http://127.0.0.1:${port}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
     assert(list.headers.get("cache-control") === "no-store", "list response missing Cache-Control: no-store");
     console.log("boot 1: GET /api/v1/workspaces -> 200");
 
@@ -185,13 +172,13 @@ async function main() {
     assert(fetchedBody.workspace.revision === 1, `expected revision 1, got ${fetchedBody.workspace.revision}`);
     console.log("GET workspace -> 200 (revision 1)");
 
-    await stopServer(child);
-    child = null;
+    await stopServer(server.child);
+    server = null;
     console.log("boot 1: stopped");
 
     const restartPort = await getFreePort();
-    child = startServer(serverJs, migrationsDir, dataDir, restartPort);
-    await pollUntilReady(restartPort, 30_000);
+    server = startServer(serverJs, migrationsDir, dataDir, restartPort);
+    await pollUntilReady(server, { url: `http://127.0.0.1:${restartPort}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
     const persisted = await fetch(`http://127.0.0.1:${restartPort}/api/v1/workspaces/smoke-workspace`);
     assert(persisted.status === 200, `workspace lost after restart (status ${persisted.status})`);
     const persistedBody = await persisted.json();
@@ -307,12 +294,12 @@ async function main() {
     console.log("asset HEAD -> metadata only");
 
     // --- Restart: assets live in VELADESK_DATA_DIR/assets -----------------
-    await stopServer(child);
-    child = null;
+    await stopServer(server.child);
+    server = null;
 
     const restartPort2 = await getFreePort();
-    child = startServer(serverJs, migrationsDir, dataDir, restartPort2);
-    await pollUntilReady(restartPort2, 30_000);
+    server = startServer(serverJs, migrationsDir, dataDir, restartPort2);
+    await pollUntilReady(server, { url: `http://127.0.0.1:${restartPort2}/api/v1/workspaces`, deadlineMs: 30_000, diagnostics: readiness });
     const readAfterRestart = await fetch(`http://127.0.0.1:${restartPort2}/api/v1/assets/${assetId}`);
     assert(readAfterRestart.status === 200, `asset GET after restart expected 200, got ${readAfterRestart.status}`);
     const bytesAfterRestart = new Uint8Array(await readAfterRestart.arrayBuffer());
@@ -323,8 +310,8 @@ async function main() {
 
     console.log("standalone smoke passed");
   } finally {
-    if (child) {
-      await stopServer(child);
+    if (server) {
+      await stopServer(server.child);
     }
     rmSync(dataDir, { recursive: true, force: true });
   }

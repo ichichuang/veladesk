@@ -15,6 +15,12 @@ on:
       - main
     paths:
       - package.json
+  # Recovery entry (task 027-R1 §8): an explicit, input-less retry of the
+  # CURRENT UNRELEASED source version (root package.json). Never a
+  # human-supplied version — the dispatch decision path re-reads the root
+  # version, re-runs version:check and re-verifies the tag AND the GitHub
+  # Release are absent before allowing should_release=true.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -55,16 +61,18 @@ jobs:
           set -eu
           BEFORE="${{ github.event.before }}"
           PREVIOUS="-"
-          # A zero sha (first push / force push) has no predecessor.
-          if [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && \
+          # A zero sha (first push / force push) — and an empty one
+          # (workflow_dispatch has no `before`) — has no predecessor; the
+          # dispatch path does not use this output at all.
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && \
              git cat-file -e "$BEFORE" 2>/dev/null; then
             PREVIOUS=$(git show "$BEFORE:package.json" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const v=JSON.parse(d).version;console.log(typeof v==="string"?v:"-")})')
           fi
           echo "Previous version: $PREVIOUS"
           echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
 
-      - name: Check whether the target tag already exists
-        id: tag
+      - name: Check whether the target tag / release already exists
+        id: exists
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -72,23 +80,44 @@ jobs:
           VERSION=$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync("package.json","utf8")).version)')
           TAG="v$VERSION"
           echo "Expected tag: $TAG"
+          TAG_EXISTS=false
+          RELEASE_EXISTS=false
           if git ls-remote --tags origin "refs/tags/$TAG" | grep -q .; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          elif gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            TAG_EXISTS=true
           fi
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            RELEASE_EXISTS=true
+          fi
+          echo "tag_exists=$TAG_EXISTS" >> "$GITHUB_OUTPUT"
+          echo "release_exists=$RELEASE_EXISTS" >> "$GITHUB_OUTPUT"
 
       - name: Decide release
         id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           CURRENT=$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync("package.json","utf8")).version)')
-          DECISION=$(node scripts/release-version.mjs \
-            "${{ steps.previous.outputs.previous }}" \
-            "$CURRENT" \
-            "${{ steps.tag.outputs.exists }}")
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Recovery of the CURRENT UNRELEASED source version (027-R1 §9):
+            # no human-supplied version — both tag and Release must be absent.
+            DECISION=$(node scripts/release-version.mjs \
+              dispatch \
+              "$CURRENT" \
+              "${{ steps.exists.outputs.tag_exists }}" \
+              "${{ steps.exists.outputs.release_exists }}")
+          else
+            # Push semantics (unchanged since 025): either an existing tag OR
+            # an existing GitHub Release blocks the release decision.
+            EITHER_EXISTS=false
+            if [ "${{ steps.exists.outputs.tag_exists }}" = "true" ] || [ "${{ steps.exists.outputs.release_exists }}" = "true" ]; then
+              EITHER_EXISTS=true
+            fi
+            DECISION=$(node scripts/release-version.mjs \
+              "${{ steps.previous.outputs.previous }}" \
+              "$CURRENT" \
+              "$EITHER_EXISTS")
+          fi
           echo "$DECISION"
           printf '%s' "$DECISION" | node -e '
             const fs = require("node:fs");
