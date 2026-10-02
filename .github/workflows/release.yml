@@ -399,6 +399,17 @@ jobs:
             exit 1
           fi
 
+      # 028: the release body is the Chinese user-facing download/run notes
+      # generated from the SAME root version that names the archives — never
+      # GitHub's auto changelog, never a hardcoded version.
+      - name: Generate the Chinese release notes
+        run: |
+          set -eu
+          node scripts/release-notes.mjs \
+            --version "${{ needs.prepare.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --out dist/RELEASE_NOTES.md
+
       - name: Create the GitHub Release (formal, never draft/prerelease)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -410,4 +421,4 @@ jobs:
             --repo "${{ github.repository }}" \
             --target "${{ needs.prepare.outputs.commit_sha }}" \
             --title "VelaDesk ${{ needs.prepare.outputs.tag }}" \
-            --generate-notes
+            --notes-file RELEASE_NOTES.md

@@ -181,7 +181,10 @@ describe("final job (task 025 §40–§43)", () => {
     expect(workflow).toMatch(/gh release create/);
     expect(workflow).toMatch(/--target/);
     expect(workflow).toMatch(/--title "VelaDesk \$\{\{ needs\.prepare\.outputs\.tag \}\}"/);
-    expect(workflow).toMatch(/--generate-notes/);
+    expect(workflow).toMatch(/--notes-file RELEASE_NOTES\.md/);
+    // 028: the body is the generated Chinese user guide, never GitHub's
+    // auto changelog.
+    expect(workflow).not.toMatch(/--generate-notes/);
     expect(workflow).not.toMatch(/--draft/);
     expect(workflow).not.toMatch(/--prerelease/);
   });
@@ -194,6 +197,21 @@ describe("final job (task 025 §40–§43)", () => {
   it("ships SHA256SUMS.txt for every archive", () => {
     expect(workflow).toMatch(/SHA256SUMS\.txt/);
     expect(workflow).toMatch(/sha256sum/);
+  });
+});
+
+describe("Chinese release notes (task 028 §19)", () => {
+  it("generates the body from the SAME version output that names the archives", () => {
+    expect(workflow).toMatch(/release-notes\.mjs/);
+    expect(workflow).toMatch(/--version "\$\{\{ needs\.prepare\.outputs\.version \}\}"/);
+    expect(workflow).toMatch(/--repo "\$\{\{ github\.repository \}\}"/);
+    expect(workflow).toMatch(/--out dist\/RELEASE_NOTES\.md/);
+  });
+
+  it("never uploads the notes file as a release asset", () => {
+    const assetLine = workflow.match(/VelaDesk-\*\.zip VelaDesk-\*\.tar\.gz SHA256SUMS\.txt/);
+    expect(assetLine).not.toBeNull();
+    expect(workflow).not.toMatch(/RELEASE_NOTES\.md \\\s*\n\s*VelaDesk-\*/);
   });
 });
 
