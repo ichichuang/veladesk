@@ -17,7 +17,7 @@ VelaDesk 是一个免费开源的浏览器主页程序。
 打开浏览器就能看到自己整理的网站桌面：
 点一下图标打开网站，像用手机桌面一样。
 
-所有数据都保存在你自己的电脑里，不上传到任何服务器。
+数据保存在你自己部署的 VelaDesk 里，不会上传到第三方云服务。
 
 ## 能做什么
 
@@ -46,7 +46,7 @@ https://github.com/ichichuang/veladesk/releases/latest
 | Linux 64 位（Intel/AMD） | `VelaDesk-v<版本号>-linux-x64.tar.gz` |
 | Mac Apple 芯片 | `VelaDesk-v<版本号>-macos-arm64.tar.gz` |
 
-Apple 芯片 = M1 / M2 / M3 / M4 等 Apple Silicon 机型。
+Apple 芯片 = Apple Silicon（M 系列芯片）。
 
 目前没有提供：
 
@@ -101,7 +101,7 @@ Apple 芯片 = M1 / M2 / M3 / M4 等 Apple Silicon 机型。
 
 6. 打开 http://127.0.0.1:3000。
 
-说明：目前只提供 Apple 芯片（M1/M2/M3/M4）的程序包。
+说明：目前只提供 Apple 芯片（Apple Silicon，M 系列）的程序包。
 
 ## Linux 使用方法
 
