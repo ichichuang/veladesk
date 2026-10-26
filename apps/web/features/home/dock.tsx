@@ -197,6 +197,7 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
                 className="vela-dock__item"
                 ariaLabel={t("dock.openApp", { name: entity.name })}
                 decoration={appIconDecorationProps(entity)}
+                data-appearance-app-id={entity.id}
                 onClick={() => launchApp(entity)}
                 onItemContextMenu={handleEntityContextMenu}
                 onItemKeyDown={handleEntityKeyDown}

@@ -260,7 +260,11 @@ export function SettingsCenter({
    * override on the active section deliberately masks it (the resolver
    * explains provenance, the preview does not erase the override).
    */
-  function publishBackgroundPreview(next: WorkspaceSettingsDraft): void {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const next = draft;
     if (onPreviewBackground === undefined) {
       return;
     }
@@ -289,16 +293,18 @@ export function SettingsCenter({
       return;
     }
     onPreviewBackground(null);
-  }
+  }, [open, draft, backgroundImage, activeSectionId, onPreviewBackground]);
 
   function updateBackground(patch: Partial<WorkspaceSettingsDraft["background"]>) {
-    const next: WorkspaceSettingsDraft = {
-      ...draft,
-      background: { ...draft.background, ...patch },
-    };
-    setDraft(next);
+    setDraft((current) => ({
+      ...current,
+      background: {
+        ...current.background,
+        ...patch,
+        pages: { ...current.background.pages, ...patch.pages },
+      },
+    }));
     setError(null);
-    publishBackgroundPreview(next);
   }
 
   /** Immediate locale switch — browser preference, never part of the draft. */
@@ -441,7 +447,7 @@ export function SettingsCenter({
                 if (backgroundScope === "workspace") {
                   updateBackground({ workspace: config });
                 } else {
-                  updateBackground({ pages: { ...draft.background.pages, [backgroundScope]: config } });
+                  updateBackground({ pages: { [backgroundScope]: config } });
                 }
               })
               .finally(() => setBackgroundBusy(false));

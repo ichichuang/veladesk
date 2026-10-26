@@ -534,6 +534,7 @@ function DesktopEntity({
         data-item-id={item.id}
         className="vela-item"
         data-kind="app"
+        data-appearance-app-id={entity.id}
         {...draggingProps}
         {...selectionProps}
         data-inspector-editing={editingAppearance === true ? "true" : undefined}

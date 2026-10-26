@@ -191,6 +191,24 @@ describe("the shared background surface (023-C.2/§C.4)", () => {
     ).toBe("dawn");
   });
 
+  it("loads a newly staged image when its pending preview is cleared", async () => {
+    const loader = vi.fn(async () => ({ ok: true, url: "blob:saved-wallpaper" }));
+    function Host({ pending }: { readonly pending: boolean }) {
+      const id = "newly-staged-wallpaper";
+      const resolved = useWallpaperAssetUrl(pending ? null : id, loader);
+      return <WallpaperSurface
+        wallpaper={{ config: { kind: "asset", assetId: id, fit: "cover", position: "center" }, provenance: "workspace" }}
+        assetUrl={pending ? "blob:pending-wallpaper" : resolved}
+      />;
+    }
+    const view = render(<Host pending />);
+    expect(view.container.querySelector("img")?.getAttribute("src")).toBe("blob:pending-wallpaper");
+    expect(loader).not.toHaveBeenCalled();
+    view.rerender(<Host pending={false} />);
+    await waitFor(() => expect(view.container.querySelector("img")?.getAttribute("src")).toBe("blob:saved-wallpaper"));
+    expect(loader).toHaveBeenCalledWith("newly-staged-wallpaper");
+  });
+
   it("a late asset result applies only to the still-current request", async () => {
     let release: ((url: string | null) => void) | undefined;
     const loader = vi.fn(
@@ -253,6 +271,32 @@ describe("the Settings background editor (023-C.2)", () => {
       </UiLocaleProvider>,
     );
   }
+
+  it("publishes the selected image URL immediately and keeps it through fit changes and Save", async () => {
+    const { prepareAssetBlob } = await import("@veladesk/assets/core");
+    vi.mocked(prepareAssetBlob).mockResolvedValue({ ok: true, asset: fakeAsset("selected-wallpaper") });
+    const urlSpy = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:selected-wallpaper");
+    const previews: (BackgroundPreview | null)[] = [];
+    const save = vi.fn(async (_draft: WorkspaceSettingsDraft, _images: readonly unknown[]) => ({ ok: true as const }));
+    const view = renderSettings({ onSave: save, onPreviewBackground: (preview) => previews.push(preview) });
+    fireEvent.change(view.getByTestId("wallpaper-file-input"), {
+      target: { files: [new File(["image"], "wall.png", { type: "image/png" })] },
+    });
+    await waitFor(() => expect(previews.at(-1)).toMatchObject({
+      scope: "workspace",
+      config: { kind: "asset", assetId: "selected-wallpaper", fit: "cover" },
+      pendingAssetId: "selected-wallpaper",
+      previewUrl: "blob:selected-wallpaper",
+    }));
+    fireEvent.click(view.getByRole("radio", { name: /显示完整图片|Show entire image/ }));
+    await waitFor(() => expect(previews.at(-1)).toMatchObject({
+      config: { fit: "contain" }, pendingAssetId: "selected-wallpaper", previewUrl: "blob:selected-wallpaper",
+    }));
+    fireEvent.click(view.getByRole("button", { name: /保存|Save/ }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0]?.[0]).toMatchObject({ background: { workspace: { assetId: "selected-wallpaper", fit: "contain" } } });
+    urlSpy.mockRestore();
+  });
 
   it("a workspace preset pick previews the workspace layer and saves it as one patch", async () => {
     const previews: (BackgroundPreview | null)[] = [];

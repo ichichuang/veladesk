@@ -162,6 +162,7 @@ export function FolderOverlay({
                 type="button"
                 className="vela-item"
                 data-kind="app"
+                data-appearance-app-id={entity.id}
                 style={buildAppIconStyleVars(appVisual(entity)) as CSSProperties}
                 // Same presentation contract as the desktop (017-C): the
                 // overlay renders the app's icon-scale label settings, and

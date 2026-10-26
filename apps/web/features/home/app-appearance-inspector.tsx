@@ -199,9 +199,10 @@ export function AppAppearanceInspector({
   const showForegroundControl = appGlyphColorModel(projected) === "tinted";
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? undefined : onCancel())}>
+    <Dialog modal={false} open={open} onOpenChange={(next) => (next ? undefined : onCancel())}>
       <DialogContent
         variant="panel"
+        onInteractOutside={(event) => event.preventDefault()}
         showCloseButton={false}
         aria-describedby={undefined}
         className="w-[380px]"

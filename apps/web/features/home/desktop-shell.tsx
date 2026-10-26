@@ -159,6 +159,7 @@ import {
 } from "./section-navigation-model";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import { launchApp } from "./launch-app";
+import { handleAppearanceAppClick } from "./appearance-app-click";
 import { buildAppearanceTheme, resolveEffectiveColorMode } from "./appearance-theme";
 import { disableDndDropAnimation } from "./dnd-static-drop";
 import { useI18n } from "../i18n/use-i18n";
@@ -516,7 +517,12 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   }, []);
   const wallpaperAssetId =
     effectiveWallpaper.config.kind === "asset" ? effectiveWallpaper.config.assetId : null;
-  const resolvedWallpaperUrl = useWallpaperAssetUrl(wallpaperAssetId, loadWallpaperAsset);
+  // Pending bytes are not staged yet. Resolve them only after Save drops
+  // the preview, so an early miss cannot leave the saved image unresolved.
+  const resolvedWallpaperUrl = useWallpaperAssetUrl(
+    backgroundPreview?.pendingAssetId === wallpaperAssetId ? null : wallpaperAssetId,
+    loadWallpaperAsset,
+  );
   // A pending (not-yet-staged) image previews through its own object URL.
   const wallpaperAssetUrl =
     backgroundPreview?.pendingAssetId !== undefined &&
@@ -2462,6 +2468,13 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     <VdPortalContainerProvider value={portalRoot}>
     <VdHeroOverlayScope>
     <div
+      onClickCapture={(event) => handleAppearanceAppClick(
+        event, inspectorOpen, appearanceEditingId, snapshot.entities,
+        (app) => {
+          setAppearanceSession(openAppearanceSession(app));
+          setDialog({ kind: "edit-visual", entityId: app.id });
+        },
+      )}
       className="vela-desktop"
       data-vd-ui=""
       data-arrange={arrange ? "true" : "false"}
@@ -2626,6 +2639,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       ) : null}
       {appearanceSession !== null ? (
         <AppAppearanceInspector
+          key={appearanceSession.appId}
           open={
             dialog !== null &&
             dialog.kind === "edit-visual" &&
