@@ -22,7 +22,7 @@ function surfaceSignature(theme: ReturnType<typeof buildAppearanceTheme>): strin
 describe("buildAppearanceTheme", () => {
   it("maps the exact defaults to the Task013 baseline CSS variables", () => {
     expect(buildAppearanceTheme(DEFAULT_WORKSPACE_APPEARANCE)).toEqual({
-      colorMode: "dark",
+      colorMode: "system",
       wallpaperPreset: "aurora",
       style: {
         "--vd-accent-hue": "205",

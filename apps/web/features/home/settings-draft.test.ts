@@ -151,7 +151,7 @@ describe("preferencesFromSettingsDraft", () => {
       expect(validateWorkspace(result.workspace)).toEqual([]);
       // The legacy baseline normalizes into the canonical glass preset.
       expect(result.workspace.preferences.appearance).toEqual({
-        colorMode: "dark",
+        colorMode: "system",
         accentHue: 205,
         wallpaperPreset: "aurora",
         surfaceOpacity: 0.5,

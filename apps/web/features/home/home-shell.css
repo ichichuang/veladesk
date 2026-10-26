@@ -1517,6 +1517,15 @@ button.vela-sync-status:focus-visible {
   color: var(--vd-app-icon-fg, var(--vd-text));
 }
 
+/* Solid/gradient tiles are saturated in BOTH color modes, so the icon and
+   title composed on top use the tile foreground (light by default) instead
+   of inheriting the mode text color, which is dark in the light theme and
+   made short names illegible. Glass/none keep the mode text color. */
+.vela-app-icon--surface[data-decoration="gradient"] ~ .vela-app-content,
+.vela-app-icon--surface[data-decoration="solid"] ~ .vela-app-content {
+  color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
+}
+
 /*
  * 019-B adaptive surface: the decoration fills the ENTIRE outer geometry
  * (grid span box / freeform rect) — gradient, solid,
