@@ -223,9 +223,14 @@ export function SettingsCenter({
     };
   }, [backgroundImage]);
 
-  useEffect(() => {
+  // Closing releases the pending image (its preview URL is revoked by the
+  // cleanup above). Tracked as derived state on the open transition, in
+  // render, rather than from an effect.
+  const [imageOpenState, setImageOpenState] = useState(open);
+  if (imageOpenState !== open) {
+    setImageOpenState(open);
     if (!open) setBackgroundImage(null);
-  }, [open]);
+  }
 
   const previousOpenRef = useRef(open);
   useEffect(() => {

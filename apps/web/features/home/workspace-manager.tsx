@@ -54,7 +54,18 @@ export function WorkspaceManagerProvider({ workspace, children, notice }: { read
     // Hosts can supply a minimal runtime before management becomes available.
     if (typeof runtime.listWorkspaces === "function") setCandidates(await runtime.listWorkspaces());
   }, [runtime]);
-  useEffect(() => { void refresh().catch(() => {}); }, [refresh, workspace.id]);
+  // Load the candidate list on mount and whenever the active workspace
+  // changes; the result lands asynchronously, and a response that arrives
+  // after a newer request (or unmount) is ignored.
+  useEffect(() => {
+    if (typeof runtime.listWorkspaces !== "function") return;
+    let current = true;
+    runtime.listWorkspaces().then(
+      (list) => { if (current) setCandidates(list); },
+      () => {},
+    );
+    return () => { current = false; };
+  }, [runtime, workspace.id]);
   async function run(operation: () => Promise<WorkspaceManagementResult>, message: string) {
     if (working.current) return { ok: false, reason: "busy" } as const;
     working.current = true; setBusy(true); setError(null);

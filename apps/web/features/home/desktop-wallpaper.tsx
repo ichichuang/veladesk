@@ -185,13 +185,18 @@ export function WorkspaceWallpaperLayers({
     }
     setSettled({ key, wallpaper, assetUrl });
   }
+  // Reduced motion switched on mid-crossfade: retire the underneath layer in
+  // the same render-phase pass (derived state) instead of from the effect.
+  if (reducedMotion && previous !== null) {
+    setPrevious(null);
+  }
 
+  const crossfading = previous !== null && !reducedMotion;
   useLayoutEffect(() => {
     const element = incomingRef.current;
     if (element === null) return;
-    if (previous === null || reducedMotion) {
+    if (!crossfading) {
       gsap.set(element, { clearProps: "opacity" });
-      if (previous !== null) setPrevious(null);
       return;
     }
     const tween = gsap.fromTo(incomingRef.current, { opacity: 0 }, {
@@ -199,7 +204,7 @@ export function WorkspaceWallpaperLayers({
       onComplete: () => { gsap.set(element, { clearProps: "opacity" }); setPrevious(null); },
     });
     return () => { tween.kill(); gsap.set(element, { clearProps: "opacity" }); };
-  }, [key, reducedMotion, previous !== null]);
+  }, [key, crossfading]);
 
   return (
     <div className={className} data-wallpaper-provenance={wallpaper.provenance}>

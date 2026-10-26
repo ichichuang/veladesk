@@ -191,6 +191,50 @@ describe("the shared background surface (023-C.2/§C.4)", () => {
     ).toBe("dawn");
   });
 
+  it("reduced motion switched on mid-crossfade retires the underneath layer at once", async () => {
+    const listeners = new Set<(event: MediaQueryListEvent) => void>();
+    let reduce = false;
+    // jsdom has no matchMedia: stub a controllable reduced-motion query.
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      get matches() { return query.includes("reduced-motion") && reduce; },
+      media: query,
+      onchange: null,
+      addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener); },
+      removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener); },
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => true,
+    }) as unknown as MediaQueryList);
+    try {
+      function Host({ presetId }: { readonly presetId: "mist" | "dawn" }) {
+        return (
+          <WorkspaceWallpaperLayers
+            wallpaper={{ config: { kind: "preset", presetId }, provenance: "workspace" }}
+            assetUrl={null}
+          />
+        );
+      }
+      const { rerender, container } = render(<Host presetId="mist" />);
+      rerender(<Host presetId="dawn" />);
+      const incoming = container.querySelector<HTMLElement>(".vela-desktop__wallpaper-incoming")!;
+      expect(container.querySelectorAll(".vela-wallpaper-surface--preset")).toHaveLength(2);
+      expect(gsap.getTweensOf(incoming)).toHaveLength(1);
+
+      await act(async () => {
+        reduce = true;
+        for (const listener of listeners) listener({ matches: true } as MediaQueryListEvent);
+      });
+      expect(container.querySelectorAll(".vela-wallpaper-surface--preset")).toHaveLength(1);
+      expect(
+        container.querySelector(".vela-wallpaper-surface--preset")?.getAttribute("data-wallpaper-preset"),
+      ).toBe("dawn");
+      expect(gsap.getTweensOf(incoming)).toHaveLength(0);
+      expect(incoming.style.opacity).toBe("");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("loads a newly staged image when its pending preview is cleared", async () => {
     const loader = vi.fn(async () => ({ ok: true, url: "blob:saved-wallpaper" }));
     function Host({ pending }: { readonly pending: boolean }) {

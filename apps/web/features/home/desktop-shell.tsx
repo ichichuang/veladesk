@@ -546,6 +546,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
 
   // The launcher index follows the live snapshot: a sync or edit landing
   // while the launcher is open recomputes the entries on the next render.
+  const workspaceCandidates = workspaceManager === null ? null : workspaceManager.candidates;
   const launcherEntries = useMemo(
     () =>
       buildLauncherEntries({
@@ -554,9 +555,9 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         mode,
         syncState: workspace.syncState,
         locale,
-        ...(workspaceManager === null ? {} : { workspaceCandidates: workspaceManager.candidates }),
+        ...(workspaceCandidates === null ? {} : { workspaceCandidates }),
       }),
-    [snapshot, effectiveActivePageId, mode, workspace.syncState, locale, workspaceManager?.candidates],
+    [snapshot, effectiveActivePageId, mode, workspace.syncState, locale, workspaceCandidates],
   );
 
   // The launcher renders app icons through the SHARED renderer, so it needs

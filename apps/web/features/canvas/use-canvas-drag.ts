@@ -150,7 +150,6 @@ export function useCanvasDrag({
       dragInitialRef.current = null;
       sawNativePointerRef.current = false;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- teardown only touches refs
   }, [dragging]);
 
   function writePreview(itemId: LayoutItemId, value: string | null): void {
