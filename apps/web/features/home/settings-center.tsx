@@ -44,6 +44,7 @@ import {
 import type { WorkspaceSettingsDraft } from "./settings-draft";
 import { ACCENT_SWATCH_HUES, hexFromHue, hueFromHex } from "./accent-color";
 import { Dialog, DialogContent, DialogTitle } from "@components/ui/dialog";
+import { BackgroundImageThumbnail } from "./background-image-thumbnail";
 import { WallpaperSurface, type BackgroundPreview } from "./desktop-wallpaper";
 import {
   prepareWallpaperImage,
@@ -210,6 +211,21 @@ export function SettingsCenter({
   const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [backgroundError, setBackgroundError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const backgroundRequestRef = useRef(0);
+
+  useLayoutEffect(() => {
+    return () => { backgroundRequestRef.current += 1; };
+  }, [open]);
+
+  useEffect(() => {
+    return () => {
+      if (backgroundImage !== null) URL.revokeObjectURL(backgroundImage.previewUrl);
+    };
+  }, [backgroundImage]);
+
+  useEffect(() => {
+    if (!open) setBackgroundImage(null);
+  }, [open]);
 
   const previousOpenRef = useRef(open);
   useEffect(() => {
@@ -223,11 +239,9 @@ export function SettingsCenter({
       setError(null);
       // A fresh settings session starts on the entry scope (a section's
       // context menu preselects it) and releases any stale pending image.
-      if (backgroundImage !== null) {
-        URL.revokeObjectURL(backgroundImage.previewUrl);
-      }
       setBackgroundImage(null);
       setBackgroundError(null);
+      setBackgroundBusy(false);
       setBackgroundScope(backgroundEntrySectionId ?? "workspace");
       onPreviewBackground?.(null);
     }
@@ -418,10 +432,15 @@ export function SettingsCenter({
             if (file === undefined) {
               return;
             }
+            const request = ++backgroundRequestRef.current;
             setBackgroundBusy(true);
             setBackgroundError(null);
             void prepareWallpaperImage(file)
               .then((result) => {
+                if (request !== backgroundRequestRef.current) {
+                  if (result.ok) URL.revokeObjectURL(result.image.previewUrl);
+                  return;
+                }
                 if (!result.ok) {
                   setBackgroundError(
                     t({
@@ -433,9 +452,6 @@ export function SettingsCenter({
                     }[result.issue] as TranslationKey),
                   );
                   return;
-                }
-                if (backgroundImage !== null) {
-                  URL.revokeObjectURL(backgroundImage.previewUrl);
                 }
                 setBackgroundImage(result.image);
                 const config: WallpaperConfig = {
@@ -450,7 +466,9 @@ export function SettingsCenter({
                   updateBackground({ pages: { [backgroundScope]: config } });
                 }
               })
-              .finally(() => setBackgroundBusy(false));
+              .finally(() => {
+                if (request === backgroundRequestRef.current) setBackgroundBusy(false);
+              });
           }}
         />
 
@@ -534,7 +552,6 @@ export function SettingsCenter({
                   onWallpaperPresetPicked={() => {
                     // Picking a preset releases a pending custom image.
                     if (backgroundImage !== null) {
-                      URL.revokeObjectURL(backgroundImage.previewUrl);
                       setBackgroundImage(null);
                     }
                   }}
@@ -882,7 +899,6 @@ function BackgroundSection({
 
   function removeImage() {
     if (backgroundImage !== null) {
-      URL.revokeObjectURL(backgroundImage.previewUrl);
       onImageChange(null);
     }
     if (isWorkspaceScope) {
@@ -983,23 +999,11 @@ function BackgroundSection({
           {t("settings.background.image")}
         </span>
         <div className="flex flex-wrap items-center gap-3">
-          <WallpaperSurface
-            wallpaper={
-              editedConfig?.kind === "asset"
-                ? { config: editedConfig, provenance: "section" }
-                : { config: { kind: "preset", presetId: draft.appearance.wallpaperPreset }, provenance: "workspace" }
-            }
-            assetUrl={
-              editedConfig?.kind === "asset" && backgroundImage !== null && backgroundImage.asset.id === editedConfig.assetId
-                ? backgroundImage.previewUrl
-                : null
-            }
-            className="vela-wallpaper-surface--thumb-art w-[168px] shrink-0"
-          />
+          <BackgroundImageThumbnail config={editedConfig} pending={backgroundImage} />
           <div className="flex min-w-0 flex-col gap-2">
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onPress={onChooseImage} isDisabled={busy}>
-                {backgroundImage === null
+                {backgroundImage === null && editedConfig?.kind !== "asset"
                   ? t("settings.background.chooseImage")
                   : t("settings.background.changeImage")}
               </Button>
