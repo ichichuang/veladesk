@@ -1,7 +1,5 @@
 import type { AppShortcut } from "@veladesk/domain";
 
-import { iconTextEmWidth } from "./generated-icon";
-
 /**
  * Adaptive app content layout (task 019-B) — the ONE pure resolver that
  * decides how an app's icon and title are composed INSIDE the outer box
@@ -57,11 +55,6 @@ const GAP_MAX_PX = 14;
 
 /** Generated-text glyph: fraction of the icon box a single code point fills. */
 const GENERATED_TEXT_SHARE = 0.56;
-/**
- * Widest share of the icon box generated text may span. 0.9 keeps every
- * 1–2 character text (two ideographs = 2em) at its code-point size.
- */
-const GENERATED_TEXT_WIDTH_BUDGET = 0.9;
 /** Smallest icon box the resolver will ever produce (degenerate inputs). */
 const ICON_BOX_MIN_PX = 12;
 /** Smallest title strip width before ellipsis takes over completely. */
@@ -82,15 +75,6 @@ export interface AppContentLayoutInput {
    * `iconKind: "generated"`.
    */
   readonly generatedTextLength?: number;
-  /**
-   * Estimated advance width of the generated text in em
-   * (`iconTextEmWidth`). When present the glyph size is additionally
-   * capped so the text spans at most GENERATED_TEXT_WIDTH_BUDGET of the
-   * icon box: ideographs are a full em wide, so 3–4 CJK characters at the
-   * code-point-count size used to wrap onto a second line. Only read for
-   * `iconKind: "generated"`.
-   */
-  readonly generatedTextEmWidth?: number;
 }
 
 export type AppContentLayoutMode = "solo" | "stack" | "inline";
@@ -183,7 +167,7 @@ export function resolveAppContentLayout(input: AppContentLayoutInput): AppConten
       labelLineHeight: round2(LABEL_FONT_MIN_PX * LABEL_LINE_HEIGHT_FACTOR),
       labelMaxWidth: Math.max(LABEL_MIN_WIDTH_PX, width - 2 * padding),
       ...(input.iconKind === "generated"
-        ? { generatedTextSize: generatedTextSizeOf(iconBoxSize, input.generatedTextLength, input.generatedTextEmWidth) }
+        ? { generatedTextSize: generatedTextSizeOf(iconBoxSize, input.generatedTextLength) }
         : {}),
     };
   }
@@ -214,7 +198,7 @@ export function resolveAppContentLayout(input: AppContentLayoutInput): AppConten
         width - 2 * padding - iconBoxSize - gap,
       ),
       ...(input.iconKind === "generated"
-        ? { generatedTextSize: generatedTextSizeOf(iconBoxSize, input.generatedTextLength, input.generatedTextEmWidth) }
+        ? { generatedTextSize: generatedTextSizeOf(iconBoxSize, input.generatedTextLength) }
         : {}),
     };
   }
@@ -240,22 +224,13 @@ export function resolveAppContentLayout(input: AppContentLayoutInput): AppConten
     labelLineHeight,
     labelMaxWidth: Math.max(LABEL_MIN_WIDTH_PX, width - 2 * padding),
     ...(input.iconKind === "generated"
-      ? { generatedTextSize: generatedTextSizeOf(iconBoxSize, input.generatedTextLength, input.generatedTextEmWidth) }
+      ? { generatedTextSize: generatedTextSizeOf(iconBoxSize, input.generatedTextLength) }
       : {}),
   };
 }
 
-function generatedTextSizeOf(
-  iconBoxSize: number,
-  codePoints: number | undefined,
-  emWidth: number | undefined,
-): number {
-  const optical = iconBoxSize * GENERATED_TEXT_SHARE * generatedIconOpticalScale(codePoints ?? 1);
-  const widthCap =
-    emWidth !== undefined && Number.isFinite(emWidth) && emWidth > 0
-      ? (iconBoxSize * GENERATED_TEXT_WIDTH_BUDGET) / emWidth
-      : Number.POSITIVE_INFINITY;
-  return round2(Math.min(optical, widthCap));
+function generatedTextSizeOf(iconBoxSize: number, codePoints: number | undefined): number {
+  return round2(iconBoxSize * GENERATED_TEXT_SHARE * generatedIconOpticalScale(codePoints ?? 1));
 }
 
 /**
@@ -292,10 +267,8 @@ export function resolveAppContentLayoutForApp(
     labelVisible: visual?.labelVisible ?? true,
     iconKind: appContentIconKind(app),
     ...(app.icon.kind === "generated"
-      ? {
-          generatedTextLength: Array.from(app.icon.text.trim()).length,
-          generatedTextEmWidth: iconTextEmWidth(app.icon.text),
-        }
+      ? // Icon text always renders ONE character (IconText).
+        { generatedTextLength: 1 }
       : {}),
   });
 }

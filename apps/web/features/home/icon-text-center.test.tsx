@@ -6,7 +6,7 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { resolveAppContentLayout } from "./app-content-layout";
-import { FIXED_SLOT_ICON_TEXT_BUDGET_EM, iconTextEmWidth, iconTextFitScale } from "./generated-icon";
+import { generatedIconText, iconInitial } from "./generated-icon";
 import { IconText } from "./icon-text";
 
 /*
@@ -17,8 +17,9 @@ import { IconText } from "./icon-text";
  *    place-items:center). Before, only `.vela-item__icon` / the dock button
  *    centered, so the launcher results and the mobile search results drew
  *    their initials as a block at the tile's top-left corner.
- * 2. Icon text is ONE nowrap line that shrinks to fit: 3–4 wide custom
- *    characters ("飞书文档", "NOTN") wrapped or spilled out of the tiles.
+ * 2. Icon text is ONE character (the first grapheme of the custom text or
+ *    the name — the full name is always shown next to the tile), so 3–4
+ *    character texts ("飞书文档", "NOTN") can no longer wrap or spill.
  * 3. Surfaces that render outside the shell roots (mobile sheets portal
  *    next to .vela-mobile-shell; the inspector Dialog portals outside
  *    .vela-desktop) and the mobile search row declare their own
@@ -56,11 +57,13 @@ describe("icon tile centers its glyph on every surface", () => {
     }
   });
 
-  it("icon text is a single unwrapped line box with the fit multiplier", () => {
+  it("icon text is a single untracked line box at the single-character scale", () => {
     const rule = ruleBlock(homeCss, ".vela-app-icon__text");
     expect(rule).toMatch(/white-space:\s*nowrap/);
     expect(rule).toMatch(/line-height:\s*1\b/);
-    expect(rule).toMatch(/font-size:\s*calc\(1em \* var\(--vd-icon-text-fit, 1\)\)/);
+    expect(rule).toMatch(/letter-spacing:\s*0\b/);
+    expect(rule).toMatch(/font-size:\s*calc\(1em \* var\(--vd-icon-initial-scale, [\d.]+\)\)/);
+    expect(homeCss).not.toMatch(/--vd-icon-text-fit/);
   });
 
   it("the launcher and mobile search tiles have a slot size", () => {
@@ -87,70 +90,58 @@ describe("icon tile centers its glyph on every surface", () => {
   });
 });
 
-describe("icon text width model", () => {
-  it("counts ideographs and emoji as 1em, Latin as narrow, marks as zero", () => {
-    expect(iconTextEmWidth("微信")).toBe(2);
-    expect(iconTextEmWidth("🚀")).toBe(1);
-    expect(iconTextEmWidth("RE")).toBeCloseTo(1.44);
-    expect(iconTextEmWidth("é")).toBeCloseTo(0.72);
-    expect(iconTextEmWidth("  飞书 ")).toBe(2);
+describe("icon initial: one user-visible character", () => {
+  it("takes the first grapheme: 中文首字, Latin uppercased, digits, whole emoji", () => {
+    expect(iconInitial("微信")).toBe("微");
+    expect(iconInitial("测试")).toBe("测");
+    expect(iconInitial("React")).toBe("R");
+    expect(iconInitial("github")).toBe("G");
+    expect(iconInitial("123云盘")).toBe("1");
+    expect(iconInitial("🚀 Launch")).toBe("🚀");
+    expect(iconInitial("👨‍👩‍👧 Family")).toBe("👨‍👩‍👧");
+    expect(iconInitial("🇨🇳 China")).toBe("🇨🇳");
+    expect(iconInitial("👍🏽ok")).toBe("👍🏽");
+    expect(iconInitial("éclair")).toBe("É");
+    expect(iconInitial("e\u0301clair")).toBe("E\u0301");
   });
 
-  it("keeps every 1–2 character text at its size and shrinks wider text", () => {
-    for (const text of ["M", "RE", "MD", "微信", "飞书", "🚀", "A画"]) {
-      expect(iconTextFitScale(text), text).toBe(1);
-    }
-    for (const text of ["飞书文档", "NOTN", "AI画", "ABC"]) {
-      const scale = iconTextFitScale(text);
-      expect(scale, text).toBeLessThan(1);
-      expect(iconTextEmWidth(text) * scale, text).toBeLessThanOrEqual(FIXED_SLOT_ICON_TEXT_BUDGET_EM + 0.001);
-    }
+  it("skips leading whitespace/punctuation, never splits on uppercasing", () => {
+    expect(iconInitial("  飞书文档 ")).toBe("飞");
+    expect(iconInitial("《三体》")).toBe("三");
+    expect(iconInitial("(beta) tool")).toBe("B");
+    expect(iconInitial("!!!")).toBe("!");
+    expect(iconInitial("ßtraße")).toBe("ß");
+    expect(iconInitial("")).toBe("");
+    expect(iconInitial("   ")).toBe("");
   });
 
-  it("<IconText> only emits the fit variable when the text needs it", () => {
+  it("generated icon text is the name's initial", () => {
+    expect(generatedIconText("微信公众平台")).toBe("微");
+    expect(generatedIconText("ChatGPT")).toBe("C");
+  });
+
+  it("<IconText> renders only the first character, with no fit variable", () => {
     const { container } = render(
       <>
         <IconText text="微信" />
         <IconText text="飞书文档" />
+        <IconText text="NOTN" />
+        <IconText text="🚀" />
       </>,
     );
-    const [short, wide] = Array.from(container.querySelectorAll<HTMLElement>(".vela-app-icon__text"));
-    expect(short!.textContent).toBe("微信");
-    expect(short!.getAttribute("style")).toBeNull();
-    expect(wide!.style.getPropertyValue("--vd-icon-text-fit")).toBe(String(iconTextFitScale("飞书文档")));
+    const spans = Array.from(container.querySelectorAll<HTMLElement>(".vela-app-icon__text"));
+    expect(spans.map((span) => span.textContent)).toEqual(["微", "飞", "N", "🚀"]);
+    for (const span of spans) {
+      expect(span.getAttribute("style")).toBeNull();
+    }
   });
 });
 
-describe("adaptive desktop tile caps generated text by width", () => {
-  const layout = (text: string) =>
-    resolveAppContentLayout({
-      width: 200,
-      height: 200,
-      labelVisible: true,
-      iconKind: "generated",
-      generatedTextLength: Array.from(text).length,
-      generatedTextEmWidth: iconTextEmWidth(text),
-    });
-  const withoutWidth = (text: string) =>
-    resolveAppContentLayout({
-      width: 200,
-      height: 200,
-      labelVisible: true,
-      iconKind: "generated",
-      generatedTextLength: Array.from(text).length,
-    });
-
-  it("leaves 1–2 character text unchanged", () => {
-    for (const text of ["M", "RE", "微信", "🚀"]) {
-      expect(layout(text).generatedTextSize, text).toBe(withoutWidth(text).generatedTextSize);
-    }
-  });
-
-  it("fits 3–4 wide characters inside 90% of the icon box", () => {
-    for (const text of ["飞书文档", "NOTN", "AI画"]) {
-      const result = layout(text);
-      expect(result.generatedTextSize! * iconTextEmWidth(text), text).toBeLessThanOrEqual(result.iconBoxSize * 0.9 + 0.005 * iconTextEmWidth(text)); // round2 slack
-    }
-    expect(layout("飞书文档").generatedTextSize!).toBeLessThan(withoutWidth("飞书文档").generatedTextSize!);
+describe("adaptive desktop tile sizes a single character", () => {
+  it("uses the full single-character share regardless of stored text length", () => {
+    const one = resolveAppContentLayout({ width: 200, height: 200, labelVisible: true, iconKind: "generated", generatedTextLength: 1 });
+    const unset = resolveAppContentLayout({ width: 200, height: 200, labelVisible: true, iconKind: "generated" });
+    expect(unset.generatedTextSize).toBe(one.generatedTextSize);
+    expect(one.generatedTextSize! / one.iconBoxSize).toBeCloseTo(0.56, 2);
   });
 });

@@ -244,23 +244,36 @@ describe("buildAppIconStyleVars", () => {
 });
 
 describe("appIconDisplayText", () => {
-  it("shows generated text verbatim (auto or custom)", () => {
-    expect(appIconDisplayText(makeApp({ icon: { kind: "generated", text: "GI" } }))).toBe("GI");
+  it("shows ONE character: the custom text's first, else the name's initial", () => {
+    expect(appIconDisplayText(makeApp({ icon: { kind: "generated", text: "GI" } }))).toBe("G");
     expect(
       appIconDisplayText(makeApp({ icon: { kind: "generated", text: "AI", source: "custom" } }))
-    ).toBe("AI");
+    ).toBe("A");
+    // Legacy 2–4 character custom text is cut at render time (no migration).
+    expect(
+      appIconDisplayText(makeApp({ icon: { kind: "generated", text: "飞书文档", source: "custom" } }))
+    ).toBe("飞");
+    // Auto text always follows the CURRENT name, even if stale data says otherwise.
+    expect(
+      appIconDisplayText(makeApp({ name: "微信", icon: { kind: "generated", text: "OL", source: "auto" } }))
+    ).toBe("微");
   });
 
   it("falls back to derived initials for blank generated text", () => {
     expect(
       appIconDisplayText(makeApp({ name: "ChatGPT", icon: { kind: "generated", text: "  " } }))
-    ).toBe("CH");
+    ).toBe("C");
+    expect(
+      appIconDisplayText(
+        makeApp({ name: "ChatGPT", icon: { kind: "generated", text: "  ", source: "custom" } })
+      )
+    ).toBe("C");
   });
 
   it("derives initials for every non-generated icon kind", () => {
-    expect(appIconDisplayText(makeApp({ icon: { kind: "iconify", icon: "ph:robot" } }))).toBe("GI");
-    expect(appIconDisplayText(makeApp({ icon: { kind: "favicon" } }))).toBe("GI");
-    expect(appIconDisplayText(makeApp({ icon: { kind: "asset", assetId: "a1" } }))).toBe("GI");
+    expect(appIconDisplayText(makeApp({ icon: { kind: "iconify", icon: "ph:robot" } }))).toBe("G");
+    expect(appIconDisplayText(makeApp({ icon: { kind: "favicon" } }))).toBe("G");
+    expect(appIconDisplayText(makeApp({ icon: { kind: "asset", assetId: "a1" } }))).toBe("G");
   });
 });
 

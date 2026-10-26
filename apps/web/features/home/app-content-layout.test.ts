@@ -329,13 +329,14 @@ describe("legacy scale compatibility (019-B §20)", () => {
     expect(hidden.mode).toBe("solo");
   });
 
-  it("reads the generated text length for generated icons only", () => {
+  it("sizes every generated icon for its ONE rendered character", () => {
     const oneChar = resolveAppContentLayoutForApp(baseApp, 120, 120);
+    // Legacy 4-character custom text still renders a single character.
     const fourChar = resolveAppContentLayoutForApp(
       { ...baseApp, icon: { kind: "generated", text: "ABCD", source: "custom" } } as unknown as AppShortcut,
       120,
       120,
     );
-    expect(oneChar.generatedTextSize!).toBeGreaterThan(fourChar.generatedTextSize!);
+    expect(fourChar.generatedTextSize).toBe(oneChar.generatedTextSize);
   });
 });

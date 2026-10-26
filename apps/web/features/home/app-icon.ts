@@ -6,7 +6,7 @@ import {
 } from "@veladesk/domain";
 import { findIconCollection, isIconCollectionId } from "@veladesk/icon-catalog/meta";
 
-import { generatedIconText } from "./generated-icon";
+import { generatedIconText, iconInitial } from "./generated-icon";
 
 /**
  * The label presentation an app renders with (019-B): just the visible
@@ -222,18 +222,24 @@ export function decorationBackground(
 }
 
 /**
- * The text a generated/fallback icon shows. `source: "custom"` text is
- * user-owned and shown verbatim; everything else derives the initials from
- * the app name (blank custom text degrades to derived initials too).
+ * The single character a generated/fallback icon shows. `source: "custom"`
+ * text is user-owned: its first character is shown (older data may hold up
+ * to four — no migration, it is cut at render time). Everything else
+ * derives the initial from the app name (blank custom text degrades to the
+ * name's initial too).
  */
 export function appIconDisplayText(app: AppShortcut): string {
-  if (app.icon.kind === "generated") {
-    const text = app.icon.text.trim();
-    if (text.length > 0) {
-      return app.icon.text;
+  if (app.icon.kind === "generated" && app.icon.source === "custom") {
+    const custom = iconInitial(app.icon.text);
+    if (custom.length > 0) {
+      return custom;
     }
   }
-  return generatedIconText(app.name);
+  const derived = generatedIconText(app.name);
+  if (derived.length === 0 && app.icon.kind === "generated") {
+    return iconInitial(app.icon.text);
+  }
+  return derived;
 }
 
 /**

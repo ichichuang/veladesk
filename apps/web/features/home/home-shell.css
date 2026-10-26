@@ -1598,17 +1598,19 @@ button.vela-sync-status:focus-visible {
   pointer-events: none;
 }
 
-/* Icon text is a single centered line: never wraps (3–4 custom characters
-   used to break onto a second line), shrinks by the width-fit multiplier
-   IconText emits for text wider than the fixed-slot budget. The adaptive
-   desktop rule above (.vela-app-content__icon …) sets its own resolver
-   size and wins on specificity. */
+/* Icon text is ONE character (IconText) on a single line box. Fixed-slot
+   tiles draw it at --vd-icon-initial-scale × the tile's base text size
+   (0.34 × slot, dock 15px) — the old 2-letter size was too small for a
+   lone character. letter-spacing is zeroed: trailing tracking after a
+   single glyph would push it off centre. The adaptive desktop rule above
+   (.vela-app-content__icon …) sets its own resolver size and wins on
+   specificity. */
 .vela-app-icon__text {
-  font-size: calc(1em * var(--vd-icon-text-fit, 1));
+  font-size: calc(1em * var(--vd-icon-initial-scale, 1.4));
   line-height: 1;
+  letter-spacing: 0;
   white-space: nowrap;
 }
-
 /* Dock: the button itself is the tile — same decoration contract, dock-
    tuned Auto fallbacks that reproduce the pre-016 dock look. 019-B: the
    dock keeps its compact FIXED geometry; the deprecated per-app scale

@@ -20,14 +20,12 @@ import { contextMenuAnchorFromElement, isContextMenuKeyEvent } from "./context-m
 import { useVdHoverLift } from "@components/vd/hover-lift";
 import { elementBoxChanged } from "./element-box";
 import { AppIconSurface, AppIconGlyph } from "./app-icon-renderer";
-import { iconTextEmWidth } from "./generated-icon";
 import {
   appContentIconKind,
   buildAppContentStyleVars,
   resolveAppContentLayout,
 } from "./app-content-layout";
 import {
-  appIconDisplayText,
   appLabelPresentation,
   appVisual,
   buildAppIconStyleVars,
@@ -524,11 +522,8 @@ function DesktopEntity({
             labelVisible: label.visible,
             iconKind: appContentIconKind(entity),
             ...(entity.icon.kind === "generated"
-              ? {
-                  generatedTextLength: Array.from(appIconDisplayText(entity).trim())
-                    .length,
-                  generatedTextEmWidth: iconTextEmWidth(appIconDisplayText(entity)),
-                }
+              ? // Icon text always renders ONE character (IconText).
+                { generatedTextLength: 1 }
               : {}),
           });
     return (

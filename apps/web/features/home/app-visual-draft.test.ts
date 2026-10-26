@@ -20,7 +20,7 @@ function makeApp(overrides: Partial<AppShortcut> = {}): AppShortcut {
     id: "app-1",
     name: "GitHub",
     url: "https://github.com",
-    icon: { kind: "generated", text: "GI", source: "auto" },
+    icon: { kind: "generated", text: "G", source: "auto" },
     openMode: "new-tab",
     tags: [],
     ...overrides,
@@ -163,7 +163,7 @@ describe("buildDraftIcon", () => {
 
     expect(buildDraftIcon(app, draft)).toEqual({
       kind: "generated",
-      text: "CH",
+      text: "C",
       source: "auto",
     });
   });
@@ -180,7 +180,7 @@ describe("buildDraftIcon", () => {
     const app = makeApp();
     const draft = { ...draftFromApp(app), source: "upload" as const, assetId: "" };
 
-    expect(buildDraftIcon(app, draft)).toEqual({ kind: "generated", text: "GI", source: "auto" });
+    expect(buildDraftIcon(app, draft)).toEqual({ kind: "generated", text: "G", source: "auto" });
   });
 
   it("stores custom text verbatim with the custom source", () => {

@@ -215,12 +215,12 @@ describe("resolveImportAppIcon (task 024 §25–§26)", () => {
   it("uses the shared generated-text helper for unknown apps", () => {
     expect(resolveImportAppIcon("Internal Dashboard", "http://wiki.internal/")).toEqual({
       kind: "generated",
-      text: "IN",
+      text: "I",
       source: "auto",
     });
     expect(resolveImportAppIcon("Beta", "https://beta.example.com/")).toEqual({
       kind: "generated",
-      text: "BE",
+      text: "B",
       source: "auto",
     });
   });
@@ -228,7 +228,7 @@ describe("resolveImportAppIcon (task 024 §25–§26)", () => {
   it("falls back to generated text when the URL cannot be parsed at all", () => {
     expect(resolveImportAppIcon("Weird", "my-tool://thing")).toEqual({
       kind: "generated",
-      text: "WE",
+      text: "W",
       source: "auto",
     });
   });
