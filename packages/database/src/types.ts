@@ -48,7 +48,7 @@ export type CreateWorkspaceResult =
     }
   | {
       readonly ok: false;
-      readonly reason: "already-exists";
+      readonly reason: "already-exists" | "workspace-limit" | "name-conflict";
     };
 
 /**
@@ -77,8 +77,19 @@ export type SaveWorkspaceResult =
       readonly actualRevision: number;
     };
 
+/** Metadata-only rename still creates a normal immutable revision. */
+export type RenameWorkspaceResult = SaveWorkspaceResult | { readonly ok: false; readonly reason: "invalid-name" | "name-conflict" };
+
+export type DeleteWorkspaceResult =
+  | { readonly ok: true; readonly deletedAssetIds: readonly string[] }
+  | { readonly ok: false; readonly reason: "not-found" }
+  | { readonly ok: false; readonly reason: "last-workspace" }
+  | { readonly ok: false; readonly reason: "revision-conflict"; readonly actualRevision: number };
+
 /** Options for {@link createWorkspaceRepository}. */
 export interface WorkspaceRepositoryOptions {
+  /** Stage filesystem cleanup while the SQLite write lock protects references. */
+  readonly prepareAssetCleanup?: (ids: readonly string[]) => { commit(): void; rollback(): void };
   /** Injectable clock for deterministic tests. Defaults to Date.now. */
   readonly now?: () => number;
 }

@@ -1,3 +1,5 @@
+import path from "node:path";
+import { prepareWorkspaceAssetCleanup, recoverWorkspaceAssetCleanup } from "./assets/workspace-cleanup";
 import { mkdirSync } from "node:fs";
 
 import {
@@ -32,18 +34,23 @@ export function createWorkspaceServerRuntime(config: {
   readonly dataDir: string;
   readonly databasePath: string;
   readonly migrationsDir: string;
+  readonly assetsDir?: string;
 }): WorkspaceServerRuntime {
   mkdirSync(config.dataDir, { recursive: true });
 
   const database = openDatabase({ filename: config.databasePath });
   try {
     applyMigrations(database, config.migrationsDir);
+    recoverWorkspaceAssetCleanup(database, config.assetsDir ?? path.join(config.dataDir, "assets"));
   } catch (error) {
     database.close();
     throw error;
   }
 
-  return { database, repository: createWorkspaceRepository(database) };
+  const assetsDir = config.assetsDir ?? path.join(config.dataDir, "assets");
+  return { database, repository: createWorkspaceRepository(database, {
+    prepareAssetCleanup: ids => prepareWorkspaceAssetCleanup(assetsDir, ids),
+  }) };
 }
 
 /**

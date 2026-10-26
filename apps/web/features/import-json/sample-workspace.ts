@@ -18,6 +18,7 @@
  */
 
 import {
+  DEFAULT_WORKSPACE_APPEARANCE,
   addAppToFolder,
   addFolderToPage,
   createEmptyWorkspace,
@@ -332,4 +333,62 @@ export function findSampleFolder(
   return workspace.entities.find(
     (entity): entity is Folder => entity.kind === "folder" && [SAMPLE_FOLDER.name, translate("en-US", "sample.frameworkDocs")].includes(entity.name)
   );
+}
+
+export type WorkspaceTemplate = "blank" | "frontend" | "work" | "home";
+
+/** Compact curated desks share the import, placement and contrast policy of
+ * the onboarding sample; no uploaded assets or network requests are needed. */
+export function buildWorkspaceTemplate(template: WorkspaceTemplate, idFactory: SampleWorkspaceIdFactory, locale: UiLocale): WorkspaceSnapshot {
+  if (template === "frontend") return buildSampleWorkspace(idFactory, locale);
+  const seed = idFactory("page");
+  let workspace = createEmptyWorkspace({ workspaceId: idFactory("workspace"), workspaceName: translate(locale, "workspace.defaultName", { number: 1 }), pageId: seed, pageName: translate(locale, "workspace.section.start"), grid: createGridDefinition(5, 6) });
+  if (template === "blank") return workspace;
+  const work = template === "work";
+  const sections = work ? [
+    { name: translate(locale, "workspace.section.collaboration"), apps: [
+      { name: "Slack", url: "https://slack.com", color: "#62469A" },
+      { name: "Notion", url: "https://www.notion.so", color: "#30343B" },
+      { name: "Figma", url: "https://www.figma.com", color: SAMPLE_COLORS.Figma! },
+      { name: "Meet", url: "https://meet.google.com", color: "#256346" },
+    ] },
+    { name: translate(locale, "workspace.section.development"), apps: [
+      { name: "GitHub", url: "https://github.com", color: SAMPLE_COLORS.GitHub! },
+      { name: "MDN", url: "https://developer.mozilla.org", color: SAMPLE_COLORS.MDN! },
+      { name: "TS", url: "https://www.typescriptlang.org", color: SAMPLE_COLORS.TS! },
+      { name: "Vite", url: "https://vite.dev", color: SAMPLE_COLORS.Vite! },
+    ] },
+  ] : [
+    { name: translate(locale, "workspace.section.entertainment"), apps: [
+      { name: "YouTube", url: "https://www.youtube.com", color: "#A3343C" },
+      { name: "Spotify", url: "https://open.spotify.com", color: "#256346" },
+      { name: "Bilibili", url: "https://www.bilibili.com", color: "#245E89" },
+      { name: "Steam", url: "https://store.steampowered.com", color: "#3C586E" },
+    ] },
+    { name: translate(locale, "workspace.section.learning"), apps: [
+      { name: "Wiki", url: "https://www.wikipedia.org", color: "#30343B" },
+      { name: "Duolingo", url: "https://www.duolingo.com", color: "#586238" },
+      { name: "Coursera", url: "https://www.coursera.org", color: "#245E9B" },
+      { name: "Maps", url: "https://maps.google.com", color: "#326D58" },
+    ] },
+  ];
+  const parsed = parseImportDocument(JSON.stringify({ format: IMPORT_FORMAT_IDENTITY, version: IMPORT_FORMAT_VERSION, sections }));
+  if (!parsed.ok) throw new Error("Invalid built-in workspace template");
+  const applied = applyImportPlan(workspace, planImport(workspace, parsed.parsed.document, parsed.parsed.issues), kind => idFactory(kind));
+  if (!applied.ok) throw new Error("Could not apply built-in workspace template");
+  workspace = applied.workspace;
+  const deleted = deleteEmptyPage(workspace, seed);
+  if (deleted.ok) workspace = deleted.workspace;
+  const colors = new Map(sections.flatMap(section => section.apps.map(app => [app.name, app.color] as const)));
+  return { ...workspace, preferences: { ...workspace.preferences, appearance: {
+    ...DEFAULT_WORKSPACE_APPEARANCE,
+    colorMode: work ? "dark" : "light",
+    wallpaperPreset: work ? "midnight" : "dawn",
+    accentHue: work ? 205 : 28,
+    interfaceStyle: work ? "clean" : "soft",
+  } }, entities: workspace.entities.map(entity => entity.kind !== "app" ? entity : {
+    ...entity, visual: { decorationStyle: "solid", decorationColor: colors.get(entity.name)!, foregroundColor: "#FFFFFF" },
+  }), pages: workspace.pages.map(page => withPageCanvas(materializePagePlacement(page), {
+    version: 2, mode: "grid", columns: 5, items: pageItemIds(page).map((id, index) => ({ id, column: index % 5, row: Math.floor(index / 5), columnSpan: 1, rowSpan: 1 })),
+  })) };
 }

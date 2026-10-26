@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { runtimeManagementStub } from "../../workspace-runtime/test-runtime-management";
 /*
  * Task 026 §76/§77/§78/§79 — the mobile consumption surfaces against the
  * real shell: search (shared model, no management commands, correct
@@ -98,6 +99,7 @@ function makeRecord(snapshot: WorkspaceSnapshot): LocalWorkspaceRecord {
 }
 
 const rejectRuntime: WorkspaceClientRuntime = {
+  ...runtimeManagementStub,
   getSnapshot: () => {
     throw new Error("unexpected getSnapshot");
   },
@@ -334,7 +336,8 @@ describe("mobile browsing never writes the workspace (§68)", () => {
       initialize: vi.fn(() => Promise.resolve({ status: "ready" } as never)),
     };
     const spyRuntime: WorkspaceClientRuntime = {
-      getSnapshot: () => {
+      ...runtimeManagementStub,
+  getSnapshot: () => {
         throw new Error("unexpected getSnapshot");
       },
       subscribe: () => () => {},

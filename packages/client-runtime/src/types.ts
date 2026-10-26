@@ -2,12 +2,12 @@
  * Public type contracts of @veladesk/client-runtime.
  *
  * The runtime owns the browser workspace session: local-first bootstrap,
- * remote discovery, in-memory active-workspace selection and explicit
+ * remote discovery, remembered active-workspace selection and explicit
  * sync/pull orchestration, exposed as an external store
  * (`subscribe`/`getSnapshot`) for `useSyncExternalStore`.
  *
- * It has no React, no Next.js, no Node APIs and no persistence beyond the
- * local store it is given.
+ * It has no React, no Next.js or Node APIs. Durable data stays in the
+ * local store; browser preferences remember selection and recent use.
  */
 
 import type {
@@ -91,6 +91,12 @@ export type WorkspaceClientRuntimeState =
 export interface WorkspaceClientRuntime {
   /** Current state reference; changes only by whole-state replacement. */
   getSnapshot(): WorkspaceClientRuntimeState;
+  listWorkspaces(): Promise<readonly WorkspaceCandidate[]>;
+  createWorkspace(snapshot: WorkspaceSnapshot): Promise<WorkspaceManagementResult>;
+  renameWorkspace(id: WorkspaceId, name: string): Promise<WorkspaceManagementResult>;
+  deleteWorkspace(id: WorkspaceId): Promise<WorkspaceManagementResult>;
+  /** Flush UI-owned edit queues, or return a readable refusal. */
+  registerBeforeWorkspaceChange(guard: () => Promise<string | null>): () => void;
 
   /** Subscribe to state replacements; returns an unsubscribe function. */
   subscribe(listener: () => void): () => void;
@@ -134,6 +140,7 @@ export interface WorkspaceClientRuntime {
 
 /** Options of {@link createWorkspaceClientRuntime}. */
 export interface WorkspaceClientRuntimeOptions {
+  readonly preferenceStorage?: import("./selection-memory").WorkspacePreferenceStorage | null;
   readonly store: LocalWorkspaceStore;
   readonly transport: WorkspaceSyncTransport;
 }
@@ -146,7 +153,8 @@ export type SelectWorkspaceResult =
     }
   | {
       readonly ok: false;
-      readonly reason: "not-found";
+      readonly reason: "not-found" | "unsaved-changes" | "busy";
+      readonly message?: string;
     }
   | {
       readonly ok: false;
@@ -163,7 +171,7 @@ export type RuntimeStageWorkspaceUpdateResult =
     }
   | {
       readonly ok: false;
-      readonly reason: "workspace-id-mismatch";
+      readonly reason: "workspace-id-mismatch" | "busy";
     };
 
 /** Result of {@link WorkspaceClientRuntime.syncCurrent}. */
@@ -175,3 +183,13 @@ export type RuntimeSyncCurrentResult =
 
 /** Result of {@link WorkspaceClientRuntime.pullCurrent}. */
 export type RuntimePullCurrentResult = RuntimeSyncCurrentResult;
+
+export type WorkspaceManagementFailureReason =
+  | "busy" | "invalid-name" | "name-conflict" | "workspace-limit" | "last-workspace"
+  | "not-found" | "unsaved-changes" | "already-exists" | "invalid-workspace"
+  | "revision-conflict" | "network-error" | "server-error" | "protocol-error"
+  | "local-changes-present" | "stale-server-revision";
+
+export type WorkspaceManagementResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: WorkspaceManagementFailureReason; readonly message?: string };

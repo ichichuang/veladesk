@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { runtimeManagementStub } from "../../workspace-runtime/test-runtime-management";
 /*
  * Task 026 §74/§75/§80 — the mobile shell's read-only contract and browse
  * surface: the exact management strings never render (not disabled —
@@ -116,6 +117,7 @@ function makeRecord(snapshot: WorkspaceSnapshot): LocalWorkspaceRecord {
 }
 
 const rejectRuntime: WorkspaceClientRuntime = {
+  ...runtimeManagementStub,
   getSnapshot: () => {
     throw new Error("unexpected getSnapshot");
   },

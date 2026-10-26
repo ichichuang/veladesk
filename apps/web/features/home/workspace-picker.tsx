@@ -107,6 +107,9 @@ function describeSelectFailure(
   t: TranslateFn
 ): string {
   switch (result.reason) {
+    case "busy":
+    case "unsaved-changes":
+      return result.message ?? t("workspace.error.unsaved");
     case "not-found":
       return t("picker.error.notFound");
     case "network-error":

@@ -138,6 +138,9 @@ export interface LocalWorkspaceStore {
     input: MarkWorkspaceConflictInput
   ): Promise<MarkWorkspaceConflictResult>;
 
+  /** Removes the working copy and its outbox atomically after server deletion. */
+  deleteWorkspace(id: WorkspaceId, expectedGeneration?: number): Promise<boolean>;
+
   close(): void;
 }
 

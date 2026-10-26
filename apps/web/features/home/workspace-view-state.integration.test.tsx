@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { runtimeManagementStub } from "../workspace-runtime/test-runtime-management";
 /*
  * Task 023-A — persistent workspace view state, integration.
  *
@@ -100,7 +101,8 @@ function makeRuntime(spies?: {
   if (spies !== undefined) {
     const never = () => new Promise(() => {}) as never;
     return {
-      getSnapshot: never,
+      ...runtimeManagementStub,
+  getSnapshot: never,
       subscribe: () => () => {},
       initialize: never,
       selectWorkspace: never,
@@ -114,7 +116,8 @@ function makeRuntime(spies?: {
   const reject = (name: string) =>
     Promise.reject(new Error(`unexpected runtime call in test: ${name}`)) as never;
   return {
-    getSnapshot: () => {
+    ...runtimeManagementStub,
+  getSnapshot: () => {
       throw new Error("unexpected getSnapshot in test");
     },
     subscribe: () => () => {},

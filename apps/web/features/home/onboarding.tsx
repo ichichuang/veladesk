@@ -49,6 +49,10 @@ export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }:
       setError(t("onboarding.error.enterName"));
       return;
     }
+    if (workspaceName.length > 40) {
+      setError(t("workspace.error.name"));
+      return;
+    }
     setCreating("empty");
     setError(null);
     try {
@@ -141,7 +145,7 @@ export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }:
             className="vela-input"
             type="text"
             value={name}
-            maxLength={80}
+            maxLength={40}
             autoComplete="off"
             spellCheck={false}
             onChange={(event) => setNameInput(event.target.value)}

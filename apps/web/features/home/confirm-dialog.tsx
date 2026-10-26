@@ -50,7 +50,7 @@ export function ConfirmDialog({
         ) : null}
         <div className="flex items-center justify-end gap-2.5">
           <AlertDialogCancel disabled={busy}>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm} disabled={busy}>
+          <AlertDialogAction onClick={(event) => { event.preventDefault(); onConfirm(); }} disabled={busy}>
             {busy ? t("common.working") : (confirmLabel ?? t("common.save"))}
           </AlertDialogAction>
         </div>

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { runtimeManagementStub } from "../workspace-runtime/test-runtime-management";
 /*
  * Task 024 — the import dialog's wiring-level contracts (task §63–§71):
  * parse/preview/cancel perform ZERO workspace writes; one confirmed
@@ -29,7 +30,8 @@ function makeRuntime(spies?: {
   const reject = (name: string) =>
     Promise.reject(new Error(`unexpected runtime call in test: ${name}`)) as never;
   return {
-    getSnapshot: reject.bind(null, "getSnapshot") as never,
+    ...runtimeManagementStub,
+  getSnapshot: reject.bind(null, "getSnapshot") as never,
     subscribe: () => () => {},
     initialize: () => reject("initialize"),
     selectWorkspace: () => reject("selectWorkspace"),

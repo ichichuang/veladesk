@@ -18,6 +18,8 @@ function makeFakeRepository(overrides: {
   revision?: WorkspaceRevision | undefined;
 } = {}): WorkspaceRepository {
   return {
+    renameWorkspace() { throw new Error("unexpected renameWorkspace"); },
+    deleteWorkspace() { throw new Error("unexpected deleteWorkspace"); },
     createWorkspace() {
       throw new Error("not expected");
     },

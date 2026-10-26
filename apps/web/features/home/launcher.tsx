@@ -56,7 +56,8 @@ const GROUP_LABEL_KEY: Readonly<Record<LauncherGroupKind, TranslationKey>> = {
   page: "launcher.group.sections",
 };
 
-const COMMAND_ICON: Readonly<Record<LauncherCommandId, LucideIcon>> = {
+const COMMAND_ICON: Readonly<Partial<Record<LauncherCommandId, LucideIcon>>> = {
+  "new-workspace": SquarePlus,
   "add-app": Plus,
   "new-section": SquarePlus,
   "open-settings": Settings,
@@ -426,7 +427,7 @@ function RowIdentity({
       </span>
     );
   }
-  const Symbol = entry.kind === "command" ? COMMAND_ICON[entry.commandId] : KIND_SYMBOL[entry.kind];
+  const Symbol = entry.kind === "command" ? (COMMAND_ICON[entry.commandId] ?? LayoutGrid) : KIND_SYMBOL[entry.kind];
   return (
     <span className="vela-launcher__symbol" aria-hidden="true">
       <Symbol size={16} />

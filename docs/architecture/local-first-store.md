@@ -104,3 +104,13 @@ WebSocket / SSE / service worker). Those belong to future tasks, as does
 Dexie Cloud / `dexie-syncable` (not used). The package depends only on
 `@veladesk/domain`, Dexie and the browser IndexedDB contract, so the same
 store can later serve the PWA and a New Tab extension.
+
+## Workspace management
+
+`deleteWorkspace(id)` removes both the working copy and its coalesced outbox
+in one IndexedDB transaction. The client runtime invokes it only after a
+successful server deletion (or a confirmed server 404), so a failed DELETE
+never discards a local workspace or leaves an outbox that could recreate it.
+Rename hydrates the acknowledged server snapshot after flushing pending work;
+the listing name and local snapshot therefore share the same revision.
+Neither operation changes the IndexedDB schema version.

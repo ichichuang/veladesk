@@ -11,6 +11,8 @@ import type { DesktopPageId, EntityId } from "@veladesk/domain";
  * remain searchable as legacy entities).
  */
 export type LauncherCommandId =
+  | "new-workspace"
+  | `workspace:${string}`
   | "add-app"
   | "new-section"
   | "open-settings"

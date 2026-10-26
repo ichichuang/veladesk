@@ -83,6 +83,8 @@ export function createAssetAwareWorkspaceSyncTransport(
   }
 
   return {
+    ...(base.renameWorkspace === undefined ? {} : { renameWorkspace: base.renameWorkspace.bind(base) }),
+    ...(base.deleteWorkspace === undefined ? {} : { deleteWorkspace: base.deleteWorkspace.bind(base) }),
     listWorkspaces() {
       return base.listWorkspaces();
     },

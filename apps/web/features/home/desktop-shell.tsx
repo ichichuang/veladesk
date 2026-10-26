@@ -87,6 +87,7 @@ import {
   undoPageCanvas,
 } from "../canvas/arrange-history";
 import type { ArrangeCanvasHistories } from "../canvas/arrange-history";
+import { useWorkspaceManager } from "./workspace-manager";
 import { ContextMenu } from "./context-menu";
 import type { ContextMenuState } from "./context-menu";
 import { AddAppDialog } from "./add-app-dialog";
@@ -265,6 +266,7 @@ interface DesktopShellProps {
  */
 export function DesktopShell({ workspace, lastRemoteResult, activeSection: externalActiveSection }: DesktopShellProps) {
   const runtime = useWorkspaceRuntimeInstance();
+  const workspaceManager = useWorkspaceManager();
   const { locale, t } = useI18n();
   const snapshot = workspace.snapshot;
   const reducedMotion = useVdReducedMotion();
@@ -552,8 +554,9 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         mode,
         syncState: workspace.syncState,
         locale,
+        ...(workspaceManager === null ? {} : { workspaceCandidates: workspaceManager.candidates }),
       }),
-    [snapshot, effectiveActivePageId, mode, workspace.syncState, locale],
+    [snapshot, effectiveActivePageId, mode, workspace.syncState, locale, workspaceManager?.candidates],
   );
 
   // The launcher renders app icons through the SHARED renderer, so it needs
@@ -1940,6 +1943,15 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   /** Wheel navigation over the rail stands down while anything owns the desktop. */
   const railNavigationLocked = scrollLocked;
 
+  useEffect(() => runtime.registerBeforeWorkspaceChange?.(async () => {
+    if (draggingRef.current || resizeLockRef.current || dialog !== null || settingsOpen) {
+      return t("workspace.error.editing");
+    }
+    await layoutQueueRef.current;
+    if (pendingHandoffRef.current !== null) return t("workspace.error.unsaved");
+    return null;
+  }), [runtime, dialog, settingsOpen, t]);
+
   function openContextMenu(target: ContextMenuTarget) {
     if (target.kind === "desktop") {
       openDesktopCommandMenu(target.x, target.y);
@@ -1969,6 +1981,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         canRedo:
           historyUsable && currentPageId !== null && canRedo(arrangeHistoriesRef.current, currentPageId),
         syncState: workspace.syncState,
+        ...(workspaceManager === null ? {} : { workspaceMenu: workspaceManager.menu }),
         callbacks: {
           onAddApp: () => openDialog({ kind: "add-app", pageId: pageDestination() }),
           onNewSection: () => openDialog({ kind: "new-section" }),
@@ -2120,7 +2133,11 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   }
 
   function activateLauncherCommand(commandId: LauncherCommandId) {
+    if (commandId.startsWith("workspace:")) { workspaceManager?.select(commandId.slice("workspace:".length)); return; }
     switch (commandId) {
+      case "new-workspace":
+        workspaceManager?.create();
+        return;
       case "add-app":
         openDialog({ kind: "add-app", pageId: pageDestination() });
         return;
@@ -2723,7 +2740,10 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       ) : null}
 
       {contextMenu !== null ? (
-        <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />
+        <ContextMenu state={{
+          ...contextMenu,
+          entries: contextMenu.entries.map(entry => entry.kind === "submenu" && entry.id === "workspaces" && workspaceManager !== null ? workspaceManager.menu : entry),
+        }} onClose={() => setContextMenu(null)} />
       ) : null}
 
       {/*

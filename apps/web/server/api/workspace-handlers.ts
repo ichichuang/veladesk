@@ -1,6 +1,6 @@
 import type { WorkspaceRepository } from "@veladesk/database";
 
-import { decodeCreateWorkspaceBody, decodeExpectedRevision, decodeSaveWorkspaceBody, parseJsonBody } from "./input";
+import { decodeCreateWorkspaceBody, decodeExpectedRevision, decodeSaveWorkspaceBody, isRecord, parseJsonBody } from "./input";
 import { errorResponse, jsonResponse } from "./response";
 
 /**
@@ -48,7 +48,7 @@ export async function handleCreateWorkspace(
   if (result.reason === "invalid-workspace") {
     return errorResponse(422, "invalid-workspace", { issues: result.issues });
   }
-  return errorResponse(409, "workspace-already-exists");
+  return errorResponse(409, result.reason === "workspace-limit" ? "workspace-limit" : result.reason === "name-conflict" ? "workspace-name-conflict" : "workspace-already-exists");
 }
 
 /** GET /api/v1/workspaces/:workspaceId */
@@ -102,4 +102,35 @@ export async function handleSaveWorkspace(
         actualRevision: result.actualRevision,
       });
   }
+}
+
+/** PATCH /api/v1/workspaces/:workspaceId — same CAS contract as PUT. */
+export async function handleRenameWorkspace(repository: WorkspaceRepository, request: Request, workspaceId: string): Promise<Response> {
+  const body = await parseJsonBody(request);
+  if (!body.ok) return body.response;
+  if (!isRecord(body.value) || typeof body.value.name !== "string") return errorResponse(400, "invalid-request");
+  const revision = decodeExpectedRevision(body.value.expectedRevision);
+  if (revision === undefined) return errorResponse(400, "invalid-revision");
+  const result = repository.renameWorkspace(workspaceId, body.value.name, revision);
+  if (result.ok) return jsonResponse({ workspace: result.workspace });
+  switch (result.reason) {
+    case "not-found": return errorResponse(404, "workspace-not-found");
+    case "invalid-name": return errorResponse(422, "invalid-workspace-name");
+    case "name-conflict": return errorResponse(409, "workspace-name-conflict");
+    case "invalid-workspace": return errorResponse(422, "invalid-workspace", { issues: result.issues });
+    case "revision-conflict": return errorResponse(409, "revision-conflict", { actualRevision: result.actualRevision });
+  }
+}
+
+/** DELETE uses an expected revision so another tab's edits cannot be erased unseen. */
+export async function handleDeleteWorkspace(repository: WorkspaceRepository, request: Request, workspaceId: string): Promise<Response> {
+  const body = await parseJsonBody(request);
+  if (!body.ok) return body.response;
+  const revision = isRecord(body.value) ? decodeExpectedRevision(body.value.expectedRevision) : undefined;
+  if (revision === undefined) return errorResponse(400, "invalid-revision");
+  const result = repository.deleteWorkspace(workspaceId, revision);
+  if (result.ok) return new Response(null, { status: 204 });
+  if (result.reason === "not-found") return errorResponse(404, "workspace-not-found");
+  if (result.reason === "last-workspace") return errorResponse(409, "last-workspace");
+  return errorResponse(409, "revision-conflict", { actualRevision: result.actualRevision });
 }

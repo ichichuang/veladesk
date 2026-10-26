@@ -11,7 +11,7 @@ one concern:
 - **`@veladesk/sync`** — the HTTP transport and outbox coordination. No UI,
   no storage of its own.
 - **`@veladesk/client-runtime`** — the workspace session: local-first
-  bootstrap, remote discovery, in-memory active-workspace selection,
+  bootstrap, remote discovery, persisted active-workspace preference,
   startup reconciliation and explicit sync/pull orchestration, exposed as
   an external store. No React, no Next.js, no Node APIs — a PWA or New Tab
   extension can reuse it verbatim.
@@ -26,12 +26,13 @@ one concern:
 
 1. **Exactly one local copy** → the runtime is `ready` immediately with
    that workspace, and one startup reconciliation runs in the background.
-2. **Multiple local copies** → `selection-required` with local candidates
-   in id ASC order. The remote catalog is not even consulted: v1 has no
-   persisted active-workspace id, so the runtime refuses to guess which
-   workspace the user means.
+2. **Multiple local copies** → open the remembered workspace when its id
+   is still present; otherwise `selection-required` with local candidates
+   in id ASC order. Bootstrap remains local-first: this branch does not
+   wait for a remote catalog.
 3. **No local copies** → remote catalog discovery: `0` → `empty`; `1` →
    pull + hydrate + `ready`; `>1` → `selection-required` in server order;
+   a remembered id among several remote candidates is pulled directly;
    list failure → `remote-unavailable` (network-error / server-error +
    httpStatus / protocol-error ± httpStatus).
 
@@ -68,11 +69,27 @@ storage corruption is never disguised as a remote problem.
 
 `selectWorkspace` opens an existing local copy (and reconciles it) or
 pulls a remote-only one into the local store; failures keep the previous
-selection state untouched. The active workspace lives **only in runtime
-memory** in v1: no IndexedDB metadata table, no `LOCAL_STORE_SCHEMA_VERSION`
-bump, no localStorage. With several local copies every start requires
-selection again — persisting the choice needs a user-preference model that
-is deliberately out of scope.
+session active. It also works from `ready`: registered UI guards finish
+queued edits or return a readable refusal, then pending local stages and
+in-flight saves are awaited and the current outbox is flushed. A conflict,
+network failure or still-pending generation blocks the switch. Concurrent
+management/selection calls receive `busy`. Late saves refresh state only
+if their workspace is still active.
+
+The last active id is stored under `veladesk:v1:last-workspace`; the bounded
+recent-use order is stored under `veladesk:v1:recent-workspaces`. Access is
+lazy, SSR-safe and best-effort (blocked/quota/corrupt storage cannot prevent
+startup). Tests and non-browser hosts may inject `preferenceStorage`, or
+pass `null` to disable it. No IndexedDB metadata table or schema bump.
+
+`listWorkspaces` merges the remote catalog with local working copies,
+preferring local names and ordering by recent use. `createWorkspace(snapshot)`
+accepts a blank or preset snapshot assembled by the presentation layer;
+`renameWorkspace(id, name)` and `deleteWorkspace(id)` use the same flush
+boundary. These explicit management operations require a server response,
+then hydrate/remove the local copy. Deleting the active workspace first
+materializes a fallback and selects the most recently used survivor. The
+existing offline `stageWorkspaceCreate` path remains unchanged.
 
 ## Editing
 

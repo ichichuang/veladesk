@@ -21,8 +21,10 @@ export type DesktopMenuEntry =
       readonly checked?: boolean;
       /** Tooltip text — the localized reason a disabled row is refused. */
       readonly reason?: string;
+      readonly tools?: readonly { readonly label: string; readonly icon: "rename" | "delete"; readonly disabled?: boolean; readonly reason?: string; readonly onSelect: () => void }[];
       readonly onSelect: () => void;
     }
+  | { readonly kind: "submenu"; readonly id: string; readonly label: string; readonly entries: readonly DesktopMenuEntry[] }
   | {
       readonly kind: "separator";
     };
@@ -52,6 +54,7 @@ export interface DesktopCommandInput {
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly syncState: LocalWorkspaceSyncState;
+  readonly workspaceMenu?: DesktopMenuEntry;
   readonly callbacks: DesktopCommandCallbacks;
 }
 
@@ -124,6 +127,7 @@ export function buildDesktopCommandEntries(
   }
 
   entries.push({ kind: "separator" });
+  if (input.workspaceMenu !== undefined) entries.push(input.workspaceMenu);
   if (syncState === "dirty") {
     entries.push({ kind: "action", id: "sync", label: t("menu.syncNow"), onSelect: callbacks.onSync });
   }

@@ -10,6 +10,8 @@ export { createWorkspaceSyncCoordinator } from "./coordinator";
 
 export type {
   CreateRemoteWorkspaceResult,
+  DeleteRemoteWorkspaceResult,
+  RenameRemoteWorkspaceResult,
   GetRemoteWorkspaceResult,
   HttpWorkspaceSyncTransportOptions,
   ListRemoteWorkspacesResult,

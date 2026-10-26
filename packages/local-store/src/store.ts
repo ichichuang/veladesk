@@ -376,6 +376,16 @@ class LocalWorkspaceStoreImpl implements LocalWorkspaceStore {
     );
   }
 
+  async deleteWorkspace(id: string, expectedGeneration?: number): Promise<boolean> {
+    return this.db.transaction("rw", this.db.workspaceCopies, this.db.workspaceOutbox, async () => {
+      const current = await this.db.workspaceCopies.get(id);
+      if (current !== undefined && expectedGeneration !== undefined && current.localGeneration !== expectedGeneration) return false;
+      await this.db.workspaceOutbox.delete(id);
+      await this.db.workspaceCopies.delete(id);
+      return true;
+    });
+  }
+
   close(): void {
     this.db.close();
   }

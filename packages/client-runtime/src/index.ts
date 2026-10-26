@@ -15,8 +15,13 @@ export type {
   RuntimeSyncCurrentResult,
   SelectWorkspaceResult,
   WorkspaceCandidate,
+  WorkspaceManagementResult,
+  WorkspaceManagementFailureReason,
   WorkspaceClientRuntime,
   WorkspaceClientRuntimeOptions,
   WorkspaceClientRuntimeState,
   WorkspaceRuntimeRemoteResult,
 } from "./types";
+
+export { LAST_WORKSPACE_KEY } from "./selection-memory";
+export type { WorkspacePreferenceStorage } from "./selection-memory";

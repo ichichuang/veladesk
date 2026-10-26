@@ -46,6 +46,7 @@ export interface BuildLauncherEntriesInput {
    * desktop launcher contract).
    */
   readonly includeCommands?: boolean;
+  readonly workspaceCandidates?: readonly { readonly id: string; readonly name: string }[];
 }
 
 interface EntryDraft {
@@ -158,6 +159,12 @@ export function buildLauncherEntries(
   //    Consumption-only surfaces (mobile search, 026 §34) skip the whole
   //    block: management commands never appear there, not even disabled.
   if (includeCommands) {
+    if (input.workspaceCandidates !== undefined) {
+      pushCommand("new-workspace", translate(locale, "workspace.createTitle"), ["workspace", "工作区"]);
+      for (const candidate of input.workspaceCandidates) {
+        pushCommand(`workspace:${candidate.id}`, translate(locale, "workspace.switchCommand", { name: candidate.name }), ["workspace", "工作区", candidate.name]);
+      }
+    }
     pushCommand("add-app", translate(locale, "launcher.command.addApp"), [
       "add app",
       "new shortcut",

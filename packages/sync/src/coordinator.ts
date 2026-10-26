@@ -130,6 +130,8 @@ export function createWorkspaceSyncCoordinator(
           // The create may already have succeeded with its response lost:
           // never fabricate a conflict before reading the remote state.
           return resolveCreateConflict(workspaceId, entry);
+        case "workspace-limit":
+        case "name-conflict":
         case "invalid-workspace":
           return { status: "server-rejected", workspaceId };
         case "network-error":

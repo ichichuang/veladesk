@@ -17,6 +17,8 @@ export type { WorkspaceRepository } from "./repository";
 
 export type {
   CreateWorkspaceResult,
+  RenameWorkspaceResult,
+  DeleteWorkspaceResult,
   SaveWorkspaceResult,
   StoredWorkspace,
   WorkspaceRepositoryOptions,

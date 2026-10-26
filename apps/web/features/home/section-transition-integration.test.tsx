@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { runtimeManagementStub } from "../workspace-runtime/test-runtime-management";
 /*
  * Task 022-R2 — the section-navigation rollback regression.
  *
@@ -84,7 +85,8 @@ function makeRuntime(): WorkspaceClientRuntime {
   const reject = (name: string) =>
     Promise.reject(new Error(`unexpected runtime call in test: ${name}`)) as never;
   return {
-    getSnapshot: () => {
+    ...runtimeManagementStub,
+  getSnapshot: () => {
       throw new Error("unexpected getSnapshot in test");
     },
     subscribe: () => () => {},

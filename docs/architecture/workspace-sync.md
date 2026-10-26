@@ -143,3 +143,33 @@ until the next explicit flush — a user who keeps editing must not be able
 to keep a single flush alive forever. One workspace's failure never stops
 the others; only a genuine invariant violation (local-store corruption)
 rejects the flush.
+
+## Workspace management
+
+The HTTP transport also exposes `renameWorkspace` (PATCH with `{ name,
+expectedRevision }`) and `deleteWorkspace` (DELETE with `{ expectedRevision }`).
+Both use the existing error envelope and revision-conflict contract. Stable
+management errors are `workspace-limit` (409, maximum ten),
+`last-workspace` (409), `workspace-name-conflict` (409), and
+`invalid-workspace-name` (422). POST applies the same 40-character name bound.
+
+The runtime serializes management and selection, waits for UI edit queues and
+in-flight saves, and flushes the current workspace before leaving it. Failed
+flushes or unresolved conflicts keep the old session active. Management writes
+require a server acknowledgement; they are not queued as new outbox operation
+types. Existing local-first editing and offline `stageWorkspaceCreate` remain
+available. After an acknowledged rename the local copy is hydrated; after an
+acknowledged deletion the local copy and outbox are removed atomically. Failed
+management requests keep local data. A fallback workspace is materialized
+before deleting the current one, then the most recently used surviving
+workspace becomes active.
+
+Server assets are immutable, content-addressed files, not rows. Deletion holds
+an immediate SQLite transaction while collecting references from *all current
+and historical snapshots*. Only assets referenced by the deleted workspace
+and no retained snapshot are quarantined; shared assets and unrelated pending
+uploads are left alone. Revisions and the workspace row are then deleted in
+the same transaction. SQL failure restores quarantined files; commit unlinks
+them. Startup recovery restores referenced quarantined files or removes
+committed garbage after a process crash. This uses the existing schema and
+requires no migration.

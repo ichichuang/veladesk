@@ -11,6 +11,8 @@ import {
 } from "./serialization";
 import type {
   CreateWorkspaceResult,
+  RenameWorkspaceResult,
+  DeleteWorkspaceResult,
   SaveWorkspaceResult,
   StoredWorkspace,
   WorkspaceRepositoryOptions,
@@ -39,6 +41,8 @@ export interface WorkspaceRepository {
   createWorkspace(snapshot: WorkspaceSnapshot): CreateWorkspaceResult;
   loadWorkspace(id: WorkspaceId): StoredWorkspace | undefined;
   saveWorkspace(snapshot: WorkspaceSnapshot, expectedRevision: number): SaveWorkspaceResult;
+  renameWorkspace(id: WorkspaceId, name: string, expectedRevision?: number): RenameWorkspaceResult;
+  deleteWorkspace(id: WorkspaceId, expectedRevision?: number): DeleteWorkspaceResult;
   listWorkspaces(): readonly WorkspaceSummary[];
   loadWorkspaceRevision(
     workspaceId: WorkspaceId,
@@ -93,9 +97,12 @@ export function createWorkspaceRepository(
   const clock = readClock(options);
   const orm = database.orm;
 
-  return {
+  const repository: WorkspaceRepository = {
     createWorkspace(snapshot): CreateWorkspaceResult {
       const issues = validateWorkspace(snapshot);
+      if (snapshot.name.trim().length > 40) {
+        return { ok: false, reason: "invalid-workspace", issues: [{ type: "invalid-workspace-name" }] };
+      }
       if (issues.length > 0) {
         return { ok: false, reason: "invalid-workspace", issues };
       }
@@ -107,7 +114,10 @@ export function createWorkspaceRepository(
       // the id is free. ON CONFLICT DO NOTHING keeps the insert race-free;
       // changes === 0 means another writer committed this id first.
       const inserted = orm
-        .transaction((tx): boolean => {
+        .transaction((tx): "created" | "already-exists" | "workspace-limit" | "name-conflict" => {
+          const existing = tx.select().from(workspaces).all();
+          if (existing.some(row => row.id === snapshot.id)) return "already-exists";
+          if (existing.length >= 10) return "workspace-limit";
           const result = tx
             .insert(workspaces)
             .values({
@@ -123,7 +133,7 @@ export function createWorkspaceRepository(
             .run();
 
           if (result.changes === 0) {
-            return false;
+            return "already-exists";
           }
 
           tx.insert(workspaceRevisions)
@@ -135,11 +145,11 @@ export function createWorkspaceRepository(
               createdAt: timestamp,
             })
             .run();
-          return true;
-        });
+          return "created";
+        }, { behavior: "immediate" });
 
-      if (!inserted) {
-        return { ok: false, reason: "already-exists" };
+      if (inserted !== "created") {
+        return { ok: false, reason: inserted };
       }
 
       return {
@@ -228,6 +238,53 @@ export function createWorkspaceRepository(
       };
     },
 
+
+    renameWorkspace(id, name, expectedRevision): RenameWorkspaceResult {
+      if (name.trim().length === 0 || name.trim().length > 40) return { ok: false, reason: "invalid-name" };
+      return orm.transaction(() => {
+        const current = repository.loadWorkspace(id);
+        if (current === undefined) return { ok: false, reason: "not-found" };
+        if (repository.listWorkspaces().some(row => row.id !== id && row.name.trim() === name.trim())) {
+          return { ok: false, reason: "name-conflict" };
+        }
+        return repository.saveWorkspace({ ...current.snapshot, name: name.trim() }, expectedRevision ?? current.revision);
+      }, { behavior: "immediate" });
+    },
+
+    deleteWorkspace(id, expectedRevision): DeleteWorkspaceResult {
+      if (expectedRevision !== undefined) assertPositiveIntegerRevision(expectedRevision, "expectedRevision");
+      let cleanup: ReturnType<NonNullable<WorkspaceRepositoryOptions["prepareAssetCleanup"]>> | undefined;
+      let result: DeleteWorkspaceResult;
+      try {
+        result = orm.transaction((tx): DeleteWorkspaceResult => {
+          const rows = tx.select().from(workspaces).all();
+          const current = rows.find(row => row.id === id);
+          if (current === undefined) return { ok: false, reason: "not-found" };
+          if (rows.length === 1) return { ok: false, reason: "last-workspace" };
+          if (expectedRevision !== undefined && current.revision !== expectedRevision) {
+            return { ok: false, reason: "revision-conflict", actualRevision: current.revision };
+          }
+          const revisions = tx.select().from(workspaceRevisions).all();
+          const owned = new Set<string>();
+          const retained = new Set<string>();
+          for (const row of [...rows.map(row => ({ ...row, workspaceId: row.id })), ...revisions]) {
+            const target = row.workspaceId === id ? owned : retained;
+            for (const assetId of snapshotAssetIds(deserializeWorkspaceSnapshot(row.snapshotJson, row.snapshotVersion))) target.add(assetId);
+          }
+          const deletedAssetIds = [...owned].filter(assetId => !retained.has(assetId));
+          cleanup = options.prepareAssetCleanup?.(deletedAssetIds);
+          tx.delete(workspaceRevisions).where(eq(workspaceRevisions.workspaceId, id)).run();
+          tx.delete(workspaces).where(eq(workspaces.id, id)).run();
+          return { ok: true, deletedAssetIds };
+        }, { behavior: "immediate" });
+      } catch (error) {
+        cleanup?.rollback();
+        throw error;
+      }
+      cleanup?.commit();
+      return result;
+    },
+
     listWorkspaces(): readonly WorkspaceSummary[] {
       const rows = orm
         .select({
@@ -294,4 +351,14 @@ export function createWorkspaceRepository(
       }));
     },
   };
+  return repository;
+}
+
+/** Include historical references: revisions are still restorable data. */
+function snapshotAssetIds(snapshot: WorkspaceSnapshot): string[] {
+  const ids = snapshot.entities.flatMap(entity => entity.kind === "app" && entity.icon.kind === "asset" ? [entity.icon.assetId] : []);
+  const wallpaper = snapshot.preferences.appearance?.wallpaper;
+  if (wallpaper?.kind === "asset") ids.push(wallpaper.assetId);
+  for (const page of snapshot.pages) if (page.wallpaper?.kind === "asset") ids.push(page.wallpaper.assetId);
+  return ids;
 }

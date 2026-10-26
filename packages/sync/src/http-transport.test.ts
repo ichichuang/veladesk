@@ -538,3 +538,41 @@ describe("PUT /api/v1/workspaces/:id", () => {
     expect(result).toEqual({ ok: false, reason: "network-error" });
   });
 });
+
+describe("workspace management transport", () => {
+  it("PATCH encodes the item id and sends the expected revision", async () => {
+    const snapshot = { ...buildRichSnapshot("work"), id: "work/space", name: "Renamed" };
+    const stub = fetchJson(200, successEnvelope(snapshot, 2)); const transport = createHttpWorkspaceSyncTransport({ fetch: stub.fetch });
+    expect(await transport.renameWorkspace!(snapshot.id, "Renamed", 1)).toEqual({ ok: true, workspace: { snapshot, revision: 2 } });
+    expect(stub.calls[0]?.url).toBe("/api/v1/workspaces/work%2Fspace"); expect(stub.calls[0]?.init.method).toBe("PATCH");
+    expect(JSON.parse(stub.calls[0]?.init.body as string)).toEqual({ name: "Renamed", expectedRevision: 1 });
+  });
+  it("DELETE accepts only 204 and sends CAS metadata", async () => {
+    const stub = fetchResponding(() => new Response(null, { status: 204 })); const transport = createHttpWorkspaceSyncTransport({ fetch: stub.fetch });
+    expect(await transport.deleteWorkspace!("work", 3)).toEqual({ ok: true }); expect(stub.calls[0]?.init.method).toBe("DELETE");
+    expect(JSON.parse(stub.calls[0]?.init.body as string)).toEqual({ expectedRevision: 3 });
+  });
+  it.each([
+    [404, "workspace-not-found", "not-found"], [409, "last-workspace", "last-workspace"], [409, "unknown-code", "protocol-error"], [500, "unknown-code", "server-error"],
+  ] as const)("DELETE maps %s/%s to %s", async (status, code, reason) => {
+    const transport = createHttpWorkspaceSyncTransport({ fetch: fetchJson(status, { error: { code } }).fetch });
+    expect(await transport.deleteWorkspace!("work", 1)).toMatchObject({ ok: false, reason });
+  });
+  it.each([
+    [422, "invalid-workspace-name", "invalid-name"], [409, "workspace-name-conflict", "name-conflict"], [404, "workspace-not-found", "not-found"], [409, "unexpected", "protocol-error"],
+  ] as const)("PATCH maps %s/%s to %s", async (status, code, reason) => {
+    const transport = createHttpWorkspaceSyncTransport({ fetch: fetchJson(status, { error: { code } }).fetch });
+    expect(await transport.renameWorkspace!("work", "Name", 1)).toMatchObject({ ok: false, reason });
+  });
+  it.each(["renameWorkspace", "deleteWorkspace"] as const)("%s validates conflict metadata and handles network failures", async method => {
+    const conflict = createHttpWorkspaceSyncTransport({ fetch: fetchJson(409, { error: { code: "revision-conflict", actualRevision: 4 } }).fetch });
+    const failed = createHttpWorkspaceSyncTransport({ fetch: fetchRejecting().fetch });
+    const result = method === "renameWorkspace" ? await conflict.renameWorkspace!("work", "Name", 1) : await conflict.deleteWorkspace!("work", 1);
+    expect(result).toEqual({ ok: false, reason: "revision-conflict", actualRevision: 4 });
+    expect(method === "renameWorkspace" ? await failed.renameWorkspace!("work", "Name", 1) : await failed.deleteWorkspace!("work", 1)).toEqual({ ok: false, reason: "network-error" });
+  });
+  it.each([["workspace-limit", "workspace-limit"], ["workspace-name-conflict", "name-conflict"]] as const)("POST recognizes %s", async (code, reason) => {
+    const transport = createHttpWorkspaceSyncTransport({ fetch: fetchJson(409, { error: { code } }).fetch });
+    expect(await transport.createWorkspace(buildRichSnapshot("work"))).toEqual({ ok: false, reason });
+  });
+});

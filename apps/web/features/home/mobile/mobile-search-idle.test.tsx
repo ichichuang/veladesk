@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { runtimeManagementStub } from "../../workspace-runtime/test-runtime-management";
 /*
  * Task 026-R2 §19 (H5) — the mobile search model is shared but must not
  * REBUILD while the surface is closed: a category switch (activePageId
@@ -61,6 +62,7 @@ function snapshot(): WorkspaceSnapshot {
 }
 
 const rejectRuntime: WorkspaceClientRuntime = {
+  ...runtimeManagementStub,
   getSnapshot: () => {
     throw new Error("unexpected getSnapshot");
   },

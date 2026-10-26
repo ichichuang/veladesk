@@ -60,6 +60,8 @@ function makeFakeRepository(overrides: {
   return {
     createdWith: [],
     savedWith: [],
+    renameWorkspace() { throw new Error("unexpected renameWorkspace"); },
+    deleteWorkspace() { throw new Error("unexpected deleteWorkspace"); },
     createWorkspace(snapshot) {
       this.createdWith.push(snapshot);
       return overrides.createResult ?? { ok: false, reason: "already-exists" };

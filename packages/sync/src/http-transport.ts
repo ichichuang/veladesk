@@ -166,6 +166,39 @@ export function createHttpWorkspaceSyncTransport(
       return { ok: false, reason: "protocol-error", status: response.status };
     },
 
+    async renameWorkspace(id, name, expectedRevision) {
+      if (!isPositiveSafeInteger(expectedRevision)) throw new RangeError("expectedRevision must be a positive safe integer");
+      const fetched = await fetchJson(workspaceUrl(id), {
+        method: "PATCH", headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ name, expectedRevision }),
+      });
+      if (!fetched.ok) return fetched;
+      const { response } = fetched;
+      if (response.status === 200) return decodeSuccessResponse(response, id);
+      const error = await readErrorEnvelope(response);
+      if (response.status === 404 && error.code === "workspace-not-found") return { ok: false, reason: "not-found" };
+      if (response.status === 422 && error.code === "invalid-workspace-name") return { ok: false, reason: "invalid-name" };
+      if (response.status === 409 && error.code === "workspace-name-conflict") return { ok: false, reason: "name-conflict" };
+      if (response.status === 409 && error.code === "revision-conflict" && isPositiveSafeInteger(error.actualRevision)) return { ok: false, reason: "revision-conflict", actualRevision: error.actualRevision };
+      return response.status >= 500 ? serverError(response) : { ok: false, reason: "protocol-error", status: response.status };
+    },
+
+    async deleteWorkspace(id, expectedRevision) {
+      if (!isPositiveSafeInteger(expectedRevision)) throw new RangeError("expectedRevision must be a positive safe integer");
+      const fetched = await fetchJson(workspaceUrl(id), {
+        method: "DELETE", headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ expectedRevision }),
+      });
+      if (!fetched.ok) return fetched;
+      const { response } = fetched;
+      if (response.status === 204) return { ok: true };
+      const error = await readErrorEnvelope(response);
+      if (response.status === 404 && error.code === "workspace-not-found") return { ok: false, reason: "not-found" };
+      if (response.status === 409 && error.code === "last-workspace") return { ok: false, reason: "last-workspace" };
+      if (response.status === 409 && error.code === "revision-conflict" && isPositiveSafeInteger(error.actualRevision)) return { ok: false, reason: "revision-conflict", actualRevision: error.actualRevision };
+      return response.status >= 500 ? serverError(response) : { ok: false, reason: "protocol-error", status: response.status };
+    },
+
     async createWorkspace(snapshot: WorkspaceSnapshot): Promise<CreateRemoteWorkspaceResult> {
       const fetched = await fetchJson(`${baseUrl}${WORKSPACES_COLLECTION_PATH}`, {
         method: "POST",
@@ -181,6 +214,8 @@ export function createHttpWorkspaceSyncTransport(
       }
       if (response.status === 409 || response.status === 422) {
         const envelope = await readErrorEnvelope(response);
+        if (response.status === 409 && envelope.code === "workspace-limit") return { ok: false, reason: "workspace-limit" };
+        if (response.status === 409 && envelope.code === "workspace-name-conflict") return { ok: false, reason: "name-conflict" };
         if (response.status === 409 && envelope.code === "workspace-already-exists") {
           return { ok: false, reason: "already-exists" };
         }

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { runtimeManagementStub } from "../workspace-runtime/test-runtime-management";
 /*
  * Task 026 §71/§72/§67/§73 — the responsive shell integration contract:
  * exactly one interaction shell mounts per resolved capability, none while
@@ -124,6 +125,7 @@ const runtimeSpies = {
 };
 
 const runtime: WorkspaceClientRuntime = {
+  ...runtimeManagementStub,
   getSnapshot: () => {
     throw new Error("unexpected getSnapshot");
   },

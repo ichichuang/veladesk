@@ -6,6 +6,7 @@ import { WorkspaceRuntimeProvider } from "../workspace-runtime/workspace-runtime
 import { useWorkspaceRuntimeState } from "../workspace-runtime/use-workspace-runtime";
 import { UiLocaleProvider } from "../i18n/ui-locale-provider";
 import { useI18n } from "../i18n/use-i18n";
+import { WorkspaceManagerProvider } from "./workspace-manager";
 import { ResponsiveWorkspaceShell } from "./responsive-workspace-shell";
 import { OnboardingScreen } from "./onboarding";
 import { StartupScreen } from "./startup-screen";
@@ -55,7 +56,11 @@ function HomeScreen() {
     case "ready":
       return (
         <>
-          <ResponsiveWorkspaceShell workspace={state.workspace} lastRemoteResult={state.lastRemoteResult} onReady={handleReady} />
+          <WorkspaceManagerProvider workspace={state.workspace}>
+            <div key={state.workspace.id} className="vela-workspace-transition">
+              <ResponsiveWorkspaceShell workspace={state.workspace} lastRemoteResult={state.lastRemoteResult} onReady={handleReady} />
+            </div>
+          </WorkspaceManagerProvider>
           {sampleCreated && paintedWorkspaceId === state.workspace.id ? <SampleSuccessToast onDismiss={dismissSample} /> : null}
         </>
       );

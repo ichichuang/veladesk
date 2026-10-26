@@ -5,6 +5,7 @@ import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import { VELADESK_VERSION } from "../../../lib/app-version";
 import { useI18n } from "../../i18n/use-i18n";
 import type { UiLocale } from "../../i18n/locale";
+import { WorkspaceMenuInline } from "../workspace-manager";
 import { MobileSheet } from "./mobile-sheet";
 import "./mobile-shell.css";
 
@@ -14,8 +15,8 @@ import "./mobile-shell.css";
  * choice, the product version, and the desktop-management hint. Rows are
  * two-level (quiet label, clear value) so a long workspace name never
  * crowds a `label:value` single line. Management features are NOT disabled
- * here; they are absent. Workspace switching is omitted in v1 (no clean
- * ready-state switch action exists today — see the task 026 report).
+ * here; workspace management now expands in place through the shared
+ * manager, while desktop layout authoring stays outside this surface.
  */
 export function MobileMenuSheet({
   open,
@@ -33,6 +34,7 @@ export function MobileMenuSheet({
         <h2 className="vela-mobile-sheet__title">{t("mobile.menu.title")}</h2>
       </div>
       <div className="vela-mobile-menu__body">
+        <WorkspaceMenuInline beforeAction={() => onOpenChange(false)} />
         <div className="vela-mobile-menu__row">
           <span className="vela-mobile-menu__row-label">{t("mobile.menu.workspaceLabel")}</span>
           <span className="vela-mobile-menu__row-value">{workspace.snapshot.name}</span>

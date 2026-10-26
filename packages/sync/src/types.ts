@@ -114,7 +114,7 @@ export type CreateRemoteWorkspaceResult =
     }
   | {
       readonly ok: false;
-      readonly reason: "already-exists";
+      readonly reason: "already-exists" | "workspace-limit" | "name-conflict";
     }
   | {
       readonly ok: false;
@@ -143,10 +143,21 @@ export type SaveRemoteWorkspaceResult =
     }
   | TransportFailureResult;
 
+export type DeleteRemoteWorkspaceResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "not-found" | "last-workspace" }
+  | { readonly ok: false; readonly reason: "revision-conflict"; readonly actualRevision: number }
+  | TransportFailureResult;
+
+export type RenameRemoteWorkspaceResult = SaveRemoteWorkspaceResult | { readonly ok: false; readonly reason: "invalid-name" | "name-conflict" };
+
 /** Browser-safe HTTP boundary towards the workspace API. */
 export interface WorkspaceSyncTransport {
   /** Lists the remote workspace catalog in server order. */
   listWorkspaces(): Promise<ListRemoteWorkspacesResult>;
+
+  renameWorkspace?(id: WorkspaceId, name: string, expectedRevision: number): Promise<RenameRemoteWorkspaceResult>;
+  deleteWorkspace?(id: WorkspaceId, expectedRevision: number): Promise<DeleteRemoteWorkspaceResult>;
 
   getWorkspace(workspaceId: WorkspaceId): Promise<GetRemoteWorkspaceResult>;
 

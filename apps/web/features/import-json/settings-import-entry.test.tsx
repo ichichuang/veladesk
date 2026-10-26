@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { runtimeManagementStub } from "../workspace-runtime/test-runtime-management";
 /*
  * Task 024 §65–§67 — the Settings → General → Data entry: the three
  * actions exist, the import dialog is a SEPARATE overlay that never
@@ -23,6 +24,7 @@ import { IMPORT_TEMPLATE_FILENAME } from "./template";
 
 /** The import dialog grabs the runtime from context; nothing here writes. */
 const idleRuntime: WorkspaceClientRuntime = {
+  ...runtimeManagementStub,
   getSnapshot: () => {
     throw new Error("unexpected getSnapshot in settings test");
   },
