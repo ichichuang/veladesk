@@ -12,6 +12,9 @@ import {
 import "./home-shell.css";
 
 interface ConfirmDialogProps {
+  readonly open?: boolean;
+  readonly onFocusReturn?: (() => void) | undefined;
+  readonly onExitComplete?: (() => void) | undefined;
   readonly title: string;
   readonly message: string;
   readonly confirmLabel?: string;
@@ -29,6 +32,9 @@ interface ConfirmDialogProps {
  */
 export function ConfirmDialog({
   title,
+  open = true,
+  onExitComplete,
+  onFocusReturn,
   message,
   confirmLabel,
   busy = false,
@@ -39,8 +45,8 @@ export function ConfirmDialog({
   const { t } = useI18n();
 
   return (
-    <AlertDialog open onOpenChange={(open) => (open ? undefined : onCancel())}>
-      <AlertDialogContent aria-describedby={undefined} data-vd-wheel-scope="local">
+    <AlertDialog open={open} onOpenChange={(open) => (open ? undefined : onCancel())}>
+      <AlertDialogContent onExitComplete={onExitComplete} onCloseAutoFocus={onFocusReturn === undefined ? undefined : event => { event.preventDefault(); onFocusReturn(); }} aria-describedby={undefined} data-vd-wheel-scope="local">
         <AlertDialogTitle>{title}</AlertDialogTitle>
         <AlertDialogDescription>{message}</AlertDialogDescription>
         {error !== null ? (

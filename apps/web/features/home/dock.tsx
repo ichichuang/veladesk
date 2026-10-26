@@ -112,7 +112,7 @@ function DockEntityButton({
   ref,
   ...triggerProps
 }: DockEntityButtonProps & { readonly ref?: Ref<HTMLButtonElement> } & DockTriggerInjectionProps) {
-  const { innerRef, onPointerEnter, onPointerLeave, onPointerCancel } = useVdHoverLift(-3);
+  const { innerRef, onPointerEnter, onPointerLeave, onPointerCancel, onPointerDown, onPointerUp } = useVdHoverLift(-2);
   return (
     <button
       ref={ref}
@@ -123,6 +123,8 @@ function DockEntityButton({
       {...triggerProps}
       {...decoration}
       onClick={onClick}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
       onPointerEnter={composed<ReactPointerEvent<HTMLButtonElement>>(
         onPointerEnter,
         triggerProps.onPointerEnter,

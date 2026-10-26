@@ -15,6 +15,9 @@ import { Button } from "@components/ui/button";
  */
 export function VdFormDialog({
   title,
+  open = true,
+  onExitComplete,
+  onFocusReturn,
   description,
   submitLabel,
   busyLabel,
@@ -28,6 +31,9 @@ export function VdFormDialog({
   className,
 }: {
   readonly title: string;
+  readonly open?: boolean;
+  readonly onFocusReturn?: (() => void) | undefined;
+  readonly onExitComplete?: (() => void) | undefined;
   readonly description?: string;
   readonly submitLabel: string;
   readonly busyLabel?: string;
@@ -41,8 +47,10 @@ export function VdFormDialog({
   readonly className?: string;
 }) {
   return (
-    <Dialog open onOpenChange={(open) => (open ? undefined : onCancel())}>
+    <Dialog open={open} onOpenChange={(open) => (open ? undefined : onCancel())}>
       <DialogContent
+        onExitComplete={onExitComplete}
+        onCloseAutoFocus={onFocusReturn === undefined ? undefined : event => { event.preventDefault(); onFocusReturn(); }}
         showCloseButton={false}
         aria-describedby={description !== undefined ? undefined : undefined}
         data-vd-wheel-scope="local"

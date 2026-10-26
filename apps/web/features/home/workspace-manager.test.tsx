@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { createEmptyWorkspace } from "@veladesk/domain";
 import type { WorkspaceCandidate } from "@veladesk/client-runtime";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
@@ -69,4 +69,48 @@ describe("workspace management feedback and confirmation", () => {
     const work = await view.findByRole("button", { name: "上班" }); expect(work.getAttribute("aria-current")).toBe("true");
     fireEvent.click(view.getByRole("button", { name: "重命名「在家」" })); expect(view.getByRole("dialog").textContent).toContain("重命名工作区");
   });
+});
+
+it("keeps only the latest queued selection while the runtime opens a workspace", async () => {
+  const third: WorkspaceCandidate = { source: "remote", id: "third", name: "第三个", revision: 1 };
+  runtime.listWorkspaces.mockResolvedValue([...candidates, third]);
+  let resolve!: (result: { ok: true }) => void;
+  runtime.selectWorkspace.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const view = await openMenu();
+  fireEvent.click(view.getByRole("menuitemradio", { name: "在家" }));
+  fireEvent.click(view.getByRole("menuitemradio", { name: "上班" }));
+  fireEvent.click(view.getByRole("menuitemradio", { name: "第三个" }));
+  expect(runtime.selectWorkspace).toHaveBeenCalledTimes(1);
+  await act(async () => { resolve({ ok: true }); });
+  await waitFor(() => expect(runtime.selectWorkspace).toHaveBeenCalledTimes(2));
+  expect(runtime.selectWorkspace.mock.calls.map(call => call[0])).toEqual(["home", "third"]);
+  expect(view.getByRole("status").textContent).toContain("已切换到：第三个");
+});
+
+it("returns focus to the management trigger after a reduced-motion dialog close", async () => {
+  const view = await openMenu();
+  const trigger = view.getByRole("button", { name: "删除「在家」" });
+  trigger.focus(); fireEvent.click(trigger);
+  fireEvent.click(view.getByRole("button", { name: "取消" }));
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+  expect(view.queryByRole("alertdialog")).toBeNull();
+});
+
+it("switches and settles the fallback before deleting the current workspace", async () => {
+  const { WorkspaceTransition } = await import("./workspace-motion");
+  const homeWorkspace: LocalWorkspaceRecord = { ...workspace, id: "home", snapshot: { ...snapshot, id: "home", name: "在家" } };
+  function ManagedDesktop() {
+    const [current, setCurrent] = useState(workspace);
+    runtime.selectWorkspace.mockImplementation(async () => { setCurrent(homeWorkspace); return { ok: true }; });
+    return <WorkspaceTransition identity={current.id} ready><WorkspaceManagerProvider workspace={current}><Host /></WorkspaceManagerProvider></WorkspaceTransition>;
+  }
+  const view = render(<UiLocaleProvider><ManagedDesktop /></UiLocaleProvider>);
+  await waitFor(() => expect(runtime.listWorkspaces).toHaveBeenCalled());
+  fireEvent.click(view.getByRole("menuitem", { name: "工作区" }));
+  fireEvent.click(view.getByRole("button", { name: "删除「上班」" }));
+  fireEvent.click(view.getByRole("button", { name: "删除工作区" }));
+  await waitFor(() => expect(runtime.deleteWorkspace).toHaveBeenCalledWith("work"));
+  expect(runtime.selectWorkspace).toHaveBeenCalledWith("home");
+  expect(runtime.selectWorkspace.mock.invocationCallOrder[0]).toBeLessThan(runtime.deleteWorkspace.mock.invocationCallOrder[0]!);
+  expect(view.container.querySelector("[data-workspace-stage]")?.getAttribute("data-settled")).toBe("home");
 });

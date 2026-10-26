@@ -2,7 +2,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { MotionMenuEntries, WorkspaceMenuRow } from "./workspace-menu-row";
+import { clearMotion } from "./workspace-motion";
 import type { DesktopMenuEntry } from "./desktop-command-menu";
 import { clampContextMenuPosition } from "./context-menu-position";
 import { gsap } from "@components/vd/gsap";
@@ -35,9 +36,11 @@ export function ContextMenu({ state, onClose }: { readonly state: ContextMenuSta
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     function outside(event: MouseEvent) {
+      if ((event.target as HTMLElement).closest?.('[role="dialog"], [role="alertdialog"]')) return;
       if (!root.current?.contains(event.target as Node)) onClose();
     }
     function escape(event: KeyboardEvent) {
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       if (event.key === "Escape" && !event.defaultPrevented) onClose();
     }
     window.addEventListener("mousedown", outside);
@@ -49,7 +52,7 @@ export function ContextMenu({ state, onClose }: { readonly state: ContextMenuSta
   </div>;
 }
 
-function MenuPanel({ entries, x, y, anchor, inline = false, focusOnOpen = true, onClose, onBack }: {
+function MenuPanel({ entries, x, y, anchor, inline = false, focusOnOpen = true, active = true, onReleased, onClose, onBack }: {
   readonly entries: readonly DesktopMenuEntry[];
   readonly x: number;
   readonly y: number;
@@ -58,17 +61,22 @@ function MenuPanel({ entries, x, y, anchor, inline = false, focusOnOpen = true, 
   readonly focusOnOpen?: boolean;
   readonly onClose: () => void;
   readonly onBack?: () => void;
+  readonly active?: boolean;
+  readonly onReleased?: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-  const [child, setChild] = useState<{ id: string; anchor: HTMLButtonElement; keyboard: boolean } | null>(null);
+  const [child, setChild] = useState<{ id: string; anchor: HTMLButtonElement; keyboard: boolean; open: boolean } | null>(null);
+  const releaseRef = useRef(onReleased);
+  useLayoutEffect(() => { releaseRef.current = onReleased; });
+  function closeChild() { setChild(current => current === null ? null : { ...current, open: false }); }
   const reducedMotion = useVdReducedMotion();
   const inPlace = inline || (typeof window !== "undefined" && (window.innerWidth < 600 || window.matchMedia?.("(hover: none)").matches));
   const childEntry = entries.find(entry => entry.kind === "submenu" && entry.id === child?.id);
   function items() {
     const menu = menuRef.current;
-    return Array.from(menu?.querySelectorAll<HTMLButtonElement>(ITEM_SELECTOR) ?? []).filter(item => item.closest('[role="menu"]') === menu);
+    return Array.from(menu?.querySelectorAll<HTMLButtonElement>(ITEM_SELECTOR) ?? []).filter(item => item.closest('[role="menu"]') === menu && item.closest("[inert]") === null);
   }
   useEffect(() => () => clearTimeout(hoverTimer.current), []);
   useLayoutEffect(() => {
@@ -92,11 +100,20 @@ function MenuPanel({ entries, x, y, anchor, inline = false, focusOnOpen = true, 
   useLayoutEffect(() => {
     const menu = menuRef.current;
     if (menu === null || position === null) return;
-    if (reducedMotion) { gsap.set(menu, { opacity: 1, scale: 1, y: 0 }); return; }
-    gsap.fromTo(menu, { opacity: 0, scale: .98, y: -2 }, { opacity: 1, scale: 1, y: 0, duration: vdMotionDuration("popup"), ease: VD_MOTION_EASE });
-    return () => { gsap.killTweensOf(menu); };
+    const rows = anchor === undefined ? [] : Array.from(menu.querySelectorAll<HTMLElement>(":scope > .vela-workspace-menu-row"));
+    if (reducedMotion) { clearMotion(menu); rows.forEach(clearMotion); if (!active) releaseRef.current?.(); return; }
+    const origin = anchor?.getBoundingClientRect();
+    const direction = origin !== undefined && position.x < origin.left ? 1 : -1;
+    const timeline = gsap.timeline({ onComplete: () => { clearMotion(menu); rows.forEach(row => { if (row.dataset.exiting !== "true") clearMotion(row); }); if (!active) releaseRef.current?.(); } });
+    if (active) {
+      timeline.fromTo(menu, { opacity: 0, x: anchor === undefined ? 0 : direction * 5, y: anchor === undefined ? -2 : 0 },
+        { opacity: 1, x: 0, y: 0, duration: vdMotionDuration("popup"), ease: VD_MOTION_EASE }, 0);
+      if (rows.length > 0 && rows.length <= 8) timeline.fromTo(rows, { opacity: 0, x: direction * 4 },
+        { opacity: 1, x: 0, duration: vdMotionDuration("hoverPress"), stagger: { amount: Math.min(vdMotionDuration("popup") / 2, (rows.length - 1) * vdMotionDuration("hoverPress") / 8) }, ease: VD_MOTION_EASE }, 0);
+    } else timeline.to(menu, { opacity: 0, duration: vdMotionDuration("hoverPress"), ease: VD_MOTION_EASE }, 0);
+    return () => { timeline.kill(); clearMotion(menu); rows.forEach(clearMotion); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [position !== null, reducedMotion]);
+  }, [position !== null, reducedMotion, active]);
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if ((event.target as HTMLElement).closest('[role="menu"]') !== menuRef.current) return;
     const rows = items();
@@ -104,7 +121,7 @@ function MenuPanel({ entries, x, y, anchor, inline = false, focusOnOpen = true, 
     if (["ArrowDown", "ArrowUp", "Home", "End", "Escape", "ArrowLeft"].includes(event.key)) {
       event.preventDefault(); event.stopPropagation();
       if (event.key === "Escape" || event.key === "ArrowLeft") {
-        if (child !== null) { child.anchor.focus(); setChild(null); }
+        if (child !== null) { child.anchor.focus(); closeChild(); }
         else if (onBack !== undefined) onBack();
         else if (event.key === "Escape") onClose();
       } else {
@@ -115,17 +132,18 @@ function MenuPanel({ entries, x, y, anchor, inline = false, focusOnOpen = true, 
   }
   function openChild(id: string, button: HTMLButtonElement, keyboard: boolean) {
     clearTimeout(hoverTimer.current);
-    setChild({ id, anchor: button, keyboard });
+    setChild({ id, anchor: button, keyboard, open: true });
   }
-  const panel = <div ref={menuRef} role="menu" aria-orientation="vertical"
+  const panel = <div ref={menuRef} role="menu" inert={!active || undefined} aria-hidden={!active || undefined} aria-orientation="vertical"
     className={`vela-context-menu${anchor !== undefined ? " vela-workspace-submenu" : ""}${inline ? " vela-context-menu--inline" : ""}`}
     data-vd-wheel-scope="local" data-measured={position !== null ? "true" : undefined}
     style={inline ? undefined : position === null ? { visibility: "hidden", left: x, top: y } : { left: position.x, top: position.y }}
+    onMouseOver={event => { const target = event.target as HTMLElement; if (target.closest('[role="menu"]') === menuRef.current && target.closest(".vela-workspace-menu-row")) closeChild(); }}
     onKeyDown={handleKeyDown} onContextMenu={(event: ReactMouseEvent) => { event.preventDefault(); event.stopPropagation(); }}>
-    {entries.map((entry, index) => {
+    {<MotionMenuEntries entries={entries} renderEntry={(entry, index, exiting, release) => {
       if (entry.kind === "separator") return <div key={`separator-${index}`} role="separator" className="vela-context-menu__separator" />;
       if (entry.kind === "submenu") return <div key={entry.id}>
-        <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={child?.id === entry.id} className="vela-context-menu__item"
+        <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={child?.id === entry.id && child.open} className="vela-context-menu__item"
           onMouseEnter={event => {
             const button = event.currentTarget;
             clearTimeout(hoverTimer.current);
@@ -133,33 +151,21 @@ function MenuPanel({ entries, x, y, anchor, inline = false, focusOnOpen = true, 
           }}
           onMouseLeave={() => clearTimeout(hoverTimer.current)}
           onKeyDown={event => { if (["ArrowRight", "Enter", " "].includes(event.key)) { event.preventDefault(); event.stopPropagation(); openChild(entry.id, event.currentTarget, true); } }}
-          onClick={event => inPlace && child?.id === entry.id ? setChild(null) : openChild(entry.id, event.currentTarget, true)}>
+          onClick={event => inPlace && child?.id === entry.id && child.open ? closeChild() : openChild(entry.id, event.currentTarget, true)}>
           {entry.label}<span className="vela-context-menu__arrow" aria-hidden="true">›</span>
         </button>
         {inPlace && child?.id === entry.id ? renderChild(true) : null}
       </div>;
-      return <div key={entry.id} className="vela-workspace-menu-row" onMouseEnter={() => { clearTimeout(hoverTimer.current); setChild(null); }}>
-        <button type="button" role={entry.checked === undefined ? "menuitem" : "menuitemradio"} aria-checked={entry.checked}
-          className="vela-context-menu__item" disabled={entry.disabled} title={entry.reason}
-          onClick={() => { onClose(); entry.onSelect(); }}>
-          {entry.checked === undefined ? null : <span className="vela-context-menu__check" aria-hidden="true">{entry.checked ? "✓" : ""}</span>}
-          <span className="vela-workspace-menu-name">{entry.label}</span>
-        </button>
-        {entry.tools === undefined ? null : <span className="vela-workspace-menu-tools">
-          {entry.tools.map(tool => <span key={tool.icon} title={tool.reason ?? tool.label}>
-            <button type="button" aria-label={tool.label} title={tool.reason ?? tool.label} disabled={tool.disabled}
-              onClick={() => { onClose(); tool.onSelect(); }}>
-              {tool.icon === "rename" ? <Pencil size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
-            </button>
-          </span>)}
-        </span>}
-      </div>;
-    })}
+      return <WorkspaceMenuRow key={entry.id} entry={entry} exiting={exiting} release={release}
+        onSelect={() => { if (!entry.keepOpen) onClose(); entry.onSelect(); }} onTool={action => { if (entry.onRename === undefined) onClose(); action(); }} />;
+    }} />}
+
   </div>;
   function renderChild(asInline: boolean) {
     if (child === null || childEntry?.kind !== "submenu") return null;
     return <MenuPanel entries={childEntry.entries} x={x} y={y} anchor={child.anchor} inline={asInline} focusOnOpen={child.keyboard}
-      onClose={onClose} onBack={() => { child.anchor.focus(); setChild(null); }} />;
+      active={child.open} onReleased={() => setChild(current => current?.open === false ? null : current)}
+      onClose={onClose} onBack={() => { child.anchor.focus(); closeChild(); }} />;
   }
   return <>{panel}{!inPlace ? renderChild(false) : null}</>;
 }

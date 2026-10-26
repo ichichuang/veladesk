@@ -7,6 +7,7 @@ import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-
 import { useI18n } from "../i18n/use-i18n";
 import type { SelectWorkspaceResult } from "@veladesk/client-runtime";
 import "./home-shell.css";
+import { captureWorkspaceDeparture } from "./workspace-motion";
 
 interface WorkspacePickerScreenProps {
   readonly candidates: readonly WorkspaceCandidate[];
@@ -31,6 +32,7 @@ export function WorkspacePickerScreen({ candidates }: WorkspacePickerScreenProps
     setPendingId(candidateId);
     setError(null);
     try {
+      captureWorkspaceDeparture();
       const result: SelectWorkspaceResult = await runtime.selectWorkspace(candidateId);
       if (!result.ok) {
         setError(describeSelectFailure(result, t));

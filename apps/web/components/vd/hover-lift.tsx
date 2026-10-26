@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 
 import { gsap } from "./gsap";
@@ -27,6 +27,8 @@ export function useVdHoverLift<HTMLHostElement extends HTMLElement = HTMLElement
   readonly innerRef: RefObject<HTMLElement | null>;
   readonly onPointerEnter: (event: ReactPointerEvent<HTMLHostElement>) => void;
   readonly onPointerLeave: (event: ReactPointerEvent<HTMLHostElement>) => void;
+  readonly onPointerDown: (event: ReactPointerEvent<HTMLHostElement>) => void;
+  readonly onPointerUp: (event: ReactPointerEvent<HTMLHostElement>) => void;
   readonly onPointerCancel: (event: ReactPointerEvent<HTMLHostElement>) => void;
 } {
   const reducedMotion = useVdReducedMotion();
@@ -39,16 +41,26 @@ export function useVdHoverLift<HTMLHostElement extends HTMLElement = HTMLElement
     reducedRef.current = reducedMotion;
   });
 
-  const lift = useCallback((y: number) => {
+  useLayoutEffect(() => {
+    const element = innerRef.current;
+    if (element === null) return;
+    if (reducedMotion) { gsap.killTweensOf(element); gsap.set(element, { clearProps: "transform" }); }
+    return () => { gsap.killTweensOf(element); gsap.set(element, { clearProps: "transform" }); };
+  }, [reducedMotion]);
+
+  const lift = useCallback((y: number, scale = 1) => {
     const inner = innerRef.current;
     if (inner === null) {
       return;
     }
+    gsap.killTweensOf(inner);
+    if (reducedRef.current) { gsap.set(inner, { clearProps: "transform" }); return; }
     gsap.to(inner, {
-      y,
+      y, scale,
       duration: vdMotionDuration("hoverPress"),
       ease: VD_MOTION_EASE,
       overwrite: "auto",
+      onComplete: () => { if (y === 0 && scale === 1) gsap.set(inner, { clearProps: "transform" }); },
     });
   }, []);
 
@@ -66,5 +78,7 @@ export function useVdHoverLift<HTMLHostElement extends HTMLElement = HTMLElement
     lift(0);
   }, [lift]);
 
-  return { innerRef, onPointerEnter, onPointerLeave, onPointerCancel };
+  const onPointerDown = useCallback(() => lift(0, .98), [lift]);
+  const onPointerUp = useCallback(() => lift(0), [lift]);
+  return { innerRef, onPointerEnter, onPointerLeave, onPointerCancel, onPointerDown, onPointerUp };
 }

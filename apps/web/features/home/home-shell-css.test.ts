@@ -48,7 +48,7 @@ describe("home-shell.css transform ownership", () => {
     // hook owns the interpolation on the INNER body node, so the CSS never
     // eases or places a hover transform again.
     expect(css).not.toMatch(/transition:\s*transform/);
-    expect(css).not.toMatch(/\.vela-item\[data-kind="app"\]:hover/);
+    expect(css).not.toMatch(/\.vela-item\[data-kind="app"\]:hover[^{]*\{[^}]*transform/);
     expect(css).not.toMatch(/\.vela-dock__item:hover[^{]*\{[^}]*transform/);
     const desktopItem = readSource("./desktop-item.tsx");
     expect(desktopItem).toMatch(/useVdHoverLift/);

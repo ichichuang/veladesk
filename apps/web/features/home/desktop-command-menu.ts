@@ -22,6 +22,8 @@ export type DesktopMenuEntry =
       /** Tooltip text — the localized reason a disabled row is refused. */
       readonly reason?: string;
       readonly tools?: readonly { readonly label: string; readonly icon: "rename" | "delete"; readonly disabled?: boolean; readonly reason?: string; readonly onSelect: () => void }[];
+      readonly onRename?: (name: string) => Promise<string | null>;
+      readonly keepOpen?: boolean;
       readonly onSelect: () => void;
     }
   | { readonly kind: "submenu"; readonly id: string; readonly label: string; readonly entries: readonly DesktopMenuEntry[] }

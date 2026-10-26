@@ -12,6 +12,11 @@ import { useI18n } from "../i18n/use-i18n";
 import type { DesktopMenuEntry } from "./desktop-command-menu";
 import { ConfirmDialog } from "./confirm-dialog";
 import { WorkspaceDialog, describeWorkspaceFailure } from "./workspace-dialog";
+import { MotionMenuEntries, WorkspaceMenuRow } from "./workspace-menu-row";
+import { VdAnimatedSurface } from "@components/vd/animated-surface";
+import { useVdPresence } from "@components/vd/presence";
+import { MotionToast, MotionToastStack } from "./motion-toast";
+import { captureWorkspaceDeparture, waitForWorkspaceTransition } from "./workspace-motion";
 import { deleteWorkspaceViewState } from "./workspace-view-state";
 
 type WorkspaceManager = { menu: DesktopMenuEntry; candidates: readonly WorkspaceCandidate[]; create(): void; select(id: string): void };
@@ -19,7 +24,7 @@ const ManagerContext = createContext<WorkspaceManager | null>(null);
 export const useWorkspaceManager = () => useContext(ManagerContext);
 
 /** Lives above the keyed shells: feedback and management dialogs survive a switch. */
-export function WorkspaceManagerProvider({ workspace, children }: { readonly workspace: LocalWorkspaceRecord; readonly children: ReactNode }) {
+export function WorkspaceManagerProvider({ workspace, children, notice }: { readonly workspace: LocalWorkspaceRecord; readonly children: ReactNode; readonly notice?: ReactNode }) {
   const runtime = useWorkspaceRuntimeInstance();
   const [portalRoot, setPortalRoot] = useState<HTMLDivElement | null>(null);
   const theme = useMemo(() => buildAppearanceTheme(resolveWorkspaceAppearance(workspace.snapshot.preferences)), [workspace.snapshot.preferences]);
@@ -28,50 +33,78 @@ export function WorkspaceManagerProvider({ workspace, children }: { readonly wor
   const { t } = useI18n();
   const [candidates, setCandidates] = useState<readonly WorkspaceCandidate[]>([{ source: "local", id: workspace.id, name: workspace.snapshot.name, syncState: workspace.syncState, serverRevision: workspace.serverRevision }]);
   const [dialog, setDialog] = useState<{ kind: "create" } | { kind: "rename" | "delete"; workspace: WorkspaceCandidate } | null>(null);
+  const [closing, setClosing] = useState(false);
+  const dialogOrigin = useRef<HTMLElement | null>(null);
+  function rememberFocus() { dialogOrigin.current = document.activeElement as HTMLElement | null; }
+  function finishDialog() { setDialog(null); setClosing(false); }
+  function returnFocus() {
+    if (dialogOrigin.current?.isConnected && dialogOrigin.current.closest("[inert]") === null && !dialogOrigin.current.matches(":disabled")) dialogOrigin.current.focus();
+    else document.querySelector<HTMLButtonElement>(".vela-rail button, .vela-mobile-shell button, .vela-desktop button")?.focus();
+  }
   const [busy, setBusy] = useState(false);
   const working = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null);
+  const [toasts, setToasts] = useState<readonly { id: number; message: string; error: boolean }[]>([]);
+  const toastId = useRef(0);
+  function showToast(toast: { message: string; error: boolean }) {
+    const id = ++toastId.current;
+    setToasts(current => [...current, { ...toast, id }]);
+  }
   const refresh = useCallback(async () => {
     // Hosts can supply a minimal runtime before management becomes available.
     if (typeof runtime.listWorkspaces === "function") setCandidates(await runtime.listWorkspaces());
   }, [runtime]);
   useEffect(() => { void refresh().catch(() => {}); }, [refresh, workspace.id]);
-  useEffect(() => {
-    if (toast === null) return;
-    const timer = setTimeout(() => setToast(null), 5000);
-    return () => clearTimeout(timer);
-  }, [toast]);
   async function run(operation: () => Promise<WorkspaceManagementResult>, message: string) {
     if (working.current) return { ok: false, reason: "busy" } as const;
     working.current = true; setBusy(true); setError(null);
     try {
       const result = await operation();
       if (result.ok) {
-        setToast({ message, error: false });
+        showToast({ message, error: false });
         await refresh().catch(() => {});
       }
       return result;
     } catch { return { ok: false, reason: "protocol-error" } as const; }
     finally { working.current = false; setBusy(false); }
   }
+  const pendingSelection = useRef<string | null>(null);
+  const selecting = useRef(false);
   function select(id: string) {
-    const name = candidates.find(candidate => candidate.id === id)?.name ?? "";
-    void run(() => runtime.selectWorkspace(id), t("workspace.switched", { name })).then(result => {
-      if (!result.ok) setToast({ message: describeWorkspaceFailure(result, t), error: true });
-    });
+    if (working.current) return;
+    pendingSelection.current = id;
+    if (selecting.current) return;
+    selecting.current = true;
+    void (async () => {
+      try {
+        while (pendingSelection.current !== null) {
+          const target = pendingSelection.current;
+          pendingSelection.current = null;
+          captureWorkspaceDeparture();
+          const name = candidates.find(candidate => candidate.id === target)?.name ?? "";
+          const result = await runtime.selectWorkspace(target);
+          if (pendingSelection.current === null) showToast({ message: result.ok ? t("workspace.switched", { name }) : describeWorkspaceFailure(result, t), error: !result.ok });
+        }
+      } catch { showToast({ message: t("workspace.error.failed"), error: true }); }
+      finally { selecting.current = false; }
+    })();
   }
-  function create() { setError(null); setDialog({ kind: "create" }); }
+  function create() { rememberFocus(); setClosing(false); setError(null); setDialog({ kind: "create" }); }
   const menu: DesktopMenuEntry = {
     kind: "submenu", id: "workspaces", label: t("workspace.menu"), entries: [
       ...candidates.map((candidate): DesktopMenuEntry => ({
         kind: "action", id: `workspace:${candidate.id}`, label: candidate.name, checked: candidate.id === workspace.id, disabled: busy,
+        keepOpen: true,
+        onRename: async name => {
+          const result = await run(() => runtime.renameWorkspace(candidate.id, name), t("workspace.renamed", { name }));
+          return result.ok ? null : describeWorkspaceFailure(result, t);
+        },
         onSelect: () => select(candidate.id), tools: [
           { icon: "rename", label: t("workspace.renameItem", { name: candidate.name }), disabled: busy,
-            onSelect: () => { setError(null); setDialog({ kind: "rename", workspace: candidate }); } },
+            onSelect: () => { rememberFocus(); setClosing(false); setError(null); setDialog({ kind: "rename", workspace: candidate }); } },
           { icon: "delete", label: t("workspace.deleteItem", { name: candidate.name }), disabled: busy || candidates.length <= 1,
             ...(candidates.length <= 1 ? { reason: t("workspace.last") } : {}),
-            onSelect: () => { setError(null); setDialog({ kind: "delete", workspace: candidate }); } },
+            onSelect: () => { rememberFocus(); setClosing(false); setError(null); setDialog({ kind: "delete", workspace: candidate }); } },
         ],
       })),
       { kind: "separator" },
@@ -84,28 +117,40 @@ export function WorkspaceManagerProvider({ workspace, children }: { readonly wor
   return <ManagerContext.Provider value={value}>
     {children}
     <VdPortalContainerProvider value={portalRoot}>
-    {dialog?.kind === "create" || dialog?.kind === "rename" ? <WorkspaceDialog candidates={candidates}
+    {dialog?.kind === "create" || dialog?.kind === "rename" ? <WorkspaceDialog open={!closing} onExitComplete={finishDialog} onFocusReturn={returnFocus} candidates={candidates}
       {...(dialog.kind === "rename" ? { workspace: dialog.workspace } : {})}
-      onClose={() => setDialog(null)}
-      onCreate={snapshot => run(() => runtime.createWorkspace(snapshot), t("workspace.created", { name: snapshot.name }))}
+      onClose={() => setClosing(true)}
+      onCreate={snapshot => { captureWorkspaceDeparture(); return run(() => runtime.createWorkspace(snapshot), t("workspace.created", { name: snapshot.name })); }}
       onRename={(id, name) => run(() => runtime.renameWorkspace(id, name), t("workspace.renamed", { name }))} /> : null}
-    {dialog?.kind === "delete" ? <ConfirmDialog title={t("workspace.delete")} message={t("workspace.deleteMessage", { name: dialog.workspace.name })}
-      confirmLabel={t("workspace.delete")} busy={busy} error={error} onCancel={() => { if (!busy) setDialog(null); }}
+    {dialog?.kind === "delete" ? <ConfirmDialog open={!closing} onExitComplete={finishDialog} onFocusReturn={returnFocus} title={t("workspace.delete")} message={t("workspace.deleteMessage", { name: dialog.workspace.name })}
+      confirmLabel={t("workspace.delete")} busy={busy} error={error} onCancel={() => { if (!busy) setClosing(true); }}
       onConfirm={() => {
         const target = dialog.workspace;
-        void run(() => runtime.deleteWorkspace(target.id), t("workspace.deleted", { name: target.name })).then(result => {
+        captureWorkspaceDeparture();
+        void run(async () => {
+          if (target.id === workspace.id && document.querySelector("[data-workspace-stage]") !== null) {
+            const fallback = candidates.find(candidate => candidate.id !== target.id);
+            if (fallback !== undefined) {
+              const result = await runtime.selectWorkspace(fallback.id);
+              if (!result.ok) return result;
+              await waitForWorkspaceTransition(fallback.id);
+            }
+          }
+          return runtime.deleteWorkspace(target.id);
+        }, t("workspace.deleted", { name: target.name })).then(result => {
           if (result.ok) {
             try { deleteWorkspaceViewState(window.localStorage, target.id); } catch { /* optional view preference */ }
-            setDialog(null);
+            setClosing(true);
           } else setError(describeWorkspaceFailure(result, t));
         });
       }} /> : null}
 
     </VdPortalContainerProvider>
     <div ref={setPortalRoot} data-vd-ui="" data-vd-portal-root="" data-vd-color-mode={effectiveColorMode} style={theme.style as CSSProperties} >
-    {toast !== null ? <div className="vela-onboarding-success vela-workspace-toast" role={toast.error ? "alert" : "status"}>
-      <span>{toast.message}</span><button type="button" className="vela-button" aria-label={t("common.close")} onClick={() => setToast(null)}>×</button>
-    </div> : null}
+    <MotionToastStack>
+      {toasts.map(toast => <MotionToast key={toast.id} slot="workspace" error={toast.error} onDismiss={() => setToasts(current => current.filter(item => item.id !== toast.id))}>{toast.message}</MotionToast>)}
+      {notice}
+    </MotionToastStack>
     </div>
   </ManagerContext.Provider>;
 }
@@ -114,16 +159,14 @@ export function WorkspaceManagerProvider({ workspace, children }: { readonly wor
 export function WorkspaceMenuInline({ beforeAction }: { readonly beforeAction: () => void }) {
   const manager = useWorkspaceManager();
   const [open, setOpen] = useState(false);
+  const presence = useVdPresence(open);
   if (manager?.menu.kind !== "submenu") return null;
   return <div className="vela-workspace-inline">
     <button type="button" className="vela-context-menu__item" aria-expanded={open} onClick={() => setOpen(!open)}>{manager.menu.label}<span aria-hidden="true">{open ? "⌄" : "›"}</span></button>
-    {open ? <div role="group" aria-label={manager.menu.label}>
-      {manager.menu.entries.map((entry, index) => entry.kind === "action" ? <div key={entry.id} className="vela-workspace-menu-row">
-        <button type="button" className="vela-context-menu__item" aria-current={entry.checked ? "true" : undefined} disabled={entry.disabled} title={entry.reason} onClick={() => { beforeAction(); entry.onSelect(); }}>
-          <span aria-hidden="true">{entry.checked ? "✓" : ""}</span><span className="vela-workspace-menu-name">{entry.label}</span>
-        </button>
-        {entry.tools?.map(tool => <span key={tool.icon} title={tool.reason ?? tool.label}><button type="button" className="vela-button" aria-label={tool.label} disabled={tool.disabled} onClick={() => { beforeAction(); tool.onSelect(); }}>{tool.icon === "rename" ? "✎" : "×"}</button></span>)}
-      </div> : <hr key={index} />)}
-    </div> : null}
+    {presence.mounted ? <VdAnimatedSurface active={open} variant="popup" onPresenceReleased={presence.completeExit} role="group" aria-label={manager.menu.label} inert={!open || undefined}>
+      <MotionMenuEntries entries={manager.menu.entries} renderEntry={(entry, index, exiting, release) => entry.kind === "action" ?
+        <WorkspaceMenuRow key={entry.id} entry={entry} exiting={exiting} release={release} mobile
+          onSelect={() => { beforeAction(); entry.onSelect(); }} onTool={action => { beforeAction(); action(); }} /> : <hr key={index} />} />
+    </VdAnimatedSurface> : null}
   </div>;
 }

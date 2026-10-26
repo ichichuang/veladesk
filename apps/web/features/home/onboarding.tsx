@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { createEmptyWorkspace } from "@veladesk/domain";
 import type { WorkspaceSnapshot } from "@veladesk/domain";
 import { createGridDefinition } from "@veladesk/desktop-engine";
@@ -10,6 +10,10 @@ import { useI18n } from "../i18n/use-i18n";
 import { buildSampleWorkspace } from "../import-json/sample-workspace";
 import { createBrowserId } from "./browser-id";
 import "./home-shell.css";
+import { gsap } from "@components/vd/gsap";
+import { VD_MOTION_EASE, vdMotionDuration } from "@components/vd/motion-tokens";
+import { useVdReducedMotion } from "@components/vd/reduced-motion";
+import { captureWorkspaceDeparture, markSampleDepartureReady } from "./workspace-motion";
 
 interface OnboardingScreenProps {
   /**
@@ -36,8 +40,24 @@ export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }:
   // own typing always wins.
   const [nameInput, setNameInput] = useState<string | null>(null);
   const name = nameInput ?? t("onboarding.defaultWorkspaceName");
+  const panelRef = useRef<HTMLElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const reduced = useVdReducedMotion();
   const [creating, setCreating] = useState<"empty" | "sample" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    const element = panelRef.current;
+    if (element === null || reduced) return;
+    const tween = gsap.fromTo(element, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: vdMotionDuration("popup"), ease: VD_MOTION_EASE, clearProps: "opacity,transform" });
+    return () => { tween.kill(); gsap.set(element, { clearProps: "opacity,transform" }); };
+  }, [reduced]);
+  useLayoutEffect(() => {
+    const element = labelRef.current;
+    if (element === null || reduced) return;
+    const tween = gsap.fromTo(element, { opacity: .65 }, { opacity: 1, duration: vdMotionDuration("hoverPress"), ease: VD_MOTION_EASE, clearProps: "opacity" });
+    return () => { tween.kill(); gsap.set(element, { clearProps: "opacity" }); };
+  }, [creating, reduced]);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -63,6 +83,7 @@ export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }:
         pageName: t("onboarding.defaultPageName"),
         grid: createGridDefinition(10, 6),
       });
+      captureWorkspaceDeparture();
       const result = await runtime.stageWorkspaceCreate(snapshot);
       if (!result.ok) {
         setError(t("onboarding.error.createFailed"));
@@ -93,6 +114,7 @@ export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }:
     setError(null);
     try {
       const snapshot = buildSampleWorkspace((kind) => createBrowserId(kind), locale);
+      captureWorkspaceDeparture();
       const result = await runtime.stageWorkspaceCreate(snapshot);
       if (!result.ok) {
         setError(t("onboarding.error.createFailed"));
@@ -102,6 +124,7 @@ export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }:
       // Same local-first contract as the manual path: the desktop is
       // usable now; the follow-up sync never blocks entry.
       void runtime.syncCurrent().catch(() => {});
+      markSampleDepartureReady(t("onboarding.sampleReadyButton"));
       onSampleCreated?.();
     } catch {
       setError(t("onboarding.error.createSampleFailed"));
@@ -112,7 +135,7 @@ export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }:
   return (
     <main className="vela-screen vela-onboarding">
       <div className="vela-screen__ambient" aria-hidden="true" />
-      <section className="vela-screen__panel vela-onboarding__panel" aria-labelledby="vela-onboarding-title">
+      <section ref={panelRef} className="vela-screen__panel vela-onboarding__panel" aria-labelledby="vela-onboarding-title">
         <h1 id="vela-onboarding-title" className="vela-wordmark">VelaDesk</h1>
         <p className="vela-screen__lead">{t("onboarding.lead")}</p>
 
@@ -133,7 +156,7 @@ export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }:
             aria-busy={creating === "sample"} aria-describedby="vela-sample-description"
             onClick={() => void handleCreateSample()}>
             {creating === "sample" ? <span className="vela-onboarding__spinner" aria-hidden="true" /> : null}
-            {creating === "sample" ? t("onboarding.creatingSampleButton") : t("onboarding.sampleButton")}
+            <span ref={labelRef} data-onboarding-label="">{creating === "sample" ? t("onboarding.creatingSampleButton") : t("onboarding.sampleButton")}</span>
           </button>
         </div>
         <form className="vela-form vela-onboarding__blank" onSubmit={handleCreate}>

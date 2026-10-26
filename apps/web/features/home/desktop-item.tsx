@@ -200,6 +200,8 @@ function DesktopEntity({
     onPointerEnter: liftEnter,
     onPointerLeave: liftLeave,
     onPointerCancel: liftCancel,
+    onPointerDown: liftDown,
+    onPointerUp: liftUp,
   } = useVdHoverLift<HTMLButtonElement>(-2);
   const handleLiftEnter = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -552,6 +554,8 @@ function DesktopEntity({
         onContextMenu={handleContextMenu}
         onKeyDown={handleKeyDown}
         onClick={handleClick}
+        onPointerDown={event => { if (!arrange) liftDown(event); }}
+        onPointerUp={event => { if (!arrange) liftUp(event); }}
         onPointerEnter={handleLiftEnter}
         onPointerLeave={liftLeave}
         onPointerCancel={liftCancel}

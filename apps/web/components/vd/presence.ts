@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useInsertionEffect, useRef, useState } from "react";
 
 /**
  * Controlled animated presence (task 022): separates the REQUESTED open
@@ -44,7 +44,8 @@ export function useVdPresence(open: boolean): VdPresence {
   /** Latest-value mirrors for the completion callback (never read in render). */
   const openRef = useRef(open);
   const exitDoneRef = useRef(exitDone);
-  useEffect(() => {
+  // Commit mirrors before child layout effects can synchronously release a reduced-motion exit.
+  useInsertionEffect(() => {
     openRef.current = open;
     exitDoneRef.current = exitDone;
   });

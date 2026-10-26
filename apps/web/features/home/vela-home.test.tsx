@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type { WorkspaceSnapshot } from "@veladesk/domain";
+import { gsap } from "@components/vd/gsap";
 import { VelaHome } from "./vela-home";
 
 const store = vi.hoisted(() => ({
@@ -56,7 +57,7 @@ describe("first desktop entry", () => {
     expect(view.getByRole("status").getAttribute("data-exiting")).toBe("false");
     act(() => vi.advanceTimersByTime(1));
     expect(view.getByRole("status").getAttribute("data-exiting")).toBe("true");
-    act(() => vi.advanceTimersByTime(150));
+    act(() => { gsap.getTweensOf(view.getByRole("status")).forEach(tween => tween.progress(1)); });
     expect(view.queryByRole("status")).toBeNull();
   });
 });

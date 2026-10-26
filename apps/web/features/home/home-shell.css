@@ -407,8 +407,13 @@
   background: var(--vd-bg);
 }
 
-/* Explicit light palette — complete, not just a white background. */
-.vela-desktop[data-vd-color-mode="light"] {
+/* Explicit light palette — complete, not just a white background.
+   The mobile shell and the shells' portal roots carry the same resolved
+   data-vd-color-mode but sit outside .vela-desktop, so they need it too
+   (otherwise phones stay on the :root dark tokens). */
+.vela-desktop[data-vd-color-mode="light"],
+.vela-mobile-shell[data-vd-color-mode="light"],
+[data-vd-portal-root][data-vd-color-mode="light"] {
   --vd-wall-l1: 0.85;
   --vd-wall-c1: 0.06;
   --vd-wall-a1: 0.55;
@@ -1844,7 +1849,8 @@ button.vela-sync-status:focus-visible {
 
 .vela-context-menu {
   position: fixed;
-  z-index: 60;
+  /* Above the toast stack (100): an open menu must never sit under a toast. */
+  z-index: 110;
   min-width: 176px;
   max-width: 260px;
   max-height: min(72vh, 560px);
@@ -2753,9 +2759,6 @@ button.vela-sync-status:focus-visible {
 
 /* Motion only when allowed; the panel's outer surface keeps its GSAP owner. */
 @media (prefers-reduced-motion: no-preference) {
-  .vela-onboarding__panel {
-    animation: vela-welcome-in 240ms ease-out both;
-  }
   .vela-inspector__subject {
     animation: vela-subject-in 160ms ease-out both;
   }
@@ -2765,11 +2768,6 @@ button.vela-sync-status:focus-visible {
   .vela-onboarding .vela-button {
     transition: box-shadow 160ms ease, background-color 160ms ease;
   }
-}
-
-@keyframes vela-welcome-in {
-  from { opacity: 0.7; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes vela-subject-in {
@@ -2786,21 +2784,8 @@ button.vela-sync-status:focus-visible {
 .vela-desktop[data-inspector-open="true"] .vela-workbench {
   padding-right: 340px;
 }
-.vela-onboarding-success[data-exiting="true"] {
-  opacity: 0;
-  pointer-events: none;
-}
 @media (prefers-reduced-motion: no-preference) {
   .vela-workbench { transition: padding-right 200ms ease; }
-  .vela-onboarding-success {
-    animation: vela-toast-in 150ms ease both;
-    transition: opacity 150ms ease;
-  }
-  .vela-onboarding-success[data-exiting="true"] { animation: none; }
-}
-@keyframes vela-toast-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 /* Workspace menus retain the shared surface and theme tokens. */
@@ -2808,25 +2793,48 @@ button.vela-sync-status:focus-visible {
 .vela-context-menu__arrow { margin-left: auto; font-size: 18px; }
 .vela-workspace-submenu { width: min(320px, calc(100vw - 16px)); max-width: calc(100vw - 16px); }
 .vela-context-menu--inline { position: static; min-width: 0; width: 100%; max-width: 100%; margin-top: 4px; box-shadow: none; max-height: 50vh; }
-.vela-workspace-menu-row { display: flex; align-items: center; min-width: 0; }
+.vela-workspace-menu-row { position: relative; display: flex; flex-wrap: wrap; align-items: center; min-width: 0; }
+.vela-workspace-menu-hint { flex-basis: 100%; padding: 0 12px 6px; margin-top: -4px; color: var(--vd-text-muted); font-size: 12px; line-height: 1.4; }
 .vela-workspace-menu-row > .vela-context-menu__item { flex: 1; min-width: 0; }
 .vela-workspace-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-workspace-menu-tools { display: flex; flex-shrink: 0; gap: 2px; padding-right: 3px; opacity: 0; }
-.vela-workspace-menu-row:hover .vela-workspace-menu-tools,
-.vela-workspace-menu-row:focus-within .vela-workspace-menu-tools { opacity: 1; }
+
 .vela-workspace-menu-tools button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--vd-text); cursor: pointer; }
 .vela-workspace-menu-tools button:hover { background: var(--vd-surface); }
 .vela-workspace-menu-tools button:focus-visible { outline: 2px solid var(--vd-accent); }
 .vela-workspace-menu-tools button:disabled { opacity: .4; cursor: default; }
-.vela-workspace-templates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; color: var(--vd-text); font-size: 13px; }
+/* Rendered inside the portaled dialog (vd-ui scope): use --vdu-* tokens, not the shell's --vd-*. */
+.vela-workspace-templates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; color: var(--vdu-fg); font-size: 13px; }
 .vela-workspace-templates legend { margin-bottom: 10px; }
-.vela-workspace-templates label { display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--vd-border); border-radius: 8px; }
-.vela-workspace-templates input { accent-color: var(--vd-accent); }
+.vela-workspace-templates label { display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--vdu-border); border-radius: 8px; }
+.vela-workspace-templates input { accent-color: var(--vdu-accent); }
 .vela-workspace-inline { min-width: 0; width: 100%; }
 .vela-workspace-inline > button { width: 100%; justify-content: space-between; }
-.vela-workspace-transition { min-height: 100dvh; animation: vela-workspace-fade 150ms ease-out both; }
+.vela-workspace-transition { min-height: 100dvh; }
+.vela-workspace-stage { position: relative; isolation: isolate; }
+.vela-workspace-ghost { position: fixed; inset: 0; pointer-events: none; z-index: 40; overflow: hidden; }
+.vela-workspace-name-flash { position: absolute; inset: 0; border-radius: 6px; pointer-events: none; background: var(--vd-accent-wash); opacity: 0; }
+.vela-context-menu__check { opacity: 0; }
+.vela-context-menu__check[data-checked="true"] { opacity: 1; }
+.vela-workspace-rename { order: 1; display: flex; flex-wrap: wrap; width: 100%; gap: 4px; padding: 4px; }
+.vela-workspace-rename input { min-width: 0; flex: 1; background: var(--vd-bg); color: var(--vd-text); border: 1px solid var(--vd-border); border-radius: 4px; padding: 4px; }
+.vela-workspace-templates label { position: relative; isolation: isolate; }
+.vela-template-selected { opacity: 0; position: absolute; inset: 0; z-index: -1; background: var(--vdu-accent-wash); border-radius: inherit; pointer-events: none; }
+.vela-toast-stack { position: fixed; z-index: 100; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
+.vela-toast-stack > div { max-width: 100%; }
+.vela-toast-stack .vela-onboarding-success { position: relative; inset: auto; max-width: 100%; pointer-events: auto; }
+.vela-onboarding-success[data-exiting="true"], .vela-toast-stack .vela-onboarding-success[data-exiting="true"] { pointer-events: none; }
 .vela-workspace-toast { position: fixed; right: 24px; bottom: max(24px, env(safe-area-inset-bottom)); z-index: 100; max-width: calc(100vw - 32px); }
-@keyframes vela-workspace-fade { from { opacity: .6; } to { opacity: 1; } }
+
 @media (hover: none) { .vela-workspace-menu-tools { opacity: 1; } }
 @media (max-width: 600px) { .vela-context-menu { max-width: calc(100vw - 16px); } .vela-workspace-toast { right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); } }
 @media (prefers-reduced-motion: reduce) { .vela-workspace-transition { animation: none; } }
+
+/* Brightness changes are static; only the existing inner transform interpolates. */
+@media (hover: hover) {
+  .vela-desktop:not([data-arrange="true"]) .vela-item[data-kind="app"]:hover .vela-item__body,
+  .vela-dock__item:hover { filter: brightness(1.06); }
+}
+.vela-workspace-stage[data-awaiting-paint="true"] > .vela-workspace-transition { opacity: 0; }
+
+.vela-workspace-wallpaper-cover { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }

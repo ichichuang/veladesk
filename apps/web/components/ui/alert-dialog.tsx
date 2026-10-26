@@ -46,8 +46,9 @@ export const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 export function AlertDialogContent({
   className,
   children,
+  onExitComplete,
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Content>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Content> & { readonly onExitComplete?: (() => void) | undefined }) {
   const portalContainer = useVdPortalContainer();
   const open = useContext(AlertDialogOpenContext);
   const presence = useVdPresence(open);
@@ -60,7 +61,6 @@ export function AlertDialogContent({
         <VdAnimatedSurface
           variant="overlay"
           active={open}
-          onPresenceReleased={presence.completeExit}
           className="fixed inset-0 z-50 bg-black/55"
         />
       </AlertDialogPrimitive.Overlay>
@@ -72,7 +72,7 @@ export function AlertDialogContent({
           <VdAnimatedSurface
             variant="dialog"
             active={open}
-            onPresenceReleased={presence.completeExit}
+            onPresenceReleased={() => { presence.completeExit(); onExitComplete?.(); }}
             className={cn(
               "flex min-h-0 w-[calc(100vw-48px)] max-w-[400px] flex-col gap-4 p-5",
               "rounded-vdu-dialog border border-vdu-border bg-vdu-bg",

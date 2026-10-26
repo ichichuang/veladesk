@@ -382,7 +382,8 @@ export function buildWorkspaceTemplate(template: WorkspaceTemplate, idFactory: S
   const colors = new Map(sections.flatMap(section => section.apps.map(app => [app.name, app.color] as const)));
   return { ...workspace, preferences: { ...workspace.preferences, appearance: {
     ...DEFAULT_WORKSPACE_APPEARANCE,
-    colorMode: work ? "dark" : "light",
+    // Follow the OS like every other workspace; presets differ by hue, not by a forced mode.
+    colorMode: "system",
     wallpaperPreset: work ? "midnight" : "dawn",
     accentHue: work ? 205 : 28,
     interfaceStyle: work ? "clean" : "soft",

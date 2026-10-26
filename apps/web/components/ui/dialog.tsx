@@ -62,12 +62,14 @@ export function Dialog({
 export function DialogContent({
   className,
   children,
+  onExitComplete,
   showCloseButton = true,
   variant = "center",
   motionPreset,
   surfaceProps,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  readonly onExitComplete?: (() => void) | undefined;
   /** Renders the standard top-right close affordance. Default true. */
   readonly showCloseButton?: boolean;
   /** "center" modal (default) or "panel" — a right-anchored inspector. */
@@ -127,7 +129,6 @@ export function DialogContent({
         <VdAnimatedSurface
           variant="overlay"
           active={open}
-          onPresenceReleased={completeExit}
           className={cn("fixed inset-0 z-50", panel ? "bg-black/15" : "bg-black/55")}
         />
       </DialogPrimitive.Overlay>
@@ -151,7 +152,7 @@ export function DialogContent({
           <VdAnimatedSurface
             variant={surfaceVariant}
             active={open}
-            onPresenceReleased={completeExit}
+            onPresenceReleased={() => { completeExit(); onExitComplete?.(); }}
             {...surfaceProps}
             className={cn(
               "flex min-h-0 flex-1 flex-col",

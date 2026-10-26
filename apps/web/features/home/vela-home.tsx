@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { WorkspaceRuntimeProvider } from "../workspace-runtime/workspace-runtime-provider";
 import { useWorkspaceRuntimeState } from "../workspace-runtime/use-workspace-runtime";
@@ -12,6 +12,8 @@ import { OnboardingScreen } from "./onboarding";
 import { StartupScreen } from "./startup-screen";
 import { WorkspacePickerScreen } from "./workspace-picker";
 import "./home-shell.css";
+import { WorkspaceTransition } from "./workspace-motion";
+import { MotionToast } from "./motion-toast";
 
 /**
  * The production VelaDesk home: mounts the workspace runtime against the
@@ -43,49 +45,37 @@ function HomeScreen() {
   const [paintedWorkspaceId, setPaintedWorkspaceId] = useState<string | null>(null);
   const handleReady = useCallback(() => setPaintedWorkspaceId(readyWorkspaceId), [readyWorkspaceId]);
   const dismissSample = useCallback(() => setSampleCreated(false), []);
-  switch (state.status) {
-    case "idle":
-    case "booting":
-      return <StartupScreen />;
-    case "empty":
-      return <OnboardingScreen onSampleCreated={() => setSampleCreated(true)} />;
-    case "remote-unavailable":
-      return <OnboardingScreen remoteUnavailable onSampleCreated={() => setSampleCreated(true)} />;
-    case "selection-required":
-      return <WorkspacePickerScreen candidates={state.candidates} />;
-    case "ready":
-      return (
-        <>
-          <WorkspaceManagerProvider workspace={state.workspace}>
-            <div key={state.workspace.id} className="vela-workspace-transition">
+  function content() {
+    switch (state.status) {
+      case "idle":
+      case "booting":
+        return <StartupScreen />;
+      case "empty":
+        return <OnboardingScreen onSampleCreated={() => setSampleCreated(true)} />;
+      case "remote-unavailable":
+        return <OnboardingScreen remoteUnavailable onSampleCreated={() => setSampleCreated(true)} />;
+      case "selection-required":
+        return <WorkspacePickerScreen candidates={state.candidates} />;
+      case "ready":
+        return (
+          <>
+            <WorkspaceManagerProvider workspace={state.workspace} notice={sampleCreated && paintedWorkspaceId === state.workspace.id ? <SampleSuccessToast onDismiss={dismissSample} /> : null}>
               <ResponsiveWorkspaceShell workspace={state.workspace} lastRemoteResult={state.lastRemoteResult} onReady={handleReady} />
-            </div>
-          </WorkspaceManagerProvider>
-          {sampleCreated && paintedWorkspaceId === state.workspace.id ? <SampleSuccessToast onDismiss={dismissSample} /> : null}
-        </>
-      );
+            </WorkspaceManagerProvider>
+          </>
+        );
+    }
   }
+  return <WorkspaceTransition
+    identity={readyWorkspaceId ?? state.status}
+    awaitingPaint={readyWorkspaceId !== null && paintedWorkspaceId !== readyWorkspaceId}
+    ready={readyWorkspaceId !== null && paintedWorkspaceId === readyWorkspaceId}
+  >{content()}</WorkspaceTransition>;
 }
 
 function SampleSuccessToast({ onDismiss }: { readonly onDismiss: () => void }) {
   const { t } = useI18n();
-  const [exiting, setExiting] = useState(false);
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setExiting(true), 7000);
-    return () => window.clearTimeout(timeout);
-  }, []);
-  useEffect(() => {
-    if (!exiting) return;
-    const timeout = window.setTimeout(onDismiss, 150);
-    return () => window.clearTimeout(timeout);
-  }, [exiting, onDismiss]);
-  return (
-    <div className="vela-onboarding-success" role="status" data-exiting={exiting}>
-      <span>{t("onboarding.sampleSuccess")}</span>
-      <button type="button" className="vela-button" aria-label={t("common.close")}
-        onClick={() => setExiting(true)}>×</button>
-    </div>
-  );
+  return <MotionToast onDismiss={onDismiss}>{t("onboarding.sampleSuccess")}</MotionToast>;
 }
 
 interface HomeRecoveryScreenProps {

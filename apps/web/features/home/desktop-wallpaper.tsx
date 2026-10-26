@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { gsap } from "@components/vd/gsap";
-import { VD_MOTION_EASE } from "@components/vd/motion-tokens";
+import { VD_MOTION_EASE, vdMotionDuration } from "@components/vd/motion-tokens";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
 import type { EffectiveWallpaper, WallpaperConfig } from "@veladesk/domain";
 
@@ -187,27 +187,18 @@ export function WorkspaceWallpaperLayers({
   }
 
   useLayoutEffect(() => {
-    if (previous === null) {
-      // Nothing crossfading: under reduced motion a fresh incoming node is
-      // settled instantly (and never left at a tween's start opacity).
-      if (reducedMotion) {
-        gsap.set(incomingRef.current, { opacity: 1 });
-      }
+    const element = incomingRef.current;
+    if (element === null) return;
+    if (previous === null || reducedMotion) {
+      gsap.set(element, { clearProps: "opacity" });
+      if (previous !== null) setPrevious(null);
       return;
     }
-    gsap.fromTo(
-      incomingRef.current,
-      { opacity: 0 },
-      {
-        opacity: 1,
-        duration: reducedMotion ? 0 : 0.24,
-        ease: VD_MOTION_EASE,
-        overwrite: "auto",
-        onComplete: () => {
-          setPrevious(null); // the old node is retired only once covered
-        },
-      },
-    );
+    const tween = gsap.fromTo(incomingRef.current, { opacity: 0 }, {
+      opacity: 1, duration: vdMotionDuration("popup"), ease: VD_MOTION_EASE,
+      onComplete: () => { gsap.set(element, { clearProps: "opacity" }); setPrevious(null); },
+    });
+    return () => { tween.kill(); gsap.set(element, { clearProps: "opacity" }); };
   }, [key, reducedMotion, previous !== null]);
 
   return (

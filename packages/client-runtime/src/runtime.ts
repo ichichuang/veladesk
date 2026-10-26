@@ -297,7 +297,9 @@ export function createWorkspaceClientRuntime(
     const recent = memory.recent();
     return [...candidates.values()].sort((a, b) => {
       const ai = recent.indexOf(a.id), bi = recent.indexOf(b.id);
-      return (ai < 0 ? 10 : ai) - (bi < 0 ? 10 : bi) || a.id.localeCompare(b.id);
+      // Stable sort: workspaces never used in this browser keep the server's
+      // creation order instead of a random-looking UUID order.
+      return (ai < 0 ? 10 : ai) - (bi < 0 ? 10 : bi);
     });
   }
 
