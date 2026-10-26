@@ -15,7 +15,7 @@ import type { WorkspaceAppearancePreferences } from "./types";
 describe("DEFAULT_WORKSPACE_APPEARANCE", () => {
   it("is the exact Task014 default contract", () => {
     expect(DEFAULT_WORKSPACE_APPEARANCE).toEqual({
-      colorMode: "dark",
+      colorMode: "system",
       accentHue: 205,
       wallpaperPreset: "aurora",
       surfaceOpacity: 0.55,
