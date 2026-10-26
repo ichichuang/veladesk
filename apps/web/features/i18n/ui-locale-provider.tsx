@@ -25,7 +25,7 @@ import type { UiLocale } from "./locale";
  * root layout), so there is no first-paint locale mismatch. After
  * hydration React switches to the client snapshot, which lazily restores
  * the stored locale — if it differs, the switch happens post-hydration.
- * A layout effect keeps document.documentElement.lang in sync.
+ * An effect keeps document.documentElement.lang in sync.
  *
  * Changing the locale updates the store, persists immediately (no Save
  * step) and is purely a browser preference: no workspace staging, no

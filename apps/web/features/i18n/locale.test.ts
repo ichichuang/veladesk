@@ -44,7 +44,7 @@ describe("ui locale", () => {
 
   it("maps each locale onto the html lang attribute value", () => {
     expect(htmlLangFor("zh-CN")).toBe("zh-CN");
-    expect(htmlLangFor("en-US")).toBe("en-US");
+    expect(htmlLangFor("en-US")).toBe("en");
   });
 
   it("uses the documented v2 storage key", () => {

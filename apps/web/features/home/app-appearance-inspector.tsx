@@ -43,8 +43,8 @@ import "./home-shell.css";
  * App Appearance Inspector (task 019-C, product-grade 019-D) — the REAL
  * desktop is the preview.
  *
- * A fixed right-side panel over the workspace (never a layout sibling, so
- * grid cells, section scroller and freeform geometry cannot reflow). The
+ * A fixed right-side panel; the shell reserves its width in the workbench
+ * so the measured desktop preview stays visible beside it. The
  * shell owns the appearance session: this component receives the DRAFT and
  * reports changes upward, and the desktop re-renders the actual placed app
  * through the same canonical projection (`buildDraftApp`) that Save
@@ -100,6 +100,16 @@ export function AppAppearanceInspector({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Keep the panel surface mounted while switching apps. Reset app-specific
+  // transient state before children render, so no previous upload can flash.
+  const [previousAppId, setPreviousAppId] = useState(appId);
+  if (previousAppId !== appId) {
+    setPreviousAppId(appId);
+    setPendingUpload(null);
+    setPickerOpen(false);
+    setBusy(false);
+    setError(null);
+  }
 
   // Open-driven presence (022): each OPEN transition resets the transient
   // panel state — the same fresh state a remount used to produce.
@@ -205,13 +215,13 @@ export function AppAppearanceInspector({
         onInteractOutside={(event) => event.preventDefault()}
         showCloseButton={false}
         aria-describedby={undefined}
-        className="w-[380px]"
+        className="w-[340px]"
         data-vd-wheel-scope="local"
       >
         {/* Header: app identity thumbnail + name. The thumbnail is an
             identity cue at a fixed slot size — deliberately NOT a preview
             of adaptive desktop composition (019-C §12). */}
-        <header className="flex h-[64px] shrink-0 items-center gap-3 border-b border-vdu-border px-5">
+        <header key={`identity-${appId}`} className="vela-inspector__subject flex h-[64px] shrink-0 items-center gap-3 border-b border-vdu-border px-5">
           {draft.source === "upload" && pendingUpload !== null ? (
             <span
               aria-hidden="true"
@@ -231,8 +241,8 @@ export function AppAppearanceInspector({
           )}
           <div className="min-w-0 flex-1">
             <DialogTitle className="truncate text-sm">{existing.name}</DialogTitle>
-            <DialogDescription className="text-xs">
-              {t("visualEditor.inspectorSubtitle")}
+            <DialogDescription className="mt-1 text-xs">
+              {t("visualEditor.closeHint")}
             </DialogDescription>
           </div>
           <CloseButton aria-label={t("common.close")} className="scale-90 text-vdu-fg-muted" onPress={onCancel} />
@@ -242,17 +252,19 @@ export function AppAppearanceInspector({
             (VdScrollArea, 021-A owns the overflow). */}
         <VdScrollArea
           axis="y"
-          className="flex min-h-0 flex-1 flex-col gap-7 px-5 py-5"
+          key={`controls-${appId}`}
+          className="vela-inspector__subject flex min-h-0 flex-1 flex-col gap-5 px-5 py-5"
         >
           {/* SECTION — Icon: one row that opens the focused picker. The
               primary label is always human-readable (019-D §9). */}
-          <section className="flex flex-col gap-2.5">
+          <section className="flex flex-col gap-3">
             <span className="vela-inspector__section-label">
               {t("visualEditor.section.icon")}
             </span>
             <button
               type="button"
               className="vela-inspector__row"
+              aria-label={t("visualEditor.changeIcon")}
               onClick={() => setPickerOpen(true)}
             >
               <IconRowThumbnail draft={draft} projected={projected} pendingUpload={pendingUpload} />
@@ -272,11 +284,11 @@ export function AppAppearanceInspector({
           </section>
 
           {/* SECTION — Title: the one title control left (019-B). */}
-          <section className="flex flex-col gap-2.5">
+          <section className="flex flex-col gap-3">
             <span className="vela-inspector__section-label">
               {t("visualEditor.section.title")}
             </span>
-            <div className="flex items-center justify-between gap-6">
+            <div className="flex min-h-9 items-center gap-3">
               <label
                 className="text-sm font-medium text-vdu-fg"
                 htmlFor="vela-visual-label-visible"
@@ -293,7 +305,7 @@ export function AppAppearanceInspector({
           </section>
 
           {/* SECTION — Appearance */}
-          <section className="flex flex-col gap-4">
+          <section className="flex flex-col gap-3">
             <span className="vela-inspector__section-label">
               {t("visualEditor.section.appearance")}
             </span>
@@ -309,6 +321,7 @@ export function AppAppearanceInspector({
                     className="vela-appearance-inspector__decoration"
                     data-style={style}
                     data-selected={draft.decorationStyle === style ? "true" : undefined}
+                    aria-label={decorationStyleLabel(style, t)}
                     aria-pressed={draft.decorationStyle === style}
                     onClick={() => patch({ decorationStyle: style })}
                   >
@@ -353,10 +366,10 @@ export function AppAppearanceInspector({
 
         {/* Footer: Cancel reverts; Save persists exactly the projection. */}
         <footer className="flex h-[60px] shrink-0 items-center justify-end gap-2.5 border-t border-vdu-border px-5">
-          <Button variant="ghost" onPress={onCancel} isDisabled={busy}>
+          <Button variant="ghost" aria-label={t("common.cancel")} onPress={onCancel} isDisabled={busy}>
             {t("common.cancel")}
           </Button>
-          <Button variant="primary" onPress={() => void handleSave()} isDisabled={busy || pristine || !savable}>
+          <Button variant="primary" aria-label={busy ? t("dialog.editApp.saving") : t("common.save")} onPress={() => void handleSave()} isDisabled={busy || pristine || !savable}>
             {busy ? t("dialog.editApp.saving") : t("common.save")}
           </Button>
         </footer>
@@ -598,7 +611,7 @@ function GeneratedTextControls({
 }) {
   const { t } = useI18n();
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 pt-3">
       <TextField>
         <Label className="text-sm font-medium text-vdu-fg">
           {t("visualEditor.textModeLabel")}
@@ -750,7 +763,7 @@ function ColorSettingRow({
   readonly onChange: (value: string | undefined) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-6">
+    <div className="flex min-h-9 items-center gap-3">
       <span className="text-sm font-medium text-vdu-fg">{label}</span>
       <ColorField
         label={label}
@@ -758,7 +771,7 @@ function ColorSettingRow({
         swatchAriaLabel={value ?? autoLabel}
         value={value}
         onChange={onChange}
-        className="max-w-[220px]"
+        className="min-w-0 flex-1"
       />
     </div>
   );

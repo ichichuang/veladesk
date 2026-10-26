@@ -36,7 +36,7 @@ function Harness({ initiallyOpen = true, launch = vi.fn() }) {
       {apps.map((app) => <button key={app.id} data-appearance-app-id={app.id} onClick={launch}>
         <span>{app.name} tile</span>
       </button>)}
-      <AppAppearanceInspector key={session.appId} open={open} workspace={workspace}
+      <AppAppearanceInspector open={open} workspace={workspace}
         appId={session.appId} draft={session.draft}
         onDraftChange={(draft) => setSession({ ...session, draft })}
         onCancel={() => setOpen(false)} onSaved={() => setOpen(false)} />
@@ -55,13 +55,27 @@ describe("appearance drawer interaction", () => {
     act(() => outside.focus());
     fireEvent.click(outside);
     expect(view.getByRole("dialog")).toBeTruthy();
+    const panel = view.getByRole("dialog");
+    expect(view.getByText("按 Esc 或点 × 关闭")).toBeTruthy();
     fireEvent.click(view.getByText("Beta tile"));
+    expect(view.getByRole("dialog")).toBe(panel);
     expect(launch).not.toHaveBeenCalled();
     expect(view.getByRole("dialog").textContent).toContain("Beta");
     fireEvent.click(view.getByText("Beta tile"));
     expect(launch).not.toHaveBeenCalled();
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
+  });
+
+  it("resets the nested icon picker when switching apps without replacing the panel", async () => {
+    const view = render(<Harness />);
+    const panel = view.getByRole("dialog");
+    fireEvent.click(view.getByRole("button", { name: "更换图标" }));
+    expect(view.getAllByRole("dialog", { hidden: true })).toHaveLength(2);
+    fireEvent.click(view.getByText("Beta tile"));
+    await waitFor(() => expect(view.getAllByRole("dialog")).toHaveLength(1));
+    expect(view.getByRole("dialog")).toBe(panel);
+    expect(panel.textContent).toContain("Beta");
   });
 
   it("closes with its own close button", async () => {

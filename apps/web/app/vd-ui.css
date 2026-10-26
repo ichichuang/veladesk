@@ -185,7 +185,7 @@
   --vdu-overlay: oklch(0.985 0.004 264 / clamp(0.96, var(--vd-window-alpha, 1), 1));
 
   --vdu-fg: oklch(0.24 0.02 264);
-  --vdu-fg-muted: oklch(0.44 0.02 264);
+  --vdu-fg-muted: oklch(0.38 0.02 264);
   --vdu-fg-disabled: oklch(0.62 0.012 264);
 
   --vdu-border: oklch(0.35 0.02 264 / 0.16);

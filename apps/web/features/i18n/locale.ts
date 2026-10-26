@@ -36,9 +36,9 @@ export function parseUiLocale(raw: string | null | undefined): UiLocale {
   return isUiLocale(raw) ? raw : DEFAULT_UI_LOCALE;
 }
 
-/** The `lang` attribute value for a locale (identical by design here). */
+/** The document language uses the supported language tags, independent of UI storage. */
 export function htmlLangFor(locale: UiLocale): string {
-  return locale;
+  return locale === "en-US" ? "en" : "zh-CN";
 }
 
 /**

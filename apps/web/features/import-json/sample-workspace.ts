@@ -2,7 +2,7 @@
  * The built-in sample workspace (一键体验示例工作区).
  *
  * A fixed, curated example: four category sections («前端开发», «微信小程序»,
- * «AI 工具», «设计灵感») with 6–8 real, long-lived websites each, one folder
+ * «AI 工具», «设计灵感») with two rows of curated websites each, one folder
  * example and a small dock. The builder REUSES the canonical JSON import
  * pipeline end-to-end — `parseImportDocument` → `planImport` →
  * `applyImportPlan` — so a sample workspace is byte-for-byte the same thing
@@ -23,9 +23,15 @@ import {
   createEmptyWorkspace,
   deleteEmptyPage,
   pinEntityToDock,
+  pageItemIds,
+  withPageCanvas,
+  materializePagePlacement,
 } from "@veladesk/domain";
 import type { Folder, WorkspaceSnapshot } from "@veladesk/domain";
 import { createGridDefinition } from "@veladesk/desktop-engine";
+
+import { translate, type TranslationKey } from "../i18n/messages";
+import type { UiLocale } from "../i18n/locale";
 
 import { applyImportPlan, resolveImportAppIcon } from "./apply-import";
 import type { VelaDeskImportDocumentV1 } from "./contract";
@@ -53,7 +59,7 @@ const SAMPLE_FOLDER = {
 } as const;
 
 /** Apps pinned to the sample dock, by exact app name from the document. */
-const SAMPLE_DOCK_APP_NAMES = ["GitHub", "MDN Web Docs", "ChatGPT", "Figma"] as const;
+const SAMPLE_DOCK_APP_NAMES = ["GitHub", "MDN", "ChatGPT", "Figma"] as const;
 
 /**
  * The static sample import document. Every URL is a real, widely used,
@@ -67,12 +73,13 @@ const SAMPLE_IMPORT_DOCUMENT: VelaDeskImportDocumentV1 = {
     {
       name: SAMPLE_FOLDER_SECTION_NAME,
       apps: [
-        { name: "MDN Web Docs", url: "https://developer.mozilla.org/", icon: "auto" },
+        { name: "MDN", url: "https://developer.mozilla.org/", icon: "auto" },
         { name: "GitHub", url: "https://github.com", icon: "auto" },
-        { name: "Stack Overflow", url: "https://stackoverflow.com", icon: "auto" },
+        { name: "Stack", url: "https://stackoverflow.com", icon: "auto" },
+        { name: "CSS", url: "https://web.dev/learn/css", icon: "auto" },
         { name: "React", url: "https://react.dev", icon: "auto" },
-        { name: "Vue.js", url: "https://vuejs.org", icon: "auto" },
-        { name: "TypeScript", url: "https://www.typescriptlang.org", icon: "auto" },
+        { name: "Vue", url: "https://vuejs.org", icon: "auto" },
+        { name: "TS", url: "https://www.typescriptlang.org", icon: "auto" },
         { name: "Vite", url: "https://vite.dev", icon: "auto" },
         { name: "npm", url: "https://www.npmjs.com", icon: "auto" },
       ],
@@ -96,6 +103,8 @@ const SAMPLE_IMPORT_DOCUMENT: VelaDeskImportDocumentV1 = {
           url: "https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html",
           icon: "auto",
         },
+        { name: "腾讯云", url: "https://cloud.tencent.com", icon: "auto" },
+        { name: "小程序码", url: "https://cli.im", icon: "auto" },
         { name: "WeUI", url: "https://weui.io", icon: "auto" },
         {
           name: "TDesign 小程序",
@@ -107,7 +116,7 @@ const SAMPLE_IMPORT_DOCUMENT: VelaDeskImportDocumentV1 = {
           url: "https://developers.weixin.qq.com/miniprogram/dev/wxcloud/basis/getting-started.html",
           icon: "auto",
         },
-        { name: "Vant Weapp", url: "https://vant-ui.github.io/vant-weapp/", icon: "auto" },
+        { name: "Vant", url: "https://vant-ui.github.io/vant-weapp/", icon: "auto" },
       ],
     },
     {
@@ -118,9 +127,11 @@ const SAMPLE_IMPORT_DOCUMENT: VelaDeskImportDocumentV1 = {
         { name: "DeepSeek", url: "https://chat.deepseek.com", icon: "auto" },
         { name: "通义千问", url: "https://tongyi.aliyun.com", icon: "auto" },
         { name: "文心一言", url: "https://yiyan.baidu.com", icon: "auto" },
-        { name: "Hugging Face", url: "https://huggingface.co", icon: "auto" },
+        { name: "Hugging", url: "https://huggingface.co", icon: "auto" },
+        { name: "Gemini", url: "https://gemini.google.com", icon: "auto" },
+        { name: "Perplex", url: "https://www.perplexity.ai", icon: "auto" },
         { name: "OpenAI", url: "https://openai.com", icon: "auto" },
-        { name: "GitHub Copilot", url: "https://github.com/features/copilot", icon: "auto" },
+        { name: "Copilot", url: "https://github.com/features/copilot", icon: "auto" },
       ],
     },
     {
@@ -133,10 +144,59 @@ const SAMPLE_IMPORT_DOCUMENT: VelaDeskImportDocumentV1 = {
         { name: "Unsplash", url: "https://unsplash.com", icon: "auto" },
         { name: "Iconfont", url: "https://www.iconfont.cn", icon: "auto" },
         { name: "Coolors", url: "https://coolors.co", icon: "auto" },
+        { name: "Pexels", url: "https://www.pexels.com", icon: "auto" },
+        { name: "Awwwards", url: "https://www.awwwards.com", icon: "auto" },
         { name: "站酷", url: "https://www.zcool.com.cn", icon: "auto" },
       ],
     },
   ],
+};
+
+
+/** Muted brand backgrounds, each meeting 4.5:1 against a white glyph. */
+const SAMPLE_COLORS: Readonly<Record<string, string>> = {
+  "MDN": "#30343B",
+  "GitHub": "#181B20",
+  "Stack": "#A44915",
+  "CSS": "#345997",
+  "React": "#126074",
+  "Vue": "#256346",
+  "TS": "#245E9B",
+  "Vite": "#62469A",
+  "npm": "#A3343C",
+  "微信开放文档": "#246B42",
+  "微信公众平台": "#286447",
+  "微信开放社区": "#39664F",
+  "开发者工具下载": "#3C586E",
+  "腾讯云": "#245E89",
+  "小程序码": "#586238",
+  "WeUI": "#326D58",
+  "TDesign 小程序": "#355CA1",
+  "微信云开发文档": "#29616C",
+  "Vant": "#47652E",
+  "ChatGPT": "#246356",
+  "Claude": "#89513B",
+  "DeepSeek": "#344F94",
+  "通义千问": "#60469A",
+  "文心一言": "#3E6085",
+  "Hugging": "#795A15",
+  "Gemini": "#415A92",
+  "Perplex": "#26616A",
+  "OpenAI": "#3C5450",
+  "Copilot": "#4B526B",
+  "Figma": "#674B85",
+  "Dribbble": "#95446A",
+  "Behance": "#284DAD",
+  "Canva": "#256C78",
+  "Unsplash": "#313D49",
+  "Iconfont": "#76519A",
+  "Coolors": "#345B85",
+  "Pexels": "#2E6751",
+  "Awwwards": "#434847",
+  "站酷": "#945436",
+  "React 文档": "#126074",
+  "Vue.js 指南": "#256346",
+  "TypeScript 手册": "#245E9B",
 };
 
 /** Kinds the sample builder needs fresh ids for. */
@@ -151,11 +211,22 @@ export type SampleWorkspaceIdFactory = (kind: SampleIdKind) => string;
  * page → folder example → dock pins. Pure: no clocks, no storage, no
  * network; all ids come from the injected factory.
  */
-export function buildSampleWorkspace(idFactory: SampleWorkspaceIdFactory): WorkspaceSnapshot {
+export function buildSampleWorkspace(idFactory: SampleWorkspaceIdFactory, locale: UiLocale = "zh-CN"): WorkspaceSnapshot {
+  const localizedNames: Readonly<Record<string, TranslationKey>> = {
+    "前端开发": "sample.frontend", "微信小程序": "sample.wechat", "AI 工具": "sample.ai",
+    "设计灵感": "sample.design", "框架文档": "sample.frameworkDocs", "React 文档": "sample.reactDocs",
+    "Vue.js 指南": "sample.vueGuide", "TypeScript 手册": "sample.typescriptHandbook",
+    "微信开放文档": "sample.wechatDocs", "微信公众平台": "sample.wechatPlatform",
+    "微信开放社区": "sample.wechatCommunity", "开发者工具下载": "sample.devtools",
+    "TDesign 小程序": "sample.tdesign", "微信云开发文档": "sample.cloudDocs",
+    "腾讯云": "sample.tencentCloud", "小程序码": "sample.qrCode",
+    "通义千问": "sample.qwen", "文心一言": "sample.ernie", "站酷": "sample.zcool",
+  };
+  const localize = (name: string) => localizedNames[name] === undefined ? name : translate(locale, localizedNames[name]);
   const seedPageId = idFactory("page");
   let workspace = createEmptyWorkspace({
     workspaceId: idFactory("workspace"),
-    workspaceName: SAMPLE_WORKSPACE_NAME,
+    workspaceName: translate(locale, "sample.workspaceName"),
     pageId: seedPageId,
     pageName: SAMPLE_SEED_PAGE_NAME,
     grid: createGridDefinition(10, 6),
@@ -225,7 +296,33 @@ export function buildSampleWorkspace(idFactory: SampleWorkspaceIdFactory): Works
     }
   }
 
-  return workspace;
+  // Apply presentation after folder/dock wiring; entity ids stay unchanged.
+  return {
+    ...workspace,
+    pages: workspace.pages.map((page) => {
+      // Use the canonical canvas API so both desktop and mobile read one layout.
+      const ids = [...pageItemIds(page)];
+      const folderIndex = ids.findIndex((id) => workspace.entities.some((entity) => entity.id === id && entity.kind === "folder"));
+      if (folderIndex > 0) ids.unshift(...ids.splice(folderIndex, 1));
+      return {
+        ...withPageCanvas(materializePagePlacement(page), {
+          version: 2, mode: "grid", columns: 5,
+          items: ids.map((id, index) => ({ id, column: index % 5, row: Math.floor(index / 5), columnSpan: 1, rowSpan: 1 })),
+        }),
+        name: localize(page.name),
+      };
+    }),
+    entities: workspace.entities.map((entity) =>
+      entity.kind === "widget" ? entity : {
+        ...entity, name: localize(entity.name),
+        ...(entity.kind === "app" ? { visual: {
+          decorationStyle: "solid" as const,
+          decorationColor: SAMPLE_COLORS[entity.name]!,
+          foregroundColor: "#FFFFFF",
+        } } : {}),
+      }
+    ),
+  };
 }
 
 /** The sample folder, exposed for tests/UI copy (null while absent). */
@@ -233,6 +330,6 @@ export function findSampleFolder(
   workspace: WorkspaceSnapshot
 ): Folder | undefined {
   return workspace.entities.find(
-    (entity): entity is Folder => entity.kind === "folder" && entity.name === SAMPLE_FOLDER.name
+    (entity): entity is Folder => entity.kind === "folder" && [SAMPLE_FOLDER.name, translate("en-US", "sample.frameworkDocs")].includes(entity.name)
   );
 }

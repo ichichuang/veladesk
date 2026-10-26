@@ -279,6 +279,19 @@ describe("declared popup color pairs (021-R1)", () => {
     expect(contrast(luminance(fgLinear), surface)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it("keeps light settings descriptions and unsaved feedback at ≥ 4.5:1", () => {
+    const muted = parseOklch(declaredVar(lightBlock, "vdu-fg-muted"), 264);
+    const foreground = luminance(oklchToClampedLinearSrgb(muted.l, muted.c, muted.h));
+    // Transparent settings windows can sit on any wallpaper, including black.
+    for (const backdrop of [0, 1] as const) {
+      expect(contrast(foreground, compositedOverlayLuminance(lightBlock, 264, backdrop))).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const name of ["vdu-bg", "vdu-bg-raised", "vdu-bg-hover", "vdu-bg-active"]) {
+      const background = parseOklch(declaredVar(lightBlock, name), 264);
+      expect(contrast(foreground, luminance(oklchToClampedLinearSrgb(background.l, background.c, background.h)))).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it("gives normal option labels ≥ 4.5:1 on the popup surface in light mode", () => {
     const fg = lightnessOf(lightBlock, "vdu-fg");
     const fgLinear = oklchToClampedLinearSrgb(fg, 0.02, 264);

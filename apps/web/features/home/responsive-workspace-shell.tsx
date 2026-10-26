@@ -1,6 +1,6 @@
 "use client";
 
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
@@ -38,17 +38,21 @@ const MobileShell = lazy(() =>
 export function ResponsiveWorkspaceShell({
   workspace,
   lastRemoteResult,
+  onReady,
 }: {
+  readonly onReady?: (() => void) | undefined;
   readonly workspace: LocalWorkspaceRecord;
   readonly lastRemoteResult?: WorkspaceRuntimeRemoteResult | undefined;
 }) {
-  return <ShellTree key={workspace.id} workspace={workspace} lastRemoteResult={lastRemoteResult} />;
+  return <ShellTree key={workspace.id} workspace={workspace} lastRemoteResult={lastRemoteResult} onReady={onReady} />;
 }
 
 function ShellTree({
   workspace,
   lastRemoteResult,
+  onReady,
 }: {
+  readonly onReady?: (() => void) | undefined;
   readonly workspace: LocalWorkspaceRecord;
   readonly lastRemoteResult?: WorkspaceRuntimeRemoteResult | undefined;
 }) {
@@ -67,6 +71,7 @@ function ShellTree({
 
   return (
     <Suspense fallback={<StartupScreen />}>
+      <WorkspacePaintReady onReady={onReady} />
       {shellMode === "mobile" ? (
         <MobileShell
           workspace={workspace}
@@ -82,4 +87,20 @@ function ShellTree({
       )}
     </Suspense>
   );
+}
+
+/** Inside Suspense: notify only after the shell commits and a paint can occur. */
+export function WorkspacePaintReady({ onReady }: { readonly onReady?: (() => void) | undefined }) {
+  useEffect(() => {
+    if (onReady === undefined) return;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(onReady);
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [onReady]);
+  return null;
 }

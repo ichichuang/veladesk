@@ -2477,6 +2477,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       )}
       className="vela-desktop"
       data-vd-ui=""
+      data-inspector-open={inspectorOpen}
       data-arrange={arrange ? "true" : "false"}
       data-vd-color-mode={effectiveColorMode}
       data-vd-wallpaper={theme.wallpaperPreset}
@@ -2639,7 +2640,6 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       ) : null}
       {appearanceSession !== null ? (
         <AppAppearanceInspector
-          key={appearanceSession.appId}
           open={
             dialog !== null &&
             dialog.kind === "edit-visual" &&

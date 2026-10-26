@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateWorkspace } from "@veladesk/domain";
-import { pageItemIds } from "@veladesk/domain";
+import { resolvePagePlacement, pageItemIds } from "@veladesk/domain";
 
 import { buildSampleWorkspace, findSampleFolder, SAMPLE_WORKSPACE_NAME } from "./sample-workspace";
 
@@ -8,7 +8,7 @@ import { buildSampleWorkspace, findSampleFolder, SAMPLE_WORKSPACE_NAME } from ".
  * The built-in sample workspace (一键体验示例工作区): a static curated
  * document built through the CANONICAL import pipeline. These tests pin
  * the structure users get on first run: exactly the four category
- * sections, 6–8 real sites each, one folder example and a curated dock —
+ * sections, 9–10 real sites each, one folder example and a curated dock —
  * all through a snapshot that passes full domain validation.
  */
 
@@ -47,12 +47,12 @@ describe("buildSampleWorkspace", () => {
     expect(SAMPLE.preferences.defaultPageId).toBe(SAMPLE.pages[0]?.id);
   });
 
-  it("gives every category 6–8 real, unique https sites", () => {
+  it("gives every category 9–10 real, unique https sites", () => {
     const urlKeys = new Set<string>();
     for (const page of SAMPLE.pages) {
       const apps = appsOnPage(page.id);
-      expect(apps.length).toBeGreaterThanOrEqual(6);
-      expect(apps.length).toBeLessThanOrEqual(8);
+      expect(apps.length).toBeGreaterThanOrEqual(9);
+      expect(apps.length).toBeLessThanOrEqual(10);
       for (const app of apps) {
         expect(app.url).toMatch(/^https:\/\//);
         expect(app.name.trim().length).toBeGreaterThan(0);
@@ -103,7 +103,7 @@ describe("buildSampleWorkspace", () => {
       const entity = SAMPLE.entities.find((candidate) => candidate.id === itemId);
       return entity?.kind === "app" ? entity.name : null;
     });
-    expect(dockedNames).toEqual(["GitHub", "MDN Web Docs", "ChatGPT", "Figma"]);
+    expect(dockedNames).toEqual(["GitHub", "MDN", "ChatGPT", "Figma"]);
   });
 
   it("keeps every id unique across pages and entities", () => {
@@ -129,4 +129,57 @@ describe("buildSampleWorkspace", () => {
       });
     expect(stripIds(rebuild)).toBe(stripIds(SAMPLE));
   });
+});
+
+describe("localized sample", () => {
+  it("creates readable English categories and folder names without changing the structure", () => {
+    const sample = buildSampleWorkspace(makeIdFactory(), "en-US");
+    expect(sample.name).toBe("Sample workspace");
+    expect(sample.pages.map((page) => page.name)).toEqual(["Frontend development", "WeChat mini programs", "AI tools", "Design inspiration"]);
+    expect(findSampleFolder(sample)?.name).toBe("Docs");
+    expect(sample.entities.some((entity) => entity.kind === "app" && entity.name === "React")).toBe(true);
+    expect(sample.pages.every((page) => pageItemIds(page).length > 0)).toBe(true);
+    expect(sample.preferences.defaultPageId).toBe(sample.pages[0]?.id);
+    expect(validateWorkspace(sample)).toEqual([]);
+    expect(sample.entities).toHaveLength(SAMPLE.entities.length);
+    expect(sample.dock.items).toHaveLength(SAMPLE.dock.items.length);
+  });
+});
+
+
+describe("sample presentation", () => {
+  for (const locale of ["zh-CN", "en-US"] as const) {
+    it(`${locale}: groups ten icons into two rows of five, folder first`, () => {
+      const sample = buildSampleWorkspace(makeIdFactory(), locale);
+      for (const page of sample.pages) {
+        const placement = resolvePagePlacement(page);
+        expect(placement.mode).toBe("grid");
+        if (placement.mode !== "grid") throw new Error("expected grid");
+        expect(placement.items).toHaveLength(10);
+        expect(placement.items.filter((item) => item.row === 0)).toHaveLength(5);
+        expect(placement.items.filter((item) => item.row === 1)).toHaveLength(5);
+        expect(placement.items.every((item) => item.column < 5)).toBe(true);
+      }
+      const folder = findSampleFolder(sample)!;
+      expect(pageItemIds(sample.pages[0]!)[0]).toBe(folder.id);
+    });
+    it(`${locale}: uses short names and distinct solid colors with accessible white glyphs`, () => {
+      const sample = buildSampleWorkspace(makeIdFactory(), locale);
+      const colors = new Set<string>();
+      for (const entity of sample.entities) {
+        if (entity.kind === "widget") continue;
+        expect([...entity.name].length).toBeLessThanOrEqual(/[\u4e00-\u9fff]/.test(entity.name) ? 6 : 8);
+        if (entity.kind !== "app") continue;
+        expect(entity.visual?.decorationStyle).toBe("solid");
+        expect(entity.visual?.foregroundColor).toBe("#FFFFFF");
+        const hex = entity.visual!.decorationColor!;
+        colors.add(hex);
+        const rgb = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255)
+          .map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+        const luminance = rgb[0]! * 0.2126 + rgb[1]! * 0.7152 + rgb[2]! * 0.0722;
+        expect(1.05 / (luminance + 0.05)).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(colors.size).toBeGreaterThanOrEqual(15);
+    });
+  }
 });

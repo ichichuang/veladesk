@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
+
 import { WorkspaceRuntimeProvider } from "../workspace-runtime/workspace-runtime-provider";
 import { useWorkspaceRuntimeState } from "../workspace-runtime/use-workspace-runtime";
 import { UiLocaleProvider } from "../i18n/ui-locale-provider";
@@ -35,21 +37,50 @@ export function VelaHome() {
 
 function HomeScreen() {
   const state = useWorkspaceRuntimeState();
+  const [sampleCreated, setSampleCreated] = useState(false);
+  const readyWorkspaceId = state.status === "ready" ? state.workspace.id : null;
+  const [paintedWorkspaceId, setPaintedWorkspaceId] = useState<string | null>(null);
+  const handleReady = useCallback(() => setPaintedWorkspaceId(readyWorkspaceId), [readyWorkspaceId]);
+  const dismissSample = useCallback(() => setSampleCreated(false), []);
   switch (state.status) {
     case "idle":
     case "booting":
       return <StartupScreen />;
     case "empty":
-      return <OnboardingScreen />;
+      return <OnboardingScreen onSampleCreated={() => setSampleCreated(true)} />;
     case "remote-unavailable":
-      return <OnboardingScreen remoteUnavailable />;
+      return <OnboardingScreen remoteUnavailable onSampleCreated={() => setSampleCreated(true)} />;
     case "selection-required":
       return <WorkspacePickerScreen candidates={state.candidates} />;
     case "ready":
       return (
-        <ResponsiveWorkspaceShell workspace={state.workspace} lastRemoteResult={state.lastRemoteResult} />
+        <>
+          <ResponsiveWorkspaceShell workspace={state.workspace} lastRemoteResult={state.lastRemoteResult} onReady={handleReady} />
+          {sampleCreated && paintedWorkspaceId === state.workspace.id ? <SampleSuccessToast onDismiss={dismissSample} /> : null}
+        </>
       );
   }
+}
+
+function SampleSuccessToast({ onDismiss }: { readonly onDismiss: () => void }) {
+  const { t } = useI18n();
+  const [exiting, setExiting] = useState(false);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setExiting(true), 7000);
+    return () => window.clearTimeout(timeout);
+  }, []);
+  useEffect(() => {
+    if (!exiting) return;
+    const timeout = window.setTimeout(onDismiss, 150);
+    return () => window.clearTimeout(timeout);
+  }, [exiting, onDismiss]);
+  return (
+    <div className="vela-onboarding-success" role="status" data-exiting={exiting}>
+      <span>{t("onboarding.sampleSuccess")}</span>
+      <button type="button" className="vela-button" aria-label={t("common.close")}
+        onClick={() => setExiting(true)}>×</button>
+    </div>
+  );
 }
 
 interface HomeRecoveryScreenProps {
