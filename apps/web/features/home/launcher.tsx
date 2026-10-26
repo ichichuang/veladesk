@@ -25,6 +25,7 @@ import { AppIconGlyph, appIconDecorationProps } from "./app-icon-renderer";
 import { flattenLauncherGroups, groupLauncherResults } from "./launcher-groups";
 import type { LauncherGroupKind } from "./launcher-groups";
 import { generatedIconText } from "./generated-icon";
+import { IconText } from "./icon-text";
 import { moveLauncherIndex } from "./launcher-navigation";
 import { LAUNCHER_MAX_RESULTS, searchLauncherEntries } from "./launcher-search";
 import type { LauncherCommandId, LauncherEntry } from "./launcher-types";
@@ -413,7 +414,7 @@ function RowIdentity({
       // the shared tile — never a technical id.
       return (
         <span className="vela-launcher__icon vela-app-icon" data-decoration="solid" aria-hidden="true">
-          <span className="vela-app-icon__text">{generatedIconText(label)}</span>
+          <IconText text={generatedIconText(label)} />
         </span>
       );
     }

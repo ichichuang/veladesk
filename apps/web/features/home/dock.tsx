@@ -21,6 +21,7 @@ import {
 } from "./context-menu";
 import { appIconDecorationProps, AppIconGlyph } from "./app-icon-renderer";
 import { generatedIconText } from "./generated-icon";
+import { IconText } from "./icon-text";
 import { launchApp } from "./launch-app";
 import "./home-shell.css";
 
@@ -219,7 +220,7 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
                 onItemKeyDown={handleEntityKeyDown}
                 entityId={entity.id}
               >
-                <span className="vela-app-icon__text">{generatedIconText(entity.name)}</span>
+                <IconText text={generatedIconText(entity.name)} />
               </DockEntityButton>
             </VdTooltip>
           )

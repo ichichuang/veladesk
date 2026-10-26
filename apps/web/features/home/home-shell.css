@@ -1485,6 +1485,13 @@ button.vela-sync-status:focus-visible {
 
 .vela-app-icon {
   /* Shared tile geometry (dock, folder overlay): the fixed slot size. */
+  /* The tile itself centers its glyph (text, masked SVG or image). Before
+     this, centering lived only on .vela-item__icon / the dock button, so
+     every surface that composed .vela-app-icon WITHOUT those (the launcher
+     results, the mobile search results) laid the glyph out as a block at
+     the top-left corner of the tile. */
+  display: grid;
+  place-items: center;
   flex-shrink: 0;
   width: var(--vd-slot-icon-size);
   height: var(--vd-slot-icon-size);
@@ -1591,8 +1598,15 @@ button.vela-sync-status:focus-visible {
   pointer-events: none;
 }
 
+/* Icon text is a single centered line: never wraps (3–4 custom characters
+   used to break onto a second line), shrinks by the width-fit multiplier
+   IconText emits for text wider than the fixed-slot budget. The adaptive
+   desktop rule above (.vela-app-content__icon …) sets its own resolver
+   size and wins on specificity. */
 .vela-app-icon__text {
+  font-size: calc(1em * var(--vd-icon-text-fit, 1));
   line-height: 1;
+  white-space: nowrap;
 }
 
 /* Dock: the button itself is the tile — same decoration contract, dock-
@@ -2506,6 +2520,14 @@ button.vela-sync-status:focus-visible {
 .vela-inspector__row:focus-visible {
   outline: 2px solid var(--vdu-focus, var(--vd-accent));
   outline-offset: 2px;
+}
+
+/* The inspector is a Dialog portalled OUTSIDE .vela-desktop, so the shell's
+   --vd-slot-icon-size never reaches its header identity tile, which then
+   collapsed onto its text. The header (64px tall) declares its own fixed
+   identity slot. */
+header.vela-inspector__subject {
+  --vd-slot-icon-size: 40px;
 }
 
 .vela-inspector__row-thumb {

@@ -21,6 +21,7 @@ import { useI18n } from "../i18n/use-i18n";
 import type { TranslateFn } from "../i18n/use-i18n";
 import { getBrowserAssetRuntime } from "../assets/browser-assets";
 import { AppIconTile, appIconDecorationProps } from "./app-icon-renderer";
+import { IconText } from "./icon-text";
 import { appGlyphColorModel, appIconDisplayText, humanizeIconName } from "./app-icon";
 import {
   buildDraftApp,
@@ -696,7 +697,7 @@ function IconRowThumbnail({
   const text = appIconDisplayText(projected);
   return (
     <span className="vela-inspector__row-thumb vela-inspector__row-thumb--text" aria-hidden="true">
-      {text}
+      <IconText text={text} />
     </span>
   );
 }

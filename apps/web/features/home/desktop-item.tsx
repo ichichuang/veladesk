@@ -20,6 +20,7 @@ import { contextMenuAnchorFromElement, isContextMenuKeyEvent } from "./context-m
 import { useVdHoverLift } from "@components/vd/hover-lift";
 import { elementBoxChanged } from "./element-box";
 import { AppIconSurface, AppIconGlyph } from "./app-icon-renderer";
+import { iconTextEmWidth } from "./generated-icon";
 import {
   appContentIconKind,
   buildAppContentStyleVars,
@@ -526,6 +527,7 @@ function DesktopEntity({
               ? {
                   generatedTextLength: Array.from(appIconDisplayText(entity).trim())
                     .length,
+                  generatedTextEmWidth: iconTextEmWidth(appIconDisplayText(entity)),
                 }
               : {}),
           });

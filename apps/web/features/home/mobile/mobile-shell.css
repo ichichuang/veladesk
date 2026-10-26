@@ -29,8 +29,19 @@
   --vd-slot-icon-size: 52px;
 }
 
+/* Sheets portal into the shell's portal root, a SIBLING of
+   .vela-mobile-shell — they never inherit the token above. Without it the
+   folder sheet's AppIconTile resolved `width: var(--vd-slot-icon-size)` to
+   nothing and collapsed onto its text (no tile, no centering). */
+.vela-mobile-sheet--bottom-host,
+.vela-mobile-sheet--fullscreen-host {
+  --vd-slot-icon-size: 52px;
+}
+
 @media (min-width: 480px) {
-  .vela-mobile-shell {
+  .vela-mobile-shell,
+  .vela-mobile-sheet--bottom-host,
+  .vela-mobile-sheet--fullscreen-host {
     --vd-slot-icon-size: 54px;
   }
 }
@@ -574,6 +585,20 @@
   justify-content: center;
   width: 34px;
   height: 34px;
+}
+
+/* App result tile: the SHARED .vela-app-icon sized by its slot variable
+   (it had none here, so the tile collapsed to the text's own box). Same
+   compact treatment as the desktop launcher's 26px tile. */
+.vela-mobile-search__app-icon {
+  --vd-slot-icon-size: 28px;
+  box-shadow:
+    0 2px 6px oklch(0 0 0 / 0.25),
+    inset 0 1px 0 oklch(0.95 0.02 260 / 0.18);
+}
+
+.vela-mobile-search__app-icon[data-decoration="none"] {
+  box-shadow: none;
 }
 
 .vela-mobile-search__row-label {

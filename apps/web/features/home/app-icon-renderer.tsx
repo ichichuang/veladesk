@@ -11,6 +11,7 @@ import {
   iconifyGlyphModel,
 } from "./app-icon";
 import { generatedIconText } from "./generated-icon";
+import { IconText } from "./icon-text";
 import { getBrowserAssetRuntime } from "../assets/browser-assets";
 import "./home-shell.css";
 
@@ -97,7 +98,7 @@ function useAssetImageUrl(assetId: string): string | null {
 function AssetImageGlyph({ assetId, fallback }: { assetId: string; fallback: string }) {
   const url = useAssetImageUrl(assetId);
   if (url === null) {
-    return <span className="vela-app-icon__text">{fallback}</span>;
+    return <IconText text={fallback} />;
   }
   // A local object URL must render as-is: next/image optimization would
   // re-fetch and re-process bytes that are already local and verified.
@@ -169,7 +170,7 @@ function LibraryIconGlyph({ icon, fallback }: { icon: string; fallback: string }
   }, [url]);
 
   if (loadStatus !== "ready" || model === undefined) {
-    return <span className="vela-app-icon__text">{fallback}</span>;
+    return <IconText text={fallback} />;
   }
   if (model.kind === "image") {
     return (
@@ -195,7 +196,7 @@ export function AppIconGlyph({ app }: { app: AppShortcut }) {
   if (app.icon.kind === "asset") {
     return <AssetImageGlyph key={app.icon.assetId} assetId={app.icon.assetId} fallback={fallback} />;
   }
-  return <span className="vela-app-icon__text">{appIconDisplayText(app)}</span>;
+  return <IconText text={appIconDisplayText(app)} />;
 }
 
 /**

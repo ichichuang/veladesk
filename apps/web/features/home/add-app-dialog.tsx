@@ -27,6 +27,7 @@ import { prepareUploadedImage } from "./asset-upload";
 import type { UploadValidationIssue } from "./asset-upload";
 import { createBrowserId } from "./browser-id";
 import { generatedIconText } from "./generated-icon";
+import { IconText } from "./icon-text";
 import { humanizeIconName } from "./app-icon";
 import { IconPreview } from "./icon-picker";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
@@ -367,7 +368,7 @@ function AddAppIconThumb({ value, name }: { readonly value: AddAppIconDraft; rea
   const text = value.kind === "custom-text" ? value.text : generatedIconText(name);
   return (
     <span className="vela-inspector__row-thumb vela-inspector__row-thumb--text" aria-hidden="true">
-      {text}
+      <IconText text={text} />
     </span>
   );
 }
@@ -397,7 +398,7 @@ function DetectedIconThumb({ icon, name }: { readonly icon: RecognitionIcon; rea
       className="vela-add-recognition__thumb vela-add-recognition__thumb--text"
       aria-hidden="true"
     >
-      {generatedIconText(name)}
+      <IconText text={generatedIconText(name)} />
     </span>
   );
 }
