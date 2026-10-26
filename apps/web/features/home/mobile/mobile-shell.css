@@ -225,6 +225,12 @@
 /* ---------------------------------------------------------------------------
  * Section content (§18/§56/§57): the one native vertical scroller. Content
  * entrance is a short GSAP fade/slide owned by the entrance wrapper.
+ *
+ * SWIPE (mobile category paging): the scroller itself never moves
+ * horizontally — it clips the strip. `touch-action: pan-y` keeps the
+ * native VERTICAL scroll (the gesture hook only claims the pointer once
+ * the travel is horizontal, so a diagonal still scrolls rather than
+ * fights); horizontal overscroll would otherwise chain to the browser.
  * ------------------------------------------------------------------------- */
 .vela-mobile-shell__content {
   flex: 1;
@@ -233,24 +239,72 @@
   overflow-x: clip;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
   z-index: 1;
 }
 
-/* Section panes (R2 §7): at most the visible page + ONE hidden-mounted
-   pending page. Pending is visibility/inert hidden — never display:none,
-   so layout, styles and image decodes prepare while nothing paints. The
-   entering pane alone may hint the compositor (§24); idle panes never do. */
-.vela-mobile-pane {
+/* The swipe strip: the ACTIVE page is the only in-flow child (it alone
+   sizes the strip and the vertical scroll range); the previous / next
+   pages are parked exactly one viewport to the left / right. The
+   horizontal translation lives in `transform`, written per animation frame
+   by the gesture hook (compositor-only — never a layout property) and
+   cleared at rest, so the strip is not a containing block or a layer
+   between gestures. */
+.vela-mobile-swipe-strip {
+  position: relative;
   min-height: 100%;
 }
 
-.vela-mobile-pane--pending {
-  visibility: hidden;
-  pointer-events: none;
+.vela-mobile-swipe-slot {
+  min-width: 0;
 }
 
-.vela-mobile-pane--entering {
-  will-change: transform, opacity;
+.vela-mobile-swipe-slot[data-swipe-slot="0"] {
+  min-height: 100%;
+}
+
+/* A neighbour is reachable but inert: it must not steal taps, be read by
+   assistive tech or extend the scroll range while it is off-screen. During
+   a drag it is aligned with the visible band of the scroller, so the page
+   always slides in from its top. */
+.vela-mobile-swipe-slot[data-swipe-slot="-1"],
+.vela-mobile-swipe-slot[data-swipe-slot="1"] {
+  position: absolute;
+  inset-block-start: var(--vela-swipe-top, 0px);
+  inline-size: 100%;
+  block-size: var(--vela-swipe-height, 100%);
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.vela-mobile-swipe-slot[data-swipe-slot="-1"],
+.vela-mobile-swipe-slot[data-swipe-both-sides][data-swipe-side="previous"] {
+  inset-inline-start: -100%;
+}
+
+.vela-mobile-swipe-slot[data-swipe-slot="1"]:not([data-swipe-side="previous"]) {
+  inset-inline-start: 100%;
+}
+
+/* Gesture in progress (attribute owned by the gesture hook): neighbours
+   show, and text selection inside a tile never starts on a sideways drag. */
+.vela-mobile-swipe-strip[data-swipe-active="true"] {
+  will-change: transform;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.vela-mobile-swipe-strip[data-swipe-active="true"] .vela-mobile-swipe-slot {
+  visibility: visible;
+}
+
+/* Reduced motion: no follow-the-finger, no settle — an instant swap. */
+@media (prefers-reduced-motion: reduce) {
+  .vela-mobile-swipe-strip {
+    transform: none !important;
+    will-change: auto;
+  }
 }
 
 /* Empty section: quiet centered hint, never a management affordance. */

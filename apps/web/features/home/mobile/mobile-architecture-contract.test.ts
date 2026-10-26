@@ -282,21 +282,25 @@ describe("sheet readability & layering (R1 §21–§25/§47/§48)", () => {
 });
 
 describe("animation ownership source contracts (R2 §23/§24/§32)", () => {
-  const mobileShellSource = readHomeSource("mobile/mobile-shell.tsx");
+  const swipeSource = readHomeSource("mobile/use-mobile-section-swipe.ts");
   const indicatorSource = readHomeSource("../../components/vd/animated-indicator.tsx");
   const wallpaperSource = readHomeSource("desktop-wallpaper.tsx");
   const css = readSource("mobile-shell.css");
 
-  it("the section pane tween only ever animates transform x + opacity", () => {
-    // Every gsap tween call site in the mobile shell must keep to the
-    // compositor properties — layout/margin keys are forbidden outright.
-    const tweenCalls = mobileShellSource.match(/gsap\.(?:to|fromTo)\(/g) ?? [];
-    expect(tweenCalls.length).toBeGreaterThanOrEqual(1);
-    expect(mobileShellSource).not.toMatch(
-      /gsap\.(?:to|fromTo)\([^;]*?(?:width|height|top|left|margin|padding):/,
+  it("the section swipe only ever animates transform x — never a layout key", () => {
+    // The strip is moved by ONE compositor transform. Every gsap call site
+    // in the gesture hook must keep to `x`; width/height/top/left/margin/
+    // padding keys are forbidden outright (they would thrash layout on
+    // every animation frame of a finger drag).
+    const tweenCalls = swipeSource.match(/gsap\.(?:to|fromTo|set)\(/g) ?? [];
+    expect(tweenCalls.length).toBeGreaterThanOrEqual(2);
+    expect(swipeSource).not.toMatch(
+      /gsap\.(?:to|fromTo|set)\([^;]*?(?:width|height|top|left|margin|padding):/,
     );
-    // The entrance is the canonical short settle.
-    expect(mobileShellSource).toContain("{ x: 12, opacity: 0 }");
+    // The settle tween's destination is the horizontal offset alone.
+    expect(swipeSource).toMatch(/gsap\.to\(element, \{\s*x: landing,/);
+    // The finger-follow write is a bare transform set.
+    expect(swipeSource).toMatch(/gsap\.set\(element, \{ x: offsetPx \}\)/);
   });
 
   it("the wallpaper crossfade animates opacity ONLY", () => {
@@ -319,9 +323,11 @@ describe("animation ownership source contracts (R2 §23/§24/§32)", () => {
     expect(indicatorSource).toContain('axis = "vertical"');
   });
 
-  it("will-change exists ONLY on the entering pane — no blanket hints (§24)", () => {
+  it("will-change is declared ONCE, on the swipe strip (§24)", () => {
     const uses = css.match(/will-change:[^;]+;/g) ?? [];
-    expect(uses).toEqual(["will-change: transform, opacity;"]);
+    // The strip hints the compositor; the only other use RESETS the hint
+    // under reduced motion, so no blanket rule ever exists.
+    expect(uses).toEqual(["will-change: transform;", "will-change: auto;"]);
     expect(css).not.toMatch(/will-change:[^;]*\*/);
     expect(css).not.toMatch(/\*\s*\{[^}]*will-change/);
   });

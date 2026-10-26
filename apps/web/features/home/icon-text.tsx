@@ -11,3 +11,14 @@ import { iconInitial } from "./generated-icon";
 export function IconText({ text }: { readonly text: string }) {
   return <span className="vela-app-icon__text">{iconInitial(text)}</span>;
 }
+
+/**
+ * What the icon-text INPUT keeps: at most ONE grapheme cluster — exactly
+ * the single glyph the tile renders. Pasting "微信" into the field leaves
+ * "微", pasting "👨‍👩‍👧" keeps the whole family emoji (one grapheme, not
+ * three code points). Legacy stored text with several characters also
+ * collapses to its first glyph when the editor re-reads it.
+ */
+export function clampIconText(text: string): string {
+  return iconInitial(text);
+}

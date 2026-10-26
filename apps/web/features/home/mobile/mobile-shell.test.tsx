@@ -187,98 +187,86 @@ describe("the mobile read-only contract (§74)", () => {
   });
 });
 
-describe("prepared-target section transition (R2 §27/§29/§30)", () => {
-  function panes(): HTMLElement[] {
-    return Array.from(document.querySelectorAll<HTMLElement>(".vela-mobile-pane"));
+describe("the section swipe strip (R2 §27/§29/§30 → swipe paging)", () => {
+  /*
+   * The old two-phase "prepared target" coordinator is gone. Paging now
+   * runs on a three-slot strip (previous | active | next), all mounted and
+   * laid out, driven by ONE transform — that structure is what makes a
+   * finger-following, infinitely looping swipe possible. These tests pin
+   * the structural contract the gesture depends on; the gesture itself is
+   * covered in mobile-section-swipe.test.tsx.
+   */
+
+  function slots(): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>(".vela-mobile-swipe-slot"));
   }
 
-  /** Flush the arm boundary: two rAFs guarantee the prepared frame ran. */
-  async function flushArmFrames(): Promise<void> {
-    await act(async () => {
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      });
-    });
+  function slotSummary(): { page: string | undefined; slot: string | undefined }[] {
+    return slots().map((element) => ({
+      page: element.dataset.sectionId,
+      slot: element.dataset.swipeSlot,
+    }));
   }
 
-  it("tap: the incoming section mounts HIDDEN while the old stays visible; arms next frame (§27)", async () => {
+  it("mounts the neighbours up-front so a swipe reveals content already laid out (§27)", () => {
     render(<MobileHost />);
-    expect(panes()).toHaveLength(1);
+    // 办公 is the first of four sections: its previous wraps to the last.
+    expect(slotSummary()).toEqual([
+      { page: "page-d", slot: "-1" },
+      { page: "page-a", slot: "0" },
+      { page: "page-b", slot: "1" },
+    ]);
+  });
+
+  it("re-slots the SAME panes on a switch — the committed page becomes the centre", async () => {
+    render(<MobileHost />);
     await act(async () => {
       fireEvent.click(screen.getByRole("tab", { name: "AI" }));
     });
-    // Phase 1 (pre-arm): old page still the visible pane, target hidden-mounted.
-    let mounted = panes();
-    expect(mounted).toHaveLength(2);
-    const [visiblePane, pendingPane] = mounted as [HTMLElement, HTMLElement];
-    expect(visiblePane.dataset.sectionId).toBe("page-a");
-    expect(visiblePane.className).not.toContain("--pending");
-    expect(pendingPane.dataset.sectionId).toBe("page-b");
-    expect(pendingPane.className).toContain("--pending");
-    expect(pendingPane.getAttribute("aria-hidden")).toBe("true");
-    // The heavy grid mount happened while hidden — never more than 2 panes.
-    await flushArmFrames();
-    // Phase 2: armed — the OLD page is gone, the target is the only pane.
-    mounted = panes();
-    expect(mounted).toHaveLength(1);
-    expect(mounted[0]!.dataset.sectionId).toBe("page-b");
-    expect(mounted[0]!.className).toContain("--entering");
-    expect(screen.getByText("ChatGPT")).not.toBeNull();
-    // Phase 3: the entrance settles — only the target remains, no mode
-    // class. (A quiet real-time wait lets the GSAP ticker run; waitFor
-    // inside a nested act starves the ticker's rAF callbacks.)
-    await act(async () => {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 600);
-      });
-    });
-    expect(panes()).toHaveLength(1);
-    expect(panes()[0]!.className).not.toContain("--entering");
+    expect(slotSummary()).toEqual([
+      { page: "page-a", slot: "-1" },
+      { page: "page-b", slot: "0" },
+      { page: "page-c", slot: "1" },
+    ]);
   });
 
-  it("rapid switch A→B→C: B is dropped before ever becoming visible; C wins (§29)", async () => {
+  it("keeps off-screen neighbours inert and hidden from assistive tech", () => {
     render(<MobileHost />);
-    // Both taps inside ONE act — no frame boundary may sneak in between,
-    // exactly like a fast double-tap on a phone.
+    for (const element of slots()) {
+      const isCentre = element.dataset.swipeSlot === "0";
+      if (isCentre) {
+        expect(element.hasAttribute("inert")).toBe(false);
+        expect(element.getAttribute("aria-hidden")).toBeNull();
+      } else {
+        expect(element.hasAttribute("inert")).toBe(true);
+        expect(element.getAttribute("aria-hidden")).toBe("true");
+      }
+    }
+  });
+
+  it("tapping the CURRENT section changes nothing — same slots, no offset", async () => {
+    render(<MobileHost />);
+    const before = slotSummary();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("tab", { name: "办公" }));
+    });
+    expect(slotSummary()).toEqual(before);
+    const strip = document.querySelector<HTMLElement>(".vela-mobile-swipe-strip")!;
+    expect(strip.dataset.swipeActive).toBeUndefined();
+  });
+
+  it("rapid switch A→B→C lands on C with exactly one active slot (§29)", async () => {
+    render(<MobileHost />);
     await act(async () => {
       fireEvent.click(screen.getByRole("tab", { name: "AI" }));
       fireEvent.click(screen.getByRole("tab", { name: "娱乐" }));
     });
-    // B is dropped outright: whether the arm boundary has fired yet or
-    // not, page-b is in NO pane — it was superseded before ever becoming
-    // visible, and at most two panes exist.
-    const mounted = panes();
-    expect(mounted.length).toBeLessThanOrEqual(2);
-    expect(mounted.map((pane) => pane.dataset.sectionId)).not.toContain("page-b");
-    // The final destination settles on C alone.
-    await flushArmFrames();
-    await act(async () => {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 600);
-      });
-    });
-    expect(panes()).toHaveLength(1);
-    expect(panes()[0]!.dataset.sectionId).toBe("page-c");
-  });
-
-  it("tapping the CURRENT section is a full no-op — one pane, no phases (§30)", async () => {
-    render(<MobileHost />);
-    await act(async () => {
-      fireEvent.click(screen.getByRole("tab", { name: "办公" }));
-    });
-    expect(panes()).toHaveLength(1);
-    expect(panes()[0]!.className).not.toContain("--pending");
-    expect(panes()[0]!.className).not.toContain("--entering");
-    await flushArmFrames();
-    expect(panes()).toHaveLength(1);
-  });
-
-  it("the boot section mounts settled — no entrance, no pending phase (§16 spirit)", () => {
-    render(<MobileHost />);
-    const mounted = panes();
-    expect(mounted).toHaveLength(1);
-    expect(mounted[0]!.className).not.toContain("--pending");
-    expect(mounted[0]!.className).not.toContain("--entering");
+    const active = slots().filter((element) => element.dataset.swipeSlot === "0");
+    expect(active).toHaveLength(1);
+    expect(active[0]!.dataset.sectionId).toBe("page-c");
+    // B is only present as a neighbour, never as the centre.
+    expect(slotSummary().map((entry) => entry.page)).toContain("page-b");
+    expect(screen.getByRole("tab", { name: "娱乐" }).getAttribute("aria-selected")).toBe("true");
   });
 });
 
@@ -323,6 +311,20 @@ describe("wallpaper crossfade semantics (R2 §12/§31)", () => {
 });
 
 describe("the browse surface (§14/§24/§75)", () => {
+  /**
+   * The swipe strip mounts the neighbours too (inert, off-screen), so a
+   * document-wide query for a tile or an empty hint can match three times
+   * over. Everything about "what the user sees" must be scoped to the
+   * CENTRE slot — the same rule the shell itself uses.
+   */
+  function activeSlot(container: HTMLElement = document.body): HTMLElement {
+    const slot = container.querySelector<HTMLElement>('.vela-mobile-swipe-slot[data-swipe-slot="0"]');
+    if (slot === null) {
+      throw new Error("no active slot");
+    }
+    return slot;
+  }
+
   it("renders a tablist with one tab per section, the active one selected", () => {
     render(<MobileHost />);
     const tablist = screen.getByRole("tablist", { name: "分类" });
@@ -337,11 +339,11 @@ describe("the browse surface (§14/§24/§75)", () => {
 
   it("renders the section's apps and folders as touch tiles — names ALWAYS visible", () => {
     render(<MobileHost />);
-    const panel = document.getElementById("vela-mobile-section-panel")!;
-    expect(panel!.textContent).toContain("GitHub");
-    expect(panel!.textContent).toContain("Notion");
-    expect(panel!.textContent).toContain("开发工具");
-    const tiles = panel!.querySelectorAll(".vela-mobile-tile__button");
+    const panel = activeSlot();
+    expect(panel.textContent).toContain("GitHub");
+    expect(panel.textContent).toContain("Notion");
+    expect(panel.textContent).toContain("开发工具");
+    const tiles = panel.querySelectorAll(".vela-mobile-tile__button");
     expect(tiles).toHaveLength(3);
   });
 
@@ -414,7 +416,7 @@ describe("the browse surface (§14/§24/§75)", () => {
       );
     }
     render(<LongHost />);
-    const panel = document.getElementById("vela-mobile-section-panel")!;
+    const panel = activeSlot();
     const labels = panel.querySelectorAll(".vela-mobile-tile__label");
     expect(labels).toHaveLength(3);
     const classes = new Set(Array.from(labels).map((label) => label.className));
@@ -426,7 +428,7 @@ describe("the browse surface (§14/§24/§75)", () => {
 
   it("an empty section shows the quiet empty hint, never management affordances", () => {
     render(<MobileHost initialPageId="page-c" />);
-    expect(screen.getByText(/这个分类还没有应用/)).not.toBeNull();
+    expect(activeSlot().textContent).toContain("这个分类还没有应用");
   });
 
   it("tapping an app launches through the canonical helper — exactly once (§26)", () => {

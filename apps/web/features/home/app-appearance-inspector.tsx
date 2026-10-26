@@ -22,6 +22,7 @@ import type { TranslateFn } from "../i18n/use-i18n";
 import { getBrowserAssetRuntime } from "../assets/browser-assets";
 import { AppIconTile, appIconDecorationProps } from "./app-icon-renderer";
 import { IconText } from "./icon-text";
+import { useIconTextInput } from "./icon-text-input";
 import { appGlyphColorModel, appIconDisplayText, humanizeIconName } from "./app-icon";
 import {
   buildDraftApp,
@@ -611,6 +612,7 @@ function GeneratedTextControls({
   readonly withHints?: boolean;
 }) {
   const { t } = useI18n();
+  const iconTextInput = useIconTextInput((customText) => patch({ customText }));
   return (
     <div className="flex flex-col gap-3 pt-3">
       <TextField>
@@ -637,7 +639,7 @@ function GeneratedTextControls({
         <>
           <TextField
             value={draft.customText}
-            onChange={(customText) => patch({ customText })}
+            onChange={iconTextInput.onChange}
             autoComplete="off"
           >
             <Label className="text-sm font-medium text-vdu-fg">
@@ -647,6 +649,7 @@ function GeneratedTextControls({
               className="mt-1.5 h-10 max-w-[280px]"
               type="text"
               spellCheck={false}
+              {...iconTextInput.inputProps}
               placeholder={t("visualEditor.customTextPlaceholder")}
             />
           </TextField>

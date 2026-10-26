@@ -1,13 +1,11 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   VdHeroOverlayScope,
   VdPortalContainerProvider,
 } from "@components/ui/overlay-scope";
-import { gsap } from "@components/vd/gsap";
-import { VD_MOTION_EASE, vdMotionDuration } from "@components/vd/motion-tokens";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
 import {
   findDesktopPage,
@@ -16,6 +14,7 @@ import {
 } from "@veladesk/domain";
 import type {
   AppShortcut,
+  DesktopPage,
   DesktopPageId,
   EntityId,
 } from "@veladesk/domain";
@@ -28,16 +27,14 @@ import {
 } from "../desktop-wallpaper";
 import { buildAppearanceTheme, resolveEffectiveColorMode } from "../appearance-theme";
 import { useSystemPrefersLight } from "../use-system-prefers-light";
+import { useDocumentColorScheme } from "../use-document-color-scheme";
 import { getBrowserAssetRuntime } from "../../assets/browser-assets";
 import { launchApp } from "../launch-app";
 import { resolveDockEntities } from "../dock-model";
 import type { WorkspaceActiveSection } from "../workspace-active-section";
 import { resolveMobileSectionItems } from "./mobile-section-items";
-import {
-  pendingMobilePageId,
-  useMobileSectionTransition,
-  visibleMobilePageId,
-} from "./mobile-section-transition";
+import { swipePaneSlots } from "./mobile-swipe-model";
+import { useSectionSwipe } from "./use-mobile-section-swipe";
 import { MobileHeader } from "./mobile-header";
 import { MobileCategoryTabs, MOBILE_SECTION_PANEL_ID } from "./mobile-category-tabs";
 import { MobileAppGrid } from "./mobile-app-grid";
@@ -81,6 +78,7 @@ export function MobileShell({
   const theme = useMemo(() => buildAppearanceTheme(resolvedAppearance), [resolvedAppearance]);
   const systemPrefersLight = useSystemPrefersLight();
   const effectiveColorMode = resolveEffectiveColorMode(theme.colorMode, systemPrefersLight);
+  useDocumentColorScheme(effectiveColorMode);
 
   // --- Active section (shared owner; wallpaper follows it — §43/§44) -------
   const activePageId = activeSection.effectiveActivePageId;
@@ -124,19 +122,12 @@ export function MobileShell({
   const [menuOpen, setMenuOpen] = useState(false);
   const [folderId, setFolderId] = useState<EntityId | null>(null);
 
-  // The prepared-target coordinator (R2 §7): the LOGICAL destination is
-  // activePageId above (tabs/persistence react immediately); the VISUAL
-  // panes follow the machine — target hidden-mounted first, armed one
-  // frame after its layout pass, entrance on a settled tree.
-  const { machine: transition, settle: settleTransition } = useMobileSectionTransition(
-    activePageId,
-    { reducedMotion },
-  );
-  const visibleId = visibleMobilePageId(transition);
-  const pendingId = pendingMobilePageId(transition);
-  const panePageIds = snapshot.pages
-    .map((page) => page.id)
-    .filter((pageId) => pageId === visibleId || pageId === pendingId);
+  // Section paging is now a SWIPE STRIP (previous | active | next, moved
+  // as one transform). The old two-phase prepared-target coordinator is gone:
+  // the neighbours are always mounted, so a swipe reveals content that is
+  // already laid out. A tap keeps the short tab-content entrance.
+  // The logical active section stays the single source of truth that the
+  // tabs, the search sheet and persistence follow.
 
   const openApp = useCallback((app: AppShortcut) => {
     launchApp(app);
@@ -174,33 +165,20 @@ export function MobileShell({
         onSelect={activeSection.requestActiveSection}
       />
       <main className="vela-mobile-shell__content" id={MOBILE_SECTION_PANEL_ID} role="tabpanel">
-        {/* §18/R2 §7: prepared-target panes in stable page order — at most
-            the visible page plus ONE hidden-mounted pending page. The
-            heavy grid mount happens in the preparing commit (which paints
-            no new content); the entrance runs on the next frame's settled
-            tree. Reduced motion bypasses straight to the settled swap. */}
-        {panePageIds.map((panePageId) => (
-          <MobileSectionPane
-            key={panePageId}
-            pageId={panePageId}
-            mode={
-              panePageId === pendingId
-                ? "pending"
-                : transition.phase === "entering" && panePageId === transition.targetId
-                  ? "entering"
-                  : "visible"
-            }
-            reducedMotion={reducedMotion}
-            onSettled={settleTransition}
-          >
+        <SectionSwipeStrip
+          pages={snapshot.pages}
+          activePageId={activePageId}
+          reducedMotion={reducedMotion}
+          onCommit={activeSection.requestActiveSection}
+          renderPage={(pageId) => (
             <MobileAppGrid
-              items={resolveMobileSectionItems({ workspace: snapshot, pageId: panePageId })}
+              items={resolveMobileSectionItems({ workspace: snapshot, pageId })}
               workspace={snapshot}
               onOpenApp={openApp}
               onOpenFolder={setFolderId}
             />
-          </MobileSectionPane>
-        ))}
+          )}
+        />
       </main>
       <MobileDock workspace={snapshot} onOpenApp={openApp} onOpenFolder={setFolderId} />
 
@@ -240,74 +218,69 @@ export function MobileShell({
 }
 
 /**
- * One section pane (R2 §7/§23): the transform/opacity wrapper the entrance
- * owns. Modes: "pending" (hidden-mounted preparation — visibility/inert via
- * CSS + attributes, never display:none), "entering" (the ONE short settle:
- * x 12px + fade on the tab-content band), "visible" (the resting pane; the
- * boot page mounts straight here — a restored section never plays an
- * entrance sweep). Re-renders never restart a running tween (effect deps
- * are mode-level); a mid-flight entrance that gets superseded snaps its
- * page to the settled pose so the base stays fully opaque. Reduced motion
- * settles instantly (§33/§61).
+ * The swipe strip (mobile category paging): the active page in flow, the
+ * previous/next pages parked one viewport to either side, all translated
+ * horizontally as one compositor layer.
+ *
+ * Why a strip instead of the old two-phase prepared-target machinery: the
+ * gesture needs the neighbour to be VISIBLE while the finger moves, so both
+ * neighbours stay mounted and laid out. Re-slotting happens only when the
+ * active page actually changes, so mid-swipe React re-renders are exactly
+ * zero — the finger only touches a transform.
+ *
+ * The loop is seam-free because the panes are IDENTIFIED BY PAGE ID: when a
+ * swipe commits, the pane the user is already looking at simply becomes the
+ * centre slot (same DOM node, no remount, no flash).
+ * With a single section there are no neighbours and no looping.
  */
-function MobileSectionPane({
-  pageId,
-  mode,
+function SectionSwipeStrip({
+  pages,
+  activePageId,
   reducedMotion,
-  onSettled,
-  children,
+  onCommit,
+  renderPage,
 }: {
-  readonly pageId: DesktopPageId | null;
-  readonly mode: "pending" | "entering" | "visible";
+  readonly pages: readonly DesktopPage[];
+  readonly activePageId: DesktopPageId | null;
   readonly reducedMotion: boolean;
-  readonly onSettled: () => void;
-  readonly children: React.ReactNode;
+  readonly onCommit: (pageId: DesktopPageId) => void;
+  readonly renderPage: (pageId: DesktopPageId) => React.ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const onSettledRef = useRef(onSettled);
-  useLayoutEffect(() => {
-    onSettledRef.current = onSettled;
+  const pageIds = useMemo(() => pages.map((page) => page.id), [pages]);
+  const looping = pageIds.length > 1;
+  const { stripRef, onPointerDown } = useSectionSwipe({
+    pageIds,
+    activePageId,
+    onCommit,
+    looping,
+    reducedMotion,
   });
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (element === null || mode !== "entering") {
-      return;
-    }
-    if (reducedMotion) {
-      gsap.set(element, { x: 0, opacity: 1 });
-      onSettledRef.current();
-      return;
-    }
-    const tween = gsap.fromTo(
-      element,
-      { x: 12, opacity: 0 },
-      {
-        x: 0,
-        opacity: 1,
-        duration: vdMotionDuration("tabContent"),
-        ease: VD_MOTION_EASE,
-        clearProps: "transform",
-        onComplete: () => {
-          onSettledRef.current();
-        },
-      },
-    );
-    return () => {
-      // Retarget mid-flight: the tween dies and this page — now the visible
-      // base for the next preparation — snaps to the settled pose.
-      tween.kill();
-      gsap.set(element, { x: 0, opacity: 1 });
-    };
-  }, [mode, reducedMotion]);
+
+  const slots = useMemo(
+    () => swipePaneSlots({ pageIds, activePageId, looping }),
+    [pageIds, activePageId, looping],
+  );
+
   return (
     <div
-      ref={ref}
-      className={`vela-mobile-pane vela-mobile-pane--${mode}`}
-      data-section-id={pageId ?? ""}
-      inert={mode === "pending" ? true : undefined}
-      aria-hidden={mode === "pending" ? "true" : undefined}
+      ref={stripRef}
+      className="vela-mobile-swipe-strip"
+      data-swipe-looping={looping ? "true" : "false"}
+      onPointerDown={onPointerDown}
     >
-      {children}
+      {slots.map(({ pageId, slot, bothSides }) => (
+        <div
+          key={pageId}
+          className="vela-mobile-swipe-slot"
+          data-swipe-slot={slot}
+          data-swipe-both-sides={bothSides ? "true" : undefined}
+          data-section-id={pageId}
+          inert={slot === 0 ? undefined : true}
+          aria-hidden={slot === 0 ? undefined : "true"}
+        >
+          {renderPage(pageId)}
+        </div>
+      ))}
     </div>
   );
 }

@@ -16,7 +16,8 @@ const segmenter =
     ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
     : undefined;
 
-function graphemes(text: string): string[] {
+/** Splits text into user-visible characters (grapheme clusters). */
+export function graphemes(text: string): string[] {
   return segmenter === undefined
     ? Array.from(text)
     : Array.from(segmenter.segment(text), (part) => part.segment);

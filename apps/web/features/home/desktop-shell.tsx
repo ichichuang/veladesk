@@ -152,6 +152,7 @@ import {
   type WorkspaceActiveSection,
 } from "./workspace-active-section";
 import { useSystemPrefersLight } from "./use-system-prefers-light";
+import { useDocumentColorScheme } from "./use-document-color-scheme";
 import { normalizeSelection, selectAllIds, toggleSelection } from "./selection-state";
 import { normalizeSelectionRect, selectIntersectingItemIds } from "./selection-geometry";
 import {
@@ -470,6 +471,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     () => resolveEffectiveColorMode(theme.colorMode, systemPrefersLight),
     [theme.colorMode, systemPrefersLight],
   );
+  useDocumentColorScheme(effectiveColorMode);
 
   /**
    * The effective wallpaper of the VISIBLE section (023-C.4): resolved

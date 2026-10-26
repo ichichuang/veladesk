@@ -3,7 +3,7 @@ import type { AppShortcut } from "@veladesk/domain";
 import { DEFAULT_APP_VISUAL_STYLE } from "@veladesk/domain";
 
 import {
-  APP_ICON_TEXT_MAX_CODE_POINTS,
+  APP_ICON_TEXT_MAX_GRAPHEMES,
   buildDraftApp,
   buildDraftIcon,
   buildDraftVisual,
@@ -101,7 +101,18 @@ describe("draftFromApp", () => {
 
     expect(draft.source).toBe("text");
     expect(draft.textMode).toBe("custom");
-    expect(draft.customText).toBe("AI");
+    // Legacy multi-character text opens as the one glyph the tile shows,
+    // so the untouched icon is still savable.
+    expect(draft.customText).toBe("A");
+    expect(isDraftSavable(draft)).toBe(true);
+  });
+
+  it("keeps a single multi-code-point emoji whole on open", () => {
+    const draft = draftFromApp(
+      makeApp({ icon: { kind: "generated", text: "👨‍👩‍👧", source: "custom" } })
+    );
+    expect(draft.customText).toBe("👨‍👩‍👧");
+    expect(isDraftSavable(draft)).toBe(true);
   });
 
   it("treats favicon/asset and legacy icons as text/auto", () => {
@@ -125,27 +136,31 @@ describe("draftFromApp", () => {
 });
 
 describe("validateIconText", () => {
-  it("accepts up to 4 code points across scripts and emoji", () => {
-    for (const text of ["AI", "家", "NAS", "🤖", "测试测", " a ", "🇯🇵", "a👍b"]) {
+  it("accepts exactly one character across scripts and emoji", () => {
+    for (const text of ["A", "a", "家", "7", "🤖", " a ", "\u00e9", "👨‍👩‍👧", "🇯🇵", "👍🏽"]) {
       expect(validateIconText(text)).toBeUndefined();
     }
   });
 
-  it("counts code points, not UTF-16 units", () => {
-    // 👍 is 2 UTF-16 code units but 1 code point — fine at 4 total.
-    expect(validateIconText("👍👍👍👍")).toBeUndefined();
-    expect(validateIconText("👍👍👍👍👍")).toBe("too-long");
+  it("counts user-visible characters, not UTF-16 units or code points", () => {
+    // 👍 is 2 UTF-16 code units but 1 code point — it is exactly one glyph;
+    // the family emoji is 5 code points but still ONE grapheme.
+    expect(validateIconText("👍")).toBeUndefined();
+    expect(validateIconText("👍👍")).toBe("too-long");
+    expect(validateIconText("👨‍👩‍👧x")).toBe("too-long");
   });
 
-  it("rejects blank and over-long text", () => {
+  it("rejects blank and multi-character text", () => {
     expect(validateIconText("")).toBe("empty");
     expect(validateIconText("   ")).toBe("empty");
-    expect(validateIconText("ABCDEF")).toBe("too-long");
+    expect(validateIconText("AI")).toBe("too-long");
+    expect(validateIconText("AB")).toBe("too-long");
+    expect(validateIconText("微信")).toBe("too-long");
     expect(validateIconText("家家人人人")).toBe("too-long");
   });
 
-  it("matches the task's 4-code-point budget constant", () => {
-    expect(APP_ICON_TEXT_MAX_CODE_POINTS).toBe(4);
+  it("clamps to a one-character budget", () => {
+    expect(APP_ICON_TEXT_MAX_GRAPHEMES).toBe(1);
   });
 });
 
@@ -365,7 +380,8 @@ describe("isDraftSavable", () => {
     const draft = { ...draftFromApp(app), textMode: "custom" as const, customText: "  " };
 
     expect(isDraftSavable(draft)).toBe(false);
-    expect(isDraftSavable({ ...draft, customText: 'AI' })).toBe(true);
+    expect(isDraftSavable({ ...draft, customText: 'A' })).toBe(true);
+    expect(isDraftSavable({ ...draft, customText: '家' })).toBe(true);
     expect(isDraftSavable({ ...draft, customText: 'TOOLONG' })).toBe(false);
   });
 

@@ -6,8 +6,9 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { resolveAppContentLayout } from "./app-content-layout";
+import { APP_ICON_TEXT_MAX_GRAPHEMES } from "./app-visual-draft";
 import { generatedIconText, iconInitial } from "./generated-icon";
-import { IconText } from "./icon-text";
+import { IconText, clampIconText } from "./icon-text";
 
 /*
  * fix/icon-text-center — regression contracts for the "search result icon
@@ -134,6 +135,39 @@ describe("icon initial: one user-visible character", () => {
     for (const span of spans) {
       expect(span.getAttribute("style")).toBeNull();
     }
+  });
+});
+
+describe("custom icon text input keeps one character", () => {
+  it("clamps typed or pasted text to the first grapheme the tile would show", () => {
+    expect(clampIconText("微信")).toBe("微");
+    expect(clampIconText("AI")).toBe("A");
+    expect(clampIconText("GitHub")).toBe("G");
+    expect(clampIconText("7")).toBe("7");
+    expect(clampIconText("🚀🚀")).toBe("🚀");
+    // One grapheme, several code points — kept whole.
+    expect(clampIconText("👨‍👩‍👧x")).toBe("👨‍👩‍👧");
+    expect(clampIconText("🇨🇳x")).toBe("🇨🇳");
+    expect(clampIconText("👍🏽x")).toBe("👍🏽");
+    expect(clampIconText("家")).toBe("家");
+    expect(clampIconText("")).toBe("");
+  });
+
+  it("it is exactly what <IconText> renders, so input and tile agree", () => {
+    for (const text of ["微信", "NOTN", "🚀 Launch", "  家 "]) {
+      expect(clampIconText(text)).toBe(iconInitial(text));
+    }
+  });
+
+  it("both icon text inputs clamp through the IME-safe hook, never a UTF-16 maxLength", () => {
+    for (const file of ["./app-appearance-inspector.tsx", "./add-app-icon-picker.tsx"]) {
+      const source = read(file);
+      expect(source, file).toMatch(/useIconTextInput\(/);
+      expect(source, file).toMatch(/\{\.\.\.iconTextInput\.inputProps\}/);
+      // maxLength counts UTF-16 units: it would cut 😀 / 👨‍👩‍👧 in half.
+      expect(source, file).not.toMatch(/maxLength=/);
+    }
+    expect(APP_ICON_TEXT_MAX_GRAPHEMES).toBe(1);
   });
 });
 

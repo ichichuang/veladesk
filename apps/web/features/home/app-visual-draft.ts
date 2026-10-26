@@ -2,7 +2,7 @@ import type { AppDecorationStyle, AppIcon, AppShortcut, AppVisualStyle } from "@
 import { DEFAULT_APP_LABEL_VISIBLE } from "@veladesk/domain";
 
 import { normalizeAppHexColor } from "./app-icon";
-import { generatedIconText } from "./generated-icon";
+import { generatedIconText, graphemes, iconInitial } from "./generated-icon";
 
 /**
  * Pure draft model of the App Visual Editor (task 016-A, sizing controls
@@ -18,7 +18,15 @@ import { generatedIconText } from "./generated-icon";
  * simply stop being written).
  */
 
-export const APP_ICON_TEXT_MAX_CODE_POINTS = 4;
+/**
+ * Custom icon text is ONE user-visible character: the tile renders a single
+ * glyph (`IconText` → `iconInitial`), so the editor must not accept more.
+ * Counted in grapheme clusters, so 中文 / 字母 / 数字 / emoji — including
+ * multi-code-point emoji (ZWJ families, flags, skin tones) — each count as 1.
+ * Legacy data with several characters still RENDERS as its first glyph and
+ * opens in the editor clamped to that glyph — see `draftFromApp`.
+ */
+export const APP_ICON_TEXT_MAX_GRAPHEMES = 1;
 
 /** Where the icon comes from — the editor's icon-source tabs. */
 export type AppVisualDraftSource = "library" | "text" | "upload";
@@ -76,7 +84,10 @@ export function draftFromApp(app: AppShortcut): AppVisualDraft {
     assetId = icon.assetId;
   } else if (icon.kind === "generated" && icon.source === "custom") {
     textMode = "custom";
-    customText = icon.text;
+    // Legacy multi-character text opens as the one glyph the tile shows,
+    // so an untouched legacy icon stays savable.
+    // (Same rule as the input clamp: `clampIconText` === `iconInitial`.)
+    customText = iconInitial(icon.text);
   }
   return {
     source,
@@ -95,16 +106,16 @@ export function draftFromApp(app: AppShortcut): AppVisualDraft {
 export type IconTextIssue = "empty" | "too-long";
 
 /**
- * Validates custom icon text: 1–4 Unicode code points (Array.from — no
- * grapheme dependency), not blank after trimming. 中文/英文/emoji/数字 all
- * count by code point.
+ * Validates custom icon text: exactly ONE user-visible character (grapheme
+ * cluster), not blank after trimming. 中文/英文/emoji/数字 all count as one,
+ * and so does a multi-code-point emoji such as 👨‍👩‍👧 or 🇨🇳.
  */
 export function validateIconText(text: string): IconTextIssue | undefined {
   const trimmed = text.trim();
   if (trimmed.length === 0) {
     return "empty";
   }
-  if (Array.from(trimmed).length > APP_ICON_TEXT_MAX_CODE_POINTS) {
+  if (graphemes(trimmed).length > APP_ICON_TEXT_MAX_GRAPHEMES) {
     return "too-long";
   }
   return undefined;

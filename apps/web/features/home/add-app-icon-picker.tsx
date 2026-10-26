@@ -20,6 +20,7 @@ import {
 import type { UploadValidationIssue } from "./asset-upload";
 import { validateIconText } from "./app-visual-draft";
 import { generatedIconText } from "./generated-icon";
+import { useIconTextInput } from "./icon-text-input";
 import { IconPicker } from "./icon-picker";
 import type { AddAppIconDraft, SmartAddAction } from "../app-recognition/smart-add-state";
 import { Dialog, DialogContent, DialogTitle } from "@components/ui/dialog";
@@ -49,6 +50,10 @@ export function AddAppIconPickerDialog({
   const { t } = useI18n();
   const [tab, setTab] = useState<"library" | "text" | "upload">(initialTab(value));
   const [customText, setCustomText] = useState(value.kind === "custom-text" ? value.text : "");
+  const iconTextInput = useIconTextInput((text) => {
+    setCustomText(text);
+    dispatch({ type: "edit-icon", value: { kind: "custom-text", text } });
+  });
   const [uploadIssue, setUploadIssue] = useState<UploadValidationIssue | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
 
@@ -105,7 +110,9 @@ export function AddAppIconPickerDialog({
     }
   }
 
-  const textIssue = customText.trim().length > 0 ? validateIconText(customText) : undefined;
+  // No verdict mid-IME-composition: the raw pinyin is not the final text.
+  const textIssue =
+    !iconTextInput.composing && customText.trim().length > 0 ? validateIconText(customText) : undefined;
 
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
@@ -231,10 +238,7 @@ export function AddAppIconPickerDialog({
                 <>
                   <TextField
                     value={customText}
-                    onChange={(text) => {
-                      setCustomText(text);
-                      dispatch({ type: "edit-icon", value: { kind: "custom-text", text } });
-                    }}
+                    onChange={iconTextInput.onChange}
                     autoComplete="off"
                   >
                     <Label className="text-sm font-medium text-vdu-fg">
@@ -244,6 +248,7 @@ export function AddAppIconPickerDialog({
                       className="mt-1.5 h-10 max-w-[280px]"
                       type="text"
                       spellCheck={false}
+                      {...iconTextInput.inputProps}
                       placeholder={t("visualEditor.customTextPlaceholder")}
                     />
                   </TextField>
