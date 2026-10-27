@@ -1,4 +1,4 @@
-import { getWorkspaceRepository } from "../../../../server/runtime";
+import { getDataDirSizeGuard, getWorkspaceRepository } from "../../../../server/runtime";
 import {
   handleCreateWorkspace,
   handleListWorkspaces,
@@ -11,5 +11,5 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  return handleCreateWorkspace(getWorkspaceRepository(), request);
+  return handleCreateWorkspace(getWorkspaceRepository(), request, getDataDirSizeGuard());
 }

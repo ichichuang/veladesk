@@ -9,9 +9,14 @@ import {
 } from "@veladesk/database";
 import type { VelaDeskDatabase, WorkspaceRepository } from "@veladesk/database";
 
+import { createAssetUploadGuard } from "./assets/upload-guard";
 import { createFilesystemAssetRepository } from "./assets/repository";
 import type { AssetRepository } from "./assets/repository";
+import type { AssetUploadGuard } from "./api/write-guard";
 import { resolveServerConfig } from "./config";
+import { LIMITS } from "./limits";
+import { createDataDirSizeGuard } from "./storage-guard";
+import type { DataDirSizeGuard } from "./storage-guard";
 
 /**
  * One process-wide server runtime: an open SQLite database plus the
@@ -50,6 +55,7 @@ export function createWorkspaceServerRuntime(config: {
   const assetsDir = config.assetsDir ?? path.join(config.dataDir, "assets");
   return { database, repository: createWorkspaceRepository(database, {
     prepareAssetCleanup: ids => prepareWorkspaceAssetCleanup(assetsDir, ids),
+    maxRevisionsPerWorkspace: LIMITS.maxRevisionsPerWorkspace,
   }) };
 }
 
@@ -107,4 +113,56 @@ export function getAssetRepository(): AssetRepository {
   const repository = createFilesystemAssetRepository({ assetsDir: config.assetsDir });
   globalThisWithAssets.__veladeskAssetRepository = repository;
   return repository;
+}
+
+interface VelaDeskGuardsGlobalThis {
+  __veladeskDataDirSizeGuard?: DataDirSizeGuard;
+  __veladeskAssetUploadGuard?: AssetUploadGuard;
+}
+
+/**
+ * Lazily created data-dir size guard singleton (task vd-guard): the
+ * mutating workspace routes share it, so the recursive size measurement
+ * is cached process-wide for the check TTL.
+ */
+export function getDataDirSizeGuard(): DataDirSizeGuard {
+  const globalThisWithGuards = globalThis as VelaDeskGuardsGlobalThis;
+  const existing = globalThisWithGuards.__veladeskDataDirSizeGuard;
+  if (existing !== undefined) {
+    return existing;
+  }
+  const config = resolveServerConfig(process.env, process.cwd());
+  const guard = createDataDirSizeGuard({
+    dataDir: config.dataDir,
+    maxBytes: LIMITS.maxDataDirBytes,
+    ttlMs: LIMITS.dataDirCheckTtlMs,
+  });
+  globalThisWithGuards.__veladeskDataDirSizeGuard = guard;
+  return guard;
+}
+
+/**
+ * Lazily created asset-upload guard singleton (task vd-guard): composes
+ * the data-dir budget with the assets-dir quota and the lazy orphan
+ * cleanup. The cleanup shares the workspace runtime's SQLite connection
+ * so it reads references under the same write lock the saves take.
+ */
+export function getAssetUploadGuard(): AssetUploadGuard {
+  const globalThisWithGuards = globalThis as VelaDeskGuardsGlobalThis;
+  const existing = globalThisWithGuards.__veladeskAssetUploadGuard;
+  if (existing !== undefined) {
+    return existing;
+  }
+  const config = resolveServerConfig(process.env, process.cwd());
+  const guard = createAssetUploadGuard({
+    database: getWorkspaceServerRuntime().database,
+    assetsDir: config.assetsDir,
+    storage: getDataDirSizeGuard(),
+    maxAssetCount: LIMITS.maxAssetCount,
+    maxAssetTotalBytes: LIMITS.maxAssetTotalBytes,
+    orphanGraceMs: LIMITS.orphanGraceMs,
+    orphanSweepIntervalMs: LIMITS.orphanSweepIntervalMs,
+  });
+  globalThisWithGuards.__veladeskAssetUploadGuard = guard;
+  return guard;
 }

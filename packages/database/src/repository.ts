@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, lt } from "drizzle-orm";
 import { validateWorkspace } from "@veladesk/domain";
 import type { WorkspaceId, WorkspaceSnapshot } from "@veladesk/domain";
 
@@ -9,6 +9,7 @@ import {
   deserializeWorkspaceSnapshot,
   serializeWorkspaceSnapshot,
 } from "./serialization";
+import { DEFAULT_MAX_REVISIONS_PER_WORKSPACE } from "./types";
 import type {
   CreateWorkspaceResult,
   RenameWorkspaceResult,
@@ -26,9 +27,10 @@ import type {
  *
  * Every write validates the snapshot with the domain validator first, and
  * every successful create/save bumps the per-workspace revision and appends
- * an immutable revision row in the same transaction. Revisions are never
- * compared or deduplicated by content: a save is a persistence commit
- * boundary, so identical snapshots still produce revision + 1.
+ * an immutable revision row in the same transaction; that transaction also
+ * prunes revisions older than the retention window (default 50). Revisions
+ * are never compared or deduplicated by content: a save is a persistence
+ * commit boundary, so identical snapshots still produce revision + 1.
  *
  * Concurrency is resolved by the database, not by JavaScript pre-reads:
  * creation races are settled by `ON CONFLICT DO NOTHING` on the primary
@@ -96,6 +98,10 @@ export function createWorkspaceRepository(
 ): WorkspaceRepository {
   const clock = readClock(options);
   const orm = database.orm;
+  const maxRevisions = options.maxRevisionsPerWorkspace ?? DEFAULT_MAX_REVISIONS_PER_WORKSPACE;
+  if (!Number.isInteger(maxRevisions) || maxRevisions < 1) {
+    throw new RangeError(`maxRevisionsPerWorkspace must be an integer >= 1, received: ${maxRevisions}`);
+  }
 
   const repository: WorkspaceRepository = {
     createWorkspace(snapshot): CreateWorkspaceResult {
@@ -145,6 +151,10 @@ export function createWorkspaceRepository(
               createdAt: timestamp,
             })
             .run();
+          // No retention pruning here by design: creation just inserted
+          // revision 1 of a brand-new id (revisions of other ids never
+          // exist without their workspace row), so there is nothing older
+          // than the window to prune.
           return "created";
         }, { behavior: "immediate" });
 
@@ -214,6 +224,21 @@ export function createWorkspaceRepository(
             snapshotJson,
             createdAt: timestamp,
           })
+          .run();
+
+        // Retention (task vd-guard): prune in the SAME transaction as the
+        // insert so history can never outgrow the budget, even on crash.
+        // Only revisions strictly older than the retention window go; the
+        // just-written current revision is never a candidate. Revision
+        // numbers keep increasing and are never reused — they come from
+        // the CAS above, not from the surviving rows.
+        tx.delete(workspaceRevisions)
+          .where(
+            and(
+              eq(workspaceRevisions.workspaceId, snapshot.id),
+              lt(workspaceRevisions.revision, newRevision - maxRevisions + 1),
+            ),
+          )
           .run();
 
         return { updated: true, createdAt: row?.createdAt ?? timestamp };

@@ -1,6 +1,8 @@
 import type { WorkspaceRepository } from "@veladesk/database";
 
+import { checkSnapshotLimits } from "../limits";
 import { decodeCreateWorkspaceBody, decodeExpectedRevision, decodeSaveWorkspaceBody, isRecord, parseJsonBody } from "./input";
+import type { WriteGuard } from "./write-guard";
 import { errorResponse, jsonResponse } from "./response";
 
 /**
@@ -11,6 +13,11 @@ import { errorResponse, jsonResponse } from "./response";
  * validation logic. Repository business results (invalid workspace,
  * conflicts) are expected outcomes with dedicated statuses; unexpected
  * repository/SQLite failures keep propagating as 500s.
+ *
+ * The optional write guard refuses mutations with 507 `storage-full`
+ * while the data dir is over budget; the snapshot limits reject oversized
+ * request bodies on POST/PUT only — reads and pre-existing data are never
+ * re-checked.
  */
 
 /** GET /api/v1/workspaces */
@@ -22,7 +29,11 @@ export function handleListWorkspaces(repository: WorkspaceRepository): Response 
 export async function handleCreateWorkspace(
   repository: WorkspaceRepository,
   request: Request,
+  guard?: WriteGuard,
 ): Promise<Response> {
+  if (guard?.storageFull) {
+    return errorResponse(507, "storage-full");
+  }
   const body = await parseJsonBody(request);
   if (!body.ok) {
     return body.response;
@@ -31,6 +42,10 @@ export async function handleCreateWorkspace(
   const snapshot = decodeCreateWorkspaceBody(body.value);
   if (snapshot === undefined) {
     return errorResponse(400, "invalid-request");
+  }
+  const violation = checkSnapshotLimits(snapshot);
+  if (violation !== undefined) {
+    return errorResponse(violation.status, "snapshot-limit-exceeded", { limit: violation.limit });
   }
 
   const result = repository.createWorkspace(snapshot);
@@ -68,7 +83,11 @@ export async function handleSaveWorkspace(
   repository: WorkspaceRepository,
   request: Request,
   workspaceId: string,
+  guard?: WriteGuard,
 ): Promise<Response> {
+  if (guard?.storageFull) {
+    return errorResponse(507, "storage-full");
+  }
   const body = await parseJsonBody(request);
   if (!body.ok) {
     return body.response;
@@ -77,6 +96,10 @@ export async function handleSaveWorkspace(
   const decoded = decodeSaveWorkspaceBody(body.value);
   if (decoded === undefined) {
     return errorResponse(400, "invalid-request");
+  }
+  const violation = checkSnapshotLimits(decoded.snapshot);
+  if (violation !== undefined) {
+    return errorResponse(violation.status, "snapshot-limit-exceeded", { limit: violation.limit });
   }
 
   if (decoded.snapshot.id !== workspaceId) {
@@ -105,7 +128,8 @@ export async function handleSaveWorkspace(
 }
 
 /** PATCH /api/v1/workspaces/:workspaceId — same CAS contract as PUT. */
-export async function handleRenameWorkspace(repository: WorkspaceRepository, request: Request, workspaceId: string): Promise<Response> {
+export async function handleRenameWorkspace(repository: WorkspaceRepository, request: Request, workspaceId: string, guard?: WriteGuard): Promise<Response> {
+  if (guard?.storageFull) return errorResponse(507, "storage-full");
   const body = await parseJsonBody(request);
   if (!body.ok) return body.response;
   if (!isRecord(body.value) || typeof body.value.name !== "string") return errorResponse(400, "invalid-request");
