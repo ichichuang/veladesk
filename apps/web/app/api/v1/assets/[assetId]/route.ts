@@ -1,4 +1,4 @@
-import { getAssetRepository } from "../../../../../server/runtime";
+import { getAssetRepository, getAssetUploadGuard } from "../../../../../server/runtime";
 import {
   handleGetAsset,
   handleHeadAsset,
@@ -13,7 +13,7 @@ interface AssetRouteContext {
 
 export async function PUT(request: Request, context: AssetRouteContext): Promise<Response> {
   const { assetId } = await context.params;
-  return handlePutAsset(getAssetRepository(), request, assetId);
+  return handlePutAsset(getAssetRepository(), request, assetId, getAssetUploadGuard());
 }
 
 export async function GET(_request: Request, context: AssetRouteContext): Promise<Response> {

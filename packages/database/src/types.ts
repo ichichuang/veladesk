@@ -86,10 +86,23 @@ export type DeleteWorkspaceResult =
   | { readonly ok: false; readonly reason: "last-workspace" }
   | { readonly ok: false; readonly reason: "revision-conflict"; readonly actualRevision: number };
 
+/**
+ * Default per-workspace revision retention: after every save the same
+ * transaction prunes revisions older than the newest minus this count.
+ * The current revision is never a pruning candidate.
+ */
+export const DEFAULT_MAX_REVISIONS_PER_WORKSPACE = 50;
+
 /** Options for {@link createWorkspaceRepository}. */
 export interface WorkspaceRepositoryOptions {
   /** Stage filesystem cleanup while the SQLite write lock protects references. */
   readonly prepareAssetCleanup?: (ids: readonly string[]) => { commit(): void; rollback(): void };
   /** Injectable clock for deterministic tests. Defaults to Date.now. */
   readonly now?: () => number;
+  /**
+   * Revisions retained per workspace (integer >= 1); the server wires its
+   * env-resolved limit here, tests inject small values. Defaults to
+   * {@link DEFAULT_MAX_REVISIONS_PER_WORKSPACE}.
+   */
+  readonly maxRevisionsPerWorkspace?: number;
 }

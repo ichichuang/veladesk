@@ -4,7 +4,8 @@ import {
   verifyAssetBytes,
 } from "@veladesk/assets/core";
 
-import type { AssetRepository } from "../assets/repository";
+import type { AssetPutResult, AssetRepository } from "../assets/repository";
+import type { AssetUploadGuard } from "./write-guard";
 import { errorResponse, jsonResponse } from "./response";
 
 /**
@@ -15,6 +16,15 @@ import { errorResponse, jsonResponse } from "./response";
  * `MAX_ASSET_BYTES` budget and answered 413 before its bytes are ever
  * hashed or written. Content-type headers are never trusted: the magic
  * bytes decide, and the recomputed SHA-256 must equal the id in the URL.
+ *
+ * The optional upload guard adds the server-side quotas (task vd-guard):
+ * 507 `storage-full` while the data dir is over budget, and 507
+ * `asset-quota-exceeded` when a NEW asset would exceed the assets-dir
+ * count/size quota — with admission and store serialized per process so
+ * concurrent uploads cannot jointly overshoot the cap. Idempotent
+ * re-uploads of an existing id never hit the quota check. Without a guard
+ * the handler behaves exactly as before, so unit tests of the HTTP
+ * contract stay dependency-free.
  */
 
 export type BoundedBodyResult =
@@ -73,8 +83,13 @@ export async function readBoundedBody(
 export async function handlePutAsset(
   repository: AssetRepository,
   request: Request,
-  assetId: string
+  assetId: string,
+  guard?: AssetUploadGuard
 ): Promise<Response> {
+  // 0. Data-dir budget: refuse before reading a single body byte.
+  if (guard?.storageFull) {
+    return errorResponse(507, "storage-full");
+  }
   // 1. The URL id must be a well-formed content address.
   if (!isContentAssetId(assetId)) {
     return errorResponse(400, "invalid-asset-id");
@@ -107,7 +122,20 @@ export async function handlePutAsset(
         return errorResponse(400, "invalid-asset-id");
     }
   }
-  const put = await repository.put(assetId, body.bytes);
+  // 6. Quota admission + store as ONE serialized critical section (per
+  // process) — only a NEW id is quota-checked; an existing file is a
+  // content-addressed no-op (idempotent PUT) that stores nothing new and
+  // must keep succeeding even at the quota.
+  let put: AssetPutResult;
+  if (guard !== undefined) {
+    const stored = await guard.storeWithinQuota(repository, assetId, body.bytes);
+    if (stored.refused) {
+      return errorResponse(507, "asset-quota-exceeded");
+    }
+    put = stored.put;
+  } else {
+    put = await repository.put(assetId, body.bytes);
+  }
   if (!put.stored) {
     return errorResponse(422, "asset-id-mismatch");
   }

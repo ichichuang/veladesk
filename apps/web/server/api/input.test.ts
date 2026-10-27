@@ -1,7 +1,9 @@
 import { createEmptyWorkspace } from "@veladesk/domain";
 import { describe, expect, it } from "vitest";
 
+import { LIMITS } from "../limits";
 import {
+  contentLengthExceeds,
   decodeCreateWorkspaceBody,
   decodeExpectedRevision,
   decodeRevisionSegment,
@@ -61,6 +63,90 @@ describe("parseJsonBody", () => {
       expect(await result.response.json()).toEqual({ error: { code: "invalid-json" } });
       expect(result.response.headers.get("Cache-Control")).toBe("no-store");
     }
+  });
+});
+
+describe("parseJsonBody byte budget", () => {
+  function request(body: string): Request {
+    return new Request("http://localhost/api", { method: "POST", body });
+  }
+
+  /** An ASCII JSON string of exactly `bytes` bytes. */
+  function paddedJson(bytes: number): string {
+    const overhead = '{"pad":""}'.length;
+    return `{"pad":"${"x".repeat(bytes - overhead)}"}`;
+  }
+
+  it("accepts a body exactly at the default 512 KiB budget", async () => {
+    const body = paddedJson(LIMITS.maxJsonBodyBytes);
+    expect(new TextEncoder().encode(body).byteLength).toBe(LIMITS.maxJsonBodyBytes);
+
+    const result = await parseJsonBody(request(body));
+
+    expect(result).toEqual({ ok: true, value: { pad: "x".repeat(LIMITS.maxJsonBodyBytes - '{"pad":""}'.length) } });
+  });
+
+  it("rejects a body one byte over the budget with 413 payload-too-large", async () => {
+    const result = await parseJsonBody(request(paddedJson(LIMITS.maxJsonBodyBytes + 1)));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(413);
+      expect(await result.response.json()).toEqual({ error: { code: "payload-too-large" } });
+    }
+  });
+
+  it("rejects before parsing, so over-budget garbage answers 413 not 400", async () => {
+    const result = await parseJsonBody(request(`${"x".repeat(1024 * 1024)}not json`));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(413);
+    }
+  });
+
+  it("rejects an oversized multi-chunk stream body at a small injected budget", async () => {
+    // Larger than one internal chunk, so the accumulation across reads is
+    // what trips the budget.
+    const overBudget = "[".repeat(65 * 1024) + "]".repeat(65 * 1024);
+    const within = "1234567890123456";
+
+    expect((await parseJsonBody(request(within), 16)).ok).toBe(true);
+    expect((await parseJsonBody(request("12345678901234567"), 16)).ok).toBe(false);
+    const result = await parseJsonBody(request(overBudget), 1024);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(413);
+    }
+  });
+
+  it("substitutes invalid UTF-8 bytes with U+FFFD like request.json()", async () => {
+    const prefix = new TextEncoder().encode('{"a":"');
+    const suffix = new TextEncoder().encode('"}');
+    const raw = new Uint8Array(prefix.length + 1 + suffix.length);
+    raw.set(prefix, 0);
+    raw[prefix.length] = 0xff;
+    raw.set(suffix, prefix.length + 1);
+    const request = new Request("http://localhost/api", {
+      method: "POST",
+      body: raw as unknown as BodyInit,
+      duplex: "half",
+    } as RequestInit);
+
+    const result = await parseJsonBody(request);
+
+    expect(result).toEqual({ ok: true, value: { a: "�" } });
+  });
+});
+
+describe("contentLengthExceeds", () => {
+  it("only a declared length over the budget rejects", () => {
+    const maxBytes = 512 * 1024;
+    expect(contentLengthExceeds(new Headers({ "content-length": "524289" }), maxBytes)).toBe(true);
+    expect(contentLengthExceeds(new Headers({ "content-length": "524288" }), maxBytes)).toBe(false);
+    expect(contentLengthExceeds(new Headers(), maxBytes)).toBe(false);
+    expect(contentLengthExceeds(new Headers({ "content-length": "abc" }), maxBytes)).toBe(false);
+    expect(contentLengthExceeds(new Headers({ "content-length": "" }), maxBytes)).toBe(false);
   });
 });
 
