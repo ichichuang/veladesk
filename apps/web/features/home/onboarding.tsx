@@ -7,6 +7,7 @@ import { createGridDefinition } from "@veladesk/desktop-engine";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
 import { useI18n } from "../i18n/use-i18n";
+import { buildSampleWorkspace } from "../import-json/sample-workspace";
 import { createBrowserId } from "./browser-id";
 import "./home-shell.css";
 
@@ -77,6 +78,39 @@ export function OnboardingScreen({ remoteUnavailable = false }: OnboardingScreen
     }
   }
 
+  /**
+   * 一键体验示例工作区: builds the curated sample (four category sections,
+   * a folder example and a dock) through the canonical import pipeline and
+   * stages it exactly like a hand-created workspace — local-first, sync
+   * fired without waiting.
+   */
+  async function handleCreateSample() {
+    if (creating) {
+      return;
+    }
+    setCreating(true);
+    setError(null);
+    try {
+      const snapshot = buildSampleWorkspace((kind) => createBrowserId(kind));
+      const result = await runtime.stageWorkspaceCreate(snapshot);
+      if (!result.ok) {
+        setError(t("onboarding.error.createFailed"));
+        setCreating(false);
+        return;
+      }
+      // Same local-first contract as the manual path: the desktop is
+      // usable now; the follow-up sync never blocks entry.
+      void runtime.syncCurrent().catch(() => {});
+    } catch (sampleError: unknown) {
+      setError(
+        sampleError instanceof Error
+          ? sampleError.message
+          : t("onboarding.error.createSampleFailed")
+      );
+      setCreating(false);
+    }
+  }
+
   return (
     <main className="vela-screen">
       <div className="vela-screen__ambient" aria-hidden="true" />
@@ -116,6 +150,9 @@ export function OnboardingScreen({ remoteUnavailable = false }: OnboardingScreen
           ) : null}
           <button type="submit" className="vela-button vela-button--primary" disabled={creating}>
             {creating ? t("onboarding.creatingButton") : t("onboarding.createButton")}
+          </button>
+          <button type="button" className="vela-button" disabled={creating} onClick={() => void handleCreateSample()}>
+            {creating ? t("onboarding.creatingSampleButton") : t("onboarding.sampleButton")}
           </button>
         </form>
       </section>
