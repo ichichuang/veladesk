@@ -493,6 +493,7 @@ const zhCNCatalog = {
   "settings.data.downloadTemplate": "下载模板",
   "settings.data.copyPrompt": "复制 AI 提示词",
   "settings.data.importJson": "导入 JSON",
+  "settings.data.exportDeck": "导出配方 (.deck.json)",
   "settings.data.promptCopied": "已复制 AI 整理提示词",
   "settings.data.copyFailed": "复制失败",
 
@@ -537,6 +538,7 @@ const zhCNCatalog = {
   "import.issue.INVALID_ROOT": "顶层必须是 JSON 对象。",
   "import.issue.INVALID_FORMAT": "format 必须是 \"veladesk-import\"。",
   "import.issue.UNSUPPORTED_VERSION": "不支持的 VelaDesk 导入版本。",
+  "import.issue.RECIPE_MIGRATED": "已识别配方文件(.deck.json),按导入格式继续;主题与动效设置暂不写入。",
   "import.issue.MISSING_SECTIONS": "缺少 sections 数组。",
   "import.issue.INVALID_SECTIONS": "sections 必须是数组。",
   "import.issue.TOO_MANY_SECTIONS": "类别数量超过上限({value})。",
@@ -1043,6 +1045,7 @@ export const enUS: MessageCatalog = {
   "settings.data.downloadTemplate": "Download template",
   "settings.data.copyPrompt": "Copy AI prompt",
   "settings.data.importJson": "Import JSON",
+  "settings.data.exportDeck": "Export deck (.deck.json)",
   "settings.data.promptCopied": "AI prompt copied",
   "settings.data.copyFailed": "Copy failed",
 
@@ -1087,6 +1090,7 @@ export const enUS: MessageCatalog = {
   "import.issue.INVALID_ROOT": "The top level must be a JSON object.",
   "import.issue.INVALID_FORMAT": "format must be \"veladesk-import\".",
   "import.issue.UNSUPPORTED_VERSION": "Unsupported VelaDesk import version.",
+  "import.issue.RECIPE_MIGRATED": "Deck file (.deck.json) recognized — continuing in the import format; theme and motion settings are not applied yet.",
   "import.issue.MISSING_SECTIONS": "Missing sections array.",
   "import.issue.INVALID_SECTIONS": "sections must be an array.",
   "import.issue.TOO_MANY_SECTIONS": "Too many sections ({value}).",

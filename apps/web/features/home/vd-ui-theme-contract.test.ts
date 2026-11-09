@@ -153,12 +153,13 @@ describe("vd-ui theme boundary contract (021-R1)", () => {
   it("keeps the popup surface and its foreground a paired, sufficiently opaque pair", () => {
     // The popup surface (--overlay) must be its own floored token, not the
     // raw translucent window: option text stays readable over any wallpaper
-    // or busy window content. --overlay is declared ONCE at the boundary;
-    // the mode blocks only re-declare the underlying --vdu-* palette it
-    // derives from.
+    // or busy window content. The semantic layer owns the floored value
+    // (--vd-color-bg-overlay); the mode blocks only re-declare the semantic
+    // palette, and the --vdu-* compatibility alias points at it.
     expect(declaredVar(baseBlock, "overlay")).toBe("var(--vdu-overlay)");
-    expect(declaredVar(baseBlock, "vdu-overlay")).toMatch(/clamp\(0\.96\b/);
-    expect(declaredVar(lightBlock, "vdu-overlay")).toMatch(/clamp\(0\.96\b/);
+    expect(declaredVar(baseBlock, "vdu-overlay")).toBe("var(--vd-color-bg-overlay)");
+    expect(declaredVar(baseBlock, "vd-color-bg-overlay")).toMatch(/clamp\(0\.96\b/);
+    expect(declaredVar(lightBlock, "vd-color-bg-overlay")).toMatch(/clamp\(0\.96\b/);
     // Paired foreground: the overlay foreground rides the same boundary.
     expect(declaredVar(baseBlock, "overlay-foreground")).toBe("var(--vdu-fg)");
   });
@@ -254,7 +255,7 @@ function lightnessOf(block: string, name: string, accentHue = 205): number {
  * component interpolation as CSS does it.
  */
 function compositedOverlayLuminance(block: string, accentHue: number, backdrop: 0 | 1): number {
-  const raw = declaredVar(block, "vdu-overlay");
+  const raw = declaredVar(block, "vd-color-bg-overlay");
   const parsed = parseOklch(raw, accentHue);
   const floor = 0.96; // the clamp() lower bound the source must declare
   const linear = oklchToClampedLinearSrgb(parsed.l, parsed.c, parsed.h);
@@ -276,39 +277,44 @@ function contrast(l1: number, l2: number): number {
 
 describe("declared popup color pairs (021-R1)", () => {
   it("gives normal option labels ≥ 4.5:1 on the popup surface in dark mode", () => {
-    const fg = lightnessOf(baseBlock, "vdu-fg");
-    const fgLinear = oklchToClampedLinearSrgb(fg, 0.01, 260);
+    const fg = lightnessOf(baseBlock, "vd-color-fg-primary");
+    const fgLinear = oklchToClampedLinearSrgb(fg, 0.01, 250);
     // Worst case: the translucent floor composited over a pure white wallpaper.
     const surface = compositedOverlayLuminance(baseBlock, 205, 1);
     expect(contrast(luminance(fgLinear), surface)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("keeps light settings descriptions and unsaved feedback at ≥ 4.5:1", () => {
-    const muted = parseOklch(declaredVar(lightBlock, "vdu-fg-muted"), 264);
+    const muted = parseOklch(declaredVar(lightBlock, "vd-color-fg-muted"), 255);
     const foreground = luminance(oklchToClampedLinearSrgb(muted.l, muted.c, muted.h));
     // Transparent settings windows can sit on any wallpaper, including black.
     for (const backdrop of [0, 1] as const) {
       expect(contrast(foreground, compositedOverlayLuminance(lightBlock, 264, backdrop))).toBeGreaterThanOrEqual(4.5);
     }
-    for (const name of ["vdu-bg", "vdu-bg-raised", "vdu-bg-hover", "vdu-bg-active"]) {
-      const background = parseOklch(declaredVar(lightBlock, name), 264);
+    for (const name of [
+      "vd-color-bg-well",
+      "vd-color-bg-well-raised",
+      "vd-color-bg-well-hover",
+      "vd-color-bg-well-active",
+    ]) {
+      const background = parseOklch(declaredVar(lightBlock, name), 250);
       expect(contrast(foreground, luminance(oklchToClampedLinearSrgb(background.l, background.c, background.h)))).toBeGreaterThanOrEqual(4.5);
     }
   });
 
   it("gives normal option labels ≥ 4.5:1 on the popup surface in light mode", () => {
-    const fg = lightnessOf(lightBlock, "vdu-fg");
-    const fgLinear = oklchToClampedLinearSrgb(fg, 0.02, 264);
+    const fg = lightnessOf(lightBlock, "vd-color-fg-primary");
+    const fgLinear = oklchToClampedLinearSrgb(fg, 0.03, 255);
     // Worst case: composited over a pure black backdrop.
     const surface = compositedOverlayLuminance(lightBlock, 205, 0);
     expect(contrast(luminance(fgLinear), surface)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("gives primary-button text ≥ 4.5:1 against EVERY supported accent hue (dark)", () => {
-    const fgL = lightnessOf(baseBlock, "vdu-accent-fg");
-    const fgLinear = oklchToClampedLinearSrgb(fgL, 0.02, 264);
+    const fgL = lightnessOf(baseBlock, "vd-color-accent-fg");
+    const fgLinear = oklchToClampedLinearSrgb(fgL, 0.04, 50);
     const fgLum = luminance(fgLinear);
-    const accentRaw = declaredVar(baseBlock, "vdu-accent");
+    const accentRaw = declaredVar(baseBlock, "vd-color-accent");
     const parsed = parseOklch(accentRaw, 205);
     const worst = Math.min(
       ...Array.from({ length: 360 }, (_, hue) =>
@@ -319,10 +325,10 @@ describe("declared popup color pairs (021-R1)", () => {
   });
 
   it("gives primary-button text ≥ 4.5:1 against EVERY supported accent hue (light)", () => {
-    const fgL = lightnessOf(lightBlock, "vdu-accent-fg");
-    const fgLinear = oklchToClampedLinearSrgb(fgL, 0.005, 264);
+    const fgL = lightnessOf(lightBlock, "vd-color-accent-fg");
+    const fgLinear = oklchToClampedLinearSrgb(fgL, 0.005, 250);
     const fgLum = luminance(fgLinear);
-    const accentRaw = declaredVar(lightBlock, "vdu-accent");
+    const accentRaw = declaredVar(lightBlock, "vd-color-accent");
     const parsed = parseOklch(accentRaw, 205);
     const worst = Math.min(
       ...Array.from({ length: 360 }, (_, hue) =>
@@ -335,7 +341,8 @@ describe("declared popup color pairs (021-R1)", () => {
   it("covers the curated accent swatches exactly (hue set unchanged)", () => {
     // The swatch picker offers these hues; the full-wheel checks above
     // subsume them, but a regression on the curated set must stay visible.
-    expect(ACCENT_SWATCH_HUES).toEqual([25, 145, 195, 205, 245, 262, 300, 340]);
+    // 60° joined with the Dawn Chart palette adoption (P1 default accent).
+    expect(ACCENT_SWATCH_HUES).toEqual([25, 60, 145, 195, 205, 245, 262, 300, 340]);
   });
 });
 

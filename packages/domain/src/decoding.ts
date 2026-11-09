@@ -268,6 +268,25 @@ function isAppearancePreferences(value: unknown): boolean {
   );
 }
 
+const REDUCED_MOTION_PREFERENCES: readonly string[] = ["system", "on", "off"];
+
+/**
+ * Structural shape of `WorkspaceMotionPreferences` only — optional as a
+ * whole (P1): pre-motion snapshots decode forever; enum legality of
+ * `reducedMotion` is semantic (validateWorkspaceMotion).
+ */
+function isMotionPreferences(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.reducedMotion === undefined ||
+      REDUCED_MOTION_PREFERENCES.includes(value.reducedMotion as string)) &&
+    (value.experiments === undefined ||
+      (isRecord(value.experiments) &&
+        (value.experiments.helmMotion === undefined ||
+          typeof value.experiments.helmMotion === "boolean")))
+  );
+}
+
 function isPreferences(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -276,6 +295,9 @@ function isPreferences(value: unknown): boolean {
     // Optional for backward compatibility: pre-gap snapshots stay decodable
     // forever; the integer range is semantic (validateWorkspace).
     (value.gridGapPx === undefined || typeof value.gridGapPx === "number") &&
+    // Optional for backward compatibility (P1): pre-motion snapshots stay
+    // decodable forever; only a structurally valid motion block is accepted.
+    (value.motion === undefined || isMotionPreferences(value.motion)) &&
     // Optional for backward compatibility: pre-appearance snapshots stay
     // decodable forever; only a structurally valid appearance is accepted.
     (value.appearance === undefined || isAppearancePreferences(value.appearance))

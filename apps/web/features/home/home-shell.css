@@ -16,7 +16,7 @@
 
 :root {
   --vd-bg: oklch(0.17 0.02 264);
-  --vd-accent-hue: 205;
+  --vd-accent-hue: 60;
   --vd-surface-opacity: 0.55;
   --vd-surface-strong-opacity: 0.78;
   --vd-surface: oklch(0.24 0.02 264 / var(--vd-surface-opacity));
@@ -351,7 +351,7 @@
   );
 
   --vd-bg: oklch(0.17 0.02 264);
-  --vd-accent-hue: 205;
+  --vd-accent-hue: 60;
   --vd-surface-opacity: 0.55;
   --vd-surface-strong-opacity: 0.78;
   --vd-surface: oklch(0.24 0.02 264 / var(--vd-surface-opacity));

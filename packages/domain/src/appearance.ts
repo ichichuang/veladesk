@@ -7,17 +7,17 @@ import type {
 /**
  * Appearance defaults, resolution and semantic validation.
  *
- * `DEFAULT_WORKSPACE_APPEARANCE` doubles as the Task013 visual baseline
- * (system color mode + aurora + accent hue 205 + 0.55/18px/14px + medium icons), so
- * legacy snapshots without a persisted appearance render exactly like the
- * pre-settings desktop. Resolution never mutates and never stages a
- * migration: old snapshots gain a stored appearance only when the user
- * actually saves Settings.
+ * `DEFAULT_WORKSPACE_APPEARANCE` is the Dawn Chart baseline (direction A,
+ * P1): system color mode + aurora + the Dawn apricot accent hue 60 +
+ * 0.55/18px/14px + medium icons. Snapshots persisted before the palette
+ * adoption keep their stored hue (205-era blue) verbatim — resolution never
+ * mutates and never stages a migration; old snapshots gain a stored
+ * appearance only when the user actually saves Settings.
  */
 
 export const DEFAULT_WORKSPACE_APPEARANCE: WorkspaceAppearancePreferences = {
   colorMode: "system",
-  accentHue: 205,
+  accentHue: 60,
   wallpaperPreset: "aurora",
   surfaceOpacity: 0.55,
   blurPx: 18,

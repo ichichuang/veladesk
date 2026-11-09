@@ -8,6 +8,7 @@ import type {
   DesktopPageId,
   WallpaperConfig,
   WorkspaceAppearancePreferences,
+  WorkspaceMotionPreferences,
   WorkspacePreferences,
   WorkspaceSnapshot,
 } from "@veladesk/domain";
@@ -52,6 +53,14 @@ export interface WorkspaceSettingsDraft {
 
   readonly gridGapPx: number;
 
+  /**
+   * Motion preferences (P1): no Settings control edits them yet (the
+   * helmMotion experiment flag is not exposed), but the draft must CARRY
+   * them — a save replaces the whole preferences value and would otherwise
+   * silently drop a persisted flag.
+   */
+  readonly motion?: WorkspaceMotionPreferences | undefined;
+
   readonly background: WorkspaceBackgroundPatches;
 }
 
@@ -72,6 +81,7 @@ export function createWorkspaceSettingsDraft(
     defaultPageId: workspace.preferences.defaultPageId,
     layoutLocked: workspace.preferences.layoutLocked,
     gridGapPx: resolveGridGapPx(workspace.preferences),
+    motion: workspace.preferences.motion,
     background: { workspace: undefined, pages: {} },
   };
 }
@@ -93,6 +103,8 @@ export function preferencesFromSettingsDraft(
     defaultPageId: draft.defaultPageId,
     layoutLocked: draft.layoutLocked,
     gridGapPx: draft.gridGapPx,
+    // Motion rides along verbatim (see the draft field docs above).
+    ...(draft.motion !== undefined ? { motion: draft.motion } : {}),
     appearance: {
       ...draft.appearance,
       surfaceOpacity: style.surfaceOpacity,
@@ -122,6 +134,17 @@ function backgroundPatchesEqual(
   );
 }
 
+/** Field-by-field equality of the optional motion block. */
+function motionPreferencesEqual(
+  a: WorkspaceMotionPreferences | undefined,
+  b: WorkspaceMotionPreferences | undefined
+): boolean {
+  return (
+    a?.reducedMotion === b?.reducedMotion &&
+    a?.experiments?.helmMotion === b?.experiments?.helmMotion
+  );
+}
+
 /** Field-by-field equality (no JSON serialization) for dirty tracking. */
 export function areWorkspaceSettingsDraftsEqual(
   a: WorkspaceSettingsDraft,
@@ -144,6 +167,7 @@ export function areWorkspaceSettingsDraftsEqual(
     // iconSize has no control in V2 but stays part of equality: an external
     // change to it still counts as a different draft.
     a.appearance.iconSize === b.appearance.iconSize &&
+    motionPreferencesEqual(a.motion, b.motion) &&
     backgroundPatchesEqual(a.background, b.background)
   );
 }

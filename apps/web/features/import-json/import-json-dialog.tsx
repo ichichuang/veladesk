@@ -33,6 +33,7 @@ const ISSUE_MESSAGE_KEY: Readonly<Record<ImportIssueCode, TranslationKey>> = {
   INVALID_ROOT: "import.issue.INVALID_ROOT",
   INVALID_FORMAT: "import.issue.INVALID_FORMAT",
   UNSUPPORTED_VERSION: "import.issue.UNSUPPORTED_VERSION",
+  RECIPE_MIGRATED: "import.issue.RECIPE_MIGRATED",
   MISSING_SECTIONS: "import.issue.MISSING_SECTIONS",
   INVALID_SECTIONS: "import.issue.INVALID_SECTIONS",
   TOO_MANY_SECTIONS: "import.issue.TOO_MANY_SECTIONS",

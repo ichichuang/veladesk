@@ -14,6 +14,8 @@ const PURE_MODULES = [
   "contract.ts",
   "normalization.ts",
   "parser.ts",
+  "recipe-adapter.ts",
+  "recipe-file.ts",
   "planner.ts",
   "apply-import.ts",
   "template.ts",

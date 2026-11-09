@@ -28,6 +28,14 @@ export {
 } from "./preferences";
 
 export {
+  DEFAULT_REDUCED_MOTION,
+  resolveHelmMotionEnabled,
+  resolveReducedMotionPreference,
+  validateWorkspaceMotion,
+} from "./motion";
+export type { WorkspaceMotionValidationIssue } from "./motion";
+
+export {
   DEFAULT_APP_LABEL_SCALE,
   DEFAULT_APP_LABEL_VISIBLE,
   DEFAULT_APP_VISUAL_STYLE,
@@ -64,6 +72,28 @@ export type {
 } from "./canvas";
 
 export { decodeWorkspaceSnapshot } from "./decoding";
+
+export { exportRecipe, importRecipe, migrateRecipe } from "./recipe/recipe";
+export type {
+  ExportRecipeOptions,
+  MigrateRecipeResult,
+  RecipeMigrationFailure,
+} from "./recipe/recipe";
+export {
+  RECIPE_FILE_EXTENSION,
+  RECIPE_FORMAT_IDENTITY,
+  RECIPE_VERSION,
+} from "./recipe/types";
+export type {
+  RecipeImportPayload,
+  RecipeMotionV1,
+  RecipePluginV1,
+  RecipeSpaceLayout,
+  RecipeSpaceV1,
+  RecipeThemeV1,
+  RecipeTileV1,
+  RecipeV1,
+} from "./recipe/types";
 
 export { validateWorkspace } from "./validation";
 export type { WorkspaceValidationIssue } from "./validation";
@@ -115,7 +145,10 @@ export type {
   WorkspaceIconSize,
   WorkspaceId,
   WorkspaceInterfaceStyle,
+  WorkspaceMotionExperiments,
+  WorkspaceMotionPreferences,
   WorkspacePreferences,
+  WorkspaceReducedMotionPreference,
   WorkspaceSnapshot,
   WorkspaceWallpaperPreset,
 } from "./types";

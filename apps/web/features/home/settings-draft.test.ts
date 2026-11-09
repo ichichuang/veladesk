@@ -152,7 +152,7 @@ describe("preferencesFromSettingsDraft", () => {
       // The legacy baseline normalizes into the canonical glass preset.
       expect(result.workspace.preferences.appearance).toEqual({
         colorMode: "system",
-        accentHue: 205,
+        accentHue: 60,
         wallpaperPreset: "aurora",
         surfaceOpacity: 0.5,
         blurPx: 24,
@@ -232,5 +232,54 @@ describe("Settings V2 — hidden iconSize survives", () => {
       expect(result.workspace.preferences.gridGapPx).toBe(8);
       expect(validateWorkspace(result.workspace)).toEqual([]);
     }
+  });
+});
+
+describe("Settings V2 — motion preferences survive (P1 helmMotion flag)", () => {
+  it("carries a persisted helmMotion flag through a save of unrelated settings", async () => {
+    const { replaceWorkspacePreferences, validateWorkspace } = await import("@veladesk/domain");
+    const snapshot = workspaceWith(false);
+    const withMotion: WorkspaceSnapshot = {
+      ...snapshot,
+      preferences: {
+        ...snapshot.preferences,
+        motion: { experiments: { helmMotion: true } },
+      },
+    };
+
+    const draft = { ...createWorkspaceSettingsDraft(withMotion), gridGapPx: 8 };
+    expect(draft.motion).toEqual({ experiments: { helmMotion: true } });
+
+    const result = replaceWorkspacePreferences(withMotion, preferencesFromSettingsDraft(draft));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.workspace.preferences.motion).toEqual({
+        experiments: { helmMotion: true },
+      });
+      expect(validateWorkspace(result.workspace)).toEqual([]);
+    }
+  });
+
+  it("does not invent motion preferences for legacy snapshots", async () => {
+    const { replaceWorkspacePreferences } = await import("@veladesk/domain");
+    const draft = createWorkspaceSettingsDraft(legacyWorkspace());
+    const result = replaceWorkspacePreferences(legacyWorkspace(), preferencesFromSettingsDraft(draft));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect("motion" in result.workspace.preferences).toBe(false);
+    }
+  });
+
+  it("counts a helmMotion flag flip as a draft change", () => {
+    const base = createWorkspaceSettingsDraft(workspaceWith(false));
+    const withFlag = {
+      ...base,
+      motion: { experiments: { helmMotion: true } },
+    };
+    expect(areWorkspaceSettingsDraftsEqual(base, withFlag)).toBe(false);
+    expect(
+      areWorkspaceSettingsDraftsEqual(withFlag, { ...withFlag, motion: { experiments: { helmMotion: false } } })
+    ).toBe(false);
+    expect(areWorkspaceSettingsDraftsEqual(withFlag, { ...withFlag })).toBe(true);
   });
 });

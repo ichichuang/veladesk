@@ -295,6 +295,36 @@ export interface WorkspaceAppearancePreferences {
   readonly iconSize: WorkspaceIconSize;
 }
 
+/** How strictly the workspace honors `prefers-reduced-motion`. */
+export type WorkspaceReducedMotionPreference = "system" | "on" | "off";
+
+/**
+ * Motion experiment switches. Every experimental motion moment (P1: the
+ * Orbits zoom-out and the Wake light trail) hangs behind ONE master switch
+ * so a single flag gates the whole helm-motion prototype surface.
+ */
+export interface WorkspaceMotionExperiments {
+  /**
+   * The single master switch for helm motion prototypes. Default false —
+   * experiments never ship enabled.
+   */
+  readonly helmMotion?: boolean;
+}
+
+/**
+ * Persisted motion preferences of a workspace.
+ *
+ * Optional as a whole for backward compatibility: snapshots persisted
+ * before motion preferences existed stay valid forever; readers resolve
+ * absent values to the defaults (`system`, experiments off) without
+ * writing a migration.
+ */
+export interface WorkspaceMotionPreferences {
+  readonly reducedMotion?: WorkspaceReducedMotionPreference;
+
+  readonly experiments?: WorkspaceMotionExperiments;
+}
+
 /** Persisted workspace preferences. Runtime drag state never lives here. */
 export interface WorkspacePreferences {
   readonly defaultPageId: DesktopPageId;
@@ -314,6 +344,12 @@ export interface WorkspacePreferences {
    * affects layout geometry, not looks. Integer 0..32.
    */
   readonly gridGapPx?: number;
+
+  /**
+   * Motion preferences (P1). Absent on legacy snapshots; resolved through
+   * `resolveHelmMotionEnabled` and friends — never migrated on read.
+   */
+  readonly motion?: WorkspaceMotionPreferences;
 
   /**
    * Visual preferences. Optional for backward compatibility: snapshots

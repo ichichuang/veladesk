@@ -1,11 +1,33 @@
 /**
- * Backdrop-blur token constants (P1-ENG-1). The live window blur is
- * runtime-configured per interface style through the theme-emitted
- * `--vd-window-blur` variable; the value here is the FALLBACK the token
- * layer declares for solid (no-style) surfaces. New blur bands land here
- * once the visual designer's token draft is ratified — do not scatter
- * literals in the meantime.
+ * Backdrop-blur token constants — the typed JS mirror of the
+ * `--vd-blur-*` declarations in `packages/ui/src/tokens.css`. Light mode
+ * runs the whole ladder softer (×⅔). The 清爽 material tier floors every
+ * band to 0 (solid surfaces); 柔和 scales to ×0.6 — see material.ts.
+ *
+ * The window/popup blur stays runtime-configured per interface style
+ * through the theme-emitted `--vd-window-blur` variable; these bands are
+ * the semantic defaults for glass tiles, panels and the scene layer.
  */
 
-/** Window/popup backdrop blur fallback (px) — 0 means fully solid. */
-export const VD_BLUR_WINDOW_FALLBACK_PX = 0;
+/** Backdrop-blur bands (px) per color mode. */
+export const VD_BLUR = {
+  dark: {
+    /** Glass tiles. */
+    glass: 18,
+    /** Menus, dialogs, windows. */
+    panel: 28,
+    /** The scene/wallpaper layer. */
+    scene: 60,
+  },
+  light: {
+    glass: 12,
+    panel: 20,
+    scene: 40,
+  },
+} as const;
+
+/** A named blur band. */
+export type VdBlurBand = keyof (typeof VD_BLUR)["dark"];
+
+/** The 柔和 (soft) tier multiplies every band by this factor. */
+export const VD_BLUR_SOFT_MULTIPLIER = 0.6;

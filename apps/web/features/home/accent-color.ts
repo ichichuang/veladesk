@@ -8,8 +8,8 @@
  * policy, only the hue is user-chosen.
  */
 
-/** Curated swatch hues, sorted by angle (display order). */
-export const ACCENT_SWATCH_HUES: readonly number[] = [25, 145, 195, 205, 245, 262, 300, 340];
+/** Curated swatch hues, sorted by angle (display order). 60° = Dawn apricot default. */
+export const ACCENT_SWATCH_HUES: readonly number[] = [25, 60, 145, 195, 205, 245, 262, 300, 340];
 
 /**
  * Extracts the hue degree (0–359) of a `#rgb`/`#rrggbb` hex color.

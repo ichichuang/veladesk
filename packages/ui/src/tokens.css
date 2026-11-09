@@ -1,79 +1,185 @@
 /*
- * VelaDesk designed-control token layer (task 018).
+ * VelaDesk semantic token layer — the Dawn Chart palette (direction A, P1).
+ *
+ * Two layers live here:
+ *
+ *   1. The SEMANTIC layer (`--vd-color-*`, `--vd-radius-*`, `--vd-blur-*`,
+ *      `--vd-glow-*`, `--vd-shadow-*`, `--vd-font-*`, `--vd-type-*`): the
+ *      designer-ratified token table, dark values by default and a light
+ *      block for `[data-vd-color-mode="light"]`. New code consumes THESE
+ *      names. The typed JS mirror lives in packages/ui/src/tokens/.
+ *
+ *   2. The COMPATIBILITY layer (`--vdu-*`): pure aliases pointing at the
+ *      semantic names, kept so every existing component keeps working
+ *      while it is migrated. Nothing may declare a literal --vdu-* value
+ *      anymore.
  *
  * Scope: every element under `[data-vd-ui]` — the desktop root and the
  * overlay portal root both carry the attribute, so dialogs portalled to
- * the portal root stay themed without a second provider. The layer is
- * SOLID by design: desktop surface-opacity / blur / radius preferences
- * deliberately do NOT feed these tokens — configuration surfaces must
- * stay readable over any wallpaper. Only the accent hue bridges in.
+ * the portal root stay themed without a second provider. The control
+ * surface stays SOLID by design (opaque wells; the popup floors its alpha
+ * at 0.96) — configuration surfaces must stay readable over any wallpaper.
+ * Only the accent hue bridges in, as before.
+ *
+ * Material tiers (清爽 clean / 柔和 soft / 玻璃 glass): token-only overrides
+ * selected by `data-vd-material` on the themed root — components never
+ * branch on the tier. Glass is the table default (no override block).
  *
  * Color modes mirror the desktop contract: dark default, an explicit
- * `light` palette, and `system` resolved by CSS media query only.
+ * `light` palette, and `system` resolved by JS to light/dark (021-R1).
  */
 
 :root,
 [data-vd-ui] {
-  /* Window surface, raised wells and hover fills — opaque. */
-  --vdu-bg: oklch(0.215 0.015 264);
-  --vdu-bg-raised: oklch(0.255 0.015 264);
-  --vdu-bg-hover: oklch(0.295 0.016 264);
-  --vdu-bg-active: oklch(0.325 0.016 264);
+  /* --- Semantic colors (dark default) ---------------------------------- */
 
+  /* Scene bottom layer. */
+  --vd-color-bg-deep: oklch(0.16 0.03 255);
   /*
-   * The overlay WINDOW surface (settings window, dialogs, popovers). It
-   * follows the chosen interface style through --vd-window-alpha/blur,
-   * which the theme emits ONLY when a style is persisted or previewed —
-   * legacy snapshots fall back to the solid 018 window exactly.
+   * Translucent surfaces. The alphas are separate channel variables so
+   * the material tiers can flip them without re-declaring colors.
    */
-  --vdu-window: oklch(0.215 0.015 264 / var(--vd-window-alpha, 1));
-  --vdu-window-blur: var(--vd-window-blur, 0px);
-
+  --vd-alpha-surface: 0.62;
+  --vd-alpha-raised: 0.78;
+  --vd-color-bg-surface: oklch(0.22 0.03 255 / var(--vd-alpha-surface));
+  --vd-color-bg-raised: oklch(0.27 0.03 255 / var(--vd-alpha-raised));
+  /* Opaque control wells (base / raised / hover / active). */
+  --vd-color-bg-well: oklch(0.24 0.03 255);
+  --vd-color-bg-well-raised: oklch(0.28 0.03 255);
+  --vd-color-bg-well-hover: oklch(0.32 0.03 255);
+  --vd-color-bg-well-active: oklch(0.36 0.03 255);
+  /*
+   * The overlay WINDOW surface (settings window, dialogs): the raised
+   * color under the runtime interface-style alpha, which the theme emits
+   * ONLY when a style is persisted or previewed — legacy snapshots fall
+   * back to fully solid exactly as before.
+   */
+  --vd-color-bg-window: oklch(0.27 0.03 255 / var(--vd-window-alpha, 1));
   /*
    * The overlay POPUP surface (Select listboxes, HeroUI popovers). Option
    * text must stay readable over ANY backdrop — wallpaper OR busy window
-   * content — so unlike the window the popup never inherits arbitrary
-   * app-tile translucency: the window alpha is floored at 0.96 (021-R1;
-   * 0.9 still ghosted bright controls behind a dark list). Foreground
-   * pairing is asserted by the token-contract tests.
+   * content — so the window alpha is floored at 0.96 (021-R1; 0.9 still
+   * ghosted bright controls behind a dark list). Foreground pairing is
+   * asserted by the token-contract tests.
    */
-  --vdu-overlay: oklch(0.215 0.015 264 / clamp(0.96, var(--vd-window-alpha, 1), 1));
+  --vd-color-bg-overlay: oklch(0.27 0.03 255 / clamp(0.96, var(--vd-window-alpha, 1), 1));
 
-  --vdu-fg: oklch(0.95 0.01 260);
-  --vdu-fg-muted: oklch(0.72 0.02 264);
-  --vdu-fg-disabled: oklch(0.55 0.012 264);
+  --vd-color-fg-primary: oklch(0.96 0.01 250);
+  --vd-color-fg-muted: oklch(0.74 0.02 250);
+  --vd-color-fg-disabled: oklch(0.55 0.015 250);
 
-  --vdu-border: oklch(0.9 0.02 264 / 0.14);
-  --vdu-border-strong: oklch(0.9 0.02 264 / 0.3);
+  /* Hairline separators, glass inner stroke, strong control borders. */
+  --vd-color-border-hairline: oklch(1 0 0 / 0.1);
+  --vd-color-border-highlight: oklch(1 0 0 / 0.18);
+  --vd-color-border-strong: oklch(1 0 0 / 0.3);
 
-  /* Accent rides the workspace hue; fallback covers the :root-only scope. */
-  --vdu-accent: oklch(0.78 0.12 var(--vd-accent-hue, 205));
-  --vdu-accent-hover: oklch(0.83 0.12 var(--vd-accent-hue, 205));
-  --vdu-accent-fg: oklch(0.17 0.02 264);
-  --vdu-accent-wash: oklch(0.78 0.11 var(--vd-accent-hue, 205) / 0.16);
-  --vdu-accent-wash-strong: oklch(0.78 0.11 var(--vd-accent-hue, 205) / 0.26);
+  /*
+   * The accent rides the workspace hue; the fallback is the Dawn apricot
+   * (60°). Light-mode L/C stay at the every-hue ≥ 4.5:1 contract pair.
+   */
+  --vd-color-accent: oklch(0.78 0.14 var(--vd-accent-hue, 60));
+  --vd-color-accent-hover: oklch(0.83 0.14 var(--vd-accent-hue, 60));
+  --vd-color-accent-fg: oklch(0.2 0.04 50);
+  --vd-color-accent-wash: oklch(0.78 0.13 var(--vd-accent-hue, 60) / 0.16);
+  --vd-color-accent-wash-strong: oklch(0.78 0.13 var(--vd-accent-hue, 60) / 0.26);
 
-  --vdu-focus: oklch(0.85 0.1 var(--vd-accent-hue, 205));
+  /* Horizon gradient stops (Dawn opening + Wake trail): apricot→rose→cold blue. */
+  --vd-color-dawn-1: oklch(0.8 0.13 65);
+  --vd-color-dawn-2: oklch(0.7 0.14 15);
+  --vd-color-dawn-3: oklch(0.55 0.1 250);
 
-  --vdu-danger: oklch(0.64 0.19 25);
-  --vdu-danger-hover: oklch(0.69 0.19 25);
-  --vdu-danger-fg: oklch(0.99 0.005 25);
+  --vd-color-focus: oklch(0.82 0.12 220);
+  --vd-color-danger: oklch(0.68 0.19 25);
+  --vd-color-danger-hover: oklch(0.73 0.19 25);
+  --vd-color-danger-fg: oklch(0.99 0.005 25);
 
-  --vdu-shadow:
-    0 24px 64px oklch(0 0 0 / 0.5),
-    0 4px 16px oklch(0 0 0 / 0.32);
-  --vdu-shadow-pop:
-    0 12px 32px oklch(0 0 0 / 0.4),
-    0 2px 8px oklch(0 0 0 / 0.28);
+  /* --- Semantic geometry, material, elevation, typography ---------------- */
 
-  /* Control geometry: 36px touch rows, 8-10px control radii, 18px dialogs. */
-  --vdu-radius: 9px;
-  --vdu-radius-dialog: 18px;
-  --vdu-control-h: 36px;
+  /* Radius: sm hairline details / md controls / lg tiles / xl panels. */
+  --vd-radius-sm: 6px;
+  --vd-radius-md: 10px;
+  --vd-radius-lg: 16px;
+  --vd-radius-xl: 24px;
+
+  /* Backdrop blur: glass tiles / panels+windows / the scene layer. */
+  --vd-blur-glass: 18px;
+  --vd-blur-panel: 28px;
+  --vd-blur-scene: 60px;
+
+  /*
+   * Glows — focus, drag and the Wake trail ONLY. They compose from the
+   * semantic accent/focus colors, so re-huing the accent re-hues every
+   * glow; light mode runs them at ×0.6 intensity.
+   */
+  --vd-glow-soft: 0 0 24px color-mix(in oklab, var(--vd-color-accent) 22%, transparent);
+  --vd-glow-focus: 0 0 0 3px color-mix(in oklab, var(--vd-color-focus) 45%, transparent);
+  --vd-glow-wake: 0 0 32px color-mix(in oklab, var(--vd-color-accent) 35%, transparent);
+
+  /* Elevation: every tile shadow leads with the 1px highlight rim. */
+  --vd-shadow-tile:
+    0 1px 0 var(--vd-color-border-highlight),
+    0 8px 24px oklch(0.16 0.03 255 / 0.4);
+  --vd-shadow-panel: 0 24px 64px oklch(0.16 0.03 255 / 0.55);
+
+  /* Typography: mixed CJK/Latin stacks; no font files ship with the app. */
+  --vd-font-sans:
+    "Inter", "HarmonyOS Sans SC", "PingFang SC", "MiSans", system-ui,
+    sans-serif;
+  --vd-font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+  --vd-font-numeric: tabular-nums;
+
+  /* Type scale — `clock` is for the clock and nothing else. */
+  --vd-type-xs: 12px;
+  --vd-type-sm: 13px;
+  --vd-type-md: 15px;
+  --vd-type-lg: 18px;
+  --vd-type-xl: 24px;
+  --vd-type-display: 40px;
+  --vd-type-clock: 72px;
+
+  /* Control geometry: the 36px touch row. */
+  --vd-control-height: 36px;
+
+  /* --- Compatibility layer: --vdu-* aliases (no literals below) ---------- */
+
+  --vdu-bg: var(--vd-color-bg-well);
+  --vdu-bg-raised: var(--vd-color-bg-well-raised);
+  --vdu-bg-hover: var(--vd-color-bg-well-hover);
+  --vdu-bg-active: var(--vd-color-bg-well-active);
+  --vdu-window: var(--vd-color-bg-window);
+  --vdu-window-blur: var(--vd-window-blur, 0px);
+  --vdu-overlay: var(--vd-color-bg-overlay);
+
+  --vdu-fg: var(--vd-color-fg-primary);
+  --vdu-fg-muted: var(--vd-color-fg-muted);
+  --vdu-fg-disabled: var(--vd-color-fg-disabled);
+
+  --vdu-border: var(--vd-color-border-hairline);
+  --vdu-border-strong: var(--vd-color-border-strong);
+
+  --vdu-accent: var(--vd-color-accent);
+  --vdu-accent-hover: var(--vd-color-accent-hover);
+  --vdu-accent-fg: var(--vd-color-accent-fg);
+  --vdu-accent-wash: var(--vd-color-accent-wash);
+  --vdu-accent-wash-strong: var(--vd-color-accent-wash-strong);
+
+  --vdu-focus: var(--vd-color-focus);
+  --vdu-danger: var(--vd-color-danger);
+  --vdu-danger-hover: var(--vd-color-danger-hover);
+  --vdu-danger-fg: var(--vd-color-danger-fg);
+
+  --vdu-shadow: var(--vd-shadow-panel);
+  --vdu-shadow-pop: var(--vd-shadow-tile);
+
+  --vdu-radius: var(--vd-radius-md);
+  --vdu-radius-dialog: var(--vd-radius-xl);
+  --vdu-control-h: var(--vd-control-height);
 
   /*
    * Canonical motion tokens (task 019-D). The JS mirror lives in
-   * components/vd/motion-tokens.ts; motion-tokens.test.ts keeps the two
+   * @veladesk/ui tokens/motion.ts; motion-tokens.test.ts keeps the two
    * identical. The easing is one smooth ease-out — no springs, no bounce.
    * Grid/Freeform drag, resize and snap landing never use these.
    */
@@ -89,7 +195,7 @@
    * HeroUI v3 semantic-token bridge (task 019-D). The canonical component
    * library for Settings + the App Appearance Inspector is HeroUI v3, whose
    * component styles read these semantic variables. Defining them here —
-   * from the --vdu-* layer, unlayered so they win over @heroui/styles'
+   * from the compat aliases, unlayered so they win over @heroui/styles'
    * @layer-base themes — themes HeroUI through VelaDesk's tokens on BOTH
    * themed roots (desktop + portal root): color mode and accent hue flow
    * in automatically, and no library default palette leaks through.
@@ -167,47 +273,100 @@
 }
 
 [data-vd-ui] {
-  font-family:
-    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-family: var(--vd-font-sans);
   color: var(--vdu-fg);
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * Light mode — "白昼海图": mist-white ground, solid surfaces, light
+ * shadows (fg-primary at 8–14%), glows at ×0.6. Only the SEMANTIC layer is
+ * re-declared; every alias, bridge and consumer cascades from it.
+ */
 [data-vd-ui][data-vd-color-mode="light"] {
   color-scheme: light;
 
-  --vdu-bg: oklch(0.985 0.004 264);
-  --vdu-bg-raised: oklch(0.955 0.006 264);
-  --vdu-bg-hover: oklch(0.925 0.008 264);
-  --vdu-bg-active: oklch(0.895 0.01 264);
+  --vd-color-bg-deep: oklch(0.97 0.01 250);
+  --vd-alpha-surface: 0.78;
+  --vd-alpha-raised: 0.92;
+  --vd-color-bg-surface: oklch(1 0 0 / var(--vd-alpha-surface));
+  --vd-color-bg-raised: oklch(1 0 0 / var(--vd-alpha-raised));
+  --vd-color-bg-well: oklch(0.955 0.008 250);
+  --vd-color-bg-well-raised: oklch(0.92 0.01 250);
+  --vd-color-bg-well-hover: oklch(0.895 0.012 250);
+  --vd-color-bg-well-active: oklch(0.87 0.014 250);
+  --vd-color-bg-window: oklch(1 0 0 / var(--vd-window-alpha, 1));
+  --vd-color-bg-overlay: oklch(1 0 0 / clamp(0.96, var(--vd-window-alpha, 1), 1));
 
-  --vdu-window: oklch(0.985 0.004 264 / var(--vd-window-alpha, 1));
-  --vdu-overlay: oklch(0.985 0.004 264 / clamp(0.96, var(--vd-window-alpha, 1), 1));
+  --vd-color-fg-primary: oklch(0.22 0.03 255);
+  --vd-color-fg-muted: oklch(0.46 0.02 255);
+  --vd-color-fg-disabled: oklch(0.64 0.012 250);
 
-  --vdu-fg: oklch(0.24 0.02 264);
-  --vdu-fg-muted: oklch(0.38 0.02 264);
-  --vdu-fg-disabled: oklch(0.62 0.012 264);
+  --vd-color-border-hairline: oklch(0.22 0.03 255 / 0.1);
+  --vd-color-border-highlight: oklch(1 0 0 / 0.9);
+  --vd-color-border-strong: oklch(0.22 0.03 255 / 0.3);
 
-  --vdu-border: oklch(0.35 0.02 264 / 0.16);
-  --vdu-border-strong: oklch(0.35 0.02 264 / 0.34);
+  /* L/C kept at the every-hue 4.5:1 contract; hue fallback is Dawn apricot. */
+  --vd-color-accent: oklch(0.53 0.15 var(--vd-accent-hue, 60));
+  --vd-color-accent-hover: oklch(0.48 0.15 var(--vd-accent-hue, 60));
+  --vd-color-accent-fg: oklch(0.99 0.005 250);
+  --vd-color-accent-wash: oklch(0.53 0.14 var(--vd-accent-hue, 60) / 0.12);
+  --vd-color-accent-wash-strong: oklch(0.53 0.14 var(--vd-accent-hue, 60) / 0.22);
 
-  /* Accent lightness 0.53 (was 0.55): with --vdu-accent-fg at 0.99 the
-     pair must hold ≥ 4.5:1 for EVERY accent hue on the wheel, and the
-     deepest-hued in-gamut accents bottomed out at 4.41 (021-R1). */
-  --vdu-accent: oklch(0.53 0.15 var(--vd-accent-hue, 205));
-  --vdu-accent-hover: oklch(0.48 0.15 var(--vd-accent-hue, 205));
-  --vdu-accent-fg: oklch(0.99 0.005 264);
-  --vdu-accent-wash: oklch(0.53 0.14 var(--vd-accent-hue, 205) / 0.12);
-  --vdu-accent-wash-strong: oklch(0.53 0.14 var(--vd-accent-hue, 205) / 0.22);
+  /* Dawn stops: same hues, +8% lightness. */
+  --vd-color-dawn-1: oklch(0.88 0.13 65);
+  --vd-color-dawn-2: oklch(0.78 0.14 15);
+  --vd-color-dawn-3: oklch(0.63 0.1 250);
 
-  --vdu-focus: oklch(0.5 0.14 var(--vd-accent-hue, 205));
+  --vd-color-focus: oklch(0.55 0.15 240);
+  --vd-color-danger: oklch(0.55 0.2 25);
+  --vd-color-danger-hover: oklch(0.5 0.2 25);
+  --vd-color-danger-fg: oklch(0.99 0.005 25);
 
-  --vdu-shadow:
-    0 24px 64px oklch(0.3 0.02 264 / 0.22),
-    0 4px 16px oklch(0.3 0.02 264 / 0.14);
-  --vdu-shadow-pop:
-    0 12px 32px oklch(0.3 0.02 264 / 0.18),
-    0 2px 8px oklch(0.3 0.02 264 / 0.12);
+  --vd-blur-glass: 12px;
+  --vd-blur-panel: 20px;
+  --vd-blur-scene: 40px;
+
+  --vd-glow-soft: 0 0 24px color-mix(in oklab, var(--vd-color-accent) 13%, transparent);
+  --vd-glow-focus: 0 0 0 3px color-mix(in oklab, var(--vd-color-focus) 27%, transparent);
+  --vd-glow-wake: 0 0 32px color-mix(in oklab, var(--vd-color-accent) 21%, transparent);
+
+  --vd-shadow-tile:
+    0 1px 0 var(--vd-color-border-highlight),
+    0 8px 24px oklch(0.22 0.03 255 / 0.08);
+  --vd-shadow-panel: 0 24px 64px oklch(0.22 0.03 255 / 0.14);
+}
+
+/*
+ * Material tiers (个性化材质档) — token overrides ONLY, keyed by
+ * `data-vd-material` on the themed root. 玻璃 glass is the table default
+ * and has no block. The tier blocks sit AFTER the light block so they win
+ * at equal specificity in both modes; the 柔和 light variant re-states the
+ * blur ladder against the softer light defaults.
+ *
+ * 清爽 clean: blur floored to 0 and surfaces fully opaque (实底) — also the
+ * collapse target for low-end devices / the "flow" performance tier.
+ */
+[data-vd-ui][data-vd-material="clean"] {
+  --vd-blur-glass: 0px;
+  --vd-blur-panel: 0px;
+  --vd-blur-scene: 0px;
+  --vd-alpha-surface: 1;
+  --vd-alpha-raised: 1;
+}
+
+/* 柔和 soft: blur ×0.6, surface alpha 0.82 (raised keeps its mode value). */
+[data-vd-ui][data-vd-material="soft"] {
+  --vd-blur-glass: 10.8px;
+  --vd-blur-panel: 16.8px;
+  --vd-blur-scene: 36px;
+  --vd-alpha-surface: 0.82;
+}
+
+[data-vd-ui][data-vd-color-mode="light"][data-vd-material="soft"] {
+  --vd-blur-glass: 7.2px;
+  --vd-blur-panel: 12px;
+  --vd-blur-scene: 24px;
 }
 
 /*
@@ -239,7 +398,7 @@
 
 /*
  * HeroUI overlay surfaces (Select listbox, popovers) ride the popup
- * surface token (--overlay → the 0.9-floored --vdu-overlay) and the same
+ * surface token (--overlay → the 0.96-floored overlay color) and the same
  * interface-style backdrop blur while a style is active, solid otherwise.
  */
 [data-vd-ui] .popover,

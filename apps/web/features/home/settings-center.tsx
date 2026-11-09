@@ -55,6 +55,7 @@ import { VELADESK_VERSION } from "../../lib/app-version";
 import { buildImportAiPrompt } from "../import-json/ai-prompt";
 import { copyTextToClipboard } from "../import-json/clipboard";
 import { downloadVelaDeskImportTemplate } from "../import-json/template";
+import { downloadWorkspaceRecipe } from "../import-json/recipe-file";
 import { ImportJsonDialog } from "../import-json/import-json-dialog";
 
 /** The EFFECTIVE upload cap rendered to users: the shared core byte budget. */
@@ -1273,6 +1274,11 @@ function GeneralSection({
           </Button>
           <Button size="sm" variant="secondary" onPress={() => void handleCopyPrompt()}>
             {t("settings.data.copyPrompt")}
+          </Button>
+          {/* RecipeV1 (P1): export the public deck config — also readable by
+              the import flow above. Never writes the workspace. */}
+          <Button size="sm" variant="secondary" onPress={() => downloadWorkspaceRecipe(workspace)}>
+            {t("settings.data.exportDeck")}
           </Button>
           <Button size="sm" variant="primary" onPress={() => setImportOpen(true)} data-import-json-trigger="">
             {t("settings.data.importJson")}

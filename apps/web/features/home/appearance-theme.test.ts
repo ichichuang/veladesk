@@ -20,12 +20,12 @@ function surfaceSignature(theme: ReturnType<typeof buildAppearanceTheme>): strin
 }
 
 describe("buildAppearanceTheme", () => {
-  it("maps the exact defaults to the Task013 baseline CSS variables", () => {
+  it("maps the exact defaults to the Dawn Chart baseline CSS variables (P1: accent hue 60)", () => {
     expect(buildAppearanceTheme(DEFAULT_WORKSPACE_APPEARANCE)).toEqual({
       colorMode: "system",
       wallpaperPreset: "aurora",
       style: {
-        "--vd-accent-hue": "205",
+        "--vd-accent-hue": "60",
         "--vd-surface-opacity": "0.55",
         "--vd-surface-strong-opacity": "0.78",
         "--vd-blur": "18px",

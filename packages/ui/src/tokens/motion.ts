@@ -56,12 +56,16 @@ export type VdMotionDurationSeconds = number;
  * The ease tokens as a GROUP (P1-ENG-1 type slot): every GSAP-owned easing,
  * keyed by role. `standard` is THE one canonical curve — identical to
  * {@link VD_MOTION_EASE}, which stays exported as the flat form every
- * existing consumer imports. Future roles (e.g. Orbits camera travel) land
- * here first, never as scattered literals.
+ * existing consumer imports. `travel` exists solely for the Orbits camera
+ * and `exit` for leave tweens; neither may leak into ordinary surfaces.
  */
 export const VD_MOTION_EASES = {
   /** The one canonical curve for every GSAP-owned surface transition. */
   standard: VD_MOTION_EASE,
+  /** Orbits camera travel ONLY (motion-spec-p1 §1). */
+  travel: "power3.inOut",
+  /** Leave/exit tweens. */
+  exit: "power2.in",
 } as const;
 
 /** A named ease role in {@link VD_MOTION_EASES}. */
@@ -69,3 +73,54 @@ export type VdMotionEaseRole = keyof typeof VD_MOTION_EASES;
 
 /** The literal ease value of a named role (a GSAP ease name). */
 export type VdMotionEaseName = (typeof VD_MOTION_EASES)[VdMotionEaseRole];
+
+/*
+ * Named motion GROUPS (motion-spec-p1 §1, seconds unless noted). Each group
+ * belongs to one motion moment; Orbits and Wake stay behind the
+ * `motion.experiments.helmMotion` switch (default OFF) until they leave
+ * prototype. No component may write these as literals.
+ */
+
+/** The Vela Dawn opening (GSAP). Total budget is a hard cap, not a target. */
+export const VD_MOTION_DAWN = {
+  /** Horizon light-band rise. */
+  horizon: 0.18,
+  /** Content reveal, overlapping the band. */
+  reveal: 0.22,
+  /** Per-tile stagger; total stagger stays ≤ 0.08 (≤ 7 tiles deep). */
+  stagger: 0.012,
+  /** HARD ceiling on the whole opening — first frame to fully settled. */
+  total: 0.3,
+} as const;
+
+/** Orbits zoom-out camera (GSAP; behind the helmMotion experiment). */
+export const VD_MOTION_ORBIT = {
+  /** Pull in/out one layer. */
+  pull: 0.42,
+  /** Travel between spaces along the ring. */
+  travel: 0.55,
+  /**
+   * Parallax coefficients (NOT durations): how far front/mid/back layers
+   * travel as a fraction of the camera motion.
+   */
+  parallax: { front: 0.06, mid: 0.12, back: 0.2 } as const,
+} as const;
+
+/** The Wake light trail (canvas overlay; behind the helmMotion experiment). */
+export const VD_MOTION_WAKE = {
+  /** Per-point lifetime before fading out. */
+  fade: 0.45,
+  /** Trail point cap (count, not a duration). */
+  maxPoints: 24,
+} as const;
+
+/** Card FLIP moments (Motion layout animations). */
+export const VD_MOTION_FLIP = {
+  /**
+   * Reorder spring: critically damped (no overshoot) — the one place a
+   * spring is allowed; everything else stays on the canonical ease.
+   */
+  reorder: { stiffness: 520, damping: 44, mass: 1 } as const,
+  /** Tile zoom-into-sail before handing off to the browser. */
+  launch: 0.26,
+} as const;

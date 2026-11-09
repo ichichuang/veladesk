@@ -14,3 +14,7 @@ export * from "./tokens/color";
 export * from "./tokens/radius";
 export * from "./tokens/blur";
 export * from "./tokens/glow";
+export * from "./tokens/shadow";
+export * from "./tokens/font";
+export * from "./tokens/type-scale";
+export * from "./tokens/material";

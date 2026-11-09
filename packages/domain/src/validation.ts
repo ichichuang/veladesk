@@ -8,6 +8,8 @@ import { validateAppVisualStyle } from "./app-visual";
 import type { AppVisualValidationIssue } from "./app-visual";
 import { validateWorkspaceAppearance } from "./appearance";
 import type { WorkspaceAppearanceValidationIssue } from "./appearance";
+import { validateWorkspaceMotion } from "./motion";
+import type { WorkspaceMotionValidationIssue } from "./motion";
 import { isValidGridGapPx } from "./preferences";
 import type {
   CategoryId,
@@ -130,6 +132,10 @@ export type WorkspaceValidationIssue =
   | {
       readonly type: "invalid-appearance-preference";
       readonly issue: WorkspaceAppearanceValidationIssue;
+    }
+  | {
+      readonly type: "invalid-motion-preference";
+      readonly issue: WorkspaceMotionValidationIssue;
     }
   | {
       readonly type: "invalid-grid-gap";
@@ -399,6 +405,14 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
   if (workspace.preferences.appearance !== undefined) {
     for (const issue of validateWorkspaceAppearance(workspace.preferences.appearance)) {
       issues.push({ type: "invalid-appearance-preference", issue });
+    }
+  }
+
+  // 9d. Motion semantics — only when persisted motion preferences exist
+  // (P1). Legacy snapshots without them are valid by definition.
+  if (workspace.preferences.motion !== undefined) {
+    for (const issue of validateWorkspaceMotion(workspace.preferences.motion)) {
+      issues.push({ type: "invalid-motion-preference", issue });
     }
   }
 

@@ -26,6 +26,7 @@ import type {
   VelaDeskImportSectionV1,
 } from "./contract";
 import { normalizeImportDisplayName, resolveImportAppUrl } from "./normalization";
+import { adoptRecipeDocument, isRecipeDocument } from "./recipe-adapter";
 
 export interface ParsedImportDocument {
   readonly document: VelaDeskImportDocumentV1;
@@ -75,6 +76,32 @@ export function parseImportDocument(text: string): ParseImportResult {
   if (!isRecord(root)) {
     error("INVALID_ROOT", "$");
     return { ok: false, issues, sectionNames };
+  }
+
+  // Recipe documents (.deck.json) migrate up and re-enter as Import JSON
+  // v1 — the whole walk below then applies unchanged (task: RecipeV1). The
+  // converted document declares the import format, so this never loops.
+  if (isRecipeDocument(root)) {
+    const adopted = adoptRecipeDocument(root);
+    if (adopted.kind === "rejected") {
+      return { ok: false, issues: [...issues, ...adopted.issues], sectionNames };
+    }
+    if (adopted.kind === "adopted") {
+      const inner = parseImportDocument(JSON.stringify(adopted.document));
+      return inner.ok
+        ? {
+            ok: true,
+            parsed: {
+              document: inner.parsed.document,
+              issues: [adopted.notice, ...inner.parsed.issues],
+            },
+          }
+        : {
+            ok: false,
+            issues: [adopted.notice, ...inner.issues],
+            sectionNames: inner.sectionNames,
+          };
+    }
   }
 
   if (root.format !== IMPORT_FORMAT_IDENTITY) {

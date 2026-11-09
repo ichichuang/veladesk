@@ -13,10 +13,10 @@ import { validateWorkspace } from "./validation";
 import type { WorkspaceAppearancePreferences } from "./types";
 
 describe("DEFAULT_WORKSPACE_APPEARANCE", () => {
-  it("is the exact Task014 default contract", () => {
+  it("is the exact Dawn Chart default contract (P1: accent hue 60)", () => {
     expect(DEFAULT_WORKSPACE_APPEARANCE).toEqual({
       colorMode: "system",
-      accentHue: 205,
+      accentHue: 60,
       wallpaperPreset: "aurora",
       surfaceOpacity: 0.55,
       blurPx: 18,
