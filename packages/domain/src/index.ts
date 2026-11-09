@@ -75,19 +75,30 @@ export type {
 
 export { decodeWorkspaceSnapshot } from "./decoding";
 
-export { exportRecipe, importRecipe, migrateRecipe } from "./recipe/recipe";
+export { exportRecipe, importRecipe, isRecipeAssetId, isRecipeWallpaperRef, migrateRecipe } from "./recipe/recipe";
 export type {
   ExportRecipeOptions,
   MigrateRecipeResult,
   RecipeMigrationFailure,
 } from "./recipe/recipe";
 export {
+  RECIPE_ASSET_MEDIA_TYPES,
+  RECIPE_CONTENT_ASSET_ID_PATTERN,
   RECIPE_FILE_EXTENSION,
   RECIPE_FORMAT_IDENTITY,
+  RECIPE_MAX_ASSET_BASE64_LENGTH,
+  RECIPE_MAX_ASSETS,
+  RECIPE_MAX_GRID_COLUMNS,
+  RECIPE_MAX_GRID_ROWS,
   RECIPE_VERSION,
 } from "./recipe/types";
 export type {
+  RecipeAssetMediaType,
+  RecipeAssetV1,
+  RecipeGridV1,
   RecipeImportPayload,
+  RecipeImportSpace,
+  RecipeImportTile,
   RecipeLayoutMode,
   RecipeMotionV1,
   RecipePluginV1,

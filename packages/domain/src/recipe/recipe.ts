@@ -1,9 +1,11 @@
 import { CANVAS_UNITS } from "@veladesk/canvas-engine";
 
 import { inferInterfaceStyle, resolveWorkspaceAppearance } from "../appearance";
-import { pageItemIds, resolvePagePlacement } from "../canvas";
-import type { AppIcon, WorkspaceSnapshot } from "../types";
+import { gridPlacementOf, pageItemIds, resolvePagePlacement } from "../canvas";
+import type { AppIcon, WorkspaceSnapshot, WorkspaceWallpaperPreset } from "../types";
+import type { WallpaperConfig } from "../wallpaper";
 import type {
+  RecipeGridV1,
   RecipeImportPayload,
   RecipeLayoutMode,
   RecipeSpaceLayout,
@@ -14,9 +16,56 @@ import type {
   RecipeWallpaperV1,
 } from "./types";
 import {
+  RECIPE_ASSET_MEDIA_TYPES,
+  RECIPE_CONTENT_ASSET_ID_PATTERN,
   RECIPE_FORMAT_IDENTITY,
+  RECIPE_MAX_ASSET_BASE64_LENGTH,
+  RECIPE_MAX_ASSETS,
+  RECIPE_MAX_GRID_COLUMNS,
+  RECIPE_MAX_GRID_ROWS,
   RECIPE_VERSION,
 } from "./types";
+
+// --- reference rules (shared by export and migrate) ---------------------------
+
+/**
+ * The wallpaper preset whitelist. Keyed by the domain's preset union so a
+ * new preset fails to compile here until the recipe accepts it too.
+ */
+const PRESET_WHITELIST: Readonly<Record<WorkspaceWallpaperPreset, true>> = {
+  aurora: true,
+  midnight: true,
+  dawn: true,
+  mist: true,
+};
+
+/** Whether `value` is a content-addressed asset id (same rule as packages/assets). */
+export function isRecipeAssetId(value: unknown): value is string {
+  return typeof value === "string" && RECIPE_CONTENT_ASSET_ID_PATTERN.test(value);
+}
+
+/** Whether `ref` is a legal wallpaper reference: `preset:<whitelisted>` or `asset:<content id>`. */
+export function isRecipeWallpaperRef(ref: unknown): ref is string {
+  if (typeof ref !== "string") {
+    return false;
+  }
+  if (ref.startsWith("preset:")) {
+    return Object.prototype.hasOwnProperty.call(PRESET_WHITELIST, ref.slice("preset:".length));
+  }
+  if (ref.startsWith("asset:")) {
+    return isRecipeAssetId(ref.slice("asset:".length));
+  }
+  return false;
+}
+
+/** The asset id a ref points at, or undefined for presets / non-refs. */
+function assetIdOfRef(ref: unknown): string | undefined {
+  return typeof ref === "string" && ref.startsWith("asset:") ? ref.slice("asset:".length) : undefined;
+}
+
+function isGridDimension(value: unknown, max: number): boolean {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= max;
+}
 
 /**
  * RecipeV1 pure operations (P1: structure only — no share links, no
@@ -39,14 +88,38 @@ function publicIconOf(icon: AppIcon): string | undefined {
   return icon.kind === "iconify" ? icon.icon : undefined;
 }
 
-/** `preset:<id>` / `asset:<assetId>` — a reference, never a payload. */
-function wallpaperRefOf(wallpaper: WorkspaceSnapshot["pages"][number]["wallpaper"]): string | undefined {
+/**
+ * `preset:<id>` / `asset:<assetId>` — a reference, never a payload. A ref
+ * the importer would reject (an asset id outside the content-addressed
+ * format, an unknown preset) is OMITTED, so an export always re-imports.
+ */
+function wallpaperRefOf(wallpaper: WallpaperConfig | undefined): string | undefined {
   if (wallpaper === undefined) {
     return undefined;
   }
-  return wallpaper.kind === "preset"
+  const ref = wallpaper.kind === "preset"
     ? `preset:${wallpaper.presetId}`
     : `asset:${wallpaper.assetId}`;
+  return isRecipeWallpaperRef(ref) ? ref : undefined;
+}
+
+/** Both modes of a mode-agnostic config, or undefined when not exportable. */
+function bothModesOf(wallpaper: WallpaperConfig | undefined): RecipeWallpaperV1 | undefined {
+  const ref = wallpaperRefOf(wallpaper);
+  return ref === undefined ? undefined : { light: ref, dark: ref };
+}
+
+/**
+ * A page's snap grid: the live grid canvas's columns (when the page is in
+ * Grid) over the layout lattice, rows from the lattice. Omitted when out
+ * of the recipe's bounds — the importer then uses its default grid.
+ */
+function gridOf(page: PageOfSnapshot): RecipeGridV1 | undefined {
+  const columns = gridPlacementOf(page)?.columns ?? page.layout.grid.columns;
+  const rows = page.layout.grid.rows;
+  return isGridDimension(columns, RECIPE_MAX_GRID_COLUMNS) && isGridDimension(rows, RECIPE_MAX_GRID_ROWS)
+    ? { columns, rows }
+    : undefined;
 }
 
 type PageOfSnapshot = WorkspaceSnapshot["pages"][number];
@@ -60,10 +133,11 @@ type PageOfSnapshot = WorkspaceSnapshot["pages"][number];
 function wallpaperOf(page: PageOfSnapshot): RecipeWallpaperV1 | undefined {
   const byMode = page.wallpaperByMode;
   const general = wallpaperRefOf(page.wallpaper);
-  const light = byMode?.light !== undefined ? wallpaperRefOf(byMode.light) : undefined;
-  const dark = byMode?.dark !== undefined ? wallpaperRefOf(byMode.dark) : undefined;
-  const resolvedLight = light ?? general;
-  const resolvedDark = dark ?? general;
+  // A present mode override that is not exportable omits THAT mode: it
+  // never silently falls back to the general upload (the renderer would
+  // not have shown the general one for this mode either).
+  const resolvedLight = byMode?.light !== undefined ? wallpaperRefOf(byMode.light) : general;
+  const resolvedDark = byMode?.dark !== undefined ? wallpaperRefOf(byMode.dark) : general;
   if (resolvedLight === undefined && resolvedDark === undefined) {
     return undefined;
   }
@@ -126,10 +200,14 @@ export function exportRecipe(
   options: ExportRecipeOptions
 ): RecipeV1 {
   const appearance = resolveWorkspaceAppearance(workspace.preferences);
+  // Only an EXPLICIT workspace default wallpaper exports (the legacy
+  // preset field stays the importer's own default).
+  const themeWallpaper = bothModesOf(workspace.preferences.appearance?.wallpaper);
   const theme: RecipeThemeV1 = {
     mode: appearance.colorMode,
     accent: appearance.accentHue,
     material: appearance.interfaceStyle ?? inferInterfaceStyle(appearance),
+    ...(themeWallpaper !== undefined ? { wallpaper: themeWallpaper } : {}),
   };
 
   const entityById = new Map(workspace.entities.map((entity) => [entity.id, entity]));
@@ -153,11 +231,13 @@ export function exportRecipe(
       });
     }
     const wallpaper = wallpaperOf(page);
+    const grid = gridOf(page);
     return {
       id: page.id,
       name: page.name,
       layout: layoutMode === "free" ? "canvas" : "grid",
       layoutMode,
+      ...(grid !== undefined ? { grid } : {}),
       ...(wallpaper !== undefined ? { wallpaper } : {}),
       tiles,
     };
@@ -191,6 +271,24 @@ export function importRecipe(recipe: RecipeV1): RecipeImportPayload {
   return {
     theme: recipe.theme,
     motion: recipe.motion,
+    assets: recipe.assets,
+    spaces: recipe.spaces.map((space) => ({
+      name: space.name,
+      layoutMode: space.layoutMode ?? "snap",
+      grid: space.grid,
+      wallpaper: space.wallpaper,
+      tiles: space.tiles.map((tile) => ({
+        name: tile.name,
+        url: tile.url,
+        ...(tile.icon !== undefined ? { icon: tile.icon } : {}),
+        ...(tile.openMode !== undefined ? { openMode: tile.openMode } : {}),
+        ...(tile.placement !== undefined ? { placement: tile.placement } : {}),
+        ...(tile.x !== undefined ? { x: tile.x } : {}),
+        ...(tile.y !== undefined ? { y: tile.y } : {}),
+        ...(tile.w !== undefined ? { w: tile.w } : {}),
+        ...(tile.h !== undefined ? { h: tile.h } : {}),
+      })),
+    })),
     sections: recipe.spaces.map((space) => ({
       name: space.name,
       apps: space.tiles.map((tile) => ({ name: tile.name, url: tile.url })),
@@ -270,7 +368,7 @@ function tileGeometryIssue(tile: Record<string, unknown>): string | null {
   return null;
 }
 
-/** A `wallpaper` object's per-mode refs: optional non-empty strings. */
+/** A `wallpaper` object's per-mode refs: optional, each a legal ref (see isRecipeWallpaperRef). */
 function wallpaperIssue(wallpaper: unknown): string | null {
   if (wallpaper === undefined) {
     return null;
@@ -280,11 +378,96 @@ function wallpaperIssue(wallpaper: unknown): string | null {
   }
   for (const mode of ["light", "dark"] as const) {
     const ref = wallpaper[mode];
-    if (ref !== undefined && (typeof ref !== "string" || ref.length === 0)) {
+    if (ref !== undefined && !isRecipeWallpaperRef(ref)) {
       return `wallpaper.${mode}`;
     }
   }
   return null;
+}
+
+/** A space's optional snap grid: positive safe integers within the caps. */
+function gridIssue(grid: unknown): string | null {
+  if (grid === undefined) {
+    return null;
+  }
+  if (!isRecord(grid)) {
+    return "grid";
+  }
+  if (!isGridDimension(grid.columns, RECIPE_MAX_GRID_COLUMNS)) {
+    return "grid.columns";
+  }
+  if (!isGridDimension(grid.rows, RECIPE_MAX_GRID_ROWS)) {
+    return "grid.rows";
+  }
+  return null;
+}
+
+const BASE64_SYNTAX = /^[A-Za-z0-9+/]+={0,2}$/;
+
+/**
+ * The optional `assets` map — SYNTAX only (decoding, hashing and magic
+ * bytes are the importer's job): a record of ≤ RECIPE_MAX_ASSETS entries,
+ * each keyed by a content asset id that some `asset:` ref in the document
+ * points at, carrying an allowed `mediaType` and non-empty padded base64
+ * within the per-asset budget.
+ */
+function assetsIssue(assets: unknown, referenced: ReadonlySet<string>): string | null {
+  if (assets === undefined) {
+    return null;
+  }
+  if (!isRecord(assets)) {
+    return "assets";
+  }
+  const keys = Object.keys(assets);
+  if (keys.length > RECIPE_MAX_ASSETS) {
+    return "assets";
+  }
+  for (const key of keys) {
+    const path = `assets.${key}`;
+    if (!isRecipeAssetId(key) || !referenced.has(key)) {
+      return path;
+    }
+    const asset = assets[key];
+    if (!isRecord(asset)) {
+      return path;
+    }
+    if (!(RECIPE_ASSET_MEDIA_TYPES as readonly unknown[]).includes(asset.mediaType)) {
+      return `${path}.mediaType`;
+    }
+    const data = asset.data;
+    if (
+      typeof data !== "string" ||
+      data.length === 0 ||
+      data.length % 4 !== 0 ||
+      data.length > RECIPE_MAX_ASSET_BASE64_LENGTH ||
+      !BASE64_SYNTAX.test(data)
+    ) {
+      return `${path}.data`;
+    }
+  }
+  return null;
+}
+
+/** Every asset id an `asset:` ref in the (validated) document points at. */
+function referencedAssetIds(spaces: readonly unknown[], theme: unknown): Set<string> {
+  const ids = new Set<string>();
+  const addWallpaper = (wallpaper: unknown) => {
+    if (!isRecord(wallpaper)) return;
+    for (const mode of ["light", "dark"] as const) {
+      const id = assetIdOfRef(wallpaper[mode]);
+      if (id !== undefined) ids.add(id);
+    }
+  };
+  for (const space of spaces) {
+    if (!isRecord(space)) continue;
+    addWallpaper(space.wallpaper);
+    const legacy = assetIdOfRef(space.wallpaperRef);
+    if (legacy !== undefined) ids.add(legacy);
+  }
+  if (isRecord(theme)) {
+    addWallpaper(theme.wallpaper);
+  }
+  return ids;
 }
 
 /** Structural walk of a `spaces` array; returns the first defect's path. */
@@ -314,9 +497,13 @@ function spacesIssue(spaces: unknown): string | null {
       return `${spacePath}.layoutMode`;
     }
     // Early-v1 singular field still validates as the mode-agnostic ref it
-    // was, then migrates into `wallpaper` below.
-    if (!optionalString(space.wallpaperRef)) {
+    // was (same strict ref rule), then migrates into `wallpaper` below.
+    if (space.wallpaperRef !== undefined && !isRecipeWallpaperRef(space.wallpaperRef)) {
       return `${spacePath}.wallpaperRef`;
+    }
+    const gridDefect = gridIssue(space.grid);
+    if (gridDefect !== null) {
+      return `${spacePath}.${gridDefect}`;
     }
     const wallpaperDefect = wallpaperIssue(space.wallpaper);
     if (wallpaperDefect !== null) {
@@ -396,6 +583,19 @@ export function migrateRecipe(input: unknown): MigrateRecipeResult {
     const spacesDefect = spacesIssue(input.spaces);
     if (spacesDefect !== null) {
       return { ok: false, issue: { type: "invalid-recipe", path: spacesDefect } };
+    }
+    if (isRecord(input.theme)) {
+      const themeWallpaperDefect = wallpaperIssue(input.theme.wallpaper);
+      if (themeWallpaperDefect !== null) {
+        return { ok: false, issue: { type: "invalid-recipe", path: `theme.${themeWallpaperDefect}` } };
+      }
+    }
+    const assetsDefect = assetsIssue(
+      input.assets,
+      referencedAssetIds(input.spaces as readonly unknown[], input.theme),
+    );
+    if (assetsDefect !== null) {
+      return { ok: false, issue: { type: "invalid-recipe", path: assetsDefect } };
     }
     // Shallow copy keeps every unknown field; the known early-v1 fields
     // are normalized in place (the singular wallpaperRef becomes the
