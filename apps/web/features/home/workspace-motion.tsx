@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { gsap } from "@components/vd/gsap";
 import { VD_MOTION_EASE, vdMotionDuration } from "@components/vd/motion-tokens";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
+import { isDawnRevealTarget } from "./scene/use-dawn-intro";
 
 const SETTLED = "vd-workspace-settled";
 /** Waits for the visible switch, without holding input or a runtime lock. */
@@ -54,13 +55,18 @@ export function animateWorkspace(incoming: HTMLElement, outgoing: HTMLElement | 
   return () => { cancelled = true; timeline.kill(); targets.forEach(clearMotion); };
 }
 
-/** First-visit entrance uses inner wrappers: item positioning/drag transforms stay untouched. */
+/**
+ * First-visit entrance uses inner wrappers: item positioning/drag transforms stay untouched.
+ * Tiles the Dawn opening is revealing right now are skipped — Dawn owns their
+ * opacity/transform until it settles (never two tweens on one element).
+ */
 export function animateWorkspaceEntrance(root: HTMLElement, reduced: boolean) {
   if (reduced) return () => {};
   const candidates = Array.from(root.querySelectorAll<HTMLElement>(".vela-item__body, .vela-mobile-tile__button, .vela-rail__item, .vela-mobile-tabs__tab"));
   const visible = candidates.map(element => ({ element, rect: element.getBoundingClientRect() })).filter(({ element, rect }) =>
     rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth &&
-    !element.closest('[inert], [aria-hidden="true"], [data-phase="warm"]') && getComputedStyle(element).visibility !== "hidden",
+    !element.closest('[inert], [aria-hidden="true"], [data-phase="warm"]') && getComputedStyle(element).visibility !== "hidden" &&
+    !isDawnRevealTarget(element),
   ).sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left).map(({ element }) => element);
   if (visible.length === 0) return () => {};
   const tween = gsap.fromTo(visible, { opacity: 0, y: 8 }, {

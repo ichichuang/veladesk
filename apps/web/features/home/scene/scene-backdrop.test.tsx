@@ -97,6 +97,10 @@ describe("SceneBackdrop once per tab across shells", () => {
     await waitFor(() => {
       expect(desktopBand!.style.transform).not.toBe("");
     });
+    // The opening reaches its end (input jumps it to progress(1)) — only a
+    // FINISHED opening counts as played (StrictMode-safe bookkeeping).
+    window.dispatchEvent(new Event("pointerdown"));
+    expect(desktopBand!.style.transform).toBe("");
     desktop.unmount();
     // The mobile shell mounts the SAME component (its own wallpaper class):
     // the module-scoped session memory refuses a second play.
@@ -122,6 +126,24 @@ describe("SceneBackdrop once per tab across shells", () => {
     expect(bands).toHaveLength(2);
     await waitFor(() => {
       expect(bands.filter((band) => band.style.transform !== "")).toHaveLength(1);
+    });
+  });
+
+  it("a swap that unmounts the first shell MID-PLAY lets the new shell play it", async () => {
+    installMatchMedia(false);
+    const desktop = render(<SceneBackdrop wallpaper={PRESET} assetUrl={null} />);
+    const desktopBand = desktop.container.querySelector<HTMLElement>(".vela-dawn-horizon__band");
+    await waitFor(() => {
+      expect(desktopBand!.style.transform).not.toBe("");
+    });
+    // Killed before its end: released, NOT played.
+    desktop.unmount();
+    const mobile = render(
+      <SceneBackdrop wallpaper={PRESET} assetUrl={null} wallpaperClassName="vela-mobile-shell__wallpaper" />,
+    );
+    const mobileBand = mobile.container.querySelector<HTMLElement>(".vela-dawn-horizon__band");
+    await waitFor(() => {
+      expect(mobileBand!.style.transform).not.toBe("");
     });
   });
 });

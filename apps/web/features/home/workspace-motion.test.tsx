@@ -11,6 +11,8 @@ import { ContextMenu } from "./context-menu";
 import type { DesktopMenuEntry } from "./desktop-command-menu";
 import { UiLocaleProvider } from "../i18n/ui-locale-provider";
 import { useVdHoverLift } from "@components/vd/hover-lift";
+import { SceneBackdrop } from "./scene/scene-backdrop";
+import { isDawnRevealTarget, resetDawnOpeningSessionForTests } from "./scene/use-dawn-intro";
 
 const preference = vi.hoisted(() => ({ reduced: false }));
 vi.mock("@components/vd/reduced-motion", () => ({ useVdReducedMotion: () => preference.reduced }));
@@ -97,6 +99,27 @@ describe("workspace transition ownership", () => {
     view.rerender(<WorkspaceTransition identity="a" ready>{icons}</WorkspaceTransition>);
     expect(gsap.getTweensOf(bodies)).toHaveLength(0);
     rect.mockRestore();
+  });
+
+  it("the first-visit entrance skips tiles the Dawn opening is revealing (one owner per tile)", () => {
+    resetDawnOpeningSessionForTests();
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ top: 0, left: 0, right: 40, bottom: 40, width: 40, height: 40, x: 0, y: 0, toJSON() {} });
+    vi.spyOn(Element.prototype, "getClientRects").mockReturnValue([{}] as unknown as DOMRectList);
+    const view = render(
+      <WorkspaceTransition identity="a" ready>
+        <div className="vela-desktop">
+          <SceneBackdrop wallpaper={{ config: { kind: "preset", presetId: "dawn" }, provenance: "default" }} assetUrl={null} />
+          <span className="vela-item__body">Icon</span>
+        </div>
+      </WorkspaceTransition>,
+    );
+    const icon = view.container.querySelector<HTMLElement>(".vela-item__body")!;
+    expect(isDawnRevealTarget(icon)).toBe(true);
+    // Only Dawn's reveal tween — the entrance did not add a second one.
+    expect(gsap.getTweensOf(icon)).toHaveLength(1);
+    view.unmount();
+    expectClean(icon);
+    resetDawnOpeningSessionForTests();
   });
 
   it("unmount kills both layers and the icon entrance without leaving inline styles", () => {

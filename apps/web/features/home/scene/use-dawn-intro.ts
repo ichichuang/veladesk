@@ -11,16 +11,21 @@ import { useVdReducedMotion } from "@components/vd/reduced-motion";
  * The Dawn opening (P1, motion-spec-p1 §2) — the signature moment, GSAP.
  *
  * Budget: first frame to fully settled ≤ 300ms (VD_MOTION_DAWN.total is
- * the hard ceiling). The desktop paints completely and stays interactive
+ * the hard ceiling). The shell paints completely and stays interactive
  * throughout — the timeline only drives OVERLAY nodes (the horizon band,
- * the brightness veil) plus a per-tile opacity/y reveal that never blocks
- * pointers. Sequence:
+ * the brightness veil) plus a per-tile opacity/y reveal on the tiles'
+ * INNER bodies (never the positioned item roots that dnd-kit and FLIP
+ * transform) that never blocks pointers. Sequence:
  *
  *   0–180ms  the horizon band rises (scaleY 0→1, y 8→0) while the
  *            full-frame brightness veil fades 0.6→0;
  *   60–280ms the tile layer reveals (opacity 0→1, y 6→0) staggered by
  *            distance from the horizon (12ms per step, ≤ 80ms total);
  *   280–300ms the bright burst fades out and the timeline ends.
+ *
+ * The tiles are found in the SHELL ROOT that hosts the scene backdrop (the
+ * desktop root or the mobile root) — not inside the scene layer, which
+ * holds only the wallpaper, the horizon and the ambient drift.
  *
  * Gating: Dawn is an official P1 moment and is ON BY DEFAULT — it is NOT
  * behind `motion.experiments.helmMotion` (that switch gates only the
@@ -32,38 +37,84 @@ import { useVdReducedMotion } from "@components/vd/reduced-motion";
  * scene renders in its final state immediately (the spec's "或直接静态"
  * downgrade).
  *
+ * Session bookkeeping (StrictMode-safe): a mount first CLAIMS the opening
+ * (an in-flight placeholder — a second shell mounted at the same time is
+ * refused while the claim is held). The opening counts as PLAYED only when
+ * the timeline completes (naturally, or because input jumped it to
+ * `progress(1)`), or when reduced motion settles it statically. A cleanup
+ * that kills an unfinished timeline (StrictMode's simulated unmount, a
+ * shell swap mid-play) RELEASES the claim without marking it played, so
+ * the next mount plays it for real.
+ *
  * Interruptible: any pointer/keyboard/wheel input during the timeline
  * jumps it to `progress(1)` — the settled state — and ⌘K never waits.
- * The cleanup path clears every GSAP property it touched, so a killed
- * intro can never leave a tile hidden.
+ * Both the settle and the cleanup paths clear every GSAP property the
+ * timeline wrote (`clearProps`), so a killed intro can never leave a tile
+ * hidden or hold a transform that a drag or FLIP would fight.
  */
 
 /** Module-scoped session memory — survives bfcache restores with the tab. */
 let dawnOpeningPlayed = false;
+/** The in-flight claim (one mount at a time may be playing the opening). */
+let dawnOpeningClaim: symbol | null = null;
 
 /**
- * Whether the Dawn opening may play for THIS mount. Pure except for the
- * session bookkeeping (the flag is only written on an accepted play).
- * The moment plays at most ONCE per tab session (a cold new-tab open —
- * spec §2 covers rapid remounts and bfcache restores alike: the module
- * state survives both with the tab, so every later mount renders
- * statically). Exported for tests.
+ * Claims the opening for one mount: returns a claim token, or null when it
+ * must render statically (a bfcache restore, already played this session,
+ * or another mount is playing it right now). Exported for tests.
  */
-export function shouldPlayDawnOpening(_now: number, navigationType: string): boolean {
+export function claimDawnOpening(navigationType: string): symbol | null {
   if (navigationType === "back_forward") {
     // bfcache restore: static per spec §2.
-    return false;
+    return null;
   }
-  if (dawnOpeningPlayed) {
-    return false;
+  if (dawnOpeningPlayed || dawnOpeningClaim !== null) {
+    return null;
   }
-  dawnOpeningPlayed = true;
-  return true;
+  dawnOpeningClaim = Symbol("dawn-opening");
+  return dawnOpeningClaim;
+}
+
+/** The claimed opening reached its end state: it has PLAYED this session. */
+export function completeDawnOpening(claim: symbol): void {
+  if (dawnOpeningClaim === claim) {
+    dawnOpeningClaim = null;
+    dawnOpeningPlayed = true;
+  }
+}
+
+/**
+ * The claimed opening was killed before its end: release the placeholder
+ * WITHOUT marking it played. A no-op after completion (the claim is gone)
+ * or for a stale token — release and the played flag never fight.
+ */
+export function releaseDawnOpening(claim: symbol): void {
+  if (dawnOpeningClaim === claim) {
+    dawnOpeningClaim = null;
+  }
+}
+
+/** The tile bodies an opening timeline is driving right now. */
+const dawnRevealTargets = new WeakSet<Element>();
+
+/**
+ * Whether the Dawn opening currently owns this element's opacity/transform
+ * (its tile reveal is in flight). Other first-paint entrances skip such
+ * tiles so two tweens never fight over the same inline styles.
+ */
+export function isDawnRevealTarget(element: Element): boolean {
+  return dawnRevealTargets.has(element);
+}
+
+/** Whether the opening has played this tab session (tests and callers). */
+export function hasDawnOpeningPlayed(): boolean {
+  return dawnOpeningPlayed;
 }
 
 /** Resets the session memory (tests only). */
 export function resetDawnOpeningSessionForTests(): void {
   dawnOpeningPlayed = false;
+  dawnOpeningClaim = null;
 }
 
 /**
@@ -73,6 +124,7 @@ export function resetDawnOpeningSessionForTests(): void {
  */
 export function markDawnOpeningPlayedForTests(): void {
   dawnOpeningPlayed = true;
+  dawnOpeningClaim = null;
 }
 
 /** The navigation type of this document, or "navigate" when unknown. */
@@ -91,23 +143,39 @@ interface IntroTargets {
   readonly veil: RefObject<HTMLElement | null>;
 }
 
+/** The tile bodies the reveal drives: desktop item bodies, mobile tiles. */
+const INTRO_TILE_SELECTOR = ".vela-item__body, .vela-mobile-tile__button";
+
 /**
- * Collects the visible tile BODIES inside the scope, sorted by distance
- * from the horizon (bottom of the frame first — the reveal starts where
- * the light starts). Warm/hidden layers, zero-box stragglers and the
- * inspector affordance never join the reveal.
+ * The shell root hosting the scene layer — where the tiles live. The scene
+ * backdrop renders as a direct child of the desktop / mobile root.
  */
-function collectIntroTiles(scope: HTMLElement): readonly HTMLElement[] {
-  const candidates = Array.from(scope.querySelectorAll<HTMLElement>(".vela-item__body"));
-  const visible = candidates.filter((element) => {
-    if (element.closest("[data-warm-hidden='true'], [inert]") !== null) {
-      return false;
-    }
-    const rect = element.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
-  });
-  visible.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
-  return visible;
+function introTileRoot(scene: HTMLElement): HTMLElement {
+  return (
+    scene.closest<HTMLElement>(".vela-desktop, [data-vd-mobile-shell]") ??
+    scene.parentElement ??
+    scene
+  );
+}
+
+/**
+ * Collects the rendered tile BODIES inside the shell root, sorted by
+ * distance from the horizon (bottom of the frame first — the reveal starts
+ * where the light starts). Warm/inert/hidden layers (mobile neighbour
+ * panes, the departing section) and unrendered (`display: none`) nodes
+ * never join the reveal. Exported for tests.
+ */
+export function collectIntroTiles(scene: HTMLElement): readonly HTMLElement[] {
+  const root = introTileRoot(scene);
+  const candidates = Array.from(root.querySelectorAll<HTMLElement>(INTRO_TILE_SELECTOR));
+  const rendered = candidates.filter(
+    (element) =>
+      element.closest("[data-warm-hidden='true'], [inert], [aria-hidden='true']") === null &&
+      element.getClientRects().length > 0,
+  );
+  const tops = new Map(rendered.map((element) => [element, element.getBoundingClientRect().top]));
+  rendered.sort((a, b) => tops.get(b)! - tops.get(a)!);
+  return rendered;
 }
 
 export interface UseDawnIntroInput extends IntroTargets {
@@ -125,7 +193,7 @@ export function useDawnIntro(input: UseDawnIntroInput): void {
   const reducedMotion = useVdReducedMotion();
 
   useLayoutEffect(() => {
-    if (!enabled || reducedMotion) {
+    if (!enabled) {
       return;
     }
     const scopeElement = scope.current;
@@ -134,21 +202,38 @@ export function useDawnIntro(input: UseDawnIntroInput): void {
     if (scopeElement === null || bandElement === null || veilElement === null) {
       return;
     }
-    if (!shouldPlayDawnOpening(Date.now(), currentNavigationType())) {
+    const claim = claimDawnOpening(currentNavigationType());
+    if (claim === null) {
+      return;
+    }
+    if (reducedMotion) {
+      // Reduced motion: the static final state IS the opening, settled.
+      completeDawnOpening(claim);
       return;
     }
 
     const tiles = collectIntroTiles(scopeElement);
     const burstElement = bandElement.querySelector<HTMLElement>(".vela-dawn-horizon__burst");
+    for (const tile of tiles) {
+      dawnRevealTargets.add(tile);
+    }
+    const clearIntroProps = () => {
+      for (const tile of tiles) {
+        dawnRevealTargets.delete(tile);
+      }
+      gsap.set([bandElement, veilElement, ...tiles], { clearProps: "opacity,transform" });
+      if (burstElement !== null) {
+        gsap.set(burstElement, { clearProps: "opacity" });
+      }
+    };
     const timeline = gsap.timeline({
       // settle: the timeline dies with its inline styles cleared — the CSS
-      // rest state (band in place, veil/burst at opacity 0) IS the end
-      // state, so a late kill can never leave a ghost veil.
+      // rest state (band in place, veil/burst at opacity 0, tiles visible)
+      // IS the end state, so a late kill can never leave a ghost veil. An
+      // input jump to progress(1) lands here too: it counts as played.
       onComplete: () => {
-        gsap.set([bandElement, veilElement, ...tiles], { clearProps: "opacity,transform" });
-        if (burstElement !== null) {
-          gsap.set(burstElement, { clearProps: "opacity" });
-        }
+        clearIntroProps();
+        completeDawnOpening(claim);
       },
     });
 
@@ -170,6 +255,8 @@ export function useDawnIntro(input: UseDawnIntroInput): void {
     // END-ALIGNED at revealStart + reveal so the whole layer settles inside
     // the total budget no matter how deep the field is (per-tile duration
     // shrinks by the stagger step; the spread stays ≤ staggerCap).
+    // `immediateRender` hides each tile from the very first frame, so a
+    // staggered tile never flashes visible before its slot.
     if (tiles.length > 0) {
       const maxDelay = VD_MOTION_DAWN.staggerCap - VD_MOTION_DAWN.stagger;
       for (const [index, tile] of tiles.entries()) {
@@ -182,6 +269,7 @@ export function useDawnIntro(input: UseDawnIntroInput): void {
             y: 0,
             duration: VD_MOTION_DAWN.reveal - delay,
             ease: VD_MOTION_EASES.standard,
+            immediateRender: true,
           },
           VD_MOTION_DAWN.revealStart + delay,
         );
@@ -225,10 +313,10 @@ export function useDawnIntro(input: UseDawnIntroInput): void {
         window.removeEventListener(event, settle, { capture: true } as EventListenerOptions);
       }
       timeline.kill();
-      gsap.set([bandElement, veilElement, ...tiles], { clearProps: "opacity,transform" });
-      if (burstElement !== null) {
-        gsap.set(burstElement, { clearProps: "opacity" });
-      }
+      clearIntroProps();
+      // Killed before its end (StrictMode, a mid-play unmount): NOT played.
+      // After a completion the claim is already gone and this is a no-op.
+      releaseDawnOpening(claim);
     };
     // The intro is a mount moment: it must never restart on re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-scoped by design; ref contents and the guards are stable within a mount
