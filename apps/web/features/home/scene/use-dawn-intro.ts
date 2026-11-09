@@ -285,30 +285,82 @@ export function useDawnIntro(input: UseDawnIntroInput): void {
         gsap.set(burstElement, { clearProps: "opacity" });
       }
     };
-    // Interruptibility (spec §2): any real input settles the timeline at
-    // once. `pointerover` counts (a hover must find the tile settled before
-    // the hover lift starts) and so does `pointerdown` (the mobile tile's
-    // press). The listeners sit in the WINDOW CAPTURE phase, so they run
-    // before React's root-delegated handlers for the SAME event: the
-    // opening jumps to progress(1) and clears its props FIRST, then the
-    // hover/press motion starts on a clean node. They detach the moment the
-    // opening settles, so a later hover is never touched by Dawn.
-    const interruptEvents: readonly (keyof WindowEventMap)[] = [
-      "pointerdown",
-      "pointerover",
-      "keydown",
-      "wheel",
-      "touchstart",
-    ];
+    // Interruptibility (spec §2): real input settles the timeline at once.
+    // `pointerdown` (the mobile tile's press), `keydown`, `wheel` and
+    // `touchstart` settle immediately. Hover is gated on a GENUINE move: a
+    // cursor resting over a freshly laid-out tile (refresh) may get a
+    // `pointerover` without moving, and that must not cut the opening
+    // short. So `pointerover` only counts after a real `pointermove`
+    // (non-zero movementX/Y, or clientX/Y changed since the last pointer
+    // event seen — jsdom has no movementX). A real move whose target is a
+    // Dawn tile settles at once too: a resting cursor never gets another
+    // `pointerover`, so the hover would otherwise never reach the tile.
+    // The listeners sit in the WINDOW CAPTURE phase, so they run before
+    // React's root-delegated handlers for the SAME event: the opening jumps
+    // to progress(1) and clears its props FIRST, then the hover/press
+    // motion starts on a clean node. They detach the moment it settles.
+    const immediateEvents: readonly (keyof WindowEventMap)[] = ["pointerdown", "keydown", "wheel", "touchstart"];
     let listening = false;
+    let moved = false;
+    let lastPoint: { readonly x: number; readonly y: number } | null = null;
+    const tileOf = (target: EventTarget | null): HTMLElement | null => {
+      if (!(target instanceof Element)) return null;
+      return tiles.find(tile => tile.contains(target) || target.contains(tile)) ?? null;
+    };
+    /** Records the pointer position; true when this event is a genuine move. */
+    const isGenuineMove = (event: Event): boolean => {
+      const pointer = event as Partial<MouseEvent>;
+      const movement = (pointer.movementX ?? 0) !== 0 || (pointer.movementY ?? 0) !== 0;
+      const hasPoint = typeof pointer.clientX === "number" && typeof pointer.clientY === "number";
+      const point = hasPoint ? { x: pointer.clientX!, y: pointer.clientY! } : null;
+      const shifted = point !== null && lastPoint !== null && (point.x !== lastPoint.x || point.y !== lastPoint.y);
+      if (point !== null) lastPoint = point;
+      return movement || shifted;
+    };
+    const onPointerOver = (event: Event) => {
+      if (moved) {
+        settle();
+        return;
+      }
+      isGenuineMove(event); // a resting cursor's position: the baseline for the next move
+      // Unarmed hover over a Dawn tile is HELD (the hover lift would kill
+      // the tile's reveal tween and its lift would then be cleared by the
+      // settle). It is replayed on the first genuine move.
+      if (tileOf(event.target) !== null) event.stopPropagation();
+    };
+    const onPointerMove = (event: Event) => {
+      if (!isGenuineMove(event)) return;
+      moved = true;
+      const target = event.target;
+      if (tileOf(target) === null || !(target instanceof Element)) return;
+      settle();
+      // Hand the hover to the tile: React derives onPointerEnter from a
+      // `pointerover`, which a resting cursor never sends again.
+      const pointer = event as Partial<PointerEvent>;
+      const init = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        relatedTarget: null,
+        clientX: pointer.clientX ?? 0,
+        clientY: pointer.clientY ?? 0,
+      };
+      const over = typeof PointerEvent === "function"
+        ? new PointerEvent("pointerover", { ...init, pointerId: pointer.pointerId ?? 1, pointerType: pointer.pointerType ?? "mouse", isPrimary: true })
+        : new MouseEvent("pointerover", init);
+      target.dispatchEvent(over);
+    };
     const detachInterrupts = () => {
       if (!listening) {
         return;
       }
       listening = false;
-      for (const event of interruptEvents) {
-        window.removeEventListener(event, settle, { capture: true } as EventListenerOptions);
+      const options = { capture: true } as EventListenerOptions;
+      for (const event of immediateEvents) {
+        window.removeEventListener(event, settle, options);
       }
+      window.removeEventListener("pointerover", onPointerOver, options);
+      window.removeEventListener("pointermove", onPointerMove, options);
     };
     const timeline = gsap.timeline({
       // settle: the timeline dies with its inline styles cleared — the CSS
@@ -383,9 +435,12 @@ export function useDawnIntro(input: UseDawnIntroInput): void {
     timeline.play();
 
     listening = true;
-    for (const event of interruptEvents) {
-      window.addEventListener(event, settle, { capture: true, passive: true });
+    const listenOptions = { capture: true, passive: true } as const;
+    for (const event of immediateEvents) {
+      window.addEventListener(event, settle, listenOptions);
     }
+    window.addEventListener("pointerover", onPointerOver, listenOptions);
+    window.addEventListener("pointermove", onPointerMove, listenOptions);
     return () => {
       detachInterrupts();
       timeline.kill();

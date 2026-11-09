@@ -381,13 +381,89 @@ describe("useDawnIntro hands input over to hover/press motion", () => {
     return view;
   }
 
-  it("pointerover settles the opening first, then the hover lift runs and is NOT cleared", () => {
+  /** jsdom has no PointerEvent: a MouseEvent carrying the pointer type, with movementX/Y when given. */
+  function pointer(
+    target: EventTarget,
+    type: "pointermove" | "pointerover",
+    init: { clientX?: number; clientY?: number; movementX?: number; movementY?: number } = {},
+  ): void {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0 });
+    if (init.movementX !== undefined) Object.defineProperty(event, "movementX", { value: init.movementX });
+    if (init.movementY !== undefined) Object.defineProperty(event, "movementY", { value: init.movementY });
+    target.dispatchEvent(event);
+  }
+  const liftTweens = (node: Element) => gsap.getTweensOf(node).filter(tween => tween.vars.y === -2);
+
+  it("pointerover ALONE (a cursor resting on a tile at refresh) does not interrupt: the opening keeps playing", () => {
+    const view = mountShell("desktop");
+    const body = view.container.querySelector<HTMLElement>(".vela-item__body")!;
+    const button = view.container.querySelector<HTMLElement>(".vela-item")!;
+    pointer(button, "pointerover", { clientX: 10, clientY: 10 });
+    fireEvent.pointerOver(button);
+    expect(isDawnOpeningPlaying()).toBe(true);
+    expect(hasDawnOpeningPlayed()).toBe(false);
+    expect(isDawnRevealTarget(body)).toBe(true);
+    expect(body.style.opacity).toBe("0");
+    // The held hover never reached the lift, so nothing will fight the reveal.
+    expect(liftTweens(body)).toHaveLength(0);
+  });
+
+  it("a zero-movement pointermove does not count: neither it nor a later pointerover interrupts", () => {
+    const view = mountShell("desktop");
+    const body = view.container.querySelector<HTMLElement>(".vela-item__body")!;
+    const button = view.container.querySelector<HTMLElement>(".vela-item")!;
+    pointer(button, "pointerover", { clientX: 10, clientY: 10 });
+    pointer(button, "pointermove", { clientX: 10, clientY: 10, movementX: 0, movementY: 0 });
+    pointer(button, "pointermove", { clientX: 10, clientY: 10 }); // jsdom shape: no movementX at all
+    pointer(button, "pointerover", { clientX: 10, clientY: 10 });
+    expect(isDawnOpeningPlaying()).toBe(true);
+    expect(body.style.opacity).toBe("0");
+    expect(liftTweens(body)).toHaveLength(0);
+  });
+
+  it("a real move off the tiles arms hover; the next pointerover settles and the lift takes over", () => {
+    const view = mountShell("desktop");
+    const body = view.container.querySelector<HTMLElement>(".vela-item__body")!;
+    const button = view.container.querySelector<HTMLElement>(".vela-item")!;
+    const scene = view.container.querySelector<HTMLElement>(".vela-desktop__scene")!;
+    pointer(scene, "pointermove", { clientX: 40, clientY: 40, movementX: 3, movementY: 0 });
+    expect(isDawnOpeningPlaying()).toBe(true); // a move off the tiles only arms
+    pointer(button, "pointerover", { clientX: 41, clientY: 40 });
+    expect(hasDawnOpeningPlayed()).toBe(true);
+    expect(body.style.opacity).toBe("");
+    expect(liftTweens(body)).toHaveLength(1);
+  });
+
+  it("a cursor resting on a tile: the first real move settles AND hands the hover to the lift, which survives the settle", () => {
+    const view = mountShell("desktop");
+    const body = view.container.querySelector<HTMLElement>(".vela-item__body")!;
+    const button = view.container.querySelector<HTMLElement>(".vela-item")!;
+    pointer(button, "pointerover", { clientX: 10, clientY: 10 }); // held: no move yet
+    // A resting cursor gets NO new pointerover when it moves — only pointermove
+    // (here the jsdom shape: no movementX, the position changed).
+    pointer(button, "pointermove", { clientX: 14, clientY: 10 });
+    expect(hasDawnOpeningPlayed()).toBe(true);
+    expect(isDawnRevealTarget(body)).toBe(false);
+    expect(body.style.opacity).toBe("");
+    const lifts = liftTweens(body);
+    expect(lifts).toHaveLength(1);
+    // The lift runs to its end on the settled node: onComplete's clearProps
+    // already ran, so nothing takes the -2px away.
+    lifts[0]!.progress(1);
+    expect(gsap.getProperty(body, "y")).toBe(-2);
+    // Later moves never reach back: Dawn's listeners are detached.
+    pointer(button, "pointermove", { clientX: 20, clientY: 10, movementX: 6 });
+    expect(gsap.getProperty(body, "y")).toBe(-2);
+  });
+
+  it("pointerover after a real move settles the opening first, then the hover lift runs and is NOT cleared", () => {
     const view = mountShell("desktop");
     const body = view.container.querySelector<HTMLElement>(".vela-item__body")!;
     const button = view.container.querySelector<HTMLElement>(".vela-item")!;
     expect(isDawnOpeningPlaying()).toBe(true);
     expect(body.style.opacity).toBe("0");
 
+    pointer(view.container, "pointermove", { movementX: 2, movementY: 1 });
     fireEvent.pointerOver(button);
 
     // Dawn settled (played) and let go of the tile…
