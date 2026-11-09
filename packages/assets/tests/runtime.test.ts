@@ -78,16 +78,34 @@ describe("asset runtime: syncAsset", () => {
   });
 
   it("flushes one pass over the snapshot, in deterministic queued order", async () => {
-    const { runtime, transport } = await openRuntime();
+    // A scripted, strictly increasing clock: with the real Date.now both
+    // stages often land in the SAME millisecond, the queuedAt tie falls
+    // through to the assetId tie-break (seed 6's id sorts before seed 7's)
+    // and the order flips. Queue order must come from queuedAt here.
+    let tick = 1_000;
+    const { runtime, transport } = await openRuntime({ now: () => (tick += 1) });
     // Stage B first (older queuedAt), then A.
     const idB = await stageSeed(runtime, 7);
     const idA = await stageSeed(runtime, 6);
+    expect(idA < idB).toBe(true); // queuedAt order and id order disagree
 
     const results = await runtime.flushOutbox();
 
     expect(results.map((entry) => entry.assetId)).toEqual([idB, idA]);
     expect(results.every((entry) => entry.result.ok)).toBe(true);
     expect(transport.puts.map((put) => put.id)).toEqual([idB, idA]);
+  });
+
+  it("breaks a queuedAt tie by assetId ascending", async () => {
+    // The same-millisecond case, made deterministic with a frozen clock.
+    const { runtime, transport } = await openRuntime({ now: () => 1_000 });
+    const idB = await stageSeed(runtime, 7);
+    const idA = await stageSeed(runtime, 6);
+
+    const results = await runtime.flushOutbox();
+
+    expect(results.map((entry) => entry.assetId)).toEqual([idA, idB]);
+    expect(transport.puts.map((put) => put.id)).toEqual([idA, idB]);
   });
 
   it("reports a missing-asset invariant without creating anything", async () => {

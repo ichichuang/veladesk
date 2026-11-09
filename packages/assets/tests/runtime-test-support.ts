@@ -138,9 +138,15 @@ export async function openRuntime(
     readonly putDelayMs?: number;
     readonly getDelayMs?: number;
     readonly fail?: ScriptedFailure | null;
+    /**
+     * The store clock (outbox `queuedAt`, record `createdAt`). Defaults to
+     * Date.now; pass a scripted clock whenever a test asserts on queue
+     * ORDER — two stages can land in the same millisecond.
+     */
+    readonly now?: () => number;
   } = {}
 ) {
-  const store = await openTestAssetStore();
+  const store = await openTestAssetStore(options.now !== undefined ? { now: options.now } : {});
   const transport = makeRecordingTransport(options);
   const runtime = createAssetRuntime({ store, transport });
   return { runtime, transport, store };
