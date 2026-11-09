@@ -69,11 +69,11 @@ describe("Settings → General version display (task 025 §12)", () => {
     expect(value?.textContent).toBe(VELADESK_VERSION);
   });
 
-  it("never hardcodes a version literal in settings-center.tsx", () => {
+  it("never hardcodes a version literal in the settings modules", () => {
     // Source contract: the component reads VELADESK_VERSION; a hardcoded
     // number in the JSX would be a second, hand-maintained version source.
     const source = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "settings-center.tsx"),
+      join(dirname(fileURLToPath(import.meta.url)), "settings-sections.tsx"),
       "utf8",
     );
     expect(source).toMatch(/VELADESK_VERSION/);

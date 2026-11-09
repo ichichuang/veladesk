@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { GridDefinition } from "@veladesk/desktop-engine";
 
-import { clampCanvasTranslation, snapCanvasTranslation, translateCanvasItems } from "./translate";
+import {
+  clampCanvasTranslation,
+  raiseCanvasItems,
+  snapCanvasTranslation,
+  translateCanvasItems,
+} from "./translate";
 import { findCanvasItem } from "./layout";
-import type { CanvasLayoutItem, CanvasLayoutV1 } from "./types";
+import type { CanvasLayoutItem, CanvasLayoutV1, FreeformCanvasLayoutV2 } from "./types";
 
 const grid10x6: GridDefinition = { columns: 10, rows: 6 };
 
@@ -140,5 +145,35 @@ describe("snapCanvasTranslation", () => {
   it("returns a zero delta for an empty selection or non-finite delta", () => {
     expect(snapCanvasTranslation(pair, [], 100, 100, grid10x6)).toEqual({ x: 0, y: 0 });
     expect(snapCanvasTranslation(pair, ["a"], Number.NaN, 0, grid10x6)).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("raiseCanvasItems (P1 z-order)", () => {
+  const layout: FreeformCanvasLayoutV2 = {
+    version: 2,
+    mode: "freeform",
+    items: [
+      { id: "a", rect: { x: 0, y: 0, width: 100, height: 100 } },
+      { id: "b", rect: { x: 200, y: 0, width: 100, height: 100 } },
+      { id: "c", rect: { x: 400, y: 0, width: 100, height: 100 } },
+    ],
+  };
+
+  it("moves a selection to the top preserving relative order", () => {
+    const raised = raiseCanvasItems(layout, ["a", "c"]);
+    expect(raised.items.map((item) => item.id)).toEqual(["b", "a", "c"]);
+  });
+
+  it("is identity for an empty selection, unknown ids, or the whole set", () => {
+    expect(raiseCanvasItems(layout, [])).toBe(layout);
+    expect(raiseCanvasItems(layout, ["zz"])).toBe(layout);
+    expect(raiseCanvasItems(layout, ["a", "b", "c"])).toBe(layout);
+  });
+
+  it("keeps rects and canvas fields untouched", () => {
+    const raised = raiseCanvasItems(layout, ["b"]);
+    expect(raised.version).toBe(2);
+    expect(raised.mode).toBe("freeform");
+    expect(raised.items.find((item) => item.id === "b")?.rect).toEqual(layout.items[1]!.rect);
   });
 });

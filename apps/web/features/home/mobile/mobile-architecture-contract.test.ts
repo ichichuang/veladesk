@@ -71,7 +71,7 @@ describe("mobile dependency boundary (§29/§64/§88)", () => {
 
   it("the mobile shell reuses the SHARED consumption modules (not copies)", () => {
     const shell = readSource("mobile-shell.tsx");
-    expect(shell).toContain("resolveEffectiveWallpaper"); // 023-C resolver
+    expect(shell).toContain("resolveModeAwareWallpaper"); // 023-C resolver, P1 mode-aware
     expect(shell).toContain("launch-app"); // canonical open helper
     const search = readSource("mobile-search.tsx");
     expect(search).toContain("buildLauncherEntries"); // shared index
@@ -304,7 +304,9 @@ describe("animation ownership source contracts (R2 §23/§24/§32)", () => {
   });
 
   it("the wallpaper crossfade animates opacity ONLY", () => {
-    expect(wallpaperSource).toMatch(/gsap\.fromTo\(\s*incomingRef\.current,\s*\{\s*opacity: 0\s*\},/);
+    // P1: the tween starts only after the incoming image decodes, but its
+    // destination remains opacity alone.
+    expect(wallpaperSource).toMatch(/gsap\.fromTo\(\s*element,\s*\{\s*opacity: 0\s*\},/);
     expect(wallpaperSource).not.toMatch(
       /gsap\.(?:to|fromTo)\([^;]*?(?:width|height|filter|background-position|background-size|backdrop-filter):/,
     );

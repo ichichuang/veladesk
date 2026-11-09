@@ -345,12 +345,16 @@ it("hover/press stay on the inner icon, and reduced pointer leave cannot start a
 
 describe("wallpaper crossfade cleanup", () => {
   const wallpaper = (presetId: "mist" | "dawn") => ({ config: { kind: "preset" as const, presetId }, provenance: "workspace" as const });
-  it.each([false, true])("crossfade settles directly or kills on unmount (reduced=%s)", reduced => {
+  it.each([false, true])("crossfade settles directly or kills on unmount (reduced=%s)", async reduced => {
     preference.reduced = reduced;
     const fromTo = vi.spyOn(gsap, "fromTo");
     const view = render(<WorkspaceWallpaperLayers wallpaper={wallpaper("mist")} assetUrl={null} />);
     view.rerender(<WorkspaceWallpaperLayers wallpaper={wallpaper("dawn")} assetUrl={null} />);
     const incoming = view.container.querySelector<HTMLElement>(".vela-desktop__wallpaper-incoming")!;
+    // The tween starts after the decode gate resolves (a microtask).
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(gsap.getTweensOf(incoming)).toHaveLength(reduced ? 0 : 1);
     if (reduced) { expect(fromTo).not.toHaveBeenCalled(); expect(view.container.querySelectorAll(".vela-wallpaper-surface--preset")).toHaveLength(1); }
     view.unmount(); expectClean(incoming);

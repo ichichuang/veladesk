@@ -35,11 +35,32 @@ export const RECIPE_FILE_EXTENSION = ".deck.json";
 export type RecipeSpaceLayout = "grid" | "canvas" | "orbit";
 
 /**
+ * How a space's tiles are placed (P1): `snap` = the integer size-step grid
+ * (1×1 / 2×1 / 2×2 / 4×2), `free` = continuous rects where overlap is
+ * legal. Absent resolves to `snap` — the deck's default arrangement.
+ */
+export type RecipeLayoutMode = "snap" | "free";
+
+/**
+ * How one tile is placed inside its space. Mirrors the resolved page
+ * placement: `snap` tiles carry integer grid cells, `free` tiles carry
+ * relative 0–1 fractions of the space's continuous canvas.
+ */
+export type RecipeTilePlacement = "snap" | "free";
+
+/**
  * One tile of a space — the public projection of an app shortcut.
  *
  * `icon` is an Iconify `collection:name` key; absent means favicon/auto
  * (generated initials are re-derivable from the name at import time).
  * Asset-backed icons are private and never exported.
+ *
+ * `placement` + `x`/`y`/`w`/`h` carry the tile's geometry in the space:
+ * `snap` → `x`/`y` are the 0-based grid column/row and `w`/`h` the cell
+ * spans (safe integers; w/h ≥ 1); `free` → all four are relative 0–1
+ * fractions of the space's canvas (resolution-independent, matching the
+ * engine's 10 000-unit model). Absent geometry lets the importer place
+ * the tile by its own default — a recipe never forces a layout.
  */
 export interface RecipeTileV1 {
   readonly id?: string;
@@ -47,17 +68,37 @@ export interface RecipeTileV1 {
   readonly url: string;
   readonly icon?: string;
   readonly openMode?: AppOpenMode;
+  readonly placement?: RecipeTilePlacement;
+  readonly x?: number;
+  readonly y?: number;
+  readonly w?: number;
+  readonly h?: number;
 }
 
 /**
- * One space of a deck. `wallpaperRef` is `preset:<id>` or `asset:<assetId>`
- * (a reference — the binary never rides along); absent = follow the deck.
+ * A space's wallpaper references, per color mode (P1). Each value is
+ * `preset:<id>` or `asset:<assetId>` — a reference, never a payload; the
+ * binary never rides along in a recipe. An absent mode falls back to the
+ * other mode, then to the space's mode-agnostic upload, then to the deck
+ * default — exactly the renderer's fallback chain. (Replaces the singular
+ * `wallpaperRef` of early v1 documents, which migrated in place.)
+ */
+export interface RecipeWallpaperV1 {
+  readonly light?: string;
+  readonly dark?: string;
+}
+
+/**
+ * One space of a deck. `wallpaper` carries the per-mode wallpaper
+ * references (a reference — the binary never rides along); absent =
+ * follow the deck.
  */
 export interface RecipeSpaceV1 {
   readonly id?: string;
   readonly name: string;
   readonly layout: RecipeSpaceLayout;
-  readonly wallpaperRef?: string;
+  readonly layoutMode?: RecipeLayoutMode;
+  readonly wallpaper?: RecipeWallpaperV1;
   readonly tiles: readonly RecipeTileV1[];
 }
 

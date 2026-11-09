@@ -19,6 +19,7 @@ import {
   placementSizeOf,
   resolvePagePlacement,
   spanFromFreeformRect,
+  switchPagePlacement,
   withPageCanvas,
 } from "./canvas";
 import type {
@@ -730,6 +731,56 @@ export function replacePageWallpaper(
 }
 
 /**
+ * Sets or clears ONE color mode's page background override (P1),
+ * immutably. `null` REMOVES that mode's override — the mode falls back to
+ * the page's mode-agnostic `wallpaper`, then the ordinary chain. Removing
+ * the last override of the map drops the whole map. Never touches the
+ * general override, membership, geometry or any other page.
+ */
+export function replacePageModeWallpaper(
+  workspace: WorkspaceSnapshot,
+  pageId: DesktopPageId,
+  mode: "light" | "dark",
+  wallpaper: WallpaperConfig | null
+): WorkspaceEditResult {
+  const page = findDesktopPage(workspace, pageId);
+  if (page === undefined) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  if (wallpaper !== null && !isWallpaperConfig(wallpaper)) {
+    return { ok: false, reason: "invalid-wallpaper" };
+  }
+  return {
+    ok: true,
+    workspace: {
+      ...workspace,
+      pages: workspace.pages.map((candidate) => {
+        if (candidate !== page) {
+          return candidate;
+        }
+        const current: { light?: WallpaperConfig; dark?: WallpaperConfig } =
+          page.wallpaperByMode ?? {};
+        const next: { light?: WallpaperConfig; dark?: WallpaperConfig } =
+          wallpaper === null
+            ? (() => {
+                const { [mode]: removed, ...rest } = current;
+                void removed;
+                return rest;
+              })()
+            : { ...current, [mode]: wallpaper };
+        const hasOverrides = next.light !== undefined || next.dark !== undefined;
+        if (!hasOverrides) {
+          const { wallpaperByMode: dropped, ...kept } = page;
+          void dropped;
+          return kept;
+        }
+        return { ...page, wallpaperByMode: next };
+      }),
+    },
+  };
+}
+
+/**
  * Moves a page one slot up or down in the `pages` array, immutably.
  * Only array order changes — contents and the default page are untouched.
  * Moving past either end is a `page-order-boundary` failure.
@@ -914,4 +965,40 @@ export function replacePageCanvas(
     ok: true,
     workspace: withPage(workspace, pageId, withPageCanvas(materializePagePlacement(page), canvas)),
   };
+}
+
+/**
+ * Switches a page between Grid and Freeform placement, KEEPING both layout
+ * datasets (P1): the leaving mode's geometry is retained on the page and
+ * reconciled back on the next switch, so a round trip never destroys
+ * either arrangement. Delegates the geometry to `switchPagePlacement`
+ * (retained-set reconciliation, first-switch conversion with the same
+ * lossy refusal the direct conversion always had) and validates the result
+ * like every canvas write. Structural — history restarts at the new
+ * placement; undo never walks back into a mode the user left.
+ */
+export function switchPagePlacementMode(
+  workspace: WorkspaceSnapshot,
+  pageId: DesktopPageId,
+  next: "grid" | "freeform"
+): WorkspaceEditResult {
+  const page = findDesktopPage(workspace, pageId);
+  if (page === undefined) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  const switched = switchPagePlacement(page, next);
+  if (!switched.ok) {
+    return { ok: false, reason: "invalid-page-layout" };
+  }
+  const { retainedCanvas, canvas } = switched.page;
+  if (validateCanvasLayout(canvas).length > 0) {
+    return { ok: false, reason: "invalid-page-layout" };
+  }
+  if (retainedCanvas !== undefined && validateCanvasLayout(retainedCanvas).length > 0) {
+    return { ok: false, reason: "invalid-page-layout" };
+  }
+  if (!hasSameItemIds(pageItemIds(page), canvasItemIds(canvas))) {
+    return { ok: false, reason: "invalid-page-layout" };
+  }
+  return { ok: true, workspace: withPage(workspace, pageId, switched.page) };
 }

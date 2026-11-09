@@ -62,6 +62,7 @@ export {
   resolvePagePlacement,
   snappedRectForGrid,
   spanFromFreeformRect,
+  switchPagePlacement,
   withPageCanvas,
 } from "./canvas";
 export type {
@@ -69,6 +70,7 @@ export type {
   NewCanvasItemRectArgs,
   PageItemPlacement,
   PagePlacement,
+  PagePlacementSwitchResult,
 } from "./canvas";
 
 export { decodeWorkspaceSnapshot } from "./decoding";
@@ -86,13 +88,16 @@ export {
 } from "./recipe/types";
 export type {
   RecipeImportPayload,
+  RecipeLayoutMode,
   RecipeMotionV1,
   RecipePluginV1,
   RecipeSpaceLayout,
   RecipeSpaceV1,
   RecipeThemeV1,
+  RecipeTilePlacement,
   RecipeTileV1,
   RecipeV1,
+  RecipeWallpaperV1,
 } from "./recipe/types";
 
 export { validateWorkspace } from "./validation";
@@ -115,8 +120,10 @@ export {
   renamePage,
   replaceApp,
   replacePageCanvas,
+  replacePageModeWallpaper,
   replaceWorkspacePreferences,
   setDefaultPage,
+  switchPagePlacementMode,
   unpinEntityFromDock,
 } from "./editing";
 export type { WorkspaceEditFailureReason, WorkspaceEditResult } from "./editing";
@@ -155,11 +162,15 @@ export type {
 
 export {
   DEFAULT_WALLPAPER,
+  isModeWallpaperMap,
   isWallpaperConfig,
   resolveEffectiveWallpaper,
+  resolveModeAwareWallpaper,
 } from "./wallpaper";
 export type {
   EffectiveWallpaper,
+  ModeAwareWallpaperInput,
+  ModeWallpaperMap,
   WallpaperConfig,
   WallpaperFit,
   WallpaperProvenance,

@@ -210,6 +210,19 @@ export interface DesktopPage {
   readonly wallpaper?: WallpaperConfig;
 
   /**
+   * Optional per-COLOR-MODE background overrides (P1): a light and/or a
+   * dark config that takes precedence over `wallpaper` for its mode.
+   * Absent modes fall back to `wallpaper` (the mode-agnostic single
+   * upload), then the ordinary workspace chain — the renderer's fallback
+   * order. Optional for backward compatibility: snapshots persisted
+   * before per-mode wallpapers existed stay valid forever.
+   */
+  readonly wallpaperByMode?: {
+    readonly light?: WallpaperConfig;
+    readonly dark?: WallpaperConfig;
+  };
+
+  /**
    * Continuous canvas geometry and per-section placement mode.
    *
    * Optional for backward compatibility: snapshots persisted before canvas
@@ -219,6 +232,20 @@ export interface DesktopPage {
    * must be empty.
    */
   readonly canvas?: CanvasLayout;
+
+  /**
+   * The RETAINED geometry of the placement mode the page is NOT in (P1):
+   * the freeform rects kept while the page renders in Grid, or the Grid
+   * spans kept while it renders in Freeform. Switching modes swaps the
+   * two instead of converting lossily, so BOTH layout datasets survive
+   * any number of round trips. Presentation memory only: `canvas` stays
+   * the sole membership authority; the retained set is reconciled against
+   * it (missing ids placed by default, stale ids dropped) at the next
+   * switch. Optional for backward compatibility: snapshots persisted
+   * before retention existed convert on their first mode switch exactly
+   * like they always did.
+   */
+  readonly retainedCanvas?: CanvasLayout;
 }
 
 /**

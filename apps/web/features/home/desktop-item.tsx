@@ -44,6 +44,7 @@ import type {
 } from "../canvas/canvas-resize";
 import { canvasRectStyle } from "../canvas/canvas-style";
 import { gridPlacementStyle } from "../canvas/square-grid-metrics";
+import { GridFlipSlot } from "../canvas/grid-flip-slot";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
 import { launchApp } from "./launch-app";
 import { useI18n } from "../i18n/use-i18n";
@@ -211,6 +212,9 @@ function DesktopEntity({
     [arrange, liftEnter],
   );
   const resizeRef = useRef<ActiveResize | null>(null);
+  // The snap-mode FLIP slot (P1): in Grid geometry the SLOT owns the cell
+  // placement (and receives the live resize preview); the button fills it.
+  const slotRef = useRef<HTMLDivElement | null>(null);
   const [resizing, setResizing] = useState(false);
   const onResizePreviewRef = useRef(onResizePreview);
   const reportedPreviewRef = useRef<GridItemGeometry | null>(null);
@@ -247,16 +251,20 @@ function DesktopEntity({
         element.style.height = String(style.height);
         return;
       }
+      // Grid geometry lives on the FLIP slot in grid mode (the slot is the
+      // CSS-Grid child; the button fills it) — fall back to the item for
+      // the rare non-slot grid render (missing-entity placeholder).
+      const target = slotRef.current ?? element;
       const style = gridPlacementStyle({ id: item.id, ...next.geometry }) as Record<
         string,
         string | number
       >;
-      element.style.left = "";
-      element.style.top = "";
-      element.style.width = "";
-      element.style.height = "";
-      element.style.gridColumn = String(style.gridColumn);
-      element.style.gridRow = String(style.gridRow);
+      target.style.left = "";
+      target.style.top = "";
+      target.style.width = "";
+      target.style.height = "";
+      target.style.gridColumn = String(style.gridColumn);
+      target.style.gridRow = String(style.gridRow);
     },
     [item.id],
   );
@@ -440,10 +448,16 @@ function DesktopEntity({
     gesturesReady &&
     (resizeActiveId === null || resizeActiveId === entity.id);
 
-  const commonStyle: CSSProperties = {
-    ...itemStyle(geometry, item),
-    ...(isDragging ? { zIndex: 30 } : {}),
-  };
+  // Grid geometry renders inside the FLIP slot (P1): the SLOT carries the
+  // cell placement and the drag lift; the button fills it and keeps only
+  // its presentation vars. Freeform keeps the direct rect style.
+  const inGridSlot = geometry === "grid";
+  const commonStyle: CSSProperties = inGridSlot
+    ? {}
+    : {
+        ...itemStyle(geometry, item),
+        ...(isDragging ? { zIndex: 30 } : {}),
+      };
   const draggingProps = { "data-dragging": isDragging ? "true" : undefined } as const;
   const selectionProps = { "data-selected": selected ? "true" : undefined } as const;
 
@@ -526,7 +540,7 @@ function DesktopEntity({
                 { generatedTextLength: 1 }
               : {}),
           });
-    return (
+    const appButton = (
       <button
         type="button"
         ref={mergeRefs(ref, itemRef)}
@@ -569,10 +583,23 @@ function DesktopEntity({
         {resizeHandles}
       </button>
     );
+    if (inGridSlot) {
+      return (
+        <GridFlipSlot
+          item={item as GridCanvasItem}
+          flip
+          dragging={isDragging}
+          slotRef={slotRef}
+        >
+          {appButton}
+        </GridFlipSlot>
+      );
+    }
+    return appButton;
   }
 
   if (entity.kind === "folder") {
-    return (
+    const folderButton = (
       <button
         type="button"
         ref={mergeRefs(ref, itemRef)}
@@ -596,9 +623,22 @@ function DesktopEntity({
         </span>
       </button>
     );
+    if (inGridSlot) {
+      return (
+        <GridFlipSlot
+          item={item as GridCanvasItem}
+          flip
+          dragging={isDragging}
+          slotRef={slotRef}
+        >
+          {folderButton}
+        </GridFlipSlot>
+      );
+    }
+    return folderButton;
   }
 
-  return (
+  const widgetNode = (
     <div
       ref={mergeRefs(ref, itemRef)}
       data-item-id={item.id}
@@ -616,6 +656,19 @@ function DesktopEntity({
       </span>
     </div>
   );
+  if (inGridSlot) {
+    return (
+      <GridFlipSlot
+        item={item as GridCanvasItem}
+        flip
+        dragging={isDragging}
+        slotRef={slotRef}
+      >
+        {widgetNode}
+      </GridFlipSlot>
+    );
+  }
+  return widgetNode;
 }
 
 /** The committed start geometry of a session, in commit form. */

@@ -40,7 +40,7 @@ describe("web version injection contract (task 025 §10–§11)", () => {
   it("apps/web exposes exactly one version helper and components use it", () => {
     expect(appVersionSource).toContain(APP_VERSION_SOURCE);
     const settingsSource = readFileSync(
-      fileURLToPath(new URL("../apps/web/features/home/settings-center.tsx", import.meta.url)),
+      fileURLToPath(new URL("../apps/web/features/home/settings-sections.tsx", import.meta.url)),
       "utf8",
     );
     expect(settingsSource).toMatch(/from "\.\.\/\.\.\/lib\/app-version"/);

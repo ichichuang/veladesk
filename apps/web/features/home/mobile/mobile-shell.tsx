@@ -9,7 +9,7 @@ import {
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
 import {
   findDesktopPage,
-  resolveEffectiveWallpaper,
+  resolveModeAwareWallpaper,
   resolveWorkspaceAppearance,
 } from "@veladesk/domain";
 import type {
@@ -86,15 +86,20 @@ export function MobileShell({
     activePageId === null ? undefined : findDesktopPage(snapshot, activePageId);
   const effectiveWallpaper = useMemo(
     () =>
-      resolveEffectiveWallpaper({
-        page: activePage,
-        pageWallpaperDraft: undefined,
-        pageWallpaperExplicitlyInherits: false,
-        workspaceWallpaper: resolvedAppearance.wallpaper,
-        workspaceDraft: undefined,
-        legacyWorkspacePreset: resolvedAppearance.wallpaperPreset,
-      }),
-    [activePage, resolvedAppearance],
+      // Mode-aware (P1): the effective color mode's page override first,
+      // then the ordinary page → workspace → preset chain.
+      resolveModeAwareWallpaper(
+        { effectiveMode: effectiveColorMode, page: activePage, modeWallpaperDraft: undefined },
+        {
+          page: activePage,
+          pageWallpaperDraft: undefined,
+          pageWallpaperExplicitlyInherits: false,
+          workspaceWallpaper: resolvedAppearance.wallpaper,
+          workspaceDraft: undefined,
+          legacyWorkspacePreset: resolvedAppearance.wallpaperPreset,
+        },
+      ),
+    [activePage, resolvedAppearance, effectiveColorMode],
   );
   const wallpaperAssetId =
     effectiveWallpaper.config.kind === "asset" ? effectiveWallpaper.config.assetId : null;

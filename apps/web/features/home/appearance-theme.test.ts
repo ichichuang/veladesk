@@ -23,7 +23,7 @@ describe("buildAppearanceTheme", () => {
   it("maps the exact defaults to the Dawn Chart baseline CSS variables (P1: accent hue 60)", () => {
     expect(buildAppearanceTheme(DEFAULT_WORKSPACE_APPEARANCE)).toEqual({
       colorMode: "system",
-      wallpaperPreset: "aurora",
+      wallpaperPreset: "dawn",
       style: {
         "--vd-accent-hue": "60",
         "--vd-surface-opacity": "0.55",

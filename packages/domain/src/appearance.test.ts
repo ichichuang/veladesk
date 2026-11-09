@@ -17,7 +17,7 @@ describe("DEFAULT_WORKSPACE_APPEARANCE", () => {
     expect(DEFAULT_WORKSPACE_APPEARANCE).toEqual({
       colorMode: "system",
       accentHue: 60,
-      wallpaperPreset: "aurora",
+      wallpaperPreset: "dawn",
       surfaceOpacity: 0.55,
       blurPx: 18,
       radiusPx: 14,
@@ -120,7 +120,7 @@ describe("validateWorkspaceAppearance", () => {
     const issues = validateWorkspaceAppearance({
       colorMode: "dark",
       accentHue: 999,
-      wallpaperPreset: "aurora",
+      wallpaperPreset: "dawn",
       surfaceOpacity: 5,
       blurPx: -3,
       radiusPx: 100,

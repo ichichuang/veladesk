@@ -175,9 +175,13 @@ describe("the shared background surface (023-C.2/§C.4)", () => {
     expect(container.querySelectorAll(".vela-wallpaper-surface--preset")).toHaveLength(1);
 
     // A different config: ONE crossfade tween; the settled surface stays
-    // underneath until the fade completes, then retires.
+    // underneath until the fade completes, then retires. The tween starts
+    // only after the decode gate resolves (a microtask for presets).
     rerender(<Host presetId="dawn" />);
     expect(container.querySelectorAll(".vela-wallpaper-surface--preset")).toHaveLength(2);
+    await act(async () => {
+      await Promise.resolve();
+    });
     const tweens = gsap.getTweensOf(container.querySelector(".vela-desktop__wallpaper-incoming")!);
     expect(tweens).toHaveLength(1);
     await act(async () => {
@@ -218,6 +222,9 @@ describe("the shared background surface (023-C.2/§C.4)", () => {
       rerender(<Host presetId="dawn" />);
       const incoming = container.querySelector<HTMLElement>(".vela-desktop__wallpaper-incoming")!;
       expect(container.querySelectorAll(".vela-wallpaper-surface--preset")).toHaveLength(2);
+      await act(async () => {
+        await Promise.resolve();
+      });
       expect(gsap.getTweensOf(incoming)).toHaveLength(1);
 
       await act(async () => {
@@ -367,6 +374,39 @@ describe("the Settings background editor (023-C.2)", () => {
     expect(saved[0]!.background.workspace).toEqual({ kind: "preset", presetId: "mist" });
   });
 
+  it("a per-mode layer edit streams a mode-tagged preview and saves the mode patch (P1)", async () => {
+    const previews: (BackgroundPreview | null)[] = [];
+    const saved: WorkspaceSettingsDraft[] = [];
+    const view = renderSettings({
+      onSave: async (draft) => {
+        saved.push(draft);
+        return { ok: true };
+      },
+      onPreviewBackground: (preview) => previews.push(preview),
+      backgroundEntrySectionId: "page-1",
+      activeSectionId: "page-1",
+    });
+    // Switch the edited layer to Dark, then pick a preset for it.
+    await act(async () => {
+      fireEvent.click(view.getByRole("radio", { name: /^仅深色$|^Dark only$/ }));
+    });
+    await act(async () => {
+      fireEvent.click(view.getByTestId("wallpaper-preset-midnight"));
+    });
+    expect(previews.at(-1)).toMatchObject({
+      scope: "page-1",
+      mode: "dark",
+      config: { kind: "preset", presetId: "midnight" },
+    });
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: /保存|Save/ }));
+    });
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]!.background.pages["page-1"]).toEqual({
+      dark: { kind: "preset", presetId: "midnight" },
+    });
+  });
+
   it("a NON-active section scope edits by thumbnail only — no live desktop preview is published", async () => {
     const previews: (BackgroundPreview | null)[] = [];
     const saved: WorkspaceSettingsDraft[] = [];
@@ -388,7 +428,7 @@ describe("the Settings background editor (023-C.2)", () => {
       fireEvent.click(view.getByRole("button", { name: /保存|Save/ }));
     });
     await waitFor(() => expect(saved).toHaveLength(1));
-    expect(saved[0]!.background.pages["page-2"]).toEqual({ kind: "preset", presetId: "dawn" });
+    expect(saved[0]!.background.pages["page-2"]).toEqual({ general: { kind: "preset", presetId: "dawn" } });
   });
 
   it("Follow workspace previews inheritance (null patch), and scope switches keep both dirty drafts", async () => {
@@ -415,6 +455,6 @@ describe("the Settings background editor (023-C.2)", () => {
       fireEvent.click(view.getByRole("button", { name: /保存|Save/ }));
     });
     await waitFor(() => expect(saved).toHaveLength(1));
-    expect(saved[0]!.background.pages["page-1"]).toEqual({ kind: "preset", presetId: "mist" });
+    expect(saved[0]!.background.pages["page-1"]).toEqual({ general: { kind: "preset", presetId: "mist" } });
   });
 });

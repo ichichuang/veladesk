@@ -31,8 +31,12 @@ export type WallpaperConfig =
       readonly position: "center";
     };
 
-/** The application default (Task013 baseline: aurora). */
-export const DEFAULT_WALLPAPER: WallpaperConfig = { kind: "preset", presetId: "aurora" };
+/**
+ * The application default (P1): the Dawn Chart scene — the adopted visual
+ * direction A's main scene (visual-directions-p1.md §A) and the last stop
+ * of every wallpaper fallback chain.
+ */
+export const DEFAULT_WALLPAPER: WallpaperConfig = { kind: "preset", presetId: "dawn" };
 
 const WALLPAPER_PRESETS: readonly string[] = ["aurora", "midnight", "dawn", "mist"];
 const WALLPAPER_FITS: readonly string[] = ["cover", "contain"];
@@ -133,4 +137,68 @@ export function resolveEffectiveWallpaper(input: {
     return { config: { kind: "preset", presetId: legacyWorkspacePreset }, provenance: "workspace" };
   }
   return { config: DEFAULT_WALLPAPER, provenance: "default" };
+}
+
+/** The per-mode override map of a page (`wallpaperByMode`). */
+export type ModeWallpaperMap = NonNullable<DesktopPage["wallpaperByMode"]>;
+
+/**
+ * Structural validity of a `wallpaperByMode` map: a record whose present
+ * values are valid wallpaper configs. Used by the snapshot decoder and
+ * the editing operations — the same rule everywhere.
+ */
+export function isModeWallpaperMap(value: unknown): value is ModeWallpaperMap {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const map = value as { light?: unknown; dark?: unknown };
+  return (
+    (map.light === undefined || isWallpaperConfig(map.light)) &&
+    (map.dark === undefined || isWallpaperConfig(map.dark))
+  );
+}
+
+/** The input of {@link resolveModeAwareWallpaper} beyond the base chain. */
+export interface ModeAwareWallpaperInput {
+  /**
+   * The EFFECTIVE color mode ("dark"/"light", already resolved from
+   * `system`) the desktop renders in right now.
+   */
+  readonly effectiveMode: "dark" | "light";
+  /** The page whose mode overrides apply (its optional `wallpaperByMode`). */
+  readonly page: Pick<DesktopPage, "wallpaper" | "wallpaperByMode"> | undefined;
+  /**
+   * The per-mode DRAFT of the visible page's edited mode layer (the
+   * Settings background editor): `null` = explicit removal — previews the
+   * mode falling back to the page's general layer. Omit entirely when no
+   * mode layer is being edited.
+   */
+  readonly modeWallpaperDraft:
+    | { readonly mode: "dark" | "light"; readonly config: WallpaperConfig | null }
+    | undefined;
+}
+
+/**
+ * The mode-aware wallpaper resolver (P1): the EFFECTIVE color mode's
+ * page-specific override first — drafted, then persisted — then the whole
+ * ordinary chain (page general → workspace → legacy preset → default
+ * Dawn Chart scene) unchanged. A mode draft that targets the OTHER mode
+ * never substitutes this render. Pure — no DOM, no clocks, no storage.
+ */
+export function resolveModeAwareWallpaper(
+  input: ModeAwareWallpaperInput,
+  base: Parameters<typeof resolveEffectiveWallpaper>[0],
+): EffectiveWallpaper {
+  const { effectiveMode, page, modeWallpaperDraft } = input;
+
+  const draftTargetsThisMode = modeWallpaperDraft !== undefined && modeWallpaperDraft.mode === effectiveMode;
+  if (draftTargetsThisMode && modeWallpaperDraft.config !== null) {
+    return { config: modeWallpaperDraft.config, provenance: "section" };
+  }
+  const persisted = page?.wallpaperByMode?.[effectiveMode];
+  if (draftTargetsThisMode !== true && persisted !== undefined) {
+    return { config: persisted, provenance: "section" };
+  }
+
+  return resolveEffectiveWallpaper(base);
 }

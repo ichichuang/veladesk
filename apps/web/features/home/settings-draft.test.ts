@@ -153,7 +153,7 @@ describe("preferencesFromSettingsDraft", () => {
       expect(result.workspace.preferences.appearance).toEqual({
         colorMode: "system",
         accentHue: 60,
-        wallpaperPreset: "aurora",
+        wallpaperPreset: "dawn",
         surfaceOpacity: 0.5,
         blurPx: 24,
         radiusPx: 18,

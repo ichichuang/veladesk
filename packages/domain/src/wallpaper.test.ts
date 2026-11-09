@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { createEmptyWorkspace } from "./workspace";
-import { replacePageWallpaper } from "./editing";
+import { replacePageModeWallpaper, replacePageWallpaper } from "./editing";
 import { decodeWorkspaceSnapshot } from "./decoding";
 import {
   DEFAULT_WALLPAPER,
   isWallpaperConfig,
   resolveEffectiveWallpaper,
+  resolveModeAwareWallpaper,
 } from "./wallpaper";
 import type { WallpaperConfig } from "./wallpaper";
 
@@ -243,6 +244,130 @@ describe("replacePageWallpaper (023-C.1)", () => {
     expect(replacePageWallpaper(base, "gone", null)).toMatchObject({ ok: false });
     expect(
       replacePageWallpaper(base, "page-1", { kind: "preset", presetId: "neon" } as never),
+    ).toMatchObject({ ok: false, reason: "invalid-wallpaper" });
+  });
+});
+
+describe("resolveModeAwareWallpaper precedence (P1)", () => {
+  const lightConfig: WallpaperConfig = { kind: "preset", presetId: "mist" };
+  const darkConfig: WallpaperConfig = { kind: "preset", presetId: "midnight" };
+  const generalConfig: WallpaperConfig = { kind: "preset", presetId: "dawn" };
+
+  function baseInput() {
+    return {
+      page: undefined,
+      pageWallpaperDraft: undefined,
+      pageWallpaperExplicitlyInherits: false,
+      workspaceWallpaper: undefined,
+      workspaceDraft: undefined,
+      legacyWorkspacePreset: "aurora" as const,
+    };
+  }
+
+  it("prefers the effective mode's override over the page's general upload", () => {
+    const page = {
+      wallpaper: generalConfig,
+      wallpaperByMode: { light: lightConfig, dark: darkConfig },
+    };
+    expect(
+      resolveModeAwareWallpaper(
+        { effectiveMode: "dark", page, modeWallpaperDraft: undefined },
+        { ...baseInput(), page },
+      ),
+    ).toEqual({ config: darkConfig, provenance: "section" });
+    expect(
+      resolveModeAwareWallpaper(
+        { effectiveMode: "light", page, modeWallpaperDraft: undefined },
+        { ...baseInput(), page },
+      ),
+    ).toEqual({ config: lightConfig, provenance: "section" });
+  });
+
+  it("falls back per-mode to the page general upload, then the ordinary chain", () => {
+    const page = { wallpaper: generalConfig, wallpaperByMode: { dark: darkConfig } };
+    // Light has no override → the mode-agnostic page upload serves it.
+    expect(
+      resolveModeAwareWallpaper(
+        { effectiveMode: "light", page, modeWallpaperDraft: undefined },
+        { ...baseInput(), page },
+      ),
+    ).toEqual({ config: generalConfig, provenance: "section" });
+    // No mode map at all → the ordinary resolver output, untouched.
+    expect(
+      resolveModeAwareWallpaper(
+        { effectiveMode: "dark", page: undefined, modeWallpaperDraft: undefined },
+        baseInput(),
+      ),
+    ).toEqual({ config: { kind: "preset", presetId: "aurora" }, provenance: "workspace" });
+  });
+
+  it("substitutes a matching mode draft and previews its explicit removal", () => {
+    const page = { wallpaper: generalConfig, wallpaperByMode: { dark: darkConfig } };
+    expect(
+      resolveModeAwareWallpaper(
+        { effectiveMode: "dark", page, modeWallpaperDraft: { mode: "dark", config: lightConfig } },
+        { ...baseInput(), page },
+      ),
+    ).toEqual({ config: lightConfig, provenance: "section" });
+    // null draft = removal → light falls to the page general layer.
+    expect(
+      resolveModeAwareWallpaper(
+        { effectiveMode: "dark", page, modeWallpaperDraft: { mode: "dark", config: null } },
+        { ...baseInput(), page },
+      ),
+    ).toEqual({ config: generalConfig, provenance: "section" });
+  });
+
+  it("never substitutes a draft that targets the other mode", () => {
+    const page = { wallpaper: generalConfig, wallpaperByMode: { dark: darkConfig } };
+    expect(
+      resolveModeAwareWallpaper(
+        { effectiveMode: "light", page, modeWallpaperDraft: { mode: "dark", config: lightConfig } },
+        { ...baseInput(), page },
+      ),
+    ).toEqual({ config: generalConfig, provenance: "section" });
+  });
+});
+
+describe("replacePageModeWallpaper (P1)", () => {
+  const config: WallpaperConfig = { kind: "preset", presetId: "mist" };
+
+  it("sets one mode without touching the general upload, and drops the map with the last override", () => {
+    const base = snapshotWithPageWallpaper(config);
+    const set = replacePageModeWallpaper(base, "page-1", "dark", { kind: "preset", presetId: "midnight" });
+    expect(set.ok).toBe(true);
+    if (!set.ok) {
+      return;
+    }
+    expect(set.workspace.pages[0]?.wallpaper).toEqual(config);
+    expect(set.workspace.pages[0]?.wallpaperByMode).toEqual({
+      dark: { kind: "preset", presetId: "midnight" },
+    });
+    // Light joins independently; the input snapshot is never mutated.
+    const both = replacePageModeWallpaper(set.workspace, "page-1", "light", config);
+    expect(both.ok).toBe(true);
+    if (both.ok) {
+      expect(both.workspace.pages[0]?.wallpaperByMode).toEqual({
+        light: config,
+        dark: { kind: "preset", presetId: "midnight" },
+      });
+    }
+    expect(base.pages[0]?.wallpaperByMode).toBeUndefined();
+    // Removing the last override drops the whole map.
+    const cleared = replacePageModeWallpaper(both.ok ? both.workspace : set.workspace, "page-1", "dark", null);
+    const cleared2 = replacePageModeWallpaper(cleared.ok ? cleared.workspace : base, "page-1", "light", null);
+    expect(cleared2.ok).toBe(true);
+    if (cleared2.ok) {
+      expect(cleared2.workspace.pages[0]?.wallpaperByMode).toBeUndefined();
+      expect(cleared2.workspace.pages[0]?.wallpaper).toEqual(config);
+    }
+  });
+
+  it("refuses unknown pages and structurally invalid configs", () => {
+    const base = snapshotWithPageWallpaper(undefined);
+    expect(replacePageModeWallpaper(base, "gone", "light", config)).toMatchObject({ ok: false });
+    expect(
+      replacePageModeWallpaper(base, "page-1", "light", { kind: "preset", presetId: "neon" } as never),
     ).toMatchObject({ ok: false, reason: "invalid-wallpaper" });
   });
 });

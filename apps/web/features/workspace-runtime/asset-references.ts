@@ -6,10 +6,11 @@ import type { WorkspaceSnapshot } from "@veladesk/domain";
  *
  * References counted: `app.icon.kind === "asset"` icons, the workspace
  * default wallpaper (`preferences.appearance.wallpaper`) and per-section
- * wallpaper overrides (`page.wallpaper`) — all part of the canonical
- * reachability set used for export/import, sync ordering and garbage
- * collection (023-C.3). Folders and dock pins point at the same entities
- * and never add references.
+ * wallpaper overrides — the mode-agnostic `page.wallpaper` AND the
+ * per-color-mode `page.wallpaperByMode` variants (P1) — all part of the
+ * canonical reachability set used for export/import, sync ordering and
+ * garbage collection (023-C.3). Folders and dock pins point at the same
+ * entities and never add references.
  */
 export function collectSnapshotAssetIds(
   snapshot: WorkspaceSnapshot
@@ -34,6 +35,12 @@ export function collectSnapshotAssetIds(
   for (const page of snapshot.pages) {
     if (page.wallpaper?.kind === "asset") {
       add(page.wallpaper.assetId);
+    }
+    for (const mode of ["light", "dark"] as const) {
+      const config = page.wallpaperByMode?.[mode];
+      if (config?.kind === "asset") {
+        add(config.assetId);
+      }
     }
   }
   return ordered;

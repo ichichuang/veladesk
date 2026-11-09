@@ -1,5 +1,5 @@
 import type { WorkspaceSnapshot } from "./types";
-import { isWallpaperConfig } from "./wallpaper";
+import { isModeWallpaperMap, isWallpaperConfig } from "./wallpaper";
 
 /**
  * Structural decoding of `WorkspaceSnapshot` from untrusted JSON.
@@ -225,9 +225,16 @@ function isDesktopPage(value: unknown): boolean {
     // Optional for backward compatibility: grid-era pages stay decodable
     // forever; only a structurally valid canvas is accepted.
     (value.canvas === undefined || isCanvasLayout(value.canvas)) &&
+    // Optional retained geometry of the OTHER placement mode (P1): only a
+    // structurally valid canvas is accepted.
+    (value.retainedCanvas === undefined || isCanvasLayout(value.retainedCanvas)) &&
     // Optional per-section wallpaper override (023-C.1): absent means
     // follow-the-workspace; only a structurally valid config is accepted.
-    (value.wallpaper === undefined || isWallpaperConfig(value.wallpaper))
+    (value.wallpaper === undefined || isWallpaperConfig(value.wallpaper)) &&
+    // Optional per-COLOR-MODE overrides (P1): absent modes follow the
+    // mode-agnostic `wallpaper`; only structurally valid configs are
+    // accepted.
+    (value.wallpaperByMode === undefined || isModeWallpaperMap(value.wallpaperByMode))
   );
 }
 

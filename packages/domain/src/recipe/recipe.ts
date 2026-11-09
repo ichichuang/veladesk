@@ -1,13 +1,17 @@
+import { CANVAS_UNITS } from "@veladesk/canvas-engine";
+
 import { inferInterfaceStyle, resolveWorkspaceAppearance } from "../appearance";
-import { pageItemIds } from "../canvas";
+import { pageItemIds, resolvePagePlacement } from "../canvas";
 import type { AppIcon, WorkspaceSnapshot } from "../types";
 import type {
   RecipeImportPayload,
+  RecipeLayoutMode,
   RecipeSpaceLayout,
   RecipeSpaceV1,
   RecipeTileV1,
   RecipeThemeV1,
   RecipeV1,
+  RecipeWallpaperV1,
 } from "./types";
 import {
   RECIPE_FORMAT_IDENTITY,
@@ -45,6 +49,72 @@ function wallpaperRefOf(wallpaper: WorkspaceSnapshot["pages"][number]["wallpaper
     : `asset:${wallpaper.assetId}`;
 }
 
+type PageOfSnapshot = WorkspaceSnapshot["pages"][number];
+
+/**
+ * A page's public wallpaper refs (P1): the mode-specific override first,
+ * the mode-agnostic single upload as each mode's fallback — an early-v1
+ * `wallpaperRef` (mode-agnostic) exports as both modes. All-absent = the
+ * deck default; nothing rides along but references.
+ */
+function wallpaperOf(page: PageOfSnapshot): RecipeWallpaperV1 | undefined {
+  const byMode = page.wallpaperByMode;
+  const general = wallpaperRefOf(page.wallpaper);
+  const light = byMode?.light !== undefined ? wallpaperRefOf(byMode.light) : undefined;
+  const dark = byMode?.dark !== undefined ? wallpaperRefOf(byMode.dark) : undefined;
+  const resolvedLight = light ?? general;
+  const resolvedDark = dark ?? general;
+  if (resolvedLight === undefined && resolvedDark === undefined) {
+    return undefined;
+  }
+  return {
+    ...(resolvedLight !== undefined ? { light: resolvedLight } : {}),
+    ...(resolvedDark !== undefined ? { dark: resolvedDark } : {}),
+  };
+}
+
+/** Relative 0–1 canvas fraction at the engine's 1-unit resolution. */
+function canvasFraction(units: number): number {
+  return Math.round((units / CANVAS_UNITS) * 10_000) / 10_000;
+}
+
+type PagePlacementOfPage = ReturnType<typeof resolvePagePlacement>;
+
+/**
+ * A tile's public geometry from the resolved page placement: snap tiles
+ * carry integer cells, free tiles relative 0–1 fractions. Both omit the
+ * fields entirely when they carry nothing beyond the placement default.
+ */
+function tileGeometryOf(
+  placement: PagePlacementOfPage,
+  itemId: string,
+): Pick<RecipeTileV1, "placement" | "x" | "y" | "w" | "h"> {
+  if (placement.mode === "grid") {
+    const item = placement.items.find((candidate) => candidate.id === itemId);
+    if (item === undefined) {
+      return {};
+    }
+    return {
+      placement: "snap",
+      x: item.column,
+      y: item.row,
+      w: item.columnSpan,
+      h: item.rowSpan,
+    };
+  }
+  const item = placement.items.find((candidate) => candidate.id === itemId);
+  if (item === undefined) {
+    return {};
+  }
+  return {
+    placement: "free",
+    x: canvasFraction(item.rect.x),
+    y: canvasFraction(item.rect.y),
+    w: canvasFraction(item.rect.width),
+    h: canvasFraction(item.rect.height),
+  };
+}
+
 /**
  * Projects a workspace snapshot into a public RecipeV1. Only page-placed
  * APP shortcuts become tiles: folder contents and widgets have no recipe
@@ -64,6 +134,8 @@ export function exportRecipe(
 
   const entityById = new Map(workspace.entities.map((entity) => [entity.id, entity]));
   const spaces: RecipeSpaceV1[] = workspace.pages.map((page) => {
+    const placement = resolvePagePlacement(page);
+    const layoutMode: RecipeLayoutMode = placement.mode === "freeform" ? "free" : "snap";
     const tiles: RecipeTileV1[] = [];
     for (const id of pageItemIds(page)) {
       const entity = entityById.get(id);
@@ -77,14 +149,16 @@ export function exportRecipe(
         url: entity.url,
         ...(icon !== undefined ? { icon } : {}),
         openMode: entity.openMode,
+        ...tileGeometryOf(placement, entity.id),
       });
     }
-    const wallpaperRef = wallpaperRefOf(page.wallpaper);
+    const wallpaper = wallpaperOf(page);
     return {
       id: page.id,
       name: page.name,
-      layout: page.canvas?.mode === "freeform" ? "canvas" : "grid",
-      ...(wallpaperRef !== undefined ? { wallpaperRef } : {}),
+      layout: layoutMode === "free" ? "canvas" : "grid",
+      layoutMode,
+      ...(wallpaper !== undefined ? { wallpaper } : {}),
       tiles,
     };
   });
@@ -142,6 +216,8 @@ export type MigrateRecipeResult =
   | { readonly ok: false; readonly issue: RecipeMigrationFailure };
 
 const SPACE_LAYOUTS: readonly string[] = ["grid", "canvas", "orbit"];
+const LAYOUT_MODES: readonly string[] = ["snap", "free"];
+const TILE_PLACEMENTS: readonly string[] = ["snap", "free"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -149,6 +225,66 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function optionalString(value: unknown): boolean {
   return value === undefined || typeof value === "string";
+}
+
+function optionalFiniteNumber(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value));
+}
+
+/**
+ * A tile's geometry fields against its declared placement: `snap` carries
+ * safe-integer grid cells (origin ≥ 0, spans ≥ 1); `free` carries relative
+ * 0–1 canvas fractions. Without a placement the fields (if any) only need
+ * to be finite numbers — the importer owns the default geometry.
+ */
+function tileGeometryIssue(tile: Record<string, unknown>): string | null {
+  const placement = tile.placement;
+  if (placement !== undefined && !TILE_PLACEMENTS.includes(placement as string)) {
+    return "placement";
+  }
+  for (const field of ["x", "y", "w", "h"] as const) {
+    if (!optionalFiniteNumber(tile[field])) {
+      return field;
+    }
+  }
+  if (placement === undefined) {
+    return null;
+  }
+  for (const field of ["x", "y", "w", "h"] as const) {
+    const value: unknown = tile[field];
+    if (value === undefined) {
+      continue;
+    }
+    if (placement === "snap") {
+      if (
+        typeof value !== "number" ||
+        !Number.isSafeInteger(value) ||
+        (field === "x" || field === "y" ? value < 0 : value < 1)
+      ) {
+        return field;
+      }
+    } else if (typeof value !== "number" || value < 0 || value > 1) {
+      return field;
+    }
+  }
+  return null;
+}
+
+/** A `wallpaper` object's per-mode refs: optional non-empty strings. */
+function wallpaperIssue(wallpaper: unknown): string | null {
+  if (wallpaper === undefined) {
+    return null;
+  }
+  if (!isRecord(wallpaper)) {
+    return "wallpaper";
+  }
+  for (const mode of ["light", "dark"] as const) {
+    const ref = wallpaper[mode];
+    if (ref !== undefined && (typeof ref !== "string" || ref.length === 0)) {
+      return `wallpaper.${mode}`;
+    }
+  }
+  return null;
 }
 
 /** Structural walk of a `spaces` array; returns the first defect's path. */
@@ -171,8 +307,20 @@ function spacesIssue(spaces: unknown): string | null {
     ) {
       return `${spacePath}.layout`;
     }
+    if (
+      space.layoutMode !== undefined &&
+      !LAYOUT_MODES.includes(space.layoutMode as string)
+    ) {
+      return `${spacePath}.layoutMode`;
+    }
+    // Early-v1 singular field still validates as the mode-agnostic ref it
+    // was, then migrates into `wallpaper` below.
     if (!optionalString(space.wallpaperRef)) {
       return `${spacePath}.wallpaperRef`;
+    }
+    const wallpaperDefect = wallpaperIssue(space.wallpaper);
+    if (wallpaperDefect !== null) {
+      return `${spacePath}.${wallpaperDefect}`;
     }
     if (!Array.isArray(space.tiles)) {
       return `${spacePath}.tiles`;
@@ -190,9 +338,30 @@ function spacesIssue(spaces: unknown): string | null {
       ) {
         return tilePath;
       }
+      const geometryDefect = tileGeometryIssue(tile);
+      if (geometryDefect !== null) {
+        return `${tilePath}.${geometryDefect}`;
+      }
     }
   }
   return null;
+}
+
+/**
+ * In-place v1 upgrade of the early singular `wallpaperRef` (a
+ * mode-agnostic ref) into the per-mode `wallpaper` object — the new
+ * per-mode refs win over the migrated ones, matching the resolution
+ * precedence. Unknown fields are preserved; the legacy field is dropped.
+ */
+function migrateSpaceWallpaperRef(space: Record<string, unknown>): Record<string, unknown> {
+  const legacyRef = space.wallpaperRef;
+  if (legacyRef === undefined || typeof legacyRef !== "string") {
+    return space;
+  }
+  const wallpaper = isRecord(space.wallpaper) ? space.wallpaper : {};
+  const next: Record<string, unknown> = { ...space, wallpaper: { dark: legacyRef, light: legacyRef, ...wallpaper } };
+  delete next.wallpaperRef;
+  return next;
 }
 
 /**
@@ -228,11 +397,17 @@ export function migrateRecipe(input: unknown): MigrateRecipeResult {
     if (spacesDefect !== null) {
       return { ok: false, issue: { type: "invalid-recipe", path: spacesDefect } };
     }
-    // Shallow copy keeps every unknown field; known fields are already
-    // valid, so the copy is a RecipeV1 without further normalization.
+    // Shallow copy keeps every unknown field; the known early-v1 fields
+    // are normalized in place (the singular wallpaperRef becomes the
+    // per-mode wallpaper object — same version, migrated in place).
+    const migratedSpaces = Array.isArray(input.spaces)
+      ? input.spaces.map((space) =>
+          isRecord(space) ? migrateSpaceWallpaperRef(space) : space,
+        )
+      : input.spaces;
     return {
       ok: true,
-      recipe: { ...input } as unknown as RecipeV1,
+      recipe: { ...input, spaces: migratedSpaces } as unknown as RecipeV1,
       migratedFromLegacy: false,
     };
   }

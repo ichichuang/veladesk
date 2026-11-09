@@ -272,6 +272,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     workspacePages: snapshot.pages,
     backgroundPreview,
     resolvedAppearance,
+    effectiveColorMode,
     activeSection,
     bootPersisted,
     viewportRef: menuAreaRef,

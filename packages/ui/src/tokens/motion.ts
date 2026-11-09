@@ -114,6 +114,17 @@ export const VD_MOTION_WAKE = {
   maxPoints: 24,
 } as const;
 
+/**
+ * Wallpaper layer changes (P1): the crossfade between two PREPARED
+ * backgrounds when the effective wallpaper identity changes — a space
+ * switch or a light/dark mode flip. Both images are decoded before the
+ * fade starts; reduced motion cuts instead.
+ */
+export const VD_MOTION_WALLPAPER = {
+  /** Prepared-surface crossfade (both layers already decoded). */
+  crossfade: 0.45,
+} as const;
+
 /** Card FLIP moments (Motion layout animations). */
 export const VD_MOTION_FLIP = {
   /**

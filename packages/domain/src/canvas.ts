@@ -20,6 +20,7 @@ import {
   findCanvasItem,
   freeformLayoutFromV1,
   gridLayoutFromV1,
+  gridLayoutToFreeform,
   nearestEdgeIndex,
 } from "@veladesk/canvas-engine";
 import type {
@@ -28,6 +29,7 @@ import type {
   FreeformCanvasLayoutV2,
   GridCanvasItem,
   GridCanvasLayoutV2,
+  PagePlacementMode,
 } from "@veladesk/canvas-engine";
 import type { GridDefinition } from "@veladesk/desktop-engine";
 
@@ -312,6 +314,131 @@ export function gridPlacementOf(page: DesktopPage): GridCanvasLayoutV2 | undefin
   return placement !== undefined && placement.version === 2 && placement.mode === "grid"
     ? placement
     : undefined;
+}
+
+// --- Placement-mode switch (P1) ----------------------------------------------
+
+/** The production mode a stored canvas (any version) resolves to. */
+function storedCanvasMode(canvas: CanvasLayout): PagePlacementMode {
+  return canvas.mode === "freeform" ? "freeform" : "grid";
+}
+
+/**
+ * Reconciles a RETAINED canvas with the page's current membership (the
+ * active canvas is the only membership authority): stale ids drop,
+ * ids added while the other mode was active join at the deterministic
+ * default position for the retained mode. A retained Grid keeps the
+ * CURRENT page lattice's column count, so a changed column preference
+ * never strands spans past the edge.
+ */
+function reconcileRetainedCanvas(
+  page: DesktopPage,
+  retained: CanvasLayout,
+): PagePlacement {
+  const membership = pageItemIds(page);
+  const keep = new Set(membership);
+
+  if (storedCanvasMode(retained) === "grid") {
+    const sourceItems =
+      retained.version === 2 && retained.mode === "grid"
+        ? retained.items
+        : retained.version === 1 && retained.mode === "snap"
+          ? gridLayoutFromV1(retained, page.layout.grid).items
+          : [];
+    let grid: GridCanvasLayoutV2 = {
+      version: 2,
+      mode: "grid",
+      columns: page.layout.grid.columns,
+      items: sourceItems.filter((item) => keep.has(item.id)),
+    };
+    const placed = new Set(grid.items.map((item) => item.id));
+    for (const id of membership) {
+      if (!placed.has(id)) {
+        const position = firstFreeGridPlacement(grid, { columnSpan: 1, rowSpan: 1 }, {});
+        grid = appendGridItem(grid, { id, ...position, columnSpan: 1, rowSpan: 1 });
+      }
+    }
+    return grid;
+  }
+
+  const sourceRectItems =
+    retained.version === 2 && retained.mode === "freeform"
+      ? retained.items
+      : retained.version === 1 && retained.mode === "freeform"
+        ? freeformLayoutFromV1(retained).items
+        : [];
+  let freeform: FreeformCanvasLayoutV2 = {
+    version: 2,
+    mode: "freeform",
+    items: sourceRectItems.filter((item) => keep.has(item.id)),
+  };
+  const placed = new Set(freeform.items.map((item) => item.id));
+  for (const id of membership) {
+    if (!placed.has(id)) {
+      freeform = appendCanvasItem(freeform, {
+        id,
+        rect: newCanvasItemRect({ grid: page.layout.grid, index: freeform.items.length }),
+      }) as FreeformCanvasLayoutV2;
+    }
+  }
+  return freeform;
+}
+
+/** Why a placement-mode switch refused to produce a new page. */
+export type PagePlacementSwitchResult =
+  | { readonly ok: true; readonly page: DesktopPage & { canvas: PagePlacement } }
+  | { readonly ok: false; readonly reason: "conversion-lossy" };
+
+/**
+ * Switches a page between Grid and Freeform placement KEEPING both layout
+ * datasets (P1): the retained canvas of the TARGET mode reconciles back
+ * into the active slot, and the leaving mode's geometry is stashed as the
+ * new retained set — so any number of round trips never destroys either
+ * arrangement. Without a retained target (the first switch), the ordinary
+ * conversions apply: Grid→Freeform through the lattice (refused when the
+ * conversion would be lossy), Freeform→Grid by snapping every rect. The
+ * page is materialized first; a page already in `next` is returned as-is.
+ * Pure — the caller owns validation and persistence.
+ */
+export function switchPagePlacement(
+  page: DesktopPage,
+  next: PagePlacementMode,
+): PagePlacementSwitchResult {
+  const materialized = materializePagePlacement(page);
+  const placement = materialized.canvas;
+  if (placement.mode === next) {
+    return { ok: true, page: materialized };
+  }
+
+  const retained = page.retainedCanvas;
+  let target: PagePlacement | null;
+  if (retained !== undefined && storedCanvasMode(retained) === next) {
+    target = reconcileRetainedCanvas(page, retained);
+  } else if (placement.mode === "grid") {
+    // First switch into Freeform: convert through the lattice, refusing a
+    // lossy conversion instead of silently compressing geometry.
+    target = gridLayoutToFreeform(placement, page.layout.grid);
+  } else {
+    // First switch into Grid: snap every freeform rect onto the lattice.
+    target = {
+      version: 2,
+      mode: "grid",
+      columns: page.layout.grid.columns,
+      items: placement.items.map((item) => ({
+        id: item.id,
+        ...canvasRectToGridGeometry(item.rect, page.layout.grid),
+      })),
+    };
+  }
+
+  if (target === null) {
+    return { ok: false, reason: "conversion-lossy" };
+  }
+
+  return {
+    ok: true,
+    page: { ...materialized, canvas: target, retainedCanvas: placement },
+  };
 }
 
 export type { GridCanvasItem, GridCanvasLayoutV2, FreeformCanvasLayoutV2 };

@@ -20,7 +20,7 @@ const FEATURES_DIR = fileURLToPath(new URL("../../features", import.meta.url));
 
 const SWITCH_USING_SURFACES = [
   new URL("../../features/home/app-appearance-inspector.tsx", import.meta.url),
-  new URL("../../features/home/settings-center.tsx", import.meta.url),
+  new URL("../../features/home/settings-sections.tsx", import.meta.url),
 ];
 
 function collectTsxFiles(dir: string): string[] {

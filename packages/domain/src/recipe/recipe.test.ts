@@ -98,6 +98,7 @@ describe("exportRecipe", () => {
         id: "page-1",
         name: "Home",
         layout: "grid",
+        layoutMode: "snap",
         tiles: [
           {
             id: "app-1",
@@ -105,6 +106,11 @@ describe("exportRecipe", () => {
             url: "https://github.com/",
             icon: "simple-icons:github",
             openMode: "new-tab",
+            placement: "snap",
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
           },
           {
             id: "app-2",
@@ -112,10 +118,111 @@ describe("exportRecipe", () => {
             url: "http://wiki.internal/",
             // favicon icons are private/auto — no icon field.
             openMode: "same-tab",
+            placement: "snap",
+            x: 1,
+            y: 0,
+            w: 1,
+            h: 1,
           },
         ],
       },
     ]);
+  });
+
+  it("exports freeform geometry as relative 0-1 fractions with layoutMode free", () => {
+    const workspace = withApps(baseWorkspace());
+    const freeform = workspace.pages.map((page) =>
+      page.id === "page-1"
+        ? {
+            ...page,
+            canvas: {
+              version: 2 as const,
+              mode: "freeform" as const,
+              items: [
+                { id: "app-1", rect: { x: 0, y: 0, width: 2000, height: 1000 } },
+                { id: "app-2", rect: { x: 2500, y: 500, width: 3333, height: 6667 } },
+              ],
+            },
+            layout: { ...page.layout, items: [] },
+          }
+        : page
+    );
+    const recipe = exportRecipe(
+      { ...workspace, pages: freeform },
+      { createdAt: "2026-11-09T00:00:00.000Z" }
+    );
+
+    expect(recipe.spaces[0]?.layoutMode).toBe("free");
+    expect(recipe.spaces[0]?.tiles).toEqual([
+      {
+        id: "app-1",
+        name: "GitHub",
+        url: "https://github.com/",
+        icon: "simple-icons:github",
+        openMode: "new-tab",
+        placement: "free",
+        x: 0,
+        y: 0,
+        w: 0.2,
+        h: 0.1,
+      },
+      {
+        id: "app-2",
+        name: "Wiki",
+        url: "http://wiki.internal/",
+        openMode: "same-tab",
+        placement: "free",
+        x: 0.25,
+        y: 0.05,
+        w: 0.3333,
+        h: 0.6667,
+      },
+    ]);
+  });
+
+  it("exports per-mode wallpaper refs with the general upload as fallback", () => {
+    const workspace = withApps(baseWorkspace());
+    const pages = workspace.pages.map((page) =>
+      page.id === "page-1"
+        ? {
+            ...page,
+            wallpaper: { kind: "asset" as const, assetId: "asset-sha256-general", fit: "cover" as const, position: "center" as const },
+            wallpaperByMode: {
+              dark: { kind: "preset" as const, presetId: "midnight" as const },
+            },
+          }
+        : page
+    );
+    const recipe = exportRecipe(
+      { ...workspace, pages },
+      { createdAt: "2026-11-09T00:00:00.000Z" }
+    );
+
+    expect(recipe.spaces[0]?.wallpaper).toEqual({
+      light: "asset:asset-sha256-general",
+      dark: "preset:midnight",
+    });
+  });
+
+  it("exports a mode-agnostic wallpaper as both modes", () => {
+    const workspace = withApps(baseWorkspace());
+    const pages = workspace.pages.map((page) =>
+      page.id === "page-1"
+        ? {
+            ...page,
+            wallpaper: { kind: "preset" as const, presetId: "mist" as const },
+          }
+        : page
+    );
+    const recipe = exportRecipe(
+      { ...workspace, pages },
+      { createdAt: "2026-11-09T00:00:00.000Z" }
+    );
+
+    expect(recipe.spaces[0]?.wallpaper).toEqual({
+      light: "preset:mist",
+      dark: "preset:mist",
+    });
   });
 
   it("labels freeform-canvas spaces as canvas", () => {
@@ -139,6 +246,7 @@ describe("exportRecipe", () => {
     );
 
     expect(recipe.spaces[0]?.layout).toBe("canvas");
+    expect(recipe.spaces[0]?.layoutMode).toBe("free");
     expect(recipe.spaces[0]?.tiles.map((tile) => tile.name)).toEqual(["GitHub"]);
   });
 
@@ -228,6 +336,130 @@ describe("migrateRecipe", () => {
       ok: false,
       issue: { type: "unsupported-version", version: 2 },
     });
+  });
+
+  it("migrates an early-v1 singular wallpaperRef into the per-mode wallpaper, in place", () => {
+    const source = {
+      format: "vela.recipe",
+      version: 1,
+      spaces: [{ name: "Home", layout: "grid", wallpaperRef: "preset:mist", tiles: [] }],
+      plugins: [],
+    };
+    const result = migrateRecipe(source);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.recipe.spaces[0]?.wallpaper).toEqual({
+      light: "preset:mist",
+      dark: "preset:mist",
+    });
+    // The legacy field is gone from the migrated copy…
+    expect(
+      (result.recipe.spaces[0] as unknown as Record<string, unknown>).wallpaperRef
+    ).toBeUndefined();
+    // …and the source document is never mutated.
+    expect(source.spaces[0]?.wallpaperRef).toBe("preset:mist");
+  });
+
+  it("keeps explicit per-mode refs over the migrated singular one", () => {
+    const result = migrateRecipe({
+      format: "vela.recipe",
+      version: 1,
+      spaces: [
+        {
+          name: "Home",
+          layout: "grid",
+          wallpaperRef: "preset:mist",
+          wallpaper: { dark: "asset:asset-sha256-night" },
+          tiles: [],
+        },
+      ],
+      plugins: [],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.recipe.spaces[0]?.wallpaper).toEqual({
+      light: "preset:mist",
+      dark: "asset:asset-sha256-night",
+    });
+  });
+
+  it("accepts the P1 layout fields when they are structurally sound", () => {
+    const result = migrateRecipe({
+      format: "vela.recipe",
+      version: 1,
+      spaces: [
+        {
+          name: "Home",
+          layout: "grid",
+          layoutMode: "free",
+          wallpaper: { light: "preset:dawn", dark: "asset:asset-sha256-x" },
+          tiles: [
+            { name: "A", url: "https://a/", placement: "free", x: 0.25, y: 0.5, w: 0.2, h: 0.1 },
+            { name: "B", url: "https://b/", placement: "snap", x: 0, y: 2, w: 2, h: 1 },
+          ],
+        },
+      ],
+      plugins: [],
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects structurally broken P1 fields with a JSON path", () => {
+    expect(
+      migrateRecipe({
+        format: "vela.recipe",
+        version: 1,
+        spaces: [{ name: "H", layout: "grid", layoutMode: "tidal", tiles: [] }],
+        plugins: [],
+      })
+    ).toEqual({ ok: false, issue: { type: "invalid-recipe", path: "spaces[0].layoutMode" } });
+    expect(
+      migrateRecipe({
+        format: "vela.recipe",
+        version: 1,
+        spaces: [{ name: "H", layout: "grid", wallpaper: { light: 7 }, tiles: [] }],
+        plugins: [],
+      })
+    ).toEqual({ ok: false, issue: { type: "invalid-recipe", path: "spaces[0].wallpaper.light" } });
+    expect(
+      migrateRecipe({
+        format: "vela.recipe",
+        version: 1,
+        spaces: [
+          { name: "H", layout: "grid", tiles: [{ name: "A", url: "https://a/", placement: "wet" }] },
+        ],
+        plugins: [],
+      })
+    ).toEqual({ ok: false, issue: { type: "invalid-recipe", path: "spaces[0].tiles[0].placement" } });
+    // snap geometry must be safe integers with spans >= 1 …
+    expect(
+      migrateRecipe({
+        format: "vela.recipe",
+        version: 1,
+        spaces: [
+          { name: "H", layout: "grid", tiles: [{ name: "A", url: "https://a/", placement: "snap", x: 0, y: 0, w: 1.5, h: 1 }] },
+        ],
+        plugins: [],
+      })
+    ).toEqual({ ok: false, issue: { type: "invalid-recipe", path: "spaces[0].tiles[0].w" } });
+    // … and free geometry must stay inside the 0-1 canvas.
+    expect(
+      migrateRecipe({
+        format: "vela.recipe",
+        version: 1,
+        spaces: [
+          { name: "H", layout: "grid", tiles: [{ name: "A", url: "https://a/", placement: "free", x: 1.2, y: 0, w: 0.2, h: 0.2 }] },
+        ],
+        plugins: [],
+      })
+    ).toEqual({ ok: false, issue: { type: "invalid-recipe", path: "spaces[0].tiles[0].x" } });
   });
 
   it("reports the first structural defect with a JSON path", () => {

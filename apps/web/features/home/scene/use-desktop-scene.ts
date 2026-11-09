@@ -57,6 +57,11 @@ export interface UseDesktopSceneInput {
   readonly backgroundPreview: BackgroundPreview | null;
   /** The resolved appearance (preview ?? persisted). */
   readonly resolvedAppearance: WorkspaceAppearancePreferences;
+  /**
+   * The EFFECTIVE color mode ("dark"/"light", resolved from `system`) —
+   * selects the per-mode wallpaper override of the visible section (P1).
+   */
+  readonly effectiveColorMode: "dark" | "light";
   /** The shared active-section controller (026 §17). */
   readonly activeSection: WorkspaceActiveSection;
   /** Mount-scoped persisted view state (boot read), owned by the shell. */
@@ -102,6 +107,7 @@ export function useDesktopScene(input: UseDesktopSceneInput): DesktopScene {
     workspacePages,
     backgroundPreview,
     resolvedAppearance,
+    effectiveColorMode,
     activeSection,
     bootPersisted,
     viewportRef,
@@ -143,6 +149,7 @@ export function useDesktopScene(input: UseDesktopSceneInput): DesktopScene {
     renderedPages: renderedSnapshot.pages,
     backgroundPreview,
     resolvedAppearance,
+    effectiveColorMode,
   });
 
   /**

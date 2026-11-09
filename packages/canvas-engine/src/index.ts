@@ -89,6 +89,7 @@ export {
 
 export {
   clampCanvasTranslation,
+  raiseCanvasItems,
   snapCanvasTranslation,
   translateCanvasItems,
 } from "./translate";

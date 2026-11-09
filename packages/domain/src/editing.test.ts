@@ -1469,3 +1469,42 @@ describe("deleteEmptyPage", () => {
     expectUnchanged(workspace, () => deleteEmptyPage(workspace, "page-2"));
   });
 });
+
+import { switchPagePlacementMode } from "./editing";
+
+describe("switchPagePlacementMode (P1 retained datasets)", () => {
+  it("switches a page both ways through the editing path, keeping both datasets", () => {
+    const base = baseWorkspace();
+    const toFree = switchPagePlacementMode(base, "page-1", "freeform");
+    expect(toFree.ok).toBe(true);
+    if (!toFree.ok) {
+      return;
+    }
+    const freePage = toFree.workspace.pages[0]!;
+    expect(freePage.canvas?.mode).toBe("freeform");
+    expect(freePage.retainedCanvas?.mode).toBe("grid");
+    expect(validateWorkspace(toFree.workspace)).toEqual([]);
+
+    const backToGrid = switchPagePlacementMode(toFree.workspace, "page-1", "grid");
+    expect(backToGrid.ok).toBe(true);
+    if (!backToGrid.ok) {
+      return;
+    }
+    const gridPage = backToGrid.workspace.pages[0]!;
+    expect(gridPage.canvas?.mode).toBe("grid");
+    expect(gridPage.retainedCanvas?.mode).toBe("freeform");
+    expect(validateWorkspace(backToGrid.workspace)).toEqual([]);
+  });
+
+  it("refuses unknown pages and never changes membership", () => {
+    const base = baseWorkspace();
+    expect(switchPagePlacementMode(base, "gone", "grid")).toMatchObject({ ok: false });
+    const switched = switchPagePlacementMode(base, "page-1", "freeform");
+    expect(switched.ok).toBe(true);
+    if (switched.ok) {
+      expect(pageItemIds(switched.workspace.pages[0]!)).toEqual(
+        pageItemIds(base.pages[0]!),
+      );
+    }
+  });
+});

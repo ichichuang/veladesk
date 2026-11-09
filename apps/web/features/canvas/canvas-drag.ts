@@ -1,6 +1,7 @@
 import {
   clampCanvasTranslation,
   clampGridTranslation,
+  raiseCanvasItems,
   translateCanvasItems,
   translateGridItems,
 } from "@veladesk/canvas-engine";
@@ -116,4 +117,34 @@ export function commitCanvasDrag(args: CanvasDragArgs): PagePlacement | null {
     translation.x,
     translation.y,
   ) as PagePlacement;
+}
+
+/**
+ * The freeform drop's z-order commit (P1): item order is the stacking
+ * order, so the tiles this drag actually moved rise to the top of the
+ * canvas — overlap stays legal and the moved set never sinks beneath what
+ * it crossed. Pure: order only, geometry unchanged. Snap mode never
+ * reorders (geometry alone carries the drop).
+ */
+export function freeformRaisedPlacement(
+  movedPlacement: PagePlacement,
+  placementAtStart: PagePlacement,
+): PagePlacement {
+  if (movedPlacement.mode !== "freeform" || placementAtStart.mode !== "freeform") {
+    return movedPlacement;
+  }
+  const movedIds = movedPlacement.items
+    .map((item, index) => {
+      const before = placementAtStart.items[index];
+      return before !== undefined &&
+        before.id === item.id &&
+        (before.rect.x !== item.rect.x ||
+          before.rect.y !== item.rect.y ||
+          before.rect.width !== item.rect.width ||
+          before.rect.height !== item.rect.height)
+        ? item.id
+        : null;
+    })
+    .filter((id): id is string => id !== null);
+  return raiseCanvasItems(movedPlacement, movedIds) as PagePlacement;
 }

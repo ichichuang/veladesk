@@ -7,8 +7,6 @@ import {
   areCanvasLayoutsEqual,
   canvasCellSize,
   canConvertGridToFreeform,
-  canvasRectToGridGeometry,
-  gridLayoutToFreeform,
   replaceCanvasItem,
   replaceGridItem,
   translateCanvasItems,
@@ -16,11 +14,7 @@ import {
 } from "@veladesk/canvas-engine";
 import type { CanvasRect, PagePlacementMode } from "@veladesk/canvas-engine";
 import type { WorkspaceClientRuntime } from "@veladesk/client-runtime";
-import {
-  findDesktopPage,
-  replacePageCanvas,
-  resolvePagePlacement,
-} from "@veladesk/domain";
+import { findDesktopPage, replacePageCanvas, resolvePagePlacement } from "@veladesk/domain";
 import type {
   DesktopPage,
   DesktopPageId,
@@ -41,7 +35,9 @@ import {
 import type { ArrangeCanvasHistories } from "../../canvas/arrange-history";
 import { reconcileCanvasHandoff, resolveDisplayPlacement } from "../../canvas/canvas-handoff";
 import type { PendingCanvasHandoff } from "../../canvas/canvas-handoff";
+import { freeformRaisedPlacement } from "../../canvas/canvas-drag";
 import type { ResizeCommitGeometry } from "../../canvas/canvas-resize";
+import { resolvePlacementSwitch } from "./placement-switch-commit";
 import { stageWorkspaceAndTrySync } from "../workspace-commit";
 import type { TranslateFn } from "../../i18n/use-i18n";
 
@@ -168,16 +164,41 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
   /**
    * Serialized local-first canvas commits: stage the new snapshot, and only
    * accept the history step after a successful stage — a stage failure rolls
-   * the step back by never accepting it into state.
-   *
-   * The optional `onSettled` callback reports the attempt's outcome exactly
-   * once (staged / noop / failed) so a handoff can reconcile; the callback
-   * never runs after a newer handoff replaced this one's token.
-   *
-   * `resetHistory` marks the structural edits that are deliberately NOT
-   * undoable (placement-mode switch): the page branch restarts at the new
-   * placement so undo can never walk back into a model the user left.
+   * the step back by never accepting it into state. `onSettled` reports the
+   * outcome exactly once (staged / noop / failed) so a handoff can
+   * reconcile; `resetHistory` marks structural edits that are deliberately
+   * NOT undoable (placement-mode switch).
    */
+
+  /**
+   * The tail every placement commit shares: stage the edited snapshot,
+   * accept the history step only after a successful stage, report the
+   * outcome exactly once (plain edits and placement switches alike).
+   */
+  const stagePlacementSnapshot = useCallback(
+    async (
+      pageId: DesktopPageId,
+      snapshot: WorkspaceSnapshot,
+      nextPlacement: PagePlacement,
+      options: { readonly resetHistory?: boolean },
+      settle: (outcome: LayoutCommitOutcome) => void
+    ) => {
+      const staged = await stageWorkspaceAndTrySync(runtime, snapshot);
+      if (!staged.ok) {
+        console.error(`VelaDesk: canvas change was not staged (${staged.reason})`);
+        settle({ status: "failed" });
+        return;
+      }
+      const nextMap: ArrangeCanvasHistories =
+        options.resetHistory === true
+          ? resetPageCanvasHistory(arrangeHistoriesRef.current, pageId, nextPlacement)
+          : commitPageCanvas(arrangeHistoriesRef.current, pageId, nextPlacement);
+      arrangeHistoriesRef.current = nextMap;
+      setArrangeHistories(nextMap);
+      settle({ status: "staged" });
+    },
+    [runtime]
+  );
   const enqueueCanvasCommit = useCallback(
     (
       pageId: DesktopPageId,
@@ -211,19 +232,7 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
             settle({ status: "noop" });
             return;
           }
-          const staged = await stageWorkspaceAndTrySync(runtime, replaced.workspace);
-          if (!staged.ok) {
-            console.error(`VelaDesk: canvas change was not staged (${staged.reason})`);
-            settle({ status: "failed" });
-            return;
-          }
-          const nextMap: ArrangeCanvasHistories =
-            options.resetHistory === true
-              ? resetPageCanvasHistory(arrangeHistoriesRef.current, pageId, nextPlacement)
-              : commitPageCanvas(arrangeHistoriesRef.current, pageId, nextPlacement);
-          arrangeHistoriesRef.current = nextMap;
-          setArrangeHistories(nextMap);
-          settle({ status: "staged" });
+          await stagePlacementSnapshot(pageId, replaced.workspace, nextPlacement, options, settle);
         } catch (error) {
           console.error("VelaDesk: canvas change could not be committed", error);
           settle({ status: "failed" });
@@ -231,7 +240,7 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
       };
       layoutQueueRef.current = layoutQueueRef.current.then(run, run);
     },
-    [runtime, workspaceRef]
+    [workspaceRef, stagePlacementSnapshot]
   );
 
   /**
@@ -292,7 +301,9 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
       if (areCanvasLayoutsEqual(movedPlacement, placementAtStart)) {
         return;
       }
-      commitCanvasEdit(pageId, movedPlacement);
+      // Freeform z-order (P1): the moved tiles rise to the top of the
+      // stacking order; snap mode never reorders.
+      commitCanvasEdit(pageId, freeformRaisedPlacement(movedPlacement, placementAtStart));
     },
     [commitCanvasEdit, workspaceRef, pageIdRef]
   );
@@ -466,21 +477,25 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
     if (placement.mode !== "grid") {
       return null;
     }
+    // A retained freeform set (P1) restores verbatim on switch — nothing
+    // converts, so nothing can be lossy.
+    const retained = activePage.retainedCanvas;
+    const hasRetainedFreeform =
+      retained !== undefined &&
+      (retained.version === 2 ? retained.mode === "freeform" : retained.mode === "freeform");
+    if (hasRetainedFreeform) {
+      return null;
+    }
     return canConvertGridToFreeform(placement.items, activePage.layout.grid)
       ? null
       : t("menu.placementFreeformBlocked");
   }, [activePage, t]);
 
   /**
-   * Switches a section between Grid and Freeform placement (task 017).
-   *
-   * The mode is persisted per section. Switching TO Grid snaps every freeform
-   * rect onto the page lattice in ONE atomic edit (columns from the page
-   * grid); switching to Freeform converts each grid item back through the
-   * same lattice — and is REFUSED when the conversion would be lossy
-   * (content beyond the freeform viewport). Overlap stays legal; the switch
-   * is structural and therefore not undoable: the page's history restarts
-   * at the new placement.
+   * Switches a section between Grid and Freeform placement KEEPING both
+   * layout datasets (P1) — retained restore, lossy first-conversion
+   * refusal, history restart. The geometry itself is resolved by the pure
+   * `resolvePlacementSwitch` (see its module docs).
    */
   const setPlacementMode = useCallback(
     (next: PagePlacementMode) => {
@@ -488,44 +503,55 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
       if (pageId === null || pendingHandoffRef.current !== null || resizeLockRef.current) {
         return;
       }
-      const current = workspaceRef.current;
-      const page = findDesktopPage(current.snapshot, pageId);
-      if (page === undefined) {
+      // Eager switch for the optimistic handoff (the queue re-resolves
+      // against its own turn state below). A null here means the toolbar's
+      // disabled state already carries the reason — nothing to do.
+      const eager = resolvePlacementSwitch(workspaceRef.current.snapshot, pageId, next);
+      if (eager === null) {
         return;
       }
-      const placement = resolvePagePlacement(page);
-      if (placement.mode === next) {
-        return;
-      }
-
-      let nextPlacement: PagePlacement;
-      if (next === "grid") {
-        if (placement.mode !== "freeform") {
-          return;
-        }
-        nextPlacement = {
-          version: 2,
-          mode: "grid",
-          columns: page.layout.grid.columns,
-          items: placement.items.map((item) => ({
-            id: item.id,
-            ...canvasRectToGridGeometry(item.rect, page.layout.grid),
-          })),
+      const token = handoffTokenRef.current + 1;
+      handoffTokenRef.current = token;
+      stagePendingHandoff({ token, pageId, placement: eager.placement });
+      const run = async () => {
+        let settled = false;
+        const settle = (outcome: LayoutCommitOutcome) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (outcome.status === "failed") {
+            // The stage refused: the optimistic display canvas falls back
+            // to the authoritative (pre-switch) one.
+            if (pendingHandoffRef.current?.token === token) {
+              settledHandoffTokensRef.current = new Set([
+                ...settledHandoffTokensRef.current,
+                token,
+              ]);
+              stagePendingHandoff(null);
+            }
+            return;
+          }
+          settledHandoffTokensRef.current = new Set([
+            ...settledHandoffTokensRef.current,
+            token,
+          ]);
         };
-      } else {
-        if (placement.mode !== "grid") {
-          return;
+        try {
+          const turn = resolvePlacementSwitch(workspaceRef.current.snapshot, pageId, next);
+          if (turn === null) {
+            settle({ status: "noop" });
+            return;
+          }
+          await stagePlacementSnapshot(pageId, turn.snapshot, turn.placement, { resetHistory: true }, settle);
+        } catch (error) {
+          console.error("VelaDesk: placement switch could not be committed", error);
+          settle({ status: "failed" });
         }
-        const converted = gridLayoutToFreeform(placement, page.layout.grid);
-        if (converted === null) {
-          // Lossy conversion: never silently compress or drop geometry.
-          return;
-        }
-        nextPlacement = converted;
-      }
-      commitCanvasEdit(pageId, nextPlacement, { resetHistory: true });
+      };
+      layoutQueueRef.current = layoutQueueRef.current.then(run, run);
     },
-    [commitCanvasEdit, workspaceRef, pageIdRef]
+    [workspaceRef, pageIdRef, stagePlacementSnapshot]
   );
 
   /**

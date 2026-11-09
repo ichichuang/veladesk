@@ -105,6 +105,30 @@ export function translateCanvasItems(
 }
 
 /**
+ * Raise a selection to the TOP of the freeform z-order (P1).
+ *
+ * Item order is the freeform stacking order; a raised selection moves to
+ * the END of the array (relative order inside the selection preserved),
+ * everything else keeps its relative order. Items not on the canvas are
+ * ignored; an empty or no-op selection returns the input identity — the
+ * caller treats that as "nothing to commit".
+ */
+export function raiseCanvasItems(
+  layout: RectItemsLayout,
+  itemIds: readonly string[],
+): RectItemsLayout {
+  const wanted = new Set(itemIds);
+  const raised = layout.items.filter((item) => wanted.has(item.id));
+  if (raised.length === 0 || raised.length === layout.items.length) {
+    return layout;
+  }
+  return {
+    ...layout,
+    items: [...layout.items.filter((item) => !wanted.has(item.id)), ...raised],
+  };
+}
+
+/**
  * Snap translation for a whole group, resolved from ONE anchor.
  *
  * The anchor is the first selected item in canvas order. Its snapped target

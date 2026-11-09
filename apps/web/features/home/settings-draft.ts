@@ -38,10 +38,21 @@ import type {
  * workspace default AND any number of section overrides independently.
  * `undefined` = untouched (keeps the saved value); `null` = explicit
  * removal (workspace: back to the preset; section: follow the workspace).
+ * A section patch carries up to three layers (P1): the mode-agnostic
+ * `general` upload plus optional `light`/`dark` overrides.
  */
+export interface PageBackgroundPatch {
+  /** The mode-agnostic layer. `null` = Follow workspace. */
+  readonly general?: WallpaperConfig | null;
+  /** The light-mode override. `null` = override removed (falls to general). */
+  readonly light?: WallpaperConfig | null;
+  /** The dark-mode override. `null` = override removed (falls to general). */
+  readonly dark?: WallpaperConfig | null;
+}
+
 export interface WorkspaceBackgroundPatches {
   readonly workspace: WallpaperConfig | null | undefined;
-  readonly pages: Readonly<Record<DesktopPageId, WallpaperConfig | null>>;
+  readonly pages: Readonly<Record<DesktopPageId, PageBackgroundPatch>>;
 }
 
 export interface WorkspaceSettingsDraft {
@@ -128,10 +139,23 @@ function backgroundPatchesEqual(
   if (aKeys.length !== bKeys.length || aKeys.some((key, index) => key !== bKeys[index])) {
     return false;
   }
-  return aKeys.every(
-    (key) =>
-      a.pages[key as DesktopPageId] === b.pages[key as DesktopPageId],
+  return aKeys.every((key) =>
+    pageBackgroundPatchesEqual(
+      a.pages[key as DesktopPageId],
+      b.pages[key as DesktopPageId]
+    )
   );
+}
+
+/** Structural equality of one page's patch (layer by layer). */
+function pageBackgroundPatchesEqual(
+  a: PageBackgroundPatch | undefined,
+  b: PageBackgroundPatch | undefined
+): boolean {
+  if (a === undefined || b === undefined) {
+    return a === b;
+  }
+  return a.general === b.general && a.light === b.light && a.dark === b.dark;
 }
 
 /** Field-by-field equality of the optional motion block. */

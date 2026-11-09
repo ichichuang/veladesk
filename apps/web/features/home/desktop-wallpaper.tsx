@@ -1,12 +1,13 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { gsap } from "@components/vd/gsap";
-import { VD_MOTION_EASE, vdMotionDuration } from "@components/vd/motion-tokens";
+import { VD_MOTION_EASE, VD_MOTION_WALLPAPER } from "@components/vd/motion-tokens";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
 import type { EffectiveWallpaper, WallpaperConfig } from "@veladesk/domain";
 
+import { isWallpaperBright } from "./wallpaper-luminance";
 import "./home-shell.css";
 
 /**
@@ -17,7 +18,8 @@ import "./home-shell.css";
  * element; custom images render the resolved asset URL with cover/contain
  * semantics — cover = centered fill without distortion, contain = centered,
  * no repetition, the shared neutral canvas color in uncovered areas. No
- * preset ambient drift, tint or dark veil is applied to custom photos.
+ * preset ambient drift or tint is applied to custom photos; an image that
+ * measures TOO BRIGHT gets the ~6% bg.deep readability veil (P1).
  */
 
 /**
@@ -30,6 +32,13 @@ export interface BackgroundPreview {
   readonly scope: "workspace" | string;
   readonly config: import("@veladesk/domain").WallpaperConfig | null;
   readonly explicitlyInherits: boolean;
+  /**
+   * The color mode the draft edits (P1): defined when the editor targets a
+   * per-mode layer (`wallpaperByMode.light|dark`) — the desktop substitutes
+   * the preview only while it renders in that mode. Undefined = the
+   * mode-agnostic layer.
+   */
+  readonly mode?: "light" | "dark" | undefined;
   /** The not-yet-staged image's content id, when the draft previews one. */
   readonly pendingAssetId?: string | undefined;
   /** Its object URL (owned by the settings session). */
@@ -41,6 +50,30 @@ export function wallpaperConfigKey(config: WallpaperConfig): string {
   return config.kind === "preset"
     ? `preset:${config.presetId}`
     : `asset:${config.assetId}:${config.fit}`;
+}
+
+/**
+ * Whether the image behind `assetUrl` measured too bright for unadapted
+ * text (cached per URL — see wallpaper-luminance.ts). `false` until the
+ * (once-per-image) measurement lands; a failure stays `false`.
+ */
+function useWallpaperVeil(assetUrl: string | null): boolean {
+  const [bright, setBright] = useState(false);
+  useEffect(() => {
+    if (assetUrl === null) {
+      return;
+    }
+    let cancelled = false;
+    void isWallpaperBright(assetUrl).then((value) => {
+      if (!cancelled) {
+        setBright(value);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [assetUrl]);
+  return bright;
 }
 
 export function WallpaperSurface({
@@ -55,6 +88,7 @@ export function WallpaperSurface({
   readonly className?: string;
 }) {
   const { config } = wallpaper;
+  const bright = useWallpaperVeil(config.kind === "asset" ? assetUrl : null);
   if (config.kind === "preset") {
     return (
       <div
@@ -68,6 +102,7 @@ export function WallpaperSurface({
     <div
       className={`vela-wallpaper-surface vela-wallpaper-surface--image ${className}`.trim()}
       data-wallpaper-fit={config.fit}
+      data-bright={bright ? "true" : undefined}
       aria-hidden="true"
     >
       {assetUrl !== null ? (
@@ -147,9 +182,13 @@ interface WallpaperSlot {
 /**
  * The full-surface background layers (023-C.4; shared desktop/mobile since
  * task 026 §45): at most TWO prepared surfaces — the settled one underneath
- * and, when the EFFECTIVE wallpaper changes with the accepted navigation,
- * the incoming one crossfading over it on one short GSAP tween that retires
- * the settled node on completion. An unchanged config keeps the SAME nodes
+ * and, when the EFFECTIVE wallpaper changes with the accepted navigation
+ * or a light/dark mode flip (P1), the incoming one crossfading over it on
+ * one GSAP tween (VD_MOTION_WALLPAPER.crossfade) that retires the settled
+ * node on completion. The fade starts only after BOTH images are decoded:
+ * the settled one is already on screen, the incoming one awaits `decode()`
+ * — reduced motion never fades, it cuts in the arming pass. An unchanged
+ * config keeps the SAME nodes
  * with no transition at all. Layers are pointer-transparent, clipped to the
  * caller's root (the `className` positions/clips them), and live behind
  * the chrome — never inside a content scroller, never per app item, and
@@ -199,11 +238,31 @@ export function WorkspaceWallpaperLayers({
       gsap.set(element, { clearProps: "opacity" });
       return;
     }
-    const tween = gsap.fromTo(incomingRef.current, { opacity: 0 }, {
-      opacity: 1, duration: vdMotionDuration("popup"), ease: VD_MOTION_EASE,
-      onComplete: () => { gsap.set(element, { clearProps: "opacity" }); setPrevious(null); },
+    // Hold the incoming layer dark synchronously, then fade ONLY after its
+    // image is genuinely decoded — the crossfade never shows a half-decoded
+    // first frame (P1; the settled layer underneath is already decoded).
+    gsap.set(element, { opacity: 0 });
+    let cancelled = false;
+    let tween: gsap.core.Tween | null = null;
+    const incomingImage = element.querySelector("img[data-wallpaper-image]");
+    const decoded =
+      incomingImage instanceof HTMLImageElement
+        ? incomingImage.decode().catch(() => undefined)
+        : Promise.resolve();
+    void decoded.then(() => {
+      if (cancelled) {
+        return;
+      }
+      tween = gsap.fromTo(element, { opacity: 0 }, {
+        opacity: 1, duration: VD_MOTION_WALLPAPER.crossfade, ease: VD_MOTION_EASE,
+        onComplete: () => { gsap.set(element, { clearProps: "opacity" }); setPrevious(null); },
+      });
     });
-    return () => { tween.kill(); gsap.set(element, { clearProps: "opacity" }); };
+    return () => {
+      cancelled = true;
+      tween?.kill();
+      gsap.set(element, { clearProps: "opacity" });
+    };
   }, [key, crossfading]);
 
   return (

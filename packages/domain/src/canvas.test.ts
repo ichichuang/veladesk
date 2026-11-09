@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { CanvasLayout, CanvasRect } from "@veladesk/canvas-engine";
+import type { CanvasLayout, CanvasLayoutItem, CanvasRect } from "@veladesk/canvas-engine";
 import type { GridDefinition, LayoutItem } from "@veladesk/desktop-engine";
 import {
   DEFAULT_GRID_GAP_PX,
@@ -21,6 +21,7 @@ import {
   replaceWorkspacePreferences,
   resolveGridGapPx,
   resolvePagePlacement,
+  switchPagePlacement,
   validateWorkspace,
 } from "@veladesk/domain";
 import type { AppShortcut, DesktopPage, Folder, WorkspaceSnapshot } from "@veladesk/domain";
@@ -808,5 +809,156 @@ describe("gridGapPx preference", () => {
       preferences: { ...workspace.preferences, gridGapPx: -2 },
     };
     expect(validateWorkspace(broken)).toContainEqual({ type: "invalid-grid-gap" });
+  });
+});
+
+describe("switchPagePlacement — retained layout datasets (P1)", () => {
+  function gridPage(): DesktopPage {
+    const workspace = emptyWorkspace();
+    let current = workspace;
+    for (const id of ["app-1", "app-2"]) {
+      const added = addAppToPage(current, "page-1", app(id));
+      if (added.ok) {
+        current = added.workspace;
+      }
+    }
+    return current.pages[0]!;
+  }
+
+  it("keeps the grid geometry when switching free → grid → free", () => {
+    const page = gridPage();
+    const toFree = switchPagePlacement(page, "freeform");
+    expect(toFree.ok).toBe(true);
+    if (!toFree.ok) {
+      return;
+    }
+    // Freeform edits move app-1 far away.
+    const edited: DesktopPage = {
+      ...toFree.page,
+      canvas: {
+        version: 2,
+        mode: "freeform",
+        items: (toFree.page.canvas as { items: readonly CanvasLayoutItem[] }).items.map((item) =>
+          item.id === "app-1"
+            ? { ...item, rect: { x: 9000, y: 9000, width: item.rect.width, height: item.rect.height } }
+            : item,
+        ),
+      },
+    };
+    const backToGrid = switchPagePlacement(edited, "grid");
+    expect(backToGrid.ok).toBe(true);
+    if (!backToGrid.ok) {
+      return;
+    }
+    // The ORIGINAL grid geometry returns — not rects snapped from the
+    // edited freeform positions.
+    expect(backToGrid.page.canvas.mode).toBe("grid");
+    if (backToGrid.page.canvas.mode === "grid") {
+      expect(backToGrid.page.canvas.items).toEqual([
+        { id: "app-1", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
+        { id: "app-2", column: 1, row: 0, columnSpan: 1, rowSpan: 1 },
+      ]);
+    }
+    // And the edited freeform layout is retained for the next switch back.
+    const backToFree = switchPagePlacement(backToGrid.page, "freeform");
+    expect(backToFree.ok).toBe(true);
+    if (!backToFree.ok) {
+      return;
+    }
+    expect(backToFree.page.canvas.mode).toBe("freeform");
+    if (backToFree.page.canvas.mode === "freeform") {
+      const moved = backToFree.page.canvas.items.find((item) => item.id === "app-1");
+      expect(moved?.rect).toMatchObject({ x: 9000, y: 9000 });
+    }
+  });
+
+  it("stashes the leaving mode's geometry as the retained set", () => {
+    const page = gridPage();
+    const switched = switchPagePlacement(page, "freeform");
+    expect(switched.ok).toBe(true);
+    if (!switched.ok) {
+      return;
+    }
+    expect(switched.page.canvas.mode).toBe("freeform");
+    expect(switched.page.retainedCanvas).toBeDefined();
+    expect(switched.page.retainedCanvas?.mode === "grid" || switched.page.retainedCanvas?.mode === "snap").toBe(true);
+  });
+
+  it("reconciles a retained set against membership changes made in the other mode", () => {
+    const page = gridPage();
+    const toFree = switchPagePlacement(page, "freeform");
+    if (!toFree.ok) {
+      throw new Error("fixture switch failed");
+    }
+    // app-2 leaves while in freeform (say, into a folder); app-3 joins.
+    const membership: DesktopPage = {
+      ...toFree.page,
+      canvas: {
+        version: 2,
+        mode: "freeform",
+        items: (toFree.page.canvas as { items: readonly CanvasLayoutItem[] }).items.filter(
+          (item) => item.id !== "app-2",
+        ),
+      },
+    };
+    const withNewcomer = placePageItem(membership, "app-3", { index: 2 });
+    const backToGrid = switchPagePlacement(withNewcomer, "grid");
+    expect(backToGrid.ok).toBe(true);
+    if (!backToGrid.ok) {
+      return;
+    }
+    if (backToGrid.page.canvas.mode !== "grid") {
+      throw new Error("expected grid canvas");
+    }
+    const ids = backToGrid.page.canvas.items.map((item) => item.id).sort();
+    expect(ids).toEqual(["app-1", "app-3"]);
+    // The newcomer lands on a valid free cell (1×1), never overlapping.
+    expect(validateWorkspace({
+      ...emptyWorkspace(),
+      entities: [app("app-1"), app("app-3")],
+      pages: [{ ...backToGrid.page, id: "page-1", name: "Home", layout: { id: "page-1", grid: GRID, items: [] } }],
+      dock: { items: [] },
+      preferences: { defaultPageId: "page-1", layoutLocked: false },
+    })).toEqual([]);
+  });
+
+  it("refuses a first lossy grid→freeform conversion exactly like the direct path", () => {
+    // An item placed beyond the freeform viewport (row beyond the 3-row
+    // lattice) cannot convert without loss — refused, never compressed.
+    const workspace = emptyWorkspace();
+    let current = workspace;
+    for (const id of ["app-1", "app-2"]) {
+      const added = addAppToPage(current, "page-1", app(id));
+      if (added.ok) {
+        current = added.workspace;
+      }
+    }
+    const replaced = replacePageCanvas(current, "page-1", {
+      version: 2,
+      mode: "grid",
+      columns: 3,
+      items: [
+        { id: "app-1", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
+        { id: "app-2", column: 0, row: 9, columnSpan: 1, rowSpan: 1 },
+      ],
+    });
+    if (!replaced.ok) {
+      throw new Error("fixture replace failed");
+    }
+    expect(switchPagePlacement(replaced.workspace.pages[0]!, "freeform")).toEqual({
+      ok: false,
+      reason: "conversion-lossy",
+    });
+  });
+
+  it("returns a page unchanged when it already renders in the target mode", () => {
+    const page = gridPage();
+    const result = switchPagePlacement(page, "grid");
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.page).toEqual(materializePagePlacement(page));
+    expect(result.page.retainedCanvas).toBeUndefined();
   });
 });

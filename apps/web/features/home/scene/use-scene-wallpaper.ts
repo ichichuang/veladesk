@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 
-import { resolveEffectiveWallpaper } from "@veladesk/domain";
+import { resolveModeAwareWallpaper } from "@veladesk/domain";
 import type {
   DesktopPageId,
   WorkspaceAppearancePreferences,
@@ -23,6 +23,11 @@ export interface UseSceneWallpaperInput {
   readonly backgroundPreview: BackgroundPreview | null;
   /** The resolved appearance (preview ?? persisted). */
   readonly resolvedAppearance: WorkspaceAppearancePreferences;
+  /**
+   * The EFFECTIVE color mode ("dark"/"light", already resolved from
+   * `system`) — the mode whose per-mode wallpaper override applies (P1).
+   */
+  readonly effectiveColorMode: "dark" | "light";
 }
 
 /**
@@ -30,17 +35,27 @@ export interface UseSceneWallpaperInput {
  * former desktop-shell.tsx: the effective wallpaper of the VISIBLE section,
  * its asset id, and the resolved object URL (including the pending-draft
  * preview URL). Rendering lives in SceneBackdrop; this hook only resolves.
+ * Mode-aware (P1): the effective color mode's page override substitutes
+ * first, then the ordinary page → workspace → preset chain.
  */
 export function useSceneWallpaper(input: UseSceneWallpaperInput) {
-  const { sectionNavMachine, effectiveActivePageId, renderedPages, backgroundPreview, resolvedAppearance } =
-    input;
+  const {
+    sectionNavMachine,
+    effectiveActivePageId,
+    renderedPages,
+    backgroundPreview,
+    resolvedAppearance,
+    effectiveColorMode,
+  } = input;
 
   /**
    * The effective wallpaper of the VISIBLE section (023-C.4): resolved
    * through the ONE canonical resolver with the Settings draft layers
    * substituted per scope (a workspace draft never masks a saved section
    * override). Bound to the machine-visible destination — never an early
-   * requested id that has not become a visible page.
+   * requested id that has not become a visible page. A per-MODE draft (P1)
+   * substitutes only its own mode layer, and only while the desktop
+   * actually renders that mode.
    */
   const visibleSectionId = visibleActiveIdOf(sectionNavMachine, effectiveActivePageId);
   const effectiveWallpaper = useMemo(() => {
@@ -48,25 +63,43 @@ export function useSceneWallpaper(input: UseSceneWallpaperInput) {
       visibleSectionId === null
         ? undefined
         : renderedPages.find((candidate) => candidate.id === visibleSectionId);
+    const previewTargetsVisibleSection =
+      backgroundPreview !== null && backgroundPreview.scope === visibleSectionId;
+    const modeDraft =
+      previewTargetsVisibleSection && backgroundPreview?.mode !== undefined
+        ? {
+            mode: backgroundPreview.mode,
+            config: backgroundPreview.explicitlyInherits ? null : backgroundPreview.config,
+          }
+        : undefined;
     const pageDraftActive =
-      backgroundPreview !== null &&
-      backgroundPreview.scope === visibleSectionId &&
+      previewTargetsVisibleSection &&
+      backgroundPreview?.mode === undefined &&
       !backgroundPreview.explicitlyInherits;
-    return resolveEffectiveWallpaper({
-      page,
-      pageWallpaperDraft: pageDraftActive ? backgroundPreview.config : undefined,
-      pageWallpaperExplicitlyInherits:
-        backgroundPreview !== null &&
-        backgroundPreview.scope === visibleSectionId &&
-        backgroundPreview.explicitlyInherits,
-      workspaceWallpaper: resolvedAppearance.wallpaper,
-      workspaceDraft:
-        backgroundPreview !== null && backgroundPreview.scope === "workspace"
-          ? { config: backgroundPreview.config }
-          : undefined,
-      legacyWorkspacePreset: resolvedAppearance.wallpaperPreset,
-    });
-  }, [renderedPages, visibleSectionId, backgroundPreview, resolvedAppearance]);
+    return resolveModeAwareWallpaper(
+      { effectiveMode: effectiveColorMode, page, modeWallpaperDraft: modeDraft },
+      {
+        page,
+        pageWallpaperDraft: pageDraftActive ? backgroundPreview.config : undefined,
+        pageWallpaperExplicitlyInherits:
+          previewTargetsVisibleSection &&
+          backgroundPreview?.mode === undefined &&
+          backgroundPreview.explicitlyInherits,
+        workspaceWallpaper: resolvedAppearance.wallpaper,
+        workspaceDraft:
+          backgroundPreview !== null && backgroundPreview.scope === "workspace"
+            ? { config: backgroundPreview.config }
+            : undefined,
+        legacyWorkspacePreset: resolvedAppearance.wallpaperPreset,
+      },
+    );
+  }, [
+    renderedPages,
+    visibleSectionId,
+    backgroundPreview,
+    resolvedAppearance,
+    effectiveColorMode,
+  ]);
 
   /** Resolves asset-backed wallpapers through the existing asset runtime. */
   const loadWallpaperAsset = useCallback(async (assetId: string) => {

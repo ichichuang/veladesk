@@ -5,16 +5,20 @@ import { useCallback } from "react";
 
 import type { WorkspaceClientRuntime } from "@veladesk/client-runtime";
 import {
+  replacePageModeWallpaper,
   replacePageWallpaper,
   replaceWorkspacePreferences,
   resolveWorkspaceAppearance,
 } from "@veladesk/domain";
 import type {
   DesktopPageId,
-  WallpaperConfig,
   WorkspaceAppearancePreferences,
+  WorkspaceEditResult,
   WorkspacePreferences,
+  WorkspaceSnapshot,
 } from "@veladesk/domain";
+
+import type { PageBackgroundPatch } from "../settings-draft";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 
 import { getBrowserAssetRuntime } from "../../assets/browser-assets";
@@ -95,6 +99,42 @@ export function useShellSettings(input: UseShellSettingsInput) {
   }
 
   /**
+   * Applies every scoped background page patch (023-C.2 + P1 mode layers)
+   * onto `base`: per page, up to three layers — the mode-agnostic upload
+   * plus the optional light/dark overrides — each applied through its
+   * dedicated immutable domain op. Stops at the FIRST refusal (a deleted
+   * target page), keeping that failure for the caller's message mapping.
+   */
+  function applyBackgroundPatches(
+    base: LocalWorkspaceRecord["snapshot"],
+    pages: Readonly<Record<DesktopPageId, PageBackgroundPatch>>,
+  ): WorkspaceEditResult {
+    let result: WorkspaceEditResult = { ok: true, workspace: base };
+    for (const [pageId, patch] of Object.entries(pages)) {
+      if (patch === undefined) {
+        continue;
+      }
+      const layers = [
+        ...(patch.general !== undefined ? [["general", patch.general] as const] : []),
+        ...(patch.light !== undefined ? [["light", patch.light] as const] : []),
+        ...(patch.dark !== undefined ? [["dark", patch.dark] as const] : []),
+      ] as const;
+      for (const [layer, config] of layers) {
+        const current: WorkspaceSnapshot = result.ok ? result.workspace : base;
+        const next: WorkspaceEditResult =
+          layer === "general"
+            ? replacePageWallpaper(current, pageId, config)
+            : replacePageModeWallpaper(current, pageId, layer, config);
+        if (!next.ok) {
+          return next;
+        }
+        result = next;
+      }
+    }
+    return result;
+  }
+
+  /**
    * Settings save path: draft → full preferences → immutable domain edit →
    * local stage + sync attempt. The appearance persisted on success, so
    * the preview can be dropped without a theme flash-back. Staging
@@ -147,23 +187,7 @@ export function useShellSettings(input: UseShellSettingsInput) {
 
     let result = replaceWorkspacePreferences(workspaceRef.current.snapshot, preferences);
     if (result.ok) {
-      for (const [pageId, patch] of Object.entries(draft.background.pages)) {
-        if (patch === undefined) {
-          continue;
-        }
-        const next = replacePageWallpaper(
-          result.workspace,
-          pageId,
-          patch as WallpaperConfig | null,
-        );
-        if (!next.ok) {
-          // A deleted target page: keep the draft and explain — never
-          // recreate a page or reference missing bytes.
-          result = { ok: false, reason: "page-not-found" };
-          break;
-        }
-        result = next;
-      }
+      result = applyBackgroundPatches(result.workspace, draft.background.pages);
     }
     if (!result.ok) {
       return {

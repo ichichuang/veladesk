@@ -14,10 +14,33 @@ import { fileURLToPath } from "node:url";
  * covered by settings-draft.test.ts; theme output by appearance-theme.test.ts.
  */
 
-const settingsSource = readFileSync(
-  fileURLToPath(new URL("./settings-center.tsx", import.meta.url)),
-  "utf8"
-);
+const settingsSource = [
+  "./settings-center.tsx",
+  "./settings-sections.tsx",
+  "./settings-background.tsx",
+  "./settings-shared.tsx",
+]
+  .map((file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8"))
+  .join("\n");
+
+const settingsModules = {
+  "settings-center.tsx": readFileSync(
+    fileURLToPath(new URL("./settings-center.tsx", import.meta.url)),
+    "utf8"
+  ),
+  "settings-sections.tsx": readFileSync(
+    fileURLToPath(new URL("./settings-sections.tsx", import.meta.url)),
+    "utf8"
+  ),
+  "settings-background.tsx": readFileSync(
+    fileURLToPath(new URL("./settings-background.tsx", import.meta.url)),
+    "utf8"
+  ),
+  "settings-shared.tsx": readFileSync(
+    fileURLToPath(new URL("./settings-shared.tsx", import.meta.url)),
+    "utf8"
+  ),
+};
 
 const css = readFileSync(
   fileURLToPath(new URL("./home-shell.css", import.meta.url)),
@@ -190,7 +213,7 @@ describe("settings: canonical component path (019-D §7/§20)", () => {
     // transforms only; the 880×680 frame is never animated.
     for (const [file, source] of [
       ["animated-surface.tsx", animatedSurfaceSource],
-      ["settings-center.tsx", settingsSource],
+      ...Object.entries(settingsModules),
     ] as const) {
       for (const call of gsapCalls(source)) {
         expect(call, `${file}: gsap(${call})`).not.toMatch(

@@ -85,7 +85,7 @@ function mobileWorkspace(): WorkspaceSnapshot {
       page("page-b", "AI", [
         { id: "app-chatgpt", column: 0, row: 0 },
         { id: "app-claude", column: 1, row: 0 },
-      ], { kind: "preset", presetId: "dawn" }),
+      ], { kind: "preset", presetId: "midnight" }),
       page("page-c", "娱乐", []),
       // An ASSET-backed override — §46/§80: the shared renderer must carry
       // the asset identity even while the blob URL is still cold.
@@ -297,7 +297,7 @@ describe("wallpaper crossfade semantics (R2 §12/§31)", () => {
   it("DIFFERENT wallpaper: exactly one crossfade — two layers while it runs, one after", async () => {
     render(<MobileHost />);
     await act(async () => {
-      fireEvent.click(screen.getByRole("tab", { name: "AI" })); // override: dawn
+      fireEvent.click(screen.getByRole("tab", { name: "AI" })); // override: midnight
     });
     // The incoming layer crossfades over the settled one: exactly two.
     expect(wallpaperSurfaces()).toBe(2);

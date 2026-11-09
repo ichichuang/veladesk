@@ -8,6 +8,8 @@ export {
   VD_MOTION,
   VD_MOTION_EASE,
   VD_MOTION_EASES,
+  VD_MOTION_FLIP,
+  VD_MOTION_WALLPAPER,
   vdMotionDuration,
   type VdMotionDurationSeconds,
   type VdMotionEaseName,

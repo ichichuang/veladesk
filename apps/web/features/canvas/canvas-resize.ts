@@ -66,6 +66,37 @@ export type ResizeCommitGeometry =
   | { readonly kind: "freeform"; readonly rect: CanvasRect }
   | { readonly kind: "grid"; readonly geometry: GridItemGeometry };
 
+/**
+ * The Grid size system (visual-directions-p1.md §规范要点): tile sizes step
+ * through 1×1 / 2×1 / 2×2 / 4×2 — never arbitrary spans. A live resize
+ * snaps its span box to the nearest step (both axes at once; distance in
+ * cells), clamped into the page's column count.
+ */
+export const GRID_SIZE_STEPS: readonly { readonly w: number; readonly h: number }[] = [
+  { w: 1, h: 1 },
+  { w: 2, h: 1 },
+  { w: 2, h: 2 },
+  { w: 4, h: 2 },
+];
+
+/** The step whose cell box is nearest to the desired span (stable order). */
+export function snapSpanToSizeStep(
+  desired: { readonly w: number; readonly h: number },
+  columns: number,
+): { readonly w: number; readonly h: number } {
+  let best = GRID_SIZE_STEPS[0]!;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const step of GRID_SIZE_STEPS) {
+    const w = Math.min(step.w, Math.max(1, columns));
+    const distance = Math.abs(w - desired.w) + Math.abs(step.h - desired.h);
+    if (distance < bestDistance) {
+      best = { w, h: step.h };
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
 const HANDLE_CURSORS: Readonly<Record<CanvasResizeHandle, string>> = {
   nw: "nwse-resize",
   se: "nwse-resize",
@@ -108,14 +139,23 @@ export function canvasResizeRectAt(
  *
  * Pointer pixels become whole-cell deltas through the pitch; the engine's
  * span semantics (min 1×1, edges never crossing, column bounds, unbounded
- * rows) do the rest. Shift is deliberately ignored: aspect locking is a
- * freeform behavior only, never ambiguous Grid spans.
+ * rows) do the rest, and the resulting span SNAPS to the size-step system
+ * (1×1 / 2×1 / 2×2 / 4×2, clamped into the columns) so Grid tiles always
+ * land on a designed size — never an arbitrary span. The origin follows
+ * the dragged edge so the far corner stays anchored. Shift is deliberately
+ * ignored: aspect locking is a freeform behavior only, never ambiguous
+ * Grid spans.
  */
 export function gridResizeGeometryAt(
   session: GridResizeSession,
   pointerX: number,
   pointerY: number,
 ): GridItemGeometry {
+  // A gesture that never moved (a handle click) keeps the start geometry —
+  // the step snap below must never commit a change the user did not make.
+  if (pointerX === session.startPointerX && pointerY === session.startPointerY) {
+    return session.startGeometry;
+  }
   const single: GridCanvasLayoutV2 = {
     version: 2,
     mode: "grid",
@@ -133,11 +173,20 @@ export function gridResizeGeometryAt(
   if (item === undefined) {
     return session.startGeometry;
   }
+  const step = snapSpanToSizeStep(
+    { w: item.columnSpan, h: item.rowSpan },
+    session.columns,
+  );
+  // Keep the anchored (far) corner fixed: a west/north handle grows
+  // rightward/downward from a moved origin, an east/south handle keeps it.
+  const growsWest = session.handle === "nw" || session.handle === "w" || session.handle === "sw";
+  const growsNorth = session.handle === "nw" || session.handle === "n" || session.handle === "ne";
+  const start = session.startGeometry;
   return {
-    column: item.column,
-    row: item.row,
-    columnSpan: item.columnSpan,
-    rowSpan: item.rowSpan,
+    column: growsWest ? start.column + start.columnSpan - step.w : item.column,
+    row: growsNorth ? start.row + start.rowSpan - step.h : item.row,
+    columnSpan: step.w,
+    rowSpan: step.h,
   };
 }
 

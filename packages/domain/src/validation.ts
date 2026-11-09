@@ -10,6 +10,7 @@ import { validateWorkspaceAppearance } from "./appearance";
 import type { WorkspaceAppearanceValidationIssue } from "./appearance";
 import { validateWorkspaceMotion } from "./motion";
 import type { WorkspaceMotionValidationIssue } from "./motion";
+import { isModeWallpaperMap } from "./wallpaper";
 import { isValidGridGapPx } from "./preferences";
 import type {
   CategoryId,
@@ -84,6 +85,17 @@ export type WorkspaceValidationIssue =
       readonly type: "page-canvas-invalid";
       readonly pageId: DesktopPageId;
       readonly issue: CanvasValidationIssue;
+    }
+  | {
+      /** The retained other-mode canvas (P1): structural validity only. */
+      readonly type: "page-retained-canvas-invalid";
+      readonly pageId: DesktopPageId;
+      readonly issue: CanvasValidationIssue;
+    }
+  | {
+      /** The per-color-mode wallpaper map (P1): only when persisted. */
+      readonly type: "page-wallpaper-mode-invalid";
+      readonly pageId: DesktopPageId;
     }
   | {
       readonly type: "canvas-page-has-legacy-items";
@@ -239,6 +251,21 @@ export function validateWorkspace(workspace: WorkspaceSnapshot): readonly Worksp
       for (const issue of validateCanvasLayout(page.canvas)) {
         issues.push({ type: "page-canvas-invalid", pageId: page.id, issue });
       }
+    }
+
+    // The retained other-mode canvas (P1): structural validity only —
+    // membership authority always stays with `canvas`, and the retained
+    // set is reconciled at the next mode switch.
+    if (page.retainedCanvas !== undefined) {
+      for (const issue of validateCanvasLayout(page.retainedCanvas)) {
+        issues.push({ type: "page-retained-canvas-invalid", pageId: page.id, issue });
+      }
+    }
+
+    // Per-color-mode wallpaper overrides (P1): semantics only when the map
+    // is persisted; absent maps are valid by definition.
+    if (page.wallpaperByMode !== undefined && !isModeWallpaperMap(page.wallpaperByMode)) {
+      issues.push({ type: "page-wallpaper-mode-invalid", pageId: page.id });
     }
   }
 
