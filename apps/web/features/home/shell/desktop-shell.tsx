@@ -9,7 +9,7 @@ import {
   VdHeroOverlayScope,
   VdPortalContainerProvider,
 } from "@components/ui/overlay-scope";
-import { resolveGridGapPx, findDesktopPage, resolveHelmMotionEnabled } from "@veladesk/domain";
+import { resolveGridGapPx, findDesktopPage } from "@veladesk/domain";
 import type {
   DesktopPageId,
   WorkspaceAppearancePreferences,
@@ -488,7 +488,6 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       <SceneBackdrop
         wallpaper={scene.effectiveWallpaper}
         assetUrl={scene.wallpaperAssetUrl}
-        dawnIntroEnabled={resolveHelmMotionEnabled(snapshot.preferences)}
       />
       <DragDropProvider
         onDragStart={tiles.wrappedHandleDragStart}

@@ -20,7 +20,7 @@ import { runtimeManagementStub } from "../workspace-runtime/test-runtime-managem
  */
 
 import { StrictMode } from "react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createEmptyWorkspace } from "@veladesk/domain";
 import type { DesktopPage, WorkspaceSnapshot } from "@veladesk/domain";
@@ -32,6 +32,7 @@ import { UiLocaleProvider } from "../i18n/ui-locale-provider";
 import { DesktopShell } from "./desktop-shell";
 import { workspaceViewStateStorageKey } from "./workspace-view-state";
 import { gsap } from "@components/vd/gsap";
+import { markDawnOpeningPlayedForTests, resetDawnOpeningSessionForTests } from "./scene/use-dawn-intro";
 
 const PAGE_NAMES: Record<string, string> = {
   "page-a": "Alpha",
@@ -230,7 +231,14 @@ beforeAll(() => {
   }
 });
 
+// Dawn is on by default (P1): this suite audits the NAVIGATION timelines
+// only, so the once-per-session opening counts as already played.
+beforeEach(() => {
+  markDawnOpeningPlayedForTests();
+});
+
 afterEach(() => {
+  resetDawnOpeningSessionForTests();
   cleanup();
   window.localStorage.clear();
   gsap.globalTimeline.clear();

@@ -10,7 +10,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 
 import type { PagePlacement } from "@veladesk/domain";
-import { snapDropBoxes, SnapDropRipples, useSnapDropRipples } from "./drop-ripple";
+import { gsap } from "@components/vd/gsap";
+import { VD_MOTION_EASES } from "@components/vd/motion-tokens";
+import { DROP_RIPPLE_EASE, snapDropBoxes, SnapDropRipples, useSnapDropRipples } from "./drop-ripple";
 
 type GridItem = { id: string; column: number; row: number; columnSpan: number; rowSpan: number };
 
@@ -115,6 +117,22 @@ describe("useSnapDropRipples", () => {
     expect(session().ripples.length).toBe(1);
   });
 
+  it("never records a freeform (free layout) drop", () => {
+    const { session } = mountSessionProbe(false);
+    const freeformStart = {
+      mode: "freeform",
+      items: [{ id: "a", rect: { x: 0, y: 0, width: 10, height: 10 } }],
+    } as unknown as PagePlacement;
+    const freeformMoved = {
+      mode: "freeform",
+      items: [{ id: "a", rect: { x: 40, y: 40, width: 10, height: 10 } }],
+    } as unknown as PagePlacement;
+    act(() => {
+      session().playSnapDrop(freeformMoved, freeformStart);
+    });
+    expect(session().ripples).toEqual([]);
+  });
+
   it("never records under reduced motion", () => {
     const { session } = mountSessionProbe(true);
     act(() => {
@@ -152,5 +170,16 @@ describe("SnapDropRipples layer", () => {
   it("renders nothing for an empty session", () => {
     const { container } = render(<SnapDropRipples ripples={[]} cellPx={100} gapPx={20} />);
     expect(container.querySelector(".vela-drop-ripple-layer")).toBeNull();
+  });
+});
+
+describe("drop ripple easing", () => {
+  it("rides the canonical standard ease token, not a literal curve", () => {
+    const standard = gsap.parseEase(VD_MOTION_EASES.standard);
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      expect(DROP_RIPPLE_EASE(t)).toBeCloseTo(standard(t), 10);
+    }
+    // power2.out is an ease-OUT: ahead of linear at mid-stroke.
+    expect(DROP_RIPPLE_EASE(0.5)).toBeGreaterThan(0.5);
   });
 });

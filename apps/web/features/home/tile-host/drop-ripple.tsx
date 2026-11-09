@@ -6,7 +6,8 @@ import { motion } from "motion/react";
 import type { GridItemGeometry } from "../../canvas/canvas-resize";
 import { gridSpanExtentPx } from "../../canvas/square-grid-metrics";
 import type { PagePlacement } from "@veladesk/domain";
-import { VD_MOTION_FLIP } from "@components/vd/motion-tokens";
+import { gsap } from "@components/vd/gsap";
+import { VD_MOTION_EASES, VD_MOTION_FLIP } from "@components/vd/motion-tokens";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
 
 /**
@@ -16,6 +17,16 @@ import { useVdReducedMotion } from "@components/vd/reduced-motion";
  * engine); reduced motion never plays it; freeform drops have no ripple
  * (there is no lattice to land on).
  */
+
+/**
+ * The ring's easing: the canonical `VD_MOTION_EASES.standard` token (no
+ * literals). The token is a GSAP ease NAME, which Motion cannot parse, so
+ * GSAP resolves it into the same easing FUNCTION Motion accepts — one
+ * curve for both engines. Exported for tests.
+ */
+export const DROP_RIPPLE_EASE: (progress: number) => number = gsap.parseEase(
+  VD_MOTION_EASES.standard,
+);
 
 /** One played ripple: the target geometry plus its session nonce. */
 export interface DropRipple {
@@ -149,7 +160,7 @@ export function SnapDropRipples({
           }}
           initial={{ opacity: 0.35, scale: 0.9 }}
           animate={{ opacity: 0, scale: 1.15 }}
-          transition={{ duration: VD_MOTION_FLIP.dropRipple, ease: "linear" }}
+          transition={{ duration: VD_MOTION_FLIP.dropRipple, ease: DROP_RIPPLE_EASE }}
         />
       ))}
     </div>

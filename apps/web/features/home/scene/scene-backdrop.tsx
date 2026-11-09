@@ -16,9 +16,11 @@ interface SceneBackdropProps {
   /** The resolved object URL for an asset config (null while cold). */
   readonly assetUrl: string | null;
   /**
-   * The Dawn opening gate (P1): the `motion.experiments.helmMotion`
-   * switch, resolved by the shell from the persisted preferences. Absent
-   * or false renders the static scene — no timeline, no veil.
+   * The Dawn opening gate (P1). Dawn is ON BY DEFAULT — it is not behind
+   * the `motion.experiments.helmMotion` switch (that gates only Orbits/
+   * Wake). Absent means true; pass false only to force the static scene.
+   * Either way the opening plays only over a PRESET wallpaper and never
+   * under reduced motion.
    */
   readonly dawnIntroEnabled?: boolean | undefined;
 }
@@ -27,11 +29,11 @@ interface SceneBackdropProps {
  * The desktop scene BACKDROP (P1-ENG-1): the full-desktop background
  * layers, the Dawn horizon and the ambient drift node. Behind the rail,
  * workspace and dock; pointer-transparent, clipped. GSAP owns the ambient
- * drift (one yoyo on a real node) and — behind the helmMotion switch —
- * the Dawn opening (use-dawn-intro.ts); reduced motion renders a static
- * backdrop.
+ * drift (one yoyo on a real node) and — on by default over preset
+ * scenes — the Dawn opening (use-dawn-intro.ts); reduced motion renders a
+ * static backdrop.
  */
-export function SceneBackdrop({ wallpaper, assetUrl, dawnIntroEnabled = false }: SceneBackdropProps) {
+export function SceneBackdrop({ wallpaper, assetUrl, dawnIntroEnabled = true }: SceneBackdropProps) {
   // Ambient wallpaper drift (022): one GSAP-owned yoyo on a real node.
   // Pure decoration behind everything; reduced motion renders a static
   // backdrop.
@@ -40,7 +42,8 @@ export function SceneBackdrop({ wallpaper, assetUrl, dawnIntroEnabled = false }:
 
   // The Dawn opening (P1, motion-spec §2): the horizon band rises over
   // the PRESET scene while the brightness veil recedes. Custom image
-  // wallpapers render no horizon at all — a photo is its own scene.
+  // wallpapers render no horizon and never play the opening — a photo is
+  // its own scene. Not gated by helmMotion.
   const sceneRootRef = useRef<HTMLDivElement | null>(null);
   const horizonBandRef = useRef<HTMLDivElement | null>(null);
   const dawnVeilRef = useRef<HTMLDivElement | null>(null);

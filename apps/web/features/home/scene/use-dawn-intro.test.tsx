@@ -2,8 +2,9 @@
 /*
  * The Dawn opening's gate logic (P1, motion-spec-p1 §2): once per tab
  * session, never within the 5s quiet window, never on a bfcache restore —
- * and the hook itself touches nothing when the experiment switch is off
- * or reduced motion is on.
+ * and the hook itself touches nothing over a custom wallpaper (`enabled`
+ * false) or under reduced motion. Dawn is on by default — not behind the
+ * helmMotion experiment switch.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
@@ -74,7 +75,7 @@ describe("shouldPlayDawnOpening (session gate)", () => {
 });
 
 describe("useDawnIntro gating", () => {
-  it("never writes inline styles when the experiment switch is off", () => {
+  it("never writes inline styles when the scene is not a preset (custom wallpaper)", () => {
     const { band, veil } = mountIntro(false, false);
     expect(band.style.length).toBe(0);
     expect(veil.style.length).toBe(0);
@@ -86,7 +87,7 @@ describe("useDawnIntro gating", () => {
     expect(veil.style.length).toBe(0);
   });
 
-  it("drives the overlay nodes when enabled and motion is allowed", async () => {
+  it("drives the overlay nodes over a preset scene when motion is allowed", async () => {
     // The timeline's first fromTo applies the band's starting transform on
     // its first tick (GSAP renders tween start values once the playhead
     // enters them), proving the moment actually armed.

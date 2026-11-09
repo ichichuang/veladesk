@@ -391,7 +391,8 @@ export function GeneralSection({
       </SettingsRow>
 
       {/* Motion experiments (P1): the single helmMotion master switch —
-          gates the Dawn opening prototype (and, later, Orbits/Wake).
+          gates ONLY the Orbits/Wake prototypes. The Dawn opening is an
+          official moment, on by default, and not tied to this switch.
           Reduced motion always wins over this flag; the hint says so. */}
       <SettingsRow title={t("settings.motion")} hint={t("settings.motion.hint")}>
         <VdSwitch

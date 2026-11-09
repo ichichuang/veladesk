@@ -22,7 +22,7 @@ import { runtimeManagementStub } from "../workspace-runtime/test-runtime-managem
  */
 
 import { StrictMode } from "react";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createEmptyWorkspace } from "@veladesk/domain";
 import type { DesktopPage, WorkspaceSnapshot } from "@veladesk/domain";
@@ -33,6 +33,7 @@ import { WorkspaceRuntimeContextProvider } from "../workspace-runtime/use-worksp
 import { UiLocaleProvider } from "../i18n/ui-locale-provider";
 import { DesktopShell } from "./desktop-shell";
 import { gsap } from "@components/vd/gsap";
+import { markDawnOpeningPlayedForTests, resetDawnOpeningSessionForTests } from "./scene/use-dawn-intro";
 
 const H = 480; // injected viewport height — never a browser measurement
 
@@ -167,7 +168,14 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
 });
 
+// Dawn is on by default (P1): this suite audits the NAVIGATION timelines
+// only, so the once-per-session opening counts as already played.
+beforeEach(() => {
+  markDawnOpeningPlayedForTests();
+});
+
 afterEach(() => {
+  resetDawnOpeningSessionForTests();
   cleanup();
   gsap.globalTimeline.clear();
   // 023-A: each test's unmount flush persists its view state to real

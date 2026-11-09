@@ -22,11 +22,15 @@ import { useVdReducedMotion } from "@components/vd/reduced-motion";
  *            distance from the horizon (12ms per step, ≤ 80ms total);
  *   280–300ms the bright burst fades out and the timeline ends.
  *
- * Gating: the whole moment hangs behind the `motion.experiments.helmMotion`
- * switch (supplied by the shell as `enabled`) AND plays at most once per
- * tab session — a same-session reopen within 5s, or a bfcache restore,
- * renders statically. Reduced motion never plays it: the scene renders in
- * its final state immediately (the spec's "或直接静态" downgrade).
+ * Gating: Dawn is an official P1 moment and is ON BY DEFAULT — it is NOT
+ * behind `motion.experiments.helmMotion` (that switch gates only the
+ * Orbits/Wake prototypes). It plays only over a PRESET scene (the caller
+ * passes `enabled = false` for a custom image wallpaper — a photo is its
+ * own scene and renders no horizon), and at most once per tab session — a
+ * same-session reopen (which covers the spec's 5s quiet window) or a
+ * bfcache restore renders statically. Reduced motion never plays it: the
+ * scene renders in its final state immediately (the spec's "或直接静态"
+ * downgrade).
  *
  * Interruptible: any pointer/keyboard/wheel input during the timeline
  * jumps it to `progress(1)` — the settled state — and ⌘K never waits.
@@ -60,6 +64,15 @@ export function shouldPlayDawnOpening(_now: number, navigationType: string): boo
 /** Resets the session memory (tests only). */
 export function resetDawnOpeningSessionForTests(): void {
   dawnOpeningPlayed = false;
+}
+
+/**
+ * Marks the opening as already played this session (tests only): suites
+ * that audit OTHER GSAP timelines (section navigation, restore) mount the
+ * shell without the default-on Dawn timeline joining the global timeline.
+ */
+export function markDawnOpeningPlayedForTests(): void {
+  dawnOpeningPlayed = true;
 }
 
 /** The navigation type of this document, or "navigate" when unknown. */
@@ -98,7 +111,11 @@ function collectIntroTiles(scope: HTMLElement): readonly HTMLElement[] {
 }
 
 export interface UseDawnIntroInput extends IntroTargets {
-  /** The helmMotion experiment switch — false renders the static scene. */
+  /**
+   * Whether this mount may open with Dawn at all: true over a preset scene
+   * (the default), false over a custom image wallpaper. Independent of the
+   * helmMotion experiment switch. False renders the static scene.
+   */
   readonly enabled: boolean;
 }
 
