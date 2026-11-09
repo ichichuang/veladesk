@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { adoptRecipeDocument, isRecipeDocument } from "./recipe-adapter";
+import { adoptRecipeDocument, isRecipeDocument, recipeSpacePreviews } from "./recipe-adapter";
 import { deckFilename } from "./recipe-file";
 import { parseImportDocument } from "./parser";
 
@@ -54,11 +54,11 @@ describe("adoptRecipeDocument", () => {
         },
       ],
     });
-    expect(result.notice).toEqual({
-      severity: "warning",
-      code: "RECIPE_MIGRATED",
-      path: "format",
-    });
+    expect(result.notices).toEqual([
+      { severity: "warning", code: "RECIPE_MIGRATED", path: "format" },
+    ]);
+    expect(result.extras.theme).toEqual({ mode: "dark", accent: 60, material: "glass" });
+    expect(result.extras.motion).toEqual({ experiments: { helmMotion: false } });
   });
 
   it("rejects decks from a newer version with UNSUPPORTED_VERSION", () => {
@@ -78,6 +78,39 @@ describe("adoptRecipeDocument", () => {
       kind: "rejected",
       issues: [{ severity: "error", code: "INVALID_FORMAT", path: "spaces[0].layout" }],
     });
+  });
+
+  it("keeps a legal theme verbatim", () => {
+    for (const theme of [
+      { mode: "system", accent: 0, material: "clean" },
+      { mode: "light", accent: 359, material: "soft" },
+    ]) {
+      const result = adoptRecipeDocument({ ...DECK, theme });
+      expect(result.kind).toBe("adopted");
+      if (result.kind === "adopted") {
+        expect(result.extras.theme).toEqual(theme);
+        expect(result.notices).toHaveLength(1);
+      }
+    }
+  });
+
+  it("drops a theme with illegal values to a warning instead of failing the adoption", () => {
+    for (const theme of [
+      { mode: "blue", accent: 60, material: "glass" }, // unknown color mode
+      { mode: "dark", accent: 999, material: "glass" }, // accent out of 0–359
+      { mode: "dark", accent: 60.5, material: "glass" }, // non-integer accent
+      { mode: "dark", accent: 60, material: "diamond" }, // unknown material
+    ]) {
+      const result = adoptRecipeDocument({ ...DECK, theme });
+      expect(result.kind).toBe("adopted");
+      if (result.kind === "adopted") {
+        expect(result.extras.theme).toBeUndefined();
+        expect(result.notices).toEqual([
+          { severity: "warning", code: "RECIPE_MIGRATED", path: "format" },
+          { severity: "warning", code: "RECIPE_THEME_IGNORED", path: "theme" },
+        ]);
+      }
+    }
   });
 });
 
@@ -134,6 +167,79 @@ describe("parseImportDocument with a .deck.json payload", () => {
         (issue) => issue.code === "UNSUPPORTED_VERSION" && issue.severity === "error"
       )
     ).toBe(true);
+  });
+});
+
+describe("recipeSpacePreviews", () => {
+  const NIGHT_ID = `asset-sha256-${"b".repeat(64)}`;
+
+  function parseExtras(text: string) {
+    const result = parseImportDocument(text);
+    if (!result.ok) throw new Error("parse failed");
+    return result.parsed;
+  }
+
+  it("summarizes each plan section's structure: mode, grid, tiles, wallpapers", () => {
+    const parsed = parseExtras(
+      JSON.stringify({
+        format: "vela.recipe",
+        version: 1,
+        spaces: [
+          {
+            name: "AI",
+            layout: "grid",
+            layoutMode: "snap",
+            grid: { columns: 8, rows: 5 },
+            wallpaper: { light: "preset:aurora", dark: `asset:${NIGHT_ID}` },
+            tiles: [
+              { name: "A", url: "https://a.example/" },
+              { name: "B", url: "https://b.example/" },
+            ],
+          },
+          { name: "Board", layout: "canvas", layoutMode: "free", tiles: [{ name: "C", url: "https://c.example/" }] },
+        ],
+        plugins: [],
+      }),
+    );
+    const previews = recipeSpacePreviews(parsed.document, parsed.recipe!);
+    expect(previews.get("ai")).toEqual({
+      layoutMode: "snap",
+      grid: { columns: 8, rows: 5 },
+      tileCount: 2,
+      light: { kind: "preset", presetId: "aurora" },
+      dark: { kind: "asset" },
+    });
+    // No declared grid / wallpapers → defaults and undefined labels.
+    expect(previews.get("board")).toEqual({
+      layoutMode: "free",
+      grid: undefined,
+      tileCount: 1,
+      light: undefined,
+      dark: undefined,
+    });
+  });
+
+  it("folds same-name spaces exactly like the planner: first space's fields, tiles concatenate", () => {
+    const parsed = parseExtras(
+      JSON.stringify({
+        format: "vela.recipe",
+        version: 1,
+        spaces: [
+          { name: "AI", layout: "grid", grid: { columns: 6, rows: 4 }, tiles: [{ name: "A", url: "https://a.example/" }] },
+          { name: " ai ", layout: "canvas", layoutMode: "free", wallpaper: { light: "preset:mist" }, tiles: [{ name: "B", url: "https://b.example/" }] },
+        ],
+        plugins: [],
+      }),
+    );
+    const previews = recipeSpacePreviews(parsed.document, parsed.recipe!);
+    expect(previews.size).toBe(1);
+    expect(previews.get("ai")).toEqual({
+      layoutMode: "snap", // first space wins; the folded " ai " section key is the same
+      grid: { columns: 6, rows: 4 },
+      tileCount: 2,
+      light: undefined,
+      dark: undefined,
+    });
   });
 });
 

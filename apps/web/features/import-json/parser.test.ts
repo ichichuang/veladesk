@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   IMPORT_FORMAT_IDENTITY,
   IMPORT_MAX_APPS,
+  IMPORT_MAX_FILE_BYTES,
   IMPORT_MAX_JSON_TEXT_LENGTH,
   IMPORT_MAX_SECTIONS,
 } from "./contract";
@@ -155,6 +156,34 @@ describe("parseImportDocument: JSON and root errors", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(issueCodes(result.issues)).toContain("FILE_TOO_LARGE");
+    }
+  });
+
+  it("accepts text above the paste cap under a raised file budget (whitespace is legal padding)", () => {
+    const padded = `${" ".repeat(IMPORT_MAX_JSON_TEXT_LENGTH)}${validDocumentJson()}`;
+    expect(padded.length).toBeGreaterThan(IMPORT_MAX_JSON_TEXT_LENGTH);
+    expect(parseImportDocument(padded, { maxLength: IMPORT_MAX_FILE_BYTES }).ok).toBe(true);
+    expect(parseImportDocument(padded).ok).toBe(false); // default stays the 1 MiB paste budget
+  });
+
+  it("threads the caller's budget through the recipe re-entry (distilled deck over 1 MiB)", () => {
+    // Long custom-protocol urls (each under IMPORT_MAX_URL_LENGTH) make the
+    // DISTILLED import document exceed the paste ceiling; without threading,
+    // the inner re-entry would reject a file-budget input.
+    const longUrl = `zzz://${"a".repeat(2030)}/`;
+    const tiles = Array.from({ length: 700 }, (_unused, index) => ({ name: `T${index}`, url: longUrl }));
+    const deck = JSON.stringify({
+      format: "vela.recipe",
+      version: 1,
+      spaces: [{ name: "Big", layout: "grid", tiles }],
+      plugins: [],
+    });
+    const adopted = parseImportDocument(deck, { maxLength: IMPORT_MAX_FILE_BYTES });
+    expect(adopted.ok).toBe(true);
+    const pasted = parseImportDocument(deck);
+    expect(pasted.ok).toBe(false);
+    if (!pasted.ok) {
+      expect(issueCodes(pasted.issues)).toContain("FILE_TOO_LARGE");
     }
   });
 });

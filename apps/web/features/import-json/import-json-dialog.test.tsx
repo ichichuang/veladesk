@@ -19,7 +19,7 @@ import { UI_LOCALE_STORAGE_KEY } from "../i18n/locale";
 import { WorkspaceRuntimeContextProvider } from "../workspace-runtime/use-workspace-runtime";
 import { VdPortalContainerProvider } from "@components/ui/overlay-scope";
 
-import { IMPORT_MAX_JSON_BYTES } from "./contract";
+import { IMPORT_MAX_FILE_BYTES, IMPORT_MAX_JSON_TEXT_LENGTH } from "./contract";
 import { ImportJsonDialog } from "./import-json-dialog";
 import { addApp, addSection, officeWorkspace } from "./fixtures";
 
@@ -185,15 +185,37 @@ describe("ImportJsonDialog: input modes", () => {
     const { view } = renderDialog(officeWorkspace().workspace, makeRuntime());
     const textSpy = vi.fn(() => Promise.resolve("unused"));
     const file = new File([""], "huge.json");
-    Object.defineProperty(file, "size", { value: IMPORT_MAX_JSON_BYTES + 1 });
+    Object.defineProperty(file, "size", { value: IMPORT_MAX_FILE_BYTES + 1 });
     Object.defineProperty(file, "text", { value: textSpy });
     await act(async () => {
       chooseFile(file);
     });
     await waitFor(() =>
-      expect(view.getByText("File too large (limit 1 MiB)")).toBeDefined()
+      expect(view.getByText("File too large (limit 24 MiB)")).toBeDefined()
     );
     expect(textSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects pasted text above the 1 MiB paste ceiling", async () => {
+    const { view } = renderDialog(officeWorkspace().workspace, makeRuntime());
+    // Non-blank content (a pure-whitespace paste is blocked by the disabled
+    // Parse button) that still exceeds the 1 MiB character ceiling.
+    await pasteAndParse(view, `x${" ".repeat(IMPORT_MAX_JSON_TEXT_LENGTH)}`);
+    await waitFor(() =>
+      expect(view.getByText("Content exceeds the 1 MiB limit.")).toBeDefined()
+    );
+    expect(view.queryByText("Ready to import")).toBeNull();
+  });
+
+  it("parses an uploaded file above the paste ceiling (24 MiB file budget)", async () => {
+    const { view } = renderDialog(officeWorkspace().workspace, makeRuntime());
+    // Whitespace is legal JSON padding: the text exceeds the 1 MiB paste
+    // ceiling while the file stays inside the 24 MiB file ceiling.
+    const padded = " ".repeat(IMPORT_MAX_JSON_TEXT_LENGTH + 1) + templateText();
+    await act(async () => {
+      chooseFile(jsonFile(padded));
+    });
+    await waitFor(() => expect(view.getByText("Ready to import")).toBeDefined());
   });
 
   it("rejects dropping more than one file", async () => {
@@ -268,6 +290,143 @@ describe("ImportJsonDialog: preview accuracy", () => {
     expect(importButton.disabled).toBe(true);
     const alerts = view.getAllByRole("alert");
     expect(alerts.some((node) => node.textContent?.includes("merge target is ambiguous"))).toBe(true);
+  });
+});
+
+describe("ImportJsonDialog: recipe preview & options", () => {
+  const NIGHT_ID = `asset-sha256-${"b".repeat(64)}`;
+
+  /** A deck whose "AI" space is created and whose "Office" space merges. */
+  function deckText(overrides: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      format: "vela.recipe",
+      version: 1,
+      theme: { mode: "dark", accent: 200, material: "glass" },
+      motion: { reducedMotion: "on" },
+      spaces: [
+        {
+          name: "AI",
+          layout: "grid",
+          layoutMode: "snap",
+          grid: { columns: 8, rows: 5 },
+          wallpaper: { light: "preset:aurora", dark: `asset:${NIGHT_ID}` },
+          tiles: [
+            { name: "ChatGPT", url: "https://chatgpt.test/", placement: "snap", x: 0, y: 0, w: 2, h: 2 },
+            { name: "Claude", url: "https://claude.test/" },
+          ],
+        },
+        {
+          name: "Office",
+          layout: "canvas",
+          layoutMode: "free",
+          tiles: [{ name: "Notion", url: "https://www.notion.so/" }],
+        },
+      ],
+      plugins: [],
+      ...overrides,
+    });
+  }
+
+  it("previews spaces, structure, wallpapers and the merge append-only note", async () => {
+    const { view } = renderDialog(officeWorkspace().workspace, makeRuntime());
+    await pasteAndParse(view, deckText());
+    expect(view.getByText("2 spaces · 3 tiles")).toBeDefined();
+    expect(view.getByText("Will create: 1 spaces · 3 tiles")).toBeDefined();
+    expect(view.getByText("Will merge: 1 spaces")).toBeDefined();
+    expect(
+      view.getByText("Snap · 8×5 grid · 2 tiles · Light wallpaper: Aurora · Dark wallpaper: custom image")
+    ).toBeDefined();
+    expect(view.getByText("Merge into existing space · 1 new apps")).toBeDefined();
+    expect(
+      view.getByText("apps appended only; layout and wallpapers stay unchanged")
+    ).toBeDefined();
+    expect(view.getByText("The deck carries theme and motion settings.")).toBeDefined();
+    // Theme & motion are opt-in: the checkbox exists and starts unchecked.
+    const checkbox = view.getByRole("checkbox") as HTMLButtonElement;
+    expect(checkbox.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("imports the structure but leaves preferences alone while the checkbox is unchecked", async () => {
+    const stageWorkspaceUpdate = vi.fn((snapshot: WorkspaceSnapshot) => {
+      void snapshot;
+      return Promise.resolve({ ok: true });
+    });
+    const { workspace } = officeWorkspace();
+    const { view } = renderDialog(
+      workspace,
+      makeRuntime({ stageWorkspaceUpdate, syncCurrent: vi.fn(() => Promise.resolve({ status: "synced" })) })
+    );
+    await pasteAndParse(view, deckText());
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Import" }));
+    });
+    await waitFor(() => expect(view.getByText("Imported")).toBeDefined());
+    const staged = stageWorkspaceUpdate.mock.calls[0]?.[0] as WorkspaceSnapshot;
+    expect(staged.preferences).toEqual(workspace.preferences);
+    expect(staged.pages.map((page) => page.name)).toEqual(expect.arrayContaining(["AI", "Office"]));
+  });
+
+  it("applies theme + motion only when the checkbox is checked", async () => {
+    const stageWorkspaceUpdate = vi.fn((snapshot: WorkspaceSnapshot) => {
+      void snapshot;
+      return Promise.resolve({ ok: true });
+    });
+    const { view } = renderDialog(
+      officeWorkspace().workspace,
+      makeRuntime({ stageWorkspaceUpdate, syncCurrent: vi.fn(() => Promise.resolve({ status: "synced" })) })
+    );
+    await pasteAndParse(view, deckText());
+    await act(async () => {
+      fireEvent.click(view.getByRole("checkbox"));
+    });
+    expect(view.getByRole("checkbox").getAttribute("aria-checked")).toBe("true");
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Import" }));
+    });
+    await waitFor(() => expect(view.getByText("Imported")).toBeDefined());
+    const staged = stageWorkspaceUpdate.mock.calls[0]?.[0] as WorkspaceSnapshot;
+    expect(staged.preferences.appearance?.colorMode).toBe("dark");
+    expect(staged.preferences.motion).toEqual({ reducedMotion: "on" });
+  });
+
+  it("hides the checkbox when the deck carries neither theme nor motion", async () => {
+    const { view } = renderDialog(officeWorkspace().workspace, makeRuntime());
+    await pasteAndParse(
+      view,
+      deckText({ theme: undefined, motion: undefined })
+    );
+    expect(view.queryByRole("checkbox")).toBeNull();
+    expect(view.queryByText("The deck carries theme and motion settings.")).toBeNull();
+  });
+
+  it("ignores an illegal theme with a warning instead of failing the import", async () => {
+    const stageWorkspaceUpdate = vi.fn((snapshot: WorkspaceSnapshot) => {
+      void snapshot;
+      return Promise.resolve({ ok: true });
+    });
+    const { workspace } = officeWorkspace();
+    const { view } = renderDialog(
+      workspace,
+      makeRuntime({ stageWorkspaceUpdate, syncCurrent: vi.fn(() => Promise.resolve({ status: "synced" })) })
+    );
+    await pasteAndParse(
+      view,
+      deckText({ theme: { mode: "dark", accent: 999, material: "glass" }, motion: undefined })
+    );
+    // Theme dropped → nothing left to opt into, and the warning says so.
+    expect(view.queryByRole("checkbox")).toBeNull();
+    await act(async () => {
+      fireEvent.click(view.getByText("2 notices"));
+    });
+    expect(
+      view.getByText(/The deck's theme carries invalid values; it is ignored/)
+    ).toBeDefined();
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Import" }));
+    });
+    await waitFor(() => expect(view.getByText("Imported")).toBeDefined());
+    const staged = stageWorkspaceUpdate.mock.calls[0]?.[0] as WorkspaceSnapshot;
+    expect(staged.preferences).toEqual(workspace.preferences);
   });
 });
 

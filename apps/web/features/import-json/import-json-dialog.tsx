@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { DragEvent } from "react";
-import type { WorkspaceSnapshot } from "@veladesk/domain";
+import type { WorkspaceSnapshot, WorkspaceWallpaperPreset } from "@veladesk/domain";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
 import { useI18n } from "../i18n/use-i18n";
@@ -11,13 +11,17 @@ import { createBrowserId } from "../home/browser-id";
 import { stageWorkspaceAndTrySync } from "../home/workspace-commit";
 
 import type { ImportIssue, ImportIssueCode } from "./contract";
-import { IMPORT_MAX_JSON_BYTES } from "./contract";
+import { IMPORT_MAX_FILE_BYTES, IMPORT_MAX_JSON_TEXT_LENGTH } from "./contract";
 import { applyImportPlan } from "./apply-import";
 import { importPlanIsBlocked, importPlanIsNoOp, planImport, plansMateriallyEqual } from "./planner";
 import type { ImportPlan } from "./planner";
 import { parseImportDocument } from "./parser";
+import type { ParseImportOptions } from "./parser";
+import { recipeSpacePreviews } from "./recipe-adapter";
+import type { RecipeImportExtras, RecipeSpacePreview, RecipeWallpaperPreview } from "./recipe-adapter";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@components/ui/dialog";
 import { Button } from "@components/ui/button";
+import { Checkbox } from "@components/ui/checkbox";
 import { VdScrollArea } from "@components/vd/scroll-area";
 
 interface ImportJsonDialogProps {
@@ -34,6 +38,7 @@ const ISSUE_MESSAGE_KEY: Readonly<Record<ImportIssueCode, TranslationKey>> = {
   INVALID_FORMAT: "import.issue.INVALID_FORMAT",
   UNSUPPORTED_VERSION: "import.issue.UNSUPPORTED_VERSION",
   RECIPE_MIGRATED: "import.issue.RECIPE_MIGRATED",
+  RECIPE_THEME_IGNORED: "import.issue.RECIPE_THEME_IGNORED",
   MISSING_SECTIONS: "import.issue.MISSING_SECTIONS",
   INVALID_SECTIONS: "import.issue.INVALID_SECTIONS",
   TOO_MANY_SECTIONS: "import.issue.TOO_MANY_SECTIONS",
@@ -64,6 +69,10 @@ const MIB = 1024 * 1024;
  * zero workspace writes; the confirm path re-derives the plan from the
  * CURRENT snapshot and, when the workspace changed materially since the
  * preview, asks for a second confirmation instead of writing.
+ *
+ * Recipe (.deck.json) documents ride the same pipeline and additionally
+ * preview each space's structure (layout mode, grid, tiles, wallpapers)
+ * with an opt-in "apply theme & motion" checkbox — unchecked by default.
  */
 export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
@@ -72,9 +81,13 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
   const [phase, setPhase] = useState<"input" | "preview" | "done">("input");
   const [pasteText, setPasteText] = useState("");
   const [sourceText, setSourceText] = useState<string | null>(null);
+  /** The size budget the CURRENT source was vetted under (paste 1 MiB / file 24 MiB). */
+  const [sourceBudget, setSourceBudget] = useState<number>(IMPORT_MAX_JSON_TEXT_LENGTH);
   const [parseIssues, setParseIssues] = useState<readonly ImportIssue[] | null>(null);
   const [parseSectionNames, setParseSectionNames] = useState<readonly (string | undefined)[]>([]);
   const [plan, setPlan] = useState<ImportPlan | null>(null);
+  const [recipeExtras, setRecipeExtras] = useState<RecipeImportExtras | null>(null);
+  const [applyTheme, setApplyTheme] = useState(false);
   const [workspaceChanged, setWorkspaceChanged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
@@ -90,13 +103,16 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
     onClose();
   }
 
-  function parseAndPreview(text: string): void {
+  function parseAndPreview(text: string, maxLength: number = IMPORT_MAX_JSON_TEXT_LENGTH): void {
     setSourceText(text);
-    const result = parseImportDocument(text);
+    setSourceBudget(maxLength);
+    const options: ParseImportOptions = { maxLength };
+    const result = parseImportDocument(text, options);
     if (!result.ok) {
       setParseIssues(result.issues);
       setParseSectionNames(result.sectionNames);
       setPlan(null);
+      setRecipeExtras(null);
       setWorkspaceChanged(false);
       setPhase("input");
       return;
@@ -105,17 +121,19 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
     setParseSectionNames([]);
     setInputError(null);
     setPlan(planImport(workspace, result.parsed.document, result.parsed.issues));
+    setRecipeExtras(result.parsed.recipe ?? null);
+    setApplyTheme(false);
     setWorkspaceChanged(false);
     setPhase("preview");
   }
 
   async function handleFile(file: File): Promise<void> {
-    if (file.size > IMPORT_MAX_JSON_BYTES) {
-      setInputError(t("import.error.fileTooLarge", { limit: String(Math.round(IMPORT_MAX_JSON_BYTES / MIB)) }));
+    if (file.size > IMPORT_MAX_FILE_BYTES) {
+      setInputError(t("import.error.fileTooLarge", { limit: String(Math.round(IMPORT_MAX_FILE_BYTES / MIB)) }));
       return;
     }
     const text = await file.text();
-    parseAndPreview(text);
+    parseAndPreview(text, IMPORT_MAX_FILE_BYTES);
   }
 
   function handleDrop(event: DragEvent<HTMLDivElement>): void {
@@ -140,11 +158,13 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
     try {
       // Re-derive from the CURRENT snapshot (task 024 §36): the live prop is
       // the latest staged snapshot — anything may have changed since preview.
-      const result = parseImportDocument(sourceText);
+      // The source keeps the budget it was vetted under at input time.
+      const result = parseImportDocument(sourceText, { maxLength: sourceBudget });
       if (!result.ok) {
         setParseIssues(result.issues);
         setParseSectionNames(result.sectionNames);
         setPlan(null);
+        setRecipeExtras(null);
         setPhase("input");
         return;
       }
@@ -153,15 +173,20 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
       if (current !== plan.baseWorkspace && !plansMateriallyEqual(plan, replanned)) {
         // Material change: update the preview and require a second confirm.
         setPlan(replanned);
+        setRecipeExtras(result.parsed.recipe ?? null);
         setWorkspaceChanged(true);
         return;
       }
       if (importPlanIsBlocked(replanned) || importPlanIsNoOp(replanned)) {
         setPlan(replanned);
+        setRecipeExtras(result.parsed.recipe ?? null);
         setWorkspaceChanged(false);
         return;
       }
-      const applied = applyImportPlan(current, replanned, (kind) => createBrowserId(kind));
+      const applied = applyImportPlan(current, replanned, (kind) => createBrowserId(kind), {
+        recipe: result.parsed.recipe,
+        applyTheme,
+      });
       if (!applied.ok) {
         setSaveError(t("import.error.saveFailed"));
         return;
@@ -187,6 +212,8 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
   const blocked = plan !== null && importPlanIsBlocked(plan);
   const noOp = plan !== null && importPlanIsNoOp(plan);
   const importDisabled = busy || blocked || noOp;
+  const spacePreviews =
+    plan !== null && recipeExtras !== null ? recipeSpacePreviews(plan.document, recipeExtras) : undefined;
 
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : requestClose())}>
@@ -240,6 +267,7 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
                   data-import-dropzone=""
                 >
                   <p className="text-sm text-vdu-fg-muted">{t("import.dropHint")}</p>
+                  <p className="text-xs text-vdu-fg-muted">{t("import.dropSizeHint")}</p>
                   <p className="text-xs text-vdu-fg-muted">{t("import.dropOr")}</p>
                   <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>
                     {t("import.chooseFile")}
@@ -264,6 +292,7 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
                   <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-import-paste">
                     {t("import.pasteLabel")}
                   </label>
+                  <span className="text-xs text-vdu-fg-muted">{t("import.pasteSizeHint")}</span>
                   <textarea
                     id="vela-import-paste"
                     className="min-h-[240px] w-full resize-none rounded-vdu border border-vdu-border bg-vdu-bg-raised px-3 py-2 font-mono text-xs text-vdu-fg placeholder:text-vdu-fg-disabled hover:border-vdu-border-strong outline-none focus-visible:border-vdu-accent focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--vdu-focus)]"
@@ -308,20 +337,68 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
             <div className="flex flex-col gap-4 pb-2" aria-live="polite">
               <div className="flex flex-col gap-1">
                 <p className="text-sm font-medium text-vdu-fg">{t("import.readyTitle")}</p>
-                <p className="text-xs text-vdu-fg-muted">
-                  {t("import.summaryLine", { sections: plan.summary.inputSections, apps: plan.summary.inputApps })}
-                </p>
-                <p className="text-xs text-vdu-fg-muted">
-                  {t("import.createLine", { sections: plan.summary.createSections, apps: plan.summary.createApps })}
-                </p>
-                <p className="text-xs text-vdu-fg-muted">
-                  {t("import.mergeLine", { sections: plan.summary.mergeSections })}
-                </p>
-                <p className="text-xs text-vdu-fg-muted">
-                  {t("import.skipLine", { apps: plan.summary.duplicateApps })}
-                </p>
+                {recipeExtras === null ? (
+                  <>
+                    <p className="text-xs text-vdu-fg-muted">
+                      {t("import.summaryLine", { sections: plan.summary.inputSections, apps: plan.summary.inputApps })}
+                    </p>
+                    <p className="text-xs text-vdu-fg-muted">
+                      {t("import.createLine", { sections: plan.summary.createSections, apps: plan.summary.createApps })}
+                    </p>
+                    <p className="text-xs text-vdu-fg-muted">
+                      {t("import.mergeLine", { sections: plan.summary.mergeSections })}
+                    </p>
+                    <p className="text-xs text-vdu-fg-muted">
+                      {t("import.skipLine", { apps: plan.summary.duplicateApps })}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-vdu-fg-muted">
+                      {t("import.recipe.summaryLine", { spaces: plan.summary.inputSections, tiles: plan.summary.inputApps })}
+                    </p>
+                    <p className="text-xs text-vdu-fg-muted">
+                      {t("import.recipe.createLine", { spaces: plan.summary.createSections, tiles: plan.summary.createApps })}
+                    </p>
+                    {plan.summary.mergeSections > 0 ? (
+                      <p className="text-xs text-vdu-fg-muted">
+                        {t("import.recipe.mergeLine", { spaces: plan.summary.mergeSections })}
+                      </p>
+                    ) : null}
+                    {plan.summary.duplicateApps > 0 ? (
+                      <p className="text-xs text-vdu-fg-muted">
+                        {t("import.recipe.skipLine", { tiles: plan.summary.duplicateApps })}
+                      </p>
+                    ) : null}
+                  </>
+                )}
                 {noOp ? <p className="text-xs text-vdu-fg-muted">{t("import.noChanges")}</p> : null}
               </div>
+
+              {recipeExtras !== null && (recipeExtras.theme !== undefined || recipeExtras.motion !== undefined) ? (
+                <div
+                  className="flex flex-col gap-1.5 rounded-vdu border border-vdu-border bg-vdu-bg-raised px-3 py-2.5"
+                  data-import-theme-offer=""
+                >
+                  <p className="text-xs text-vdu-fg-muted">
+                    {recipeExtras.theme !== undefined && recipeExtras.motion !== undefined
+                      ? t("import.recipe.hasThemeAndMotion")
+                      : recipeExtras.theme !== undefined
+                        ? t("import.recipe.hasTheme")
+                        : t("import.recipe.hasMotion")}
+                  </p>
+                  <label className="flex cursor-pointer items-center gap-2" htmlFor="vela-import-apply-theme">
+                    <Checkbox
+                      id="vela-import-apply-theme"
+                      checked={applyTheme}
+                      disabled={busy}
+                      onCheckedChange={(checked) => setApplyTheme(checked === true)}
+                    />
+                    <span className="text-sm text-vdu-fg">{t("import.recipe.applyTheme")}</span>
+                  </label>
+                  <p className="text-xs text-vdu-fg-muted">{t("import.recipe.applyThemeHint")}</p>
+                </div>
+              ) : null}
 
               {workspaceChanged ? (
                 <p className="rounded-vdu border border-vdu-border bg-vdu-bg-raised px-3 py-2 text-xs text-vdu-fg" role="status">
@@ -359,16 +436,27 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
                 {plan.sections.map((section, index) => {
                   const creates = section.apps.filter((app) => app.action === "create").length;
                   const duplicates = section.apps.length - creates;
+                  const space = spacePreviews?.get(section.nameKey);
                   return (
                     <div key={index} className="flex flex-col gap-0.5 py-2">
                       <span className="text-sm font-medium text-vdu-fg">{section.displayName}</span>
                       <span className="text-xs text-vdu-fg-muted">
-                        {section.action === "merge" ? t("import.section.merge") : t("import.section.create")}
+                        {section.action === "merge"
+                          ? t(space === undefined ? "import.section.merge" : "import.recipe.section.merge")
+                          : t(space === undefined ? "import.section.create" : "import.recipe.section.create")}
                         {section.apps.length === 0
                           ? ` · ${t("import.section.empty")}`
                           : ` · ${t("import.section.newApps", { count: creates })}`}
                         {duplicates > 0 ? ` · ${t("import.section.duplicateApps", { count: duplicates })}` : ""}
                       </span>
+                      {space !== undefined && section.action === "merge" ? (
+                        <span className="text-xs text-vdu-fg-muted">{t("import.recipe.section.mergeNote")}</span>
+                      ) : null}
+                      {space !== undefined && section.action === "create" ? (
+                        <span className="text-xs text-vdu-fg-muted" data-import-space-structure="">
+                          {spaceStructureLine(space, t)}
+                        </span>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -419,6 +507,38 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
       </DialogContent>
     </Dialog>
   );
+}
+
+// --- recipe preview rendering ---------------------------------------------------
+
+/** The wallpaper preset's localized display name (total over the whitelist). */
+const PRESET_NAME_KEY: Readonly<Record<WorkspaceWallpaperPreset, TranslationKey>> = {
+  aurora: "settings.wallpaper.aurora",
+  midnight: "settings.wallpaper.midnight",
+  dawn: "settings.wallpaper.dawn",
+  mist: "settings.wallpaper.mist",
+};
+
+type Translate = (key: TranslationKey, params?: Record<string, string | number>) => string;
+
+/** `Snap · 8×5 grid · 2 tiles · Light wallpaper: Aurora · Dark wallpaper: custom image`. */
+function spaceStructureLine(space: RecipeSpacePreview, t: Translate): string {
+  const wallpaperName = (wallpaper: RecipeWallpaperPreview): string =>
+    wallpaper.kind === "preset" ? t(PRESET_NAME_KEY[wallpaper.presetId]) : t("import.recipe.wallpaper.asset");
+  const parts = [
+    space.layoutMode === "free" ? t("import.recipe.layout.free") : t("import.recipe.layout.snap"),
+    space.grid === undefined
+      ? t("import.recipe.gridDefault")
+      : t("import.recipe.grid", { columns: space.grid.columns, rows: space.grid.rows }),
+    t("import.recipe.tiles", { count: space.tileCount }),
+  ];
+  if (space.light !== undefined) {
+    parts.push(t("import.recipe.wallpaper.light", { name: wallpaperName(space.light) }));
+  }
+  if (space.dark !== undefined) {
+    parts.push(t("import.recipe.wallpaper.dark", { name: wallpaperName(space.dark) }));
+  }
+  return parts.join(" · ");
 }
 
 /** Renders `AI → app 3 · Invalid url`-style context + message pairs. */

@@ -31,8 +31,6 @@ import type {
   RecipeThemeV1,
   RecipeWallpaperV1,
   WallpaperConfig,
-  WorkspaceColorMode,
-  WorkspaceInterfaceStyle,
   WorkspaceMotionPreferences,
   WorkspaceReducedMotionPreference,
   WorkspaceSnapshot,
@@ -42,7 +40,6 @@ import {
   addPage,
   findDesktopPage,
   gridPlacementOf,
-  INTERFACE_STYLES,
   isRecipeWallpaperRef,
   replacePageCanvas,
   replacePageModeWallpaper,
@@ -56,6 +53,7 @@ import { resolveBrandFromHostname } from "../app-recognition/brand-aliases";
 import { generatedIconText } from "../home/generated-icon";
 import { normalizeImportNameKey } from "./normalization";
 import type { ImportPlan, ImportSectionPlan } from "./planner";
+import { isLegalRecipeTheme } from "./recipe-adapter";
 import type { RecipeImportExtras } from "./recipe-adapter";
 
 /** Creates fresh entity/page ids at apply-time only. */
@@ -389,7 +387,6 @@ function wallpaperConfigOf(ref: string | undefined): WallpaperConfig | undefined
   return { kind: "asset", assetId: ref.slice("asset:".length), fit: "cover", position: "center" };
 }
 
-const COLOR_MODES: readonly WorkspaceColorMode[] = ["system", "dark", "light"];
 const REDUCED_MOTION: readonly WorkspaceReducedMotionPreference[] = ["system", "on", "off"];
 
 /**
@@ -422,7 +419,9 @@ function motionOf(motion: RecipeMotionV1 | undefined): WorkspaceMotionPreference
  * Theme + motion through the Settings write path: color mode, accent and
  * the material's canonical surface parameters (`resolveInterfaceStyle`,
  * like a Settings save), the theme wallpaper as the workspace default.
- * An illegal theme fails the whole import (`invalid-appearance`).
+ * An illegal theme is SKIPPED (the adapter already stripped it with a
+ * warning; this is the defense for hand-built extras) — an import never
+ * fails over theme values.
  */
 function applyRecipeTheme(
   workspace: WorkspaceSnapshot,
@@ -430,13 +429,7 @@ function applyRecipeTheme(
   motion: RecipeMotionV1 | undefined
 ): WorkspaceEditResult {
   let preferences = workspace.preferences;
-  if (theme !== undefined) {
-    if (
-      !COLOR_MODES.includes(theme.mode) ||
-      !INTERFACE_STYLES.includes(theme.material as WorkspaceInterfaceStyle)
-    ) {
-      return { ok: false, reason: "invalid-appearance" };
-    }
+  if (theme !== undefined && isLegalRecipeTheme(theme)) {
     const style = resolveInterfaceStyle(theme.material);
     const wallpaper = themeWallpaperOf(theme);
     preferences = {

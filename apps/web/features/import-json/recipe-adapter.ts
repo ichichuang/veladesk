@@ -17,10 +17,22 @@
  */
 
 import { importRecipe, migrateRecipe, RECIPE_FORMAT_IDENTITY } from "@veladesk/domain";
-import type { RecipeImportSpace, RecipeMotionV1, RecipeThemeV1, RecipeV1 } from "@veladesk/domain";
+import type {
+  RecipeGridV1,
+  RecipeImportSpace,
+  RecipeLayoutMode,
+  RecipeMotionV1,
+  RecipeThemeV1,
+  RecipeV1,
+  WorkspaceColorMode,
+  WorkspaceInterfaceStyle,
+  WorkspaceWallpaperPreset,
+} from "@veladesk/domain";
+import { INTERFACE_STYLES } from "@veladesk/domain";
 
 import type { ImportIssue, VelaDeskImportDocumentV1 } from "./contract";
 import { IMPORT_FORMAT_IDENTITY, IMPORT_FORMAT_VERSION } from "./contract";
+import { normalizeImportNameKey } from "./normalization";
 
 /**
  * The recipe structure beyond sections/apps. `spaces[i]` describes the
@@ -38,7 +50,7 @@ export type AdoptRecipeResult =
   | {
       readonly kind: "adopted";
       readonly document: VelaDeskImportDocumentV1;
-      readonly notice: ImportIssue;
+      readonly notices: readonly ImportIssue[];
       readonly extras: RecipeImportExtras;
     }
   | { readonly kind: "rejected"; readonly issues: readonly ImportIssue[] };
@@ -71,6 +83,15 @@ export function adoptRecipeDocument(root: Record<string, unknown>): AdoptRecipeR
   }
 
   const payload = importRecipe(migrated.recipe satisfies RecipeV1);
+  // A theme with illegal values is IGNORED with a warning, not an error:
+  // the structure (spaces/tiles) stays importable and applying a theme is
+  // opt-in anyway (recipe B review: never fail the import over it).
+  const theme = payload.theme;
+  const legalTheme = theme !== undefined && isLegalRecipeTheme(theme);
+  const notices: ImportIssue[] = [{ severity: "warning", code: "RECIPE_MIGRATED", path: "format" }];
+  if (theme !== undefined && !legalTheme) {
+    notices.push({ severity: "warning", code: "RECIPE_THEME_IGNORED", path: "theme" });
+  }
   const document: VelaDeskImportDocumentV1 = {
     format: IMPORT_FORMAT_IDENTITY,
     version: IMPORT_FORMAT_VERSION,
@@ -82,7 +103,90 @@ export function adoptRecipeDocument(root: Record<string, unknown>): AdoptRecipeR
   return {
     kind: "adopted",
     document,
-    notice: { severity: "warning", code: "RECIPE_MIGRATED", path: "format" },
-    extras: { spaces: payload.spaces, theme: payload.theme, motion: payload.motion },
+    notices,
+    extras: {
+      spaces: payload.spaces,
+      theme: legalTheme ? theme : undefined,
+      motion: payload.motion,
+    },
   };
+}
+
+const COLOR_MODES: readonly WorkspaceColorMode[] = ["system", "dark", "light"];
+
+/**
+ * Whether a recipe theme's values would survive the Settings write path:
+ * color mode, material tier and an integer OKLCH accent hue in 0–359
+ * (the same rule `validateWorkspaceAppearance` enforces). The theme's
+ * wallpaper refs are already strictly validated by `migrateRecipe`.
+ */
+export function isLegalRecipeTheme(theme: RecipeThemeV1): boolean {
+  return (
+    COLOR_MODES.includes(theme.mode) &&
+    INTERFACE_STYLES.includes(theme.material as WorkspaceInterfaceStyle) &&
+    typeof theme.accent === "number" &&
+    Number.isInteger(theme.accent) &&
+    theme.accent >= 0 &&
+    theme.accent <= 359
+  );
+}
+
+// --- preview summary -----------------------------------------------------------
+
+/** How a wallpaper reference renders in the preview: preset or custom image. */
+export type RecipeWallpaperPreview =
+  | { readonly kind: "preset"; readonly presetId: WorkspaceWallpaperPreset }
+  | { readonly kind: "asset" };
+
+/** One folded plan section's recipe structure, for the preview rows. */
+export interface RecipeSpacePreview {
+  readonly layoutMode: RecipeLayoutMode;
+  readonly grid: RecipeGridV1 | undefined;
+  /** Every tile of the space(s) with this name key, document order. */
+  readonly tileCount: number;
+  readonly light: RecipeWallpaperPreview | undefined;
+  readonly dark: RecipeWallpaperPreview | undefined;
+}
+
+function wallpaperPreviewOf(ref: string | undefined): RecipeWallpaperPreview | undefined {
+  if (ref === undefined) {
+    return undefined;
+  }
+  return ref.startsWith("preset:")
+    ? { kind: "preset", presetId: ref.slice("preset:".length) as WorkspaceWallpaperPreset }
+    : { kind: "asset" };
+}
+
+/**
+ * Folds the recipe spaces exactly the way the planner folds the document
+ * sections (name key; the FIRST space supplies the space-level fields, the
+ * tiles concatenate in document order) — so each preview row shows the
+ * structure its plan section would restore. Sections without a recipe
+ * space (never expected) simply have no entry.
+ */
+export function recipeSpacePreviews(
+  document: VelaDeskImportDocumentV1,
+  recipe: RecipeImportExtras
+): ReadonlyMap<string, RecipeSpacePreview> {
+  const previews = new Map<string, RecipeSpacePreview>();
+  document.sections.forEach((section, index) => {
+    const space = recipe.spaces[index];
+    if (space === undefined) {
+      return;
+    }
+    const key = normalizeImportNameKey(section.name);
+    const existing = previews.get(key);
+    if (existing === undefined) {
+      previews.set(key, {
+        layoutMode: space.layoutMode,
+        grid: space.grid,
+        tileCount: space.tiles.length,
+        light: wallpaperPreviewOf(space.wallpaper?.light),
+        dark: wallpaperPreviewOf(space.wallpaper?.dark),
+      });
+      return;
+    }
+    previews.set(key, { ...existing, tileCount: existing.tileCount + space.tiles.length });
+  });
+  return previews;
 }

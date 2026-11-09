@@ -151,7 +151,8 @@ placement engine — imported apps see previously imported apps.
 
 | Limit | Value |
 | --- | --- |
-| JSON text | 1 MiB (files checked by `size` BEFORE reading; paste by length) |
+| uploaded file | 24 MiB (checked by `size` BEFORE reading — the recipe budget) |
+| pasted JSON text | 1 MiB (character length) |
 | sections per import | 100 |
 | apps per import | 2000 (total) |
 | section name | 80 chars (the New Section dialog cap) |

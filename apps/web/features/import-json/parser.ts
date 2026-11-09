@@ -53,11 +53,24 @@ export type ParseImportResult =
       readonly sectionNames: readonly (string | undefined)[];
     };
 
+/**
+ * The input-size budget: pasted text keeps the 1 MiB character ceiling
+ * (`IMPORT_MAX_JSON_TEXT_LENGTH`); an uploaded file may pass the 24 MiB
+ * byte ceiling instead (`IMPORT_MAX_FILE_BYTES`) — the dialog checks the
+ * file's size BEFORE reading and forwards the matching budget here. The
+ * budget also applies to the recipe re-entry below, whose re-serialized
+ * document can exceed the paste ceiling.
+ */
+export interface ParseImportOptions {
+  readonly maxLength?: number;
+}
+
 const ROOT_KNOWN_FIELDS = new Set(["format", "version", "sections"]);
 const SECTION_KNOWN_FIELDS = new Set(["name", "apps"]);
 const APP_KNOWN_FIELDS = new Set(["name", "url", "icon"]);
 
-export function parseImportDocument(text: string): ParseImportResult {
+export function parseImportDocument(text: string, options: ParseImportOptions = {}): ParseImportResult {
+  const maxLength = options.maxLength ?? IMPORT_MAX_JSON_TEXT_LENGTH;
   const issues: ImportIssue[] = [];
   const sectionNames: (string | undefined)[] = [];
   const error = (code: ImportIssueCode, path: string, value?: unknown): void => {
@@ -67,7 +80,7 @@ export function parseImportDocument(text: string): ParseImportResult {
     issues.push({ severity: "warning", code, path, value });
   };
 
-  if (text.length > IMPORT_MAX_JSON_TEXT_LENGTH) {
+  if (text.length > maxLength) {
     error("FILE_TOO_LARGE", "$");
     return { ok: false, issues, sectionNames };
   }
@@ -94,19 +107,19 @@ export function parseImportDocument(text: string): ParseImportResult {
       return { ok: false, issues: [...issues, ...adopted.issues], sectionNames };
     }
     if (adopted.kind === "adopted") {
-      const inner = parseImportDocument(JSON.stringify(adopted.document));
+      const inner = parseImportDocument(JSON.stringify(adopted.document), options);
       return inner.ok
         ? {
             ok: true,
             parsed: {
               document: inner.parsed.document,
-              issues: [adopted.notice, ...inner.parsed.issues],
+              issues: [...adopted.notices, ...inner.parsed.issues],
               recipe: adopted.extras,
             },
           }
         : {
             ok: false,
-            issues: [adopted.notice, ...inner.issues],
+            issues: [...adopted.notices, ...inner.issues],
             sectionNames: inner.sectionNames,
           };
     }

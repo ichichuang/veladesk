@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { CANVAS_UNITS } from "@veladesk/canvas-engine";
 import type { CanvasLayout } from "@veladesk/canvas-engine";
-import type { DesktopPage, WorkspaceSnapshot } from "@veladesk/domain";
+import type { DesktopPage, RecipeThemeV1, WorkspaceSnapshot } from "@veladesk/domain";
 import {
   addAppToPage,
   addPage,
@@ -242,18 +242,45 @@ describe("theme + motion are opt-in", () => {
     expect(next.preferences.appearance?.wallpaper).toEqual({ kind: "asset", assetId: NIGHT_ID, fit: "cover", position: "center" });
   });
 
-  it("an illegal theme fails the whole apply (nothing half-written)", () => {
+  it("an illegal theme is ignored (warning at parse; apply never fails over it)", () => {
     const { workspace } = officeWorkspace();
     const parsed = parseImportDocument(
       recipeDoc([{ name: "AI", layout: "grid", tiles: [] }], { theme: { mode: "dark", accent: 999, material: "glass" } }),
     );
     if (!parsed.ok) throw new Error("parse");
+    expect(parsed.parsed.issues.some((issue) => issue.code === "RECIPE_THEME_IGNORED")).toBe(true);
+    expect(parsed.parsed.recipe?.theme).toBeUndefined();
     const plan = planImport(workspace, parsed.parsed.document, parsed.parsed.issues);
-    expect(applyImportPlan(workspace, plan, makeTestIdFactory(), { recipe: parsed.parsed.recipe, applyTheme: true })).toEqual({
-      ok: false,
-      reason: "invalid-appearance",
+    // Even opted in, the import succeeds and preferences stay untouched.
+    const applied = applyImportPlan(workspace, plan, makeTestIdFactory(), {
+      recipe: parsed.parsed.recipe,
+      applyTheme: true,
     });
-    expect(applyImportPlan(workspace, plan, makeTestIdFactory(), { recipe: parsed.parsed.recipe }).ok).toBe(true);
+    expect(applied.ok).toBe(true);
+    if (applied.ok) {
+      expect(applied.workspace.preferences).toEqual(workspace.preferences);
+    }
+  });
+
+  it("a hand-built illegal theme (no adapter sanitization) is skipped defensively", () => {
+    const { workspace } = officeWorkspace();
+    const parsed = parseImportDocument(
+      recipeDoc([{ name: "AI", layout: "grid", tiles: [{ name: "A", url: "https://a.example/" }] }], {
+        motion: { reducedMotion: "on" },
+      }),
+    );
+    if (!parsed.ok) throw new Error("parse");
+    const recipe = parsed.parsed.recipe!;
+    const plan = planImport(workspace, parsed.parsed.document, parsed.parsed.issues);
+    const applied = applyImportPlan(workspace, plan, makeTestIdFactory(), {
+      recipe: { ...recipe, theme: { mode: "blue", accent: 60, material: "diamond" } as unknown as RecipeThemeV1 },
+      applyTheme: true,
+    });
+    expect(applied.ok).toBe(true);
+    if (applied.ok) {
+      expect(applied.workspace.preferences.appearance).toEqual(workspace.preferences.appearance); // theme skipped…
+      expect(applied.workspace.preferences.motion).toEqual({ reducedMotion: "on" }); // …motion still applied
+    }
   });
 });
 
@@ -323,6 +350,77 @@ describe("illegal geometry falls back to the engine, per tile", () => {
     for (const item of items) {
       expect(item.rect.x + item.rect.width).toBeLessThanOrEqual(CANVAS_UNITS);
       expect(item.rect.y + item.rect.height).toBeLessThanOrEqual(CANVAS_UNITS);
+    }
+  });
+
+  it("free: a created freeform space has no retained canvas; geometry-less tiles keep the engine cascade", () => {
+    const next = importRecipeText(
+      officeWorkspace().workspace,
+      recipeDoc([
+        {
+          name: "Board",
+          layout: "canvas",
+          layoutMode: "free",
+          // No free geometry anywhere — every tile falls to the cascade.
+          tiles: [
+            { name: "One", url: "https://one.example/" },
+            { name: "Two", url: "https://two.example/", placement: "snap", x: 0, y: 0, w: 1, h: 1 },
+          ],
+        },
+      ]),
+    );
+    const board = pageNamed(next, "Board");
+    // Determined behavior: the imported freeform page carries an ACTIVE
+    // freeform canvas only — never a retained one — and stays valid.
+    expect(board.retainedCanvas).toBeUndefined();
+    expect(board.canvas).toMatchObject({ version: 2, mode: "freeform" });
+    const items = freeItems(board);
+    expect(items).toHaveLength(2);
+    for (const item of items) {
+      expect(item.rect.x).toBeGreaterThanOrEqual(0);
+      expect(item.rect.y).toBeGreaterThanOrEqual(0);
+      expect(item.rect.x + item.rect.width).toBeLessThanOrEqual(CANVAS_UNITS);
+      expect(item.rect.y + item.rect.height).toBeLessThanOrEqual(CANVAS_UNITS);
+    }
+  });
+});
+
+describe("tile/app count mismatch falls back to the engine (defensive)", () => {
+  it("drops declared geometry entirely when the tiles misalign with the planned apps", () => {
+    const { workspace } = officeWorkspace();
+    const text = recipeDoc([
+      {
+        name: "AI",
+        layout: "grid",
+        grid: { columns: 6, rows: 4 },
+        tiles: [
+          { name: "A", url: "https://a.example/", placement: "snap", x: 0, y: 0, w: 1, h: 1 },
+          { name: "B", url: "https://b.example/", placement: "snap", x: 5, y: 3, w: 1, h: 1 },
+        ],
+      },
+    ]);
+    const parsed = parseImportDocument(text);
+    if (!parsed.ok) throw new Error("parse");
+    // Tamper the extras so the tiles no longer line up with the apps.
+    const recipe = parsed.parsed.recipe!;
+    const tampered = {
+      ...recipe,
+      spaces: [{ ...recipe.spaces[0]!, tiles: recipe.spaces[0]!.tiles.slice(0, 1) }],
+    };
+    const plan = planImport(workspace, parsed.parsed.document, parsed.parsed.issues);
+    const applied = applyImportPlan(workspace, plan, makeTestIdFactory(), { recipe: tampered });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+    const items = gridItems(pageNamed(applied.workspace, "AI"));
+    expect(items).toHaveLength(2);
+    // No declared cell survives the mismatch — every tile is engine-placed
+    // (first-free around nothing = the cascade origin column), unlike the
+    // aligned import which pins B at column 5, row 3.
+    expect(items.some((item) => item.column === 5 && item.row === 3)).toBe(false);
+    for (const item of items) {
+      expect(item.column + item.columnSpan).toBeLessThanOrEqual(6);
     }
   });
 });

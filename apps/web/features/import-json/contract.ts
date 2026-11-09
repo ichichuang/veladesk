@@ -23,11 +23,18 @@ export const IMPORT_MAX_SECTIONS = 100;
 
 export const IMPORT_MAX_APPS = 2000;
 
-/** Hard byte ceiling for an uploaded JSON file (checked before reading). */
-export const IMPORT_MAX_JSON_BYTES = 1024 * 1024; // 1 MiB
+/**
+ * Hard byte ceiling for an UPLOADED file (checked before reading). Recipes
+ * with embedded wallpaper assets get the larger budget (import plan §4);
+ * paste stays at the text ceiling below.
+ */
+export const IMPORT_MAX_FILE_BYTES = 24 * 1024 * 1024; // 24 MiB
 
-/** Character ceiling for pasted JSON text (paste-mode file-limit analogue). */
-export const IMPORT_MAX_JSON_TEXT_LENGTH = 1024 * 1024;
+/**
+ * Character ceiling for pasted JSON text (paste-mode file-limit analogue,
+ * also the parser's default budget).
+ */
+export const IMPORT_MAX_JSON_TEXT_LENGTH = 1024 * 1024; // 1 MiB
 
 /** Mirrors the New Section dialog's `maxLength`. */
 export const IMPORT_MAX_SECTION_NAME_LENGTH = 80;
@@ -52,6 +59,7 @@ export type ImportIssueCode =
   | "INVALID_FORMAT"
   | "UNSUPPORTED_VERSION"
   | "RECIPE_MIGRATED"
+  | "RECIPE_THEME_IGNORED"
   | "MISSING_SECTIONS"
   | "INVALID_SECTIONS"
   | "TOO_MANY_SECTIONS"
