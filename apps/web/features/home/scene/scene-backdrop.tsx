@@ -3,6 +3,7 @@
 import { useRef } from "react";
 
 import { useVdAmbientDrift } from "@components/vd/ambient-drift";
+import { VD_MOTION_AMBIENT } from "@components/vd/motion-tokens";
 import type { EffectiveWallpaper } from "@veladesk/domain";
 
 import { WorkspaceWallpaperLayers } from "../desktop-wallpaper";
@@ -38,7 +39,7 @@ export function SceneBackdrop({ wallpaper, assetUrl, dawnIntroEnabled = true }: 
   // Pure decoration behind everything; reduced motion renders a static
   // backdrop.
   const desktopAmbientRef = useRef<HTMLDivElement | null>(null);
-  useVdAmbientDrift(desktopAmbientRef, { durationSeconds: 30 });
+  useVdAmbientDrift(desktopAmbientRef, { durationSeconds: VD_MOTION_AMBIENT.drift });
 
   // The Dawn opening (P1, motion-spec §2): the horizon band rises over
   // the PRESET scene while the brightness veil recedes. Custom image

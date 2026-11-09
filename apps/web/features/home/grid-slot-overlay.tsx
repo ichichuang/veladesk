@@ -3,6 +3,7 @@
 import { useId, useLayoutEffect, useRef } from "react";
 
 import { gsap } from "@components/vd/gsap";
+import { VD_MOTION_EASES, VD_MOTION_GRID_GUIDES } from "@components/vd/motion-tokens";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
 
 /**
@@ -50,7 +51,7 @@ export function GridSlotOverlay({ cellPx, gapPx }: GridSlotOverlayProps) {
     gsap.fromTo(
       svg,
       { opacity: 0 },
-      { opacity: 0.55, duration: 0.14, ease: "power2.out" },
+      { opacity: 0.55, duration: VD_MOTION_GRID_GUIDES.fadeIn, ease: VD_MOTION_EASES.standard },
     );
     return () => {
       gsap.killTweensOf(svg);

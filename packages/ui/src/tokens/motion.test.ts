@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { VD_MOTION_EASES, VD_MOTION_EASES_BEZIER } from "./motion";
+import { VD_MOTION_AMBIENT, VD_MOTION_EASES, VD_MOTION_EASES_BEZIER, VD_MOTION_GRID_GUIDES } from "./motion";
 
 /**
  * The bezier twins (P2): every GSAP ease role has a Motion-usable
@@ -13,6 +13,7 @@ const EXPECTED_TWINS: Readonly<Record<string, readonly number[]>> = {
   "power2.out": [0.33, 1, 0.68, 1],
   "power3.inOut": [0.76, 0, 0.24, 1],
   "power2.in": [0.32, 0, 0.67, 0],
+  "sine.inOut": [0.37, 0, 0.63, 1],
 };
 
 describe("VD_MOTION_EASES_BEZIER", () => {
@@ -42,5 +43,28 @@ describe("VD_MOTION_EASES_BEZIER", () => {
 
   it("linear is the identity curve", () => {
     expect([...VD_MOTION_EASES_BEZIER.linear]).toEqual([0, 0, 1, 1]);
+  });
+});
+
+describe("ambient and grid-guide duration tokens (seconds)", () => {
+  it("pins the ambient loop table in SECONDS", () => {
+    expect(VD_MOTION_AMBIENT).toEqual({ drift: 30, bootDrift: 26, bootPulse: 1.6 });
+  });
+
+  it("pins the grid guides fade-in in SECONDS (140ms)", () => {
+    expect(VD_MOTION_GRID_GUIDES.fadeIn).toBe(0.14);
+  });
+
+  it("stores seconds, never milliseconds", () => {
+    // Every one-shot band stays under a second; loops under a minute.
+    expect(VD_MOTION_GRID_GUIDES.fadeIn).toBeLessThan(1);
+    for (const seconds of Object.values(VD_MOTION_AMBIENT)) {
+      expect(seconds).toBeGreaterThan(0);
+      expect(seconds).toBeLessThan(60);
+    }
+  });
+
+  it("keeps ambient loops on the drift ease", () => {
+    expect(VD_MOTION_EASES.drift).toBe("sine.inOut");
   });
 });

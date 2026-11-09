@@ -66,6 +66,12 @@ export const VD_MOTION_EASES = {
   travel: "power3.inOut",
   /** Leave/exit tweens. */
   exit: "power2.in",
+  /**
+   * Symmetric ambient LOOPS only (wallpaper drift yoyo, boot pulse sweep):
+   * a loop cannot pause at its extremes without an in-out curve. Never on
+   * ordinary surface transitions.
+   */
+  drift: "sine.inOut",
 } as const;
 
 /** A named ease role in {@link VD_MOTION_EASES}. */
@@ -93,6 +99,8 @@ export const VD_MOTION_EASES_BEZIER = {
   travel: [0.76, 0, 0.24, 1],
   /** power2.in — ease-in cubic (leave/exit). */
   exit: [0.32, 0, 0.67, 0],
+  /** sine.inOut — ease-in-out sine (ambient loops only). */
+  drift: [0.37, 0, 0.63, 1],
   /** No easing: the reduced-motion opacity crossfades (§3). */
   linear: [0, 0, 1, 1],
 } as const satisfies Record<VdMotionEaseRole | "linear", VdMotionBezier>;
@@ -153,6 +161,26 @@ export const VD_MOTION_WAKE = {
 export const VD_MOTION_WALLPAPER = {
   /** Prepared-surface crossfade (both layers already decoded). */
   crossfade: 0.45,
+} as const;
+
+/**
+ * Ambient loops (GSAP, infinite): the wallpaper drift yoyo and the boot
+ * screen's pulse sweep, on the `drift` ease. Reduced motion renders all of
+ * them static.
+ */
+export const VD_MOTION_AMBIENT = {
+  /** One desktop wallpaper drift leg (yoyo). */
+  drift: 30,
+  /** One boot-screen backdrop drift leg (yoyo) — a touch livelier. */
+  bootDrift: 26,
+  /** One boot-screen pulse sweep across the status bar. */
+  bootPulse: 1.6,
+} as const;
+
+/** Grid slot guides (GSAP): the one-shot fade-in when the guides mount. */
+export const VD_MOTION_GRID_GUIDES = {
+  /** Guides fade-in. */
+  fadeIn: 0.14,
 } as const;
 
 /** Card FLIP moments (Motion layout animations). */

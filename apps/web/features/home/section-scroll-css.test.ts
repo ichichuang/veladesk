@@ -137,7 +137,10 @@ describe("home-shell.css right-side scroll ownership (task 017)", () => {
     expect(slots).toMatch(/opacity:\s*0\.55/);
     const overlay = readSource("./grid-slot-overlay.tsx");
     expect(overlay).toMatch(/gsap\.fromTo/);
-    expect(overlay).toMatch(/\{ opacity: 0\.55, duration: 0\.14/);
+    // Duration and ease come from the motion tokens, never literals.
+    expect(overlay).toMatch(
+      /\{ opacity: 0\.55, duration: VD_MOTION_GRID_GUIDES\.fadeIn, ease: VD_MOTION_EASES\.standard \}/,
+    );
   });
 
   it("hands the section page transition to the GSAP pair coordinator, viewport-sized (018/020-A2, 022)", () => {

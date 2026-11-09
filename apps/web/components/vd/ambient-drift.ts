@@ -4,15 +4,16 @@ import { useEffect } from "react";
 import type { RefObject } from "react";
 
 import { gsap } from "./gsap";
+import { VD_MOTION_AMBIENT, VD_MOTION_EASES } from "./motion-tokens";
 import { useVdReducedMotion } from "./reduced-motion";
 
 /**
  * useVdAmbientDrift (task 022): the slow ambient wallpaper drift, GSAP-
  * owned. One infinite yoyo tween on a REAL element (the old CSS
  * `vela-ambient` keyframes rode pseudo-elements and stylesheet
- * animations). `sine.inOut` is deliberate here — a symmetric loop cannot
- * pause at the extremes without it; this is the one product surface that
- * does not use the shared ease-out token. The tween lives on GSAP's rAF
+ * animations). The `drift` ease token (`sine.inOut`) is deliberate here — a
+ * symmetric loop cannot pause at the extremes without it; ambient loops
+ * are the only surfaces that do not use the shared ease-out token. The tween lives on GSAP's rAF
  * ticker (it stops advancing when the tab is hidden), dies with the
  * element, and reduced motion renders a static backdrop.
  */
@@ -21,7 +22,7 @@ export function useVdAmbientDrift(
   options: { readonly durationSeconds?: number } = {},
 ): void {
   const reducedMotion = useVdReducedMotion();
-  const duration = options.durationSeconds ?? 30;
+  const duration = options.durationSeconds ?? VD_MOTION_AMBIENT.drift;
 
   useEffect(() => {
     const element = targetRef.current;
@@ -42,7 +43,7 @@ export function useVdAmbientDrift(
         scale: 1.06,
         opacity: 1,
         duration,
-        ease: "sine.inOut",
+        ease: VD_MOTION_EASES.drift,
         repeat: -1,
         yoyo: true,
       },

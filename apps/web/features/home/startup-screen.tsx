@@ -6,6 +6,7 @@ import { gsap } from "@components/vd/gsap";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
 import { BrandLogo } from "@components/vd/brand-logo";
 import { useVdAmbientDrift } from "@components/vd/ambient-drift";
+import { VD_MOTION_AMBIENT, VD_MOTION_EASES } from "@components/vd/motion-tokens";
 import { useI18n } from "../i18n/use-i18n";
 
 /**
@@ -22,7 +23,7 @@ export function StartupScreen() {
   const ambientRef = useRef<HTMLDivElement | null>(null);
   const pulseThumbRef = useRef<HTMLSpanElement | null>(null);
   const reducedMotion = useVdReducedMotion();
-  useVdAmbientDrift(ambientRef, { durationSeconds: 26 });
+  useVdAmbientDrift(ambientRef, { durationSeconds: VD_MOTION_AMBIENT.bootDrift });
 
   useEffect(() => {
     const thumb = pulseThumbRef.current;
@@ -32,7 +33,7 @@ export function StartupScreen() {
     const tween = gsap.fromTo(
       thumb,
       { xPercent: -110 },
-      { xPercent: 370, duration: 1.6, ease: "sine.inOut", repeat: -1 },
+      { xPercent: 370, duration: VD_MOTION_AMBIENT.bootPulse, ease: VD_MOTION_EASES.drift, repeat: -1 },
     );
     return () => {
       tween.kill();
