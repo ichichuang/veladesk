@@ -46,8 +46,9 @@ import { useVdReducedMotion } from "@components/vd/reduced-motion";
  * shell swap mid-play) RELEASES the claim without marking it played, so
  * the next mount plays it for real.
  *
- * Interruptible: any pointer/keyboard/wheel input during the timeline
- * jumps it to `progress(1)` — the settled state — and ⌘K never waits.
+ * Interruptible: any pointer (down or over)/keyboard/wheel/touch input
+ * during the timeline jumps it to `progress(1)` — the settled state — and
+ * ⌘K never waits; a hover lift or press then starts on a clean node.
  * Both the settle and the cleanup paths clear every GSAP property the
  * timeline wrote (`clearProps`), so a killed intro can never leave a tile
  * hidden or hold a transform that a drag or FLIP would fight.
@@ -106,6 +107,17 @@ export function isDawnRevealTarget(element: Element): boolean {
   return dawnRevealTargets.has(element);
 }
 
+/**
+ * Whether an opening timeline is playing RIGHT NOW (a claim is held). False
+ * under reduced motion (settled at once), over a custom wallpaper (never
+ * claimed) and once the tab has played it. Ancestor layout effects of the
+ * shell (the workspace stage entrance) can read it in the same commit: a
+ * child's layout effect — the Dawn claim — always runs first.
+ */
+export function isDawnOpeningPlaying(): boolean {
+  return dawnOpeningClaim !== null;
+}
+
 /** Whether the opening has played this tab session (tests and callers). */
 export function hasDawnOpeningPlayed(): boolean {
   return dawnOpeningPlayed;
@@ -158,12 +170,61 @@ function introTileRoot(scene: HTMLElement): HTMLElement {
   );
 }
 
+/** A tile's grid cell from its slot's inline `grid-row`/`grid-column`. */
+function gridCellOf(tile: HTMLElement): { readonly row: number; readonly column: number } | null {
+  const slot = tile.closest<HTMLElement>(".vela-item-slot");
+  if (slot === null) {
+    return null;
+  }
+  const row = Number.parseInt(slot.style.getPropertyValue("grid-row") || slot.style.gridRowStart, 10);
+  const column = Number.parseInt(
+    slot.style.getPropertyValue("grid-column") || slot.style.gridColumnStart,
+    10,
+  );
+  return Number.isFinite(row) && Number.isFinite(column) ? { row, column } : null;
+}
+
 /**
- * Collects the rendered tile BODIES inside the shell root, sorted by
- * distance from the horizon (bottom of the frame first — the reveal starts
- * where the light starts). Warm/inert/hidden layers (mobile neighbour
- * panes, the departing section) and unrendered (`display: none`) nodes
- * never join the reveal. Exported for tests.
+ * Orders the reveal from the horizon (bottom of the frame first): by the
+ * measured top (descending), ties by left (ascending). When the boxes are
+ * not usable — every tile has a zero box, or every top is identical (the
+ * first frame before the grid measured) — it falls back to the tiles'
+ * GRID CELLS (row descending, column ascending; tiles without a cell keep
+ * reverse DOM order after them). Stable for equal keys. Exported for tests.
+ */
+export function orderIntroTiles(tiles: readonly HTMLElement[]): readonly HTMLElement[] {
+  const boxes = tiles.map((element, index) => ({
+    element,
+    index,
+    rect: element.getBoundingClientRect(),
+  }));
+  const allZero = boxes.every(({ rect }) => rect.width <= 0 || rect.height <= 0);
+  const allSameTop = boxes.length > 1 && boxes.every(({ rect }) => rect.top === boxes[0]!.rect.top);
+  if (!allZero && !allSameTop) {
+    return [...boxes]
+      .sort((a, b) => b.rect.top - a.rect.top || a.rect.left - b.rect.left || a.index - b.index)
+      .map(({ element }) => element);
+  }
+  const cells = boxes.map((box) => ({ ...box, cell: gridCellOf(box.element) }));
+  return cells
+    .sort((a, b) => {
+      if (a.cell !== null && b.cell !== null) {
+        return b.cell.row - a.cell.row || a.cell.column - b.cell.column || a.index - b.index;
+      }
+      if (a.cell !== null) return -1;
+      if (b.cell !== null) return 1;
+      // No layout data at all (e.g. the mobile derived grid): reverse DOM
+      // order — the reading order's last row is nearest the horizon.
+      return b.index - a.index;
+    })
+    .map(({ element }) => element);
+}
+
+/**
+ * Collects the rendered tile BODIES inside the shell root, ordered from
+ * the horizon ({@link orderIntroTiles}). Warm/inert/hidden layers (mobile
+ * neighbour panes, the departing section) and unrendered (`display:
+ * none`) nodes never join the reveal. Exported for tests.
  */
 export function collectIntroTiles(scene: HTMLElement): readonly HTMLElement[] {
   const root = introTileRoot(scene);
@@ -173,9 +234,7 @@ export function collectIntroTiles(scene: HTMLElement): readonly HTMLElement[] {
       element.closest("[data-warm-hidden='true'], [inert], [aria-hidden='true']") === null &&
       element.getClientRects().length > 0,
   );
-  const tops = new Map(rendered.map((element) => [element, element.getBoundingClientRect().top]));
-  rendered.sort((a, b) => tops.get(b)! - tops.get(a)!);
-  return rendered;
+  return orderIntroTiles(rendered);
 }
 
 export interface UseDawnIntroInput extends IntroTargets {
@@ -226,16 +285,45 @@ export function useDawnIntro(input: UseDawnIntroInput): void {
         gsap.set(burstElement, { clearProps: "opacity" });
       }
     };
+    // Interruptibility (spec §2): any real input settles the timeline at
+    // once. `pointerover` counts (a hover must find the tile settled before
+    // the hover lift starts) and so does `pointerdown` (the mobile tile's
+    // press). The listeners sit in the WINDOW CAPTURE phase, so they run
+    // before React's root-delegated handlers for the SAME event: the
+    // opening jumps to progress(1) and clears its props FIRST, then the
+    // hover/press motion starts on a clean node. They detach the moment the
+    // opening settles, so a later hover is never touched by Dawn.
+    const interruptEvents: readonly (keyof WindowEventMap)[] = [
+      "pointerdown",
+      "pointerover",
+      "keydown",
+      "wheel",
+      "touchstart",
+    ];
+    let listening = false;
+    const detachInterrupts = () => {
+      if (!listening) {
+        return;
+      }
+      listening = false;
+      for (const event of interruptEvents) {
+        window.removeEventListener(event, settle, { capture: true } as EventListenerOptions);
+      }
+    };
     const timeline = gsap.timeline({
       // settle: the timeline dies with its inline styles cleared — the CSS
       // rest state (band in place, veil/burst at opacity 0, tiles visible)
       // IS the end state, so a late kill can never leave a ghost veil. An
       // input jump to progress(1) lands here too: it counts as played.
       onComplete: () => {
+        detachInterrupts();
         clearIntroProps();
         completeDawnOpening(claim);
       },
     });
+    function settle() {
+      timeline.progress(1);
+    }
 
     // 0–180ms: the band rises from the waterline; the veil recedes.
     timeline.fromTo(
@@ -294,24 +382,12 @@ export function useDawnIntro(input: UseDawnIntroInput): void {
 
     timeline.play();
 
-    // Interruptibility (spec §2): any real input settles the timeline at
-    // once — progress(1) fires the settle above and input keeps flowing.
-    const settle = () => {
-      timeline.progress(1);
-    };
-    const interruptEvents: readonly (keyof WindowEventMap)[] = [
-      "pointerdown",
-      "keydown",
-      "wheel",
-      "touchstart",
-    ];
+    listening = true;
     for (const event of interruptEvents) {
       window.addEventListener(event, settle, { capture: true, passive: true });
     }
     return () => {
-      for (const event of interruptEvents) {
-        window.removeEventListener(event, settle, { capture: true } as EventListenerOptions);
-      }
+      detachInterrupts();
       timeline.kill();
       clearIntroProps();
       // Killed before its end (StrictMode, a mid-play unmount): NOT played.

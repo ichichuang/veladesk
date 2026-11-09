@@ -7,18 +7,21 @@
  * helmMotion experiment switch.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type { RefObject } from "react";
 
 import { StrictMode } from "react";
 
 import { gsap } from "@components/vd/gsap";
+import { useVdHoverLift } from "@components/vd/hover-lift";
 import {
   claimDawnOpening,
   collectIntroTiles,
   completeDawnOpening,
   hasDawnOpeningPlayed,
+  isDawnOpeningPlaying,
   isDawnRevealTarget,
+  orderIntroTiles,
   releaseDawnOpening,
   resetDawnOpeningSessionForTests,
   useDawnIntro,
@@ -252,5 +255,166 @@ describe("useDawnIntro under React.StrictMode", () => {
     await waitFor(() => {
       expect(band.style.transform).toBe("");
     });
+  });
+});
+
+/** Fakes one measured box per element (jsdom lays nothing out). */
+function stubBoxes(boxes: Map<Element, { top: number; left: number; width?: number; height?: number }>): void {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    const box = boxes.get(this) ?? { top: 0, left: 0, width: 0, height: 0 };
+    const width = box.width ?? 40;
+    const height = box.height ?? 40;
+    return { top: box.top, left: box.left, width, height, right: box.left + width, bottom: box.top + height, x: box.left, y: box.top, toJSON() {} } as DOMRect;
+  });
+}
+
+function tileIn(slotStyle?: { row: number; column: number }): HTMLElement {
+  const body = document.createElement("span");
+  body.className = "vela-item__body";
+  if (slotStyle === undefined) {
+    document.body.append(body);
+    return body;
+  }
+  const slot = document.createElement("div");
+  slot.className = "vela-item-slot";
+  slot.style.setProperty("grid-row", `${slotStyle.row} / span 1`);
+  slot.style.setProperty("grid-column", `${slotStyle.column} / span 1`);
+  slot.append(body);
+  document.body.append(slot);
+  return body;
+}
+
+describe("orderIntroTiles (reveal order from the horizon)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("orders by top (bottom first), then left (ascending)", () => {
+    const high = tileIn();
+    const lowRight = tileIn();
+    const lowLeft = tileIn();
+    stubBoxes(new Map([
+      [high, { top: 10, left: 0 }],
+      [lowRight, { top: 200, left: 300 }],
+      [lowLeft, { top: 200, left: 20 }],
+    ]));
+    expect(orderIntroTiles([high, lowRight, lowLeft])).toEqual([lowLeft, lowRight, high]);
+  });
+
+  it("falls back to grid cells when every tile has a zero box", () => {
+    const a = tileIn({ row: 1, column: 2 });
+    const b = tileIn({ row: 3, column: 4 });
+    const c = tileIn({ row: 3, column: 1 });
+    stubBoxes(new Map([
+      [a, { top: 0, left: 0, width: 0, height: 0 }],
+      [b, { top: 0, left: 0, width: 0, height: 0 }],
+      [c, { top: 0, left: 0, width: 0, height: 0 }],
+    ]));
+    // Row descending (nearest the horizon first), then column ascending.
+    expect(orderIntroTiles([a, b, c])).toEqual([c, b, a]);
+  });
+
+  it("falls back to grid cells when every top is identical", () => {
+    const a = tileIn({ row: 2, column: 1 });
+    const b = tileIn({ row: 4, column: 1 });
+    stubBoxes(new Map([
+      [a, { top: 50, left: 0 }],
+      [b, { top: 50, left: 100 }],
+    ]));
+    expect(orderIntroTiles([a, b])).toEqual([b, a]);
+  });
+
+  it("without any layout data keeps reverse DOM order (last row nearest the horizon)", () => {
+    const first = tileIn();
+    const second = tileIn();
+    const third = tileIn();
+    stubBoxes(new Map());
+    expect(orderIntroTiles([first, second, third])).toEqual([third, second, first]);
+  });
+});
+
+describe("useDawnIntro hands input over to hover/press motion", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    gsap.globalTimeline.clear();
+  });
+
+  function HoverTile() {
+    const { innerRef, onPointerEnter, onPointerLeave } = useVdHoverLift<HTMLButtonElement>(-2);
+    return (
+      <button type="button" className="vela-item" onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+        <span className="vela-item__body" ref={innerRef as RefObject<HTMLSpanElement | null>}>
+          Tile
+        </span>
+      </button>
+    );
+  }
+
+  function mountShell(root: "desktop" | "mobile") {
+    installMatchMedia(false);
+    vi.spyOn(Element.prototype, "getClientRects").mockReturnValue([{}] as unknown as DOMRectList);
+    const sceneRef = { current: null } as RefObject<HTMLDivElement | null>;
+    const bandRef = { current: null } as RefObject<HTMLDivElement | null>;
+    const veilRef = { current: null } as RefObject<HTMLDivElement | null>;
+    function Intro() {
+      useDawnIntro({ enabled: true, scope: sceneRef, band: bandRef, veil: veilRef });
+      return null;
+    }
+    const tile =
+      root === "desktop" ? (
+        <HoverTile />
+      ) : (
+        <button type="button" className="vela-mobile-tile__button">
+          App
+        </button>
+      );
+    const view = render(
+      <div {...(root === "desktop" ? { className: "vela-desktop" } : { "data-vd-mobile-shell": "" })}>
+        <div className="vela-desktop__scene" ref={sceneRef}>
+          <div ref={bandRef} />
+        </div>
+        {tile}
+        <div ref={veilRef} />
+        <Intro />
+      </div>,
+    );
+    return view;
+  }
+
+  it("pointerover settles the opening first, then the hover lift runs and is NOT cleared", () => {
+    const view = mountShell("desktop");
+    const body = view.container.querySelector<HTMLElement>(".vela-item__body")!;
+    const button = view.container.querySelector<HTMLElement>(".vela-item")!;
+    expect(isDawnOpeningPlaying()).toBe(true);
+    expect(body.style.opacity).toBe("0");
+
+    fireEvent.pointerOver(button);
+
+    // Dawn settled (played) and let go of the tile…
+    expect(hasDawnOpeningPlayed()).toBe(true);
+    expect(isDawnRevealTarget(body)).toBe(false);
+    expect(body.style.opacity).toBe("");
+    // …and the hover lift owns it now: one live tween toward y = -2.
+    const tweens = gsap.getTweensOf(body);
+    expect(tweens).toHaveLength(1);
+    expect(tweens[0]!.vars.y).toBe(-2);
+    // A further input never reaches back: Dawn's listeners are detached.
+    window.dispatchEvent(new Event("pointerover"));
+    window.dispatchEvent(new Event("pointerdown"));
+    expect(gsap.getTweensOf(body)).toHaveLength(1);
+    expect(gsap.getTweensOf(body)[0]).toBe(tweens[0]);
+  });
+
+  it("a mobile tile press (pointerdown) settles the opening and clears the button for its CSS press", () => {
+    const view = mountShell("mobile");
+    const button = view.container.querySelector<HTMLElement>(".vela-mobile-tile__button")!;
+    expect(button.style.opacity).toBe("0");
+    fireEvent.pointerDown(button);
+    // The mobile tile press is a CSS :active scale (no GSAP press tween):
+    // the button must carry no inline transform/opacity left by Dawn.
+    expect(button.style.transform).toBe("");
+    expect(button.style.opacity).toBe("");
+    expect(gsap.getTweensOf(button)).toHaveLength(0);
+    expect(hasDawnOpeningPlayed()).toBe(true);
   });
 });

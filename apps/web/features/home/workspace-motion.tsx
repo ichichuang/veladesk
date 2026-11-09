@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { gsap } from "@components/vd/gsap";
 import { VD_MOTION_EASE, vdMotionDuration } from "@components/vd/motion-tokens";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
-import { isDawnRevealTarget } from "./scene/use-dawn-intro";
+import { isDawnOpeningPlaying, isDawnRevealTarget } from "./scene/use-dawn-intro";
 
 const SETTLED = "vd-workspace-settled";
 /** Waits for the visible switch, without holding input or a runtime lock. */
@@ -179,7 +179,15 @@ export function WorkspaceTransition({ identity, ready, awaitingPaint = false, ch
     const ghost = host.firstElementChild as HTMLElement | null;
     const stopWallpaper = preserveDepartureWallpaper(element, ghost, reduced);
     const stopEntrance = visited.current.has(identity) ? () => {} : animateWorkspaceEntrance(element, reduced);
-    const stop = animateWorkspace(element, ghost, reduced, () => {
+    // Cold open with the Dawn opening PLAYING (claimed by the shell's layout
+    // effect, which runs before this ancestor's in the same commit): Dawn IS
+    // the entrance — its veil already brightens the frame, and a stage-wide
+    // fade + 1.01 scale would dim the veil/burst themselves. The stage then
+    // settles instantly (same path as reduced motion). Reduced motion, a
+    // custom wallpaper, an already-played tab or a workspace switch (ghost
+    // present) keep the stage animation exactly as before.
+    const dawnOwnsEntrance = ghost === null && isDawnOpeningPlaying();
+    const stop = animateWorkspace(element, ghost, reduced || dawnOwnsEntrance, () => {
       host.replaceChildren();
       element.parentElement!.dataset.settled = identity;
       window.dispatchEvent(new Event(SETTLED));

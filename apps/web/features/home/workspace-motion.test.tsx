@@ -12,7 +12,7 @@ import type { DesktopMenuEntry } from "./desktop-command-menu";
 import { UiLocaleProvider } from "../i18n/ui-locale-provider";
 import { useVdHoverLift } from "@components/vd/hover-lift";
 import { SceneBackdrop } from "./scene/scene-backdrop";
-import { isDawnRevealTarget, resetDawnOpeningSessionForTests } from "./scene/use-dawn-intro";
+import { isDawnRevealTarget, markDawnOpeningPlayedForTests, resetDawnOpeningSessionForTests } from "./scene/use-dawn-intro";
 
 const preference = vi.hoisted(() => ({ reduced: false }));
 vi.mock("@components/vd/reduced-motion", () => ({ useVdReducedMotion: () => preference.reduced }));
@@ -120,6 +120,61 @@ describe("workspace transition ownership", () => {
     view.unmount();
     expectClean(icon);
     resetDawnOpeningSessionForTests();
+  });
+
+  describe("the cold-open stage entrance vs the Dawn opening", () => {
+    const PRESET = { config: { kind: "preset" as const, presetId: "dawn" as const }, provenance: "default" as const };
+    const CUSTOM = {
+      config: { kind: "asset" as const, assetId: "asset-1", fit: "cover" as const, position: "center" as const },
+      provenance: "workspace" as const,
+    };
+    /** This file mocks the reduced-motion bridge: one switch for every consumer. */
+    function stubReducedMotion(reduced: boolean) {
+      preference.reduced = reduced;
+    }
+    function mountColdOpen(wallpaper: typeof PRESET | typeof CUSTOM) {
+      const view = render(
+        <WorkspaceTransition identity="a" ready>
+          <div className="vela-desktop">
+            <SceneBackdrop wallpaper={wallpaper} assetUrl={null} />
+          </div>
+        </WorkspaceTransition>,
+      );
+      return view.container.querySelector<HTMLElement>(".vela-workspace-transition")!;
+    }
+    beforeEach(() => { resetDawnOpeningSessionForTests(); });
+    afterEach(() => { resetDawnOpeningSessionForTests(); gsap.globalTimeline.clear(); });
+
+    it("Dawn PLAYING: the stage skips its fade+scale (settles instantly, no inline styles)", () => {
+      stubReducedMotion(false);
+      const stage = mountColdOpen(PRESET);
+      expect(gsap.getTweensOf(stage)).toHaveLength(0);
+      expect(stage.style.opacity).toBe("");
+      expect(stage.style.transform).toBe("");
+    });
+
+    it("custom wallpaper (no Dawn): the stage keeps its fade+scale", () => {
+      stubReducedMotion(false);
+      const stage = mountColdOpen(CUSTOM);
+      const tweens = gsap.getTweensOf(stage);
+      expect(tweens).toHaveLength(1);
+      expect(tweens[0]!.vars.scale).toBe(1);
+      expect(tweens[0]!.duration()).toBe(vdMotionDuration("inspector"));
+    });
+
+    it("already played this tab: the stage keeps its fade+scale", () => {
+      stubReducedMotion(false);
+      markDawnOpeningPlayedForTests();
+      const stage = mountColdOpen(PRESET);
+      expect(gsap.getTweensOf(stage)).toHaveLength(1);
+    });
+
+    it("reduced motion: unchanged — the stage settles statically", () => {
+      stubReducedMotion(true);
+      const stage = mountColdOpen(PRESET);
+      expect(gsap.getTweensOf(stage)).toHaveLength(0);
+      expect(stage.style.opacity).toBe("");
+    });
   });
 
   it("unmount kills both layers and the icon entrance without leaving inline styles", () => {
