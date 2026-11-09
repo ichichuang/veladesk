@@ -87,8 +87,12 @@ export const VD_MOTION_DAWN = {
   horizon: 0.18,
   /** Content reveal, overlapping the band. */
   reveal: 0.22,
-  /** Per-tile stagger; total stagger stays ≤ 0.08 (≤ 7 tiles deep). */
+  /** Per-tile stagger; total stagger stays ≤ staggerCap. */
   stagger: 0.012,
+  /** The stagger budget ceiling (总错峰 ≤ 80ms, motion-spec §1/§2). */
+  staggerCap: 0.08,
+  /** When the tile reveal begins inside the sequence (§2: 60ms). */
+  revealStart: 0.06,
   /** HARD ceiling on the whole opening — first frame to fully settled. */
   total: 0.3,
 } as const;
@@ -134,4 +138,15 @@ export const VD_MOTION_FLIP = {
   reorder: { stiffness: 520, damping: 44, mass: 1 } as const,
   /** Tile zoom-into-sail before handing off to the browser. */
   launch: 0.26,
+  /**
+   * Snap-drop ripple: one 220ms ring stroke at the landing cells
+   * (motion-spec-p1 §3) — opacity 0.35→0, scale 0.9→1.15, plays once per
+   * drop and never under reduced motion.
+   */
+  dropRipple: 0.22,
+  /**
+   * The reduced-motion reorder downgrade: positions swap instantly, the
+   * moved tiles crossfade their opacity over 120ms (§3).
+   */
+  reducedCrossfade: 0.12,
 } as const;

@@ -15,6 +15,7 @@ import type { SectionLayerPhase } from "./section-transition-machine";
 import type { ResizeCommitGeometry, GridItemGeometry } from "../canvas/canvas-resize";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
 import type { SquareGridMetrics } from "../canvas/square-grid-metrics";
+import type { DropRipple } from "./tile-host/drop-ripple";
 import "./home-shell.css";
 
 interface SectionLayerProps {
@@ -110,6 +111,8 @@ interface SectionViewProps {
   /** Grid target-slot feedback (active view only). */
   readonly onResizePreview?: ((geometry: GridItemGeometry | null) => void) | undefined;
   readonly gridFeedbackBoxes?: readonly GridItemGeometry[] | undefined;
+  /** Snap-drop ripple rings (active grid stage only, P1). */
+  readonly snapDropRipples?: readonly DropRipple[] | undefined;
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
   readonly onOpenFolder: (folderId: EntityId) => void;
@@ -156,6 +159,7 @@ function SectionViewImpl({
   onResizeSessionChange,
   onResizePreview,
   gridFeedbackBoxes,
+  snapDropRipples,
   onItemSelect,
   onEntityContextMenu,
   onOpenFolder,
@@ -230,6 +234,7 @@ function SectionViewImpl({
         onResizeSessionChange={onResizeSessionChange}
         onResizePreview={active ? onResizePreview : undefined}
         gridFeedbackBoxes={active ? gridFeedbackBoxes : undefined}
+        snapDropRipples={active ? snapDropRipples : undefined}
         onItemSelect={onItemSelect}
         onEntityContextMenu={onEntityContextMenu}
         onOpenFolder={onOpenFolder}

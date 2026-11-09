@@ -328,15 +328,19 @@ export function LayoutSection({
   );
 }
 
-/** The general tab: language, data import/export, version. */
+/** The general tab: language, motion experiments, data import/export, version. */
 export function GeneralSection({
   workspace,
   locale,
   updateLocale,
+  draft,
+  updateMotionExperiment,
 }: {
   readonly workspace: WorkspaceSnapshot;
   readonly locale: UiLocale;
   readonly updateLocale: (next: UiLocale) => void;
+  readonly draft: WorkspaceSettingsDraft;
+  readonly updateMotionExperiment: (patch: { readonly helmMotion?: boolean }) => void;
 }) {
   const { t } = useI18n();
   const [importOpen, setImportOpen] = useState(false);
@@ -384,6 +388,17 @@ export function GeneralSection({
           <ToggleButton id="zh-CN">{t("settings.language.chinese")}</ToggleButton>
           <ToggleButton id="en-US">{t("settings.language.english")}</ToggleButton>
         </ToggleButtonGroup>
+      </SettingsRow>
+
+      {/* Motion experiments (P1): the single helmMotion master switch —
+          gates the Dawn opening prototype (and, later, Orbits/Wake).
+          Reduced motion always wins over this flag; the hint says so. */}
+      <SettingsRow title={t("settings.motion")} hint={t("settings.motion.hint")}>
+        <VdSwitch
+          isSelected={draft.motion?.experiments?.helmMotion === true}
+          onChange={(helmMotion) => updateMotionExperiment({ helmMotion })}
+          aria-label={t("settings.motion")}
+        />
       </SettingsRow>
 
       {/* Data (task 024): AI-friendly bulk import. The three actions never

@@ -9,7 +9,7 @@ import {
   VdHeroOverlayScope,
   VdPortalContainerProvider,
 } from "@components/ui/overlay-scope";
-import { resolveGridGapPx, findDesktopPage } from "@veladesk/domain";
+import { resolveGridGapPx, findDesktopPage, resolveHelmMotionEnabled } from "@veladesk/domain";
 import type {
   DesktopPageId,
   WorkspaceAppearancePreferences,
@@ -480,11 +480,16 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       data-inspector-open={inspectorOpen}
       data-arrange={arrange ? "true" : "false"}
       data-vd-color-mode={effectiveColorMode}
+      data-vd-material={theme.materialTier}
       data-vd-wallpaper={theme.wallpaperPreset}
       data-has-dock={hasDock ? "true" : "false"}
       style={theme.style as CSSProperties}
     >
-      <SceneBackdrop wallpaper={scene.effectiveWallpaper} assetUrl={scene.wallpaperAssetUrl} />
+      <SceneBackdrop
+        wallpaper={scene.effectiveWallpaper}
+        assetUrl={scene.wallpaperAssetUrl}
+        dawnIntroEnabled={resolveHelmMotionEnabled(snapshot.preferences)}
+      />
       <DragDropProvider
         onDragStart={tiles.wrappedHandleDragStart}
         onDragMove={tiles.handleDragMove}
@@ -585,6 +590,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       data-vd-ui=""
       data-vd-portal-root=""
       data-vd-color-mode={effectiveColorMode}
+      data-vd-material={theme.materialTier}
       style={theme.style as CSSProperties}
     />
     </ShellContextProvider>

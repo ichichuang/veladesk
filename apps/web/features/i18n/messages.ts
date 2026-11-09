@@ -441,6 +441,8 @@ const zhCNCatalog = {
   "settings.startInViewHint":
     "仅作为启动默认值——不切换当前模式;勾选后以查看模式打开,未勾选则以整理模式打开。",
   "settings.version": "版本",
+  "settings.motion": "动效实验",
+  "settings.motion.hint": "开启后，新标签页冷打开时播放「拂晓」开场光带（300ms 内完成，可被任意输入打断；系统开启“减弱动态”时自动停用）。保存后生效。",
   "settings.language": "界面语言",
   "settings.language.chinese": "中文",
   "settings.language.english": "English",
@@ -1002,6 +1004,8 @@ export const enUS: MessageCatalog = {
   "settings.startInViewHint":
     "Startup default only — the current mode is not switched, and the workspace opens in View mode when checked or Arrange mode when unchecked.",
   "settings.version": "Version",
+  "settings.motion": "Motion experiments",
+  "settings.motion.hint": "Plays the Dawn opening light band on cold new-tab opens (settles within 300ms, interrupted by any input; turns itself off under system reduced motion). Takes effect after saving.",
   "settings.language": "Interface language",
   "settings.language.chinese": "中文",
   "settings.language.english": "English",

@@ -138,7 +138,7 @@ export function FolderOverlay({
         ) : null}
         {/* The scroll owner (VdScrollArea, 021-A) — the grid inside is
             layout only. Wheel stays local to the overlay. */}
-        <VdScrollArea axis="y" className="vela-folder-overlay__scroll" data-vd-wheel-scope="local">
+        <VdScrollArea axis="y" smooth className="vela-folder-overlay__scroll" data-vd-wheel-scope="local">
           <div className="vela-folder-overlay__grid">
           {children.map(({ childId, entity }) => {
             if (entity === undefined) {

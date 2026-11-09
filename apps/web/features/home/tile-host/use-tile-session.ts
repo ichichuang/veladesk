@@ -9,6 +9,7 @@ import type {
   DesktopPage,
   DesktopPageId,
   EntityId,
+  PagePlacement,
   WorkspaceSnapshot,
 } from "@veladesk/domain";
 import type { LayoutItemId } from "@veladesk/desktop-engine";
@@ -25,6 +26,7 @@ import { reconcilePageCanvasHistory } from "../../canvas/arrange-history";
 import type { WorkspaceClientRuntime } from "@veladesk/client-runtime";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { TranslateFn } from "../../i18n/use-i18n";
+import { useSnapDropRipples } from "./drop-ripple";
 import { useCanvasCommits } from "./use-canvas-commits";
 
 interface MarqueeState {
@@ -90,6 +92,10 @@ export function useTileSession(input: UseTileSessionInput) {
   const lastDragEndedAtRef = useRef(0);
   const marqueeOriginRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
 
+  // The snap-drop ripple session (P1, motion-spec §3): landing cells of a
+  // committed Grid drag, rendered by the grid stage as one-shot rings.
+  const { ripples: snapDropRipples, playSnapDrop } = useSnapDropRipples();
+
   // The canvas command layer (geometry commits, handoff, arrange history).
   // Called here — after the selection state it reads, before the drag
   // wiring that commits through it — so one hook owns every tile-level
@@ -109,6 +115,7 @@ export function useTileSession(input: UseTileSessionInput) {
     resizeLockRef,
     displayPlacement,
     setArrangeHistories,
+    commitDraggedCanvas,
   } = commits;
 
   function applySelection(next: ReadonlySet<LayoutItemId>) {
@@ -177,7 +184,15 @@ export function useTileSession(input: UseTileSessionInput) {
     placement: displayPlacement,
     metrics: freeformMetrics,
     pitchPx: gridMetrics?.pitchPx ?? null,
-    onCommit: commits.commitDraggedCanvas,
+    onCommit: useCallback(
+      (moved: PagePlacement, placementAtStart: PagePlacement) => {
+        commitDraggedCanvas(moved, placementAtStart);
+        // The ripple rides the committed placement — one ring per landing
+        // cell, never rendered under reduced motion (inside the hook).
+        playSnapDrop(moved, placementAtStart);
+      },
+      [commitDraggedCanvas, playSnapDrop],
+    ),
     onGridTargetChange: setDragTargetBoxes,
     getDragItemIds: useCallback(
       (sourceId: LayoutItemId) => resolveDragItemIds(sourceId, selectionRef.current),
@@ -382,6 +397,8 @@ export function useTileSession(input: UseTileSessionInput) {
     gridFeedbackBoxes,
     setResizeTargetBox,
     resizableIds,
+    // The snap-drop ripple session (rendered by the active grid stage).
+    snapDropRipples,
   };
 }
 

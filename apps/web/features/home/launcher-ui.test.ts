@@ -24,8 +24,10 @@ function ruleBlock(selector: string): string {
 }
 
 describe("launcher structure (021-B)", () => {
-  it("renders the results through the canonical VdScrollArea", () => {
-    expect(launcher).toMatch(/<VdScrollArea\s+axis="y"\s+className="vela-launcher__results-scroll"/);
+  it("renders the results through the canonical VdScrollArea (Lenis-smoothed, P1)", () => {
+    expect(launcher).toMatch(
+      /<VdScrollArea\s+axis="y"\s+smooth\s+className="vela-launcher__results-scroll"/
+    );
     expect(launcher).toMatch(/@components\/vd\/scroll-area/);
   });
 

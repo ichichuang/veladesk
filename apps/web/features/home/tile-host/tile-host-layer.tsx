@@ -15,6 +15,7 @@ import type {
 import type { ResizeCommitGeometry, GridItemGeometry } from "../../canvas/canvas-resize";
 import type { CanvasPixelMetrics } from "../../canvas/canvas-metrics";
 import type { SquareGridMetrics } from "../../canvas/square-grid-metrics";
+import type { DropRipple } from "./drop-ripple";
 import {
   deriveLayerPhase,
   interactiveActiveIdOf,
@@ -43,6 +44,8 @@ interface TileHostLayerProps {
   readonly resizableIds: ReadonlySet<EntityId>;
   readonly resizeActiveId: EntityId | null;
   readonly gridFeedbackBoxes: readonly GridItemGeometry[] | undefined;
+  /** Snap-drop ripple rings (active grid stage only, P1). */
+  readonly snapDropRipples: readonly DropRipple[] | undefined;
   readonly initialScrollTop: number | undefined;
   readonly onResizeCommit: (entityId: EntityId, geometry: ResizeCommitGeometry) => void;
   readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
@@ -88,6 +91,7 @@ export const TileHostLayer = memo(function TileHostLayer({
   resizableIds,
   resizeActiveId,
   gridFeedbackBoxes,
+  snapDropRipples,
   initialScrollTop,
   onResizeCommit,
   onResizeSessionChange,
@@ -131,6 +135,7 @@ export const TileHostLayer = memo(function TileHostLayer({
         onResizeSessionChange={onResizeSessionChange}
         onResizePreview={interactive ? onResizePreview : undefined}
         gridFeedbackBoxes={interactive ? gridFeedbackBoxes : undefined}
+        snapDropRipples={interactive ? snapDropRipples : undefined}
         onItemSelect={onItemSelect}
         onEntityContextMenu={onEntityContextMenu}
         onOpenFolder={onOpenFolder}

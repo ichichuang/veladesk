@@ -69,6 +69,29 @@ describe("GridFlipSlot (P1)", () => {
     expect(slot.getAttribute("data-motion-owner")).toBe("motion");
   });
 
+  it("keeps the SAME node across a geometry change under reduced motion (P1 crossfade)", () => {
+    stubReducedMotion(true);
+    const moved = { ...item, column: 4, row: 3 };
+    const { container, rerender } = render(
+      <GridFlipSlot item={item} flip dragging={false} slotRef={{ current: null }}>
+        <button type="button">tile</button>
+      </GridFlipSlot>,
+    );
+    const slot = container.querySelector(".vela-item-slot") as HTMLElement;
+    const button = container.querySelector("button") as HTMLElement;
+    rerender(
+      <GridFlipSlot item={moved} flip dragging={false} slotRef={{ current: null }}>
+        <button type="button">tile</button>
+      </GridFlipSlot>,
+    );
+    // Instant reposition + 120ms opacity crossfade — but NEVER a remount:
+    // focus and hover state must survive the swap.
+    expect(container.querySelector(".vela-item-slot")).toBe(slot);
+    expect(container.querySelector("button")).toBe(button);
+    expect(slot.style.gridColumn).toBe("5 / span 2");
+    expect(slot.style.gridRow).toBe("4 / span 1");
+  });
+
   it("builds the flip spring from the shared token — critically damped, no literals", () => {
     expect(GRID_FLIP_TRANSITION).toEqual({
       type: "spring",

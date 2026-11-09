@@ -1,7 +1,8 @@
-import { resolveInterfaceStyle } from "@veladesk/domain";
+import { inferInterfaceStyle, resolveInterfaceStyle } from "@veladesk/domain";
 import type {
   WorkspaceAppearancePreferences,
   WorkspaceColorMode,
+  WorkspaceInterfaceStyle,
   WorkspaceWallpaperPreset,
 } from "@veladesk/domain";
 
@@ -47,6 +48,14 @@ const SURFACE_SHADOWS: Readonly<Record<"none" | "subtle" | "elevated", string>> 
 export interface AppearanceTheme {
   readonly colorMode: WorkspaceColorMode;
   readonly wallpaperPreset: WorkspaceWallpaperPreset;
+  /**
+   * The material tier (P1): the persisted interfaceStyle — or the NEAREST
+   * inferred preset for pre-019-D snapshots that never saved one. The
+   * shell emits it as `data-vd-material` on every themed root; the token
+   * layer's tier blocks do all the restyling (blur bands, surface
+   * alphas). Components never branch on it.
+   */
+  readonly materialTier: WorkspaceInterfaceStyle;
   readonly style: Readonly<Record<string, string>>;
 }
 
@@ -127,6 +136,7 @@ export function buildAppearanceTheme(
   return {
     colorMode: appearance.colorMode,
     wallpaperPreset: appearance.wallpaperPreset,
+    materialTier: inferInterfaceStyle(appearance),
     style,
   };
 }

@@ -46,9 +46,9 @@ describe("canonical scroll component", () => {
 });
 
 describe("core scrollers are migrated", () => {
-  it("Settings content pane uses VdScrollArea", () => {
+  it("Settings content pane uses VdScrollArea (Lenis-smoothed, P1)", () => {
     expect(readSource("./settings-center.tsx")).toMatch(
-      /<VdScrollArea\s+axis="y"\s+ref=\{settingsPaneRef\}/
+      /<VdScrollArea\s+axis="y"\s+smooth\s+ref=\{settingsPaneRef\}/
     );
     // The old unstyled hook is gone.
     expect(readSource("./settings-center.tsx")).not.toMatch(/data-scrollbar/);

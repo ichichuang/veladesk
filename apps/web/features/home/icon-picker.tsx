@@ -277,9 +277,11 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
       ) : null}
       {/* The scroll owner (VdScrollArea, 021-A): wheeling through icons
           never pages the section stack, and the framed well carries the
-          shared quiet scrollbar. */}
+          shared quiet scrollbar. Lenis-smoothed (an overlay pane, never
+          the app frame). */}
       <VdScrollArea
         axis="y"
+        smooth
         className="vela-icon-picker__scroll"
         data-vd-wheel-scope="local"
       >

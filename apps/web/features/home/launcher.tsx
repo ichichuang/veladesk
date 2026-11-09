@@ -290,9 +290,11 @@ export function Launcher({ open, entries, appsById, onActivate, onClose }: Launc
           }}
           onKeyDown={handleKeyDown}
         />
-        {/* The one scroll region: results only (VdScrollArea, 021-A). */}
+        {/* The one scroll region: results only (VdScrollArea, 021-A);
+            Lenis-smoothed — the fixed frame around it never scrolls. */}
         <VdScrollArea
           axis="y"
+          smooth
           className="vela-launcher__results-scroll"
           data-vd-wheel-scope="local"
         >

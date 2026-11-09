@@ -49,7 +49,8 @@ const SHELL_SPLIT_FILES = [
 
 const feedback = source("./grid-target-feedback.tsx");
 const grid = source("./desktop-grid.tsx");
-const item = source("./desktop-item.tsx");
+// P1 hygiene split: the resize preview reporting moved to use-item-resize.ts.
+const item = [source("./desktop-item.tsx"), source("./use-item-resize.ts")].join("\n");
 const drag = source("../canvas/use-canvas-drag.ts");
 const shell = SHELL_SPLIT_FILES.map((file) => source(file)).join("\n");
 

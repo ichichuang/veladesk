@@ -12,7 +12,6 @@ import type {
 import type { EntityId, WorkspaceEntity, WorkspaceSnapshot } from "@veladesk/domain";
 import type {
   CanvasLayoutItem,
-  CanvasResizeHandle,
   GridCanvasItem,
 } from "@veladesk/canvas-engine";
 
@@ -30,22 +29,11 @@ import {
   appVisual,
   buildAppIconStyleVars,
 } from "./app-icon";
-import {
-  CANVAS_RESIZE_HANDLES,
-  areGridGeometriesEqual,
-  canvasResizeRectAt,
-  gridResizeGeometryAt,
-  isCanvasResizeNoop,
-} from "../canvas/canvas-resize";
-import type {
-  CanvasResizeSession,
-  GridItemGeometry,
-  ResizeCommitGeometry,
-} from "../canvas/canvas-resize";
 import { canvasRectStyle } from "../canvas/canvas-style";
 import { gridPlacementStyle } from "../canvas/square-grid-metrics";
 import { GridFlipSlot } from "../canvas/grid-flip-slot";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
+import { useItemResize, ITEM_RESIZE_HANDLES } from "./use-item-resize";
 import { launchApp } from "./launch-app";
 import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
@@ -86,7 +74,7 @@ interface DesktopItemProps {
   readonly resizable: boolean;
   /** The app whose resize session or handoff is live, if any. */
   readonly resizeActiveId: EntityId | null;
-  readonly onResizeCommit: (entityId: EntityId, geometry: ResizeCommitGeometry) => void;
+  readonly onResizeCommit: (entityId: EntityId, geometry: import("../canvas/canvas-resize").ResizeCommitGeometry) => void;
   /** Reports a session start/end so the shell can lock competing gestures. */
   readonly onResizeSessionChange: (entityId: EntityId, active: boolean) => void;
   /**
@@ -95,7 +83,7 @@ interface DesktopItemProps {
    * equality — never once per pointer frame), and `null` when the gesture
    * ends, commits or cancels.
    */
-  readonly onResizePreview?: ((geometry: GridItemGeometry | null) => void) | undefined;
+  readonly onResizePreview?: ((geometry: import("../canvas/canvas-resize").GridItemGeometry | null) => void) | undefined;
   /** Arrange-mode click: plain selects, Cmd/Ctrl toggles (shell decides). */
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
@@ -116,7 +104,8 @@ interface DesktopItemProps {
  * Apps are buttons: native focus and Enter/Space keep launch accessible in
  * view mode, while dnd-kit's keyboard sensor owns drag gestures in arrange
  * mode. View-mode clicks launch apps / open folders; arrange-mode clicks
- * drive the session selection.
+ * drive the session selection. The RESIZE gesture session lives in
+ * use-item-resize.ts (P1 split); this component only renders its handles.
  */
 export function DesktopItem(props: DesktopItemProps) {
   const { t } = useI18n();
@@ -156,12 +145,6 @@ function swallowContextMenu(event: ReactMouseEvent) {
 
 interface DesktopEntityProps extends Omit<DesktopItemProps, "workspace"> {
   readonly entity: WorkspaceEntity;
-}
-
-/** A live resize gesture, keyed by the pointer that owns it. */
-interface ActiveResize {
-  readonly session: CanvasResizeSession;
-  readonly pointerId: number;
 }
 
 function DesktopEntity({
@@ -211,16 +194,9 @@ function DesktopEntity({
     },
     [arrange, liftEnter],
   );
-  const resizeRef = useRef<ActiveResize | null>(null);
   // The snap-mode FLIP slot (P1): in Grid geometry the SLOT owns the cell
   // placement (and receives the live resize preview); the button fills it.
   const slotRef = useRef<HTMLDivElement | null>(null);
-  const [resizing, setResizing] = useState(false);
-  const onResizePreviewRef = useRef(onResizePreview);
-  const reportedPreviewRef = useRef<GridItemGeometry | null>(null);
-  useEffect(() => {
-    onResizePreviewRef.current = onResizePreview;
-  });
   // The RENDERED item box (019-B): the single sizing authority for the
   // adaptive app content. Grid gaps, span changes, freeform rects and
   // window resizes all funnel through one measurement. Deduped to 0.5px so
@@ -228,218 +204,20 @@ function DesktopEntity({
   // is absolutely positioned — it cannot resize the box back).
   const box = useElementBox(itemRef);
 
-  /**
-   * The geometry the element shows right now, as inline styles. During a
-   * resize gesture the preview writes here directly — never through React
-   * state — so a pointermove costs no render. Cancel and no-op commits put
-   * the authoritative start geometry back, because React will not re-apply
-   * a style prop that never changed.
-   */
-  const applyGeometry = useCallback(
-    (next: ResizeCommitGeometry) => {
-      const element = itemRef.current;
-      if (element === null) {
-        return;
-      }
-      if (next.kind === "freeform") {
-        const style = canvasRectStyle(next.rect) as Record<string, string | number>;
-        element.style.gridColumn = "";
-        element.style.gridRow = "";
-        element.style.left = String(style.left);
-        element.style.top = String(style.top);
-        element.style.width = String(style.width);
-        element.style.height = String(style.height);
-        return;
-      }
-      // Grid geometry lives on the FLIP slot in grid mode (the slot is the
-      // CSS-Grid child; the button fills it) — fall back to the item for
-      // the rare non-slot grid render (missing-entity placeholder).
-      const target = slotRef.current ?? element;
-      const style = gridPlacementStyle({ id: item.id, ...next.geometry }) as Record<
-        string,
-        string | number
-      >;
-      target.style.left = "";
-      target.style.top = "";
-      target.style.width = "";
-      target.style.height = "";
-      target.style.gridColumn = String(style.gridColumn);
-      target.style.gridRow = String(style.gridRow);
-    },
-    [item.id],
-  );
-
-  function endResize() {
-    resizeRef.current = null;
-    setResizing(false);
-    reportResizePreview(null);
-    onResizeSessionChange(entity.id, false);
-  }
-
-  /**
-   * Target-slot feedback: the live integer preview, deduped by structural
-   * equality so a report only fires when the resolved geometry actually
-   * changed — never once per pointermove.
-   */
-  function reportResizePreview(geometry: GridItemGeometry | null): void {
-    const last = reportedPreviewRef.current;
-    if (geometry === null) {
-      if (last === null) {
-        return;
-      }
-    } else if (last !== null && areGridGeometriesEqual(last, geometry)) {
-      return;
-    }
-    reportedPreviewRef.current = geometry;
-    onResizePreviewRef.current?.(geometry);
-  }
-
-  function cancelResize() {
-    const active = resizeRef.current;
-    if (active === null) {
-      return;
-    }
-    applyGeometry(startGeometryOf(active.session));
-    endResize();
-  }
-
-  function handleResizePointerDown(handle: CanvasResizeHandle) {
-    return (event: ReactPointerEvent<HTMLElement>) => {
-      // Never let a handle start a drag, a marquee, a launch or a menu.
-      //
-      // This MUST run in the CAPTURE phase: dnd-kit attaches its own native
-      // pointerdown listener to the draggable button, and a native listener
-      // on the button fires before React's root-level bubble handlers —
-      // stopping propagation from a bubble handler would be too late and the
-      // tile would start dragging instead of resizing.
-      event.preventDefault();
-      event.stopPropagation();
-      if (resizeRef.current !== null || !gesturesReady) {
-        return;
-      }
-      event.currentTarget.setPointerCapture(event.pointerId);
-      if (geometry === "grid") {
-        const gridItem = item as GridCanvasItem;
-        resizeRef.current = {
-          session: {
-            kind: "grid",
-            handle,
-            itemId: item.id,
-            startGeometry: {
-              column: gridItem.column,
-              row: gridItem.row,
-              columnSpan: gridItem.columnSpan,
-              rowSpan: gridItem.rowSpan,
-            },
-            startPointerX: event.clientX,
-            startPointerY: event.clientY,
-            pitchPx: gridPitchPx ?? 1,
-            columns: gridColumns ?? 1,
-          },
-          pointerId: event.pointerId,
-        };
-      } else {
-        resizeRef.current = {
-          session: {
-            kind: "freeform",
-            handle,
-            startRect: (item as CanvasLayoutItem).rect,
-            startPointerX: event.clientX,
-            startPointerY: event.clientY,
-            metrics: metrics!,
-          },
-          pointerId: event.pointerId,
-        };
-      }
-      setResizing(true);
-      onResizeSessionChange(entity.id, true);
-    };
-  }
-
-  function previewGeometryAt(
-    session: CanvasResizeSession,
-    pointerX: number,
-    pointerY: number,
-    shiftKey: boolean,
-  ): ResizeCommitGeometry {
-    if (session.kind === "grid") {
-      // Shift is a freeform behavior only — grid spans never aspect-lock.
-      return { kind: "grid", geometry: gridResizeGeometryAt(session, pointerX, pointerY) };
-    }
-    return {
-      kind: "freeform",
-      rect: canvasResizeRectAt(session, pointerX, pointerY, shiftKey),
-    };
-  }
-
-  function handleResizePointerMove(event: ReactPointerEvent<HTMLElement>) {
-    const active = resizeRef.current;
-    if (active === null || active.pointerId !== event.pointerId) {
-      return;
-    }
-    const next = previewGeometryAt(active.session, event.clientX, event.clientY, event.shiftKey);
-    applyGeometry(next);
-    if (next.kind === "grid") {
-      reportResizePreview(next.geometry);
-    }
-  }
-
-  function handleResizePointerUp(event: ReactPointerEvent<HTMLElement>) {
-    const active = resizeRef.current;
-    if (active === null || active.pointerId !== event.pointerId) {
-      return;
-    }
-    const finalGeometry = previewGeometryAt(
-      active.session,
-      event.clientX,
-      event.clientY,
-      event.shiftKey,
-    );
-    const startGeometry = startGeometryOf(active.session);
-    endResize();
-    if (isCanvasResizeNoop(startGeometry, finalGeometry)) {
-      // No effective change: no commit, no history entry, no sync — and the
-      // preview goes back to the authoritative geometry.
-      applyGeometry(startGeometry);
-      return;
-    }
-    // The preview STAYS at the final geometry: the shell hands it off to the
-    // durable snapshot, or drops it (failed stage) — it never flashes back
-    // to the old geometry in between.
-    onResizeCommit(entity.id, finalGeometry);
-  }
-
-  /** Capture lost without a pointerup (OS gesture, element detach): cancel. */
-  function handleLostPointerCapture(event: ReactPointerEvent<HTMLElement>) {
-    if (resizeRef.current?.pointerId === event.pointerId) {
-      cancelResize();
-    }
-  }
-
-  // Escape cancels a live resize: no stage, no sync, geometry untouched.
-  useEffect(() => {
-    if (!resizing) {
-      return;
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        cancelResize();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- cancelResize only reads refs and stable setters
-  }, [resizing]);
-
-  // A remount mid-gesture (drop handoff eviction, section switch) must not
-  // leave a dangling feedback box in the shell.
-  useEffect(() => {
-    return () => {
-      onResizePreviewRef.current?.(null);
-    };
-  }, []);
+  const resize = useItemResize({
+    item,
+    entityId: entity.id,
+    geometry,
+    gesturesReady,
+    metrics,
+    gridPitchPx,
+    gridColumns,
+    itemRef,
+    slotRef,
+    onResizeCommit,
+    onResizeSessionChange,
+    onResizePreview,
+  });
 
   const showResizeHandles =
     entity.kind === "app" &&
@@ -495,7 +273,7 @@ function DesktopEntity({
   const resizeHandles =
     showResizeHandles && entity.kind === "app" ? (
       <span className="vela-item__resize-layer" aria-hidden="false">
-        {CANVAS_RESIZE_HANDLES.map((handle) => (
+        {ITEM_RESIZE_HANDLES.map((handle) => (
           <span
             key={handle}
             className="vela-item__resize-handle"
@@ -503,11 +281,11 @@ function DesktopEntity({
             role="button"
             tabIndex={-1}
             aria-label={t("arrange.resizeIcon")}
-            onPointerDownCapture={handleResizePointerDown(handle)}
-            onPointerMove={handleResizePointerMove}
-            onPointerUp={handleResizePointerUp}
-            onPointerCancel={handleLostPointerCapture}
-            onLostPointerCapture={handleLostPointerCapture}
+            onPointerDownCapture={resize.handleResizePointerDown(handle)}
+            onPointerMove={resize.handleResizePointerMove}
+            onPointerUp={resize.handleResizePointerUp}
+            onPointerCancel={resize.handleLostPointerCapture}
+            onLostPointerCapture={resize.handleLostPointerCapture}
             onClick={(event) => {
               // The click a handle produces belongs to the resize.
               event.preventDefault();
@@ -669,13 +447,6 @@ function DesktopEntity({
     );
   }
   return widgetNode;
-}
-
-/** The committed start geometry of a session, in commit form. */
-function startGeometryOf(session: CanvasResizeSession): ResizeCommitGeometry {
-  return session.kind === "grid"
-    ? { kind: "grid", geometry: session.startGeometry }
-    : { kind: "freeform", rect: session.startRect };
 }
 
 /**

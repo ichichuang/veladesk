@@ -314,3 +314,45 @@ describe("the fixed frame reaches the ONE marked painted surface (023-R2)", () =
     expect(paintedSettingsSurface()).toBe(surface);
   });
 });
+
+describe("the General tab's motion experiment switch (P1)", () => {
+  it("rides the draft's motion block through Save — off by default, on when toggled", async () => {
+    const onSaveImpl: (
+      draft: import("./settings-draft").WorkspaceSettingsDraft,
+      images: readonly import("./wallpaper-prep").PreparedWallpaperImage[],
+    ) => Promise<import("./settings-center").SettingsSaveResult> = async () => ({ ok: true });
+    const onSave = vi.fn(onSaveImpl);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    render(
+      <VdPortalContainerProvider value={host}>
+        <UiLocaleProvider>
+          <SettingsCenter
+            open={true}
+            workspace={workspace()}
+            onPreviewAppearance={() => {}}
+            onSave={onSave}
+            onClose={() => {}}
+          />
+        </UiLocaleProvider>
+      </VdPortalContainerProvider>,
+    );
+
+    await switchTab("General");
+    const toggle = screen.getByRole("switch", { name: "Motion experiments" });
+    // helmMotion ships OFF: no persisted motion block anywhere.
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const draft = onSave.mock.calls[0]![0];
+    expect(draft.motion?.experiments?.helmMotion).toBe(true);
+  });
+});

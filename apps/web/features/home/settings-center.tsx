@@ -205,6 +205,23 @@ export function SettingsCenter({
   }
 
   /**
+   * Motion experiment switches (P1): the helmMotion master flag rides the
+   * draft's optional motion block — never live-previewed, applied on Save
+   * with the rest of the preferences. Toggling merges into whatever
+   * persisted block exists (or none).
+   */
+  function updateMotionExperiment(patch: { readonly helmMotion?: boolean }) {
+    setDraft((current) => ({
+      ...current,
+      motion: {
+        ...current.motion,
+        experiments: { ...current.motion?.experiments, ...patch },
+      },
+    }));
+    setError(null);
+  }
+
+  /**
    * Streams the scoped background draft to the desktop (023-C.2): only
    * the ACTIVE section's scope previews live — a non-active section keeps
    * its renderer-based thumbnail instead of navigating the desktop. The
@@ -478,9 +495,11 @@ export function SettingsCenter({
           {/* The one scroll region (VdScrollArea, 021-A): switching sections
               animates the pane content only — never the window. The stable
               scrollbar gutter keeps the pane from resizing when long content
-              first becomes scrollable. */}
+              first becomes scrollable. Lenis smooth-scrolls this independent
+              pane (P1) — the fixed window frame never scrolls. */}
           <VdScrollArea
             axis="y"
+            smooth
             ref={settingsPaneRef}
             className="min-h-0 min-w-0 flex-1"
             data-vd-wheel-scope="local"
@@ -523,7 +542,13 @@ export function SettingsCenter({
                   updateLayout={updateLayout}
                 />
               ) : (
-                <GeneralSection workspace={workspace} locale={locale} updateLocale={updateLocale} />
+                <GeneralSection
+                  workspace={workspace}
+                  locale={locale}
+                  updateLocale={updateLocale}
+                  draft={draft}
+                  updateMotionExperiment={updateMotionExperiment}
+                />
               )}
             </div>
           </VdScrollArea>

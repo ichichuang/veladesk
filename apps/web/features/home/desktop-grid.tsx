@@ -8,6 +8,8 @@ import type { PagePlacement, WorkspaceSnapshot, EntityId } from "@veladesk/domai
 import { DesktopItem } from "./desktop-item";
 import { GridSlotOverlay } from "./grid-slot-overlay";
 import { GridTargetFeedback } from "./grid-target-feedback";
+import { SnapDropRipples } from "./tile-host/drop-ripple";
+import type { DropRipple } from "./tile-host/drop-ripple";
 import type { ResizeCommitGeometry } from "../canvas/canvas-resize";
 import type { GridItemGeometry } from "../canvas/canvas-resize";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
@@ -54,6 +56,8 @@ interface DesktopCanvasViewProps {
   readonly onResizePreview?: ((geometry: GridItemGeometry | null) => void) | undefined;
   /** Grid target-slot feedback boxes (drag targets + resize preview). */
   readonly gridFeedbackBoxes?: readonly GridItemGeometry[] | undefined;
+  /** Snap-drop ripple rings (P1, motion-spec §3). */
+  readonly snapDropRipples?: readonly DropRipple[] | undefined;
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
   readonly onOpenFolder: (folderId: EntityId) => void;
@@ -97,6 +101,7 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
   onResizeSessionChange,
   onResizePreview,
   gridFeedbackBoxes,
+  snapDropRipples,
   onItemSelect,
   onEntityContextMenu,
   onOpenFolder,
@@ -126,6 +131,13 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
         {arrange && gridMetrics !== null && gridFeedbackBoxes !== undefined ? (
           <GridTargetFeedback
             boxes={gridFeedbackBoxes}
+            cellPx={gridMetrics.cellPx}
+            gapPx={gridMetrics.gapPx}
+          />
+        ) : null}
+        {gridMetrics !== null && snapDropRipples !== undefined && snapDropRipples.length > 0 ? (
+          <SnapDropRipples
+            ripples={snapDropRipples}
             cellPx={gridMetrics.cellPx}
             gapPx={gridMetrics.gapPx}
           />

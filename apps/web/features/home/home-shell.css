@@ -1,39 +1,57 @@
 /*
- * VelaDesk production visual language v1 — "future glass", minimal, dark.
+ * VelaDesk production visual language — Dawn Chart (direction A, P1).
  *
- * Custom CSS only (no animation engine in this stage). Glass treatment is
- * reserved for the top bar, dock and dialogs/overlays; desktop apps are
- * icons and labels in space, never cards. All motion is explicit-property
- * CSS with prefers-reduced-motion fallbacks.
+ * The desktop scene + chrome consume the SEMANTIC token layer declared in
+ * `@veladesk/ui` tokens.css (`--vd-color-*`, `--vd-blur-*`, `--vd-radius-*`,
+ * `--vd-shadow-*`): deep navy ground, frosted-glass surfaces, the dawn
+ * horizon band and the apricot accent. The `--vd-*` names below are the
+ * shell's legacy alias layer — pure indirection onto the semantic names,
+ * re-declared on every themed root (`[data-vd-ui]`) so portalled surfaces
+ * follow the resolved color mode and material tier exactly like the
+ * desktop. No literal colors live here; the material tiers
+ * (`data-vd-material`) and light/dark modes flip the semantics underneath.
  *
- * Theming contract (Task014): `:root` keeps the neutral dark startup
- * palette used by boot/onboarding/picker screens. The workspace desktop
- * (`.vela-desktop`) shadows every appearance variable in its own scope —
- * fed inline by the resolved workspace appearance (or the Settings live
- * preview) via `buildAppearanceTheme` — so every surface inside the shell
- * inherits the workspace theme without per-component reads.
+ * Theming contract (Task014, P1): the workspace desktop (`.vela-desktop`)
+ * is fed inline by the resolved workspace appearance (or the Settings live
+ * preview) via `buildAppearanceTheme` for the geometry controls (radius,
+ * window alpha) — every color, blur band and elevation comes from the
+ * token layer.
  */
 
-:root {
-  --vd-bg: oklch(0.17 0.02 264);
+:root,
+[data-vd-ui] {
   --vd-accent-hue: 60;
-  --vd-surface-opacity: 0.55;
-  --vd-surface-strong-opacity: 0.78;
-  --vd-surface: oklch(0.24 0.02 264 / var(--vd-surface-opacity));
-  --vd-surface-strong: oklch(0.27 0.02 264 / var(--vd-surface-strong-opacity));
-  --vd-border: oklch(0.9 0.02 264 / 0.14);
-  --vd-text: oklch(0.95 0.01 260);
-  --vd-text-muted: oklch(0.74 0.02 264);
-  --vd-accent: oklch(0.78 0.12 var(--vd-accent-hue));
-  --vd-accent-strong: oklch(0.6 0.1 var(--vd-accent-hue) / 0.85);
-  --vd-accent-strong-hover: oklch(0.66 0.11 var(--vd-accent-hue) / 0.9);
-  --vd-accent-contrast: oklch(0.98 0.01 210);
-  --vd-field: oklch(0.2 0.02 264 / 0.6);
-  --vd-chip: oklch(0.2 0.02 264 / 0.45);
-  --vd-radius: 14px;
-  --vd-blur: 18px;
-  --vd-font:
-    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --vd-bg: var(--vd-color-bg-deep);
+  --vd-surface: var(--vd-color-bg-surface);
+  --vd-surface-strong: var(--vd-color-bg-raised);
+  --vd-border: var(--vd-color-border-hairline);
+  --vd-surface-border: color-mix(
+    in oklab,
+    var(--vd-color-fg-primary) calc(15% * var(--vd-surface-border-strength, 1)),
+    transparent
+  );
+  --vd-text: var(--vd-color-fg-primary);
+  --vd-text-muted: var(--vd-color-fg-muted);
+  --vd-accent: var(--vd-color-accent);
+  --vd-accent-strong: color-mix(
+    in oklab,
+    var(--vd-color-accent) 78%,
+    var(--vd-color-bg-deep)
+  );
+  --vd-accent-strong-hover: color-mix(
+    in oklab,
+    var(--vd-color-accent-hover) 82%,
+    var(--vd-color-bg-deep)
+  );
+  --vd-accent-contrast: var(--vd-color-accent-fg);
+  --vd-accent-wash: var(--vd-color-accent-wash);
+  --vd-field: color-mix(in oklab, var(--vd-color-bg-well) 60%, transparent);
+  --vd-chip: color-mix(in oklab, var(--vd-color-bg-well) 45%, transparent);
+  --vd-grid-line: color-mix(in oklab, var(--vd-color-fg-primary) 38%, transparent);
+  --vd-radius: var(--vd-radius-md);
+  --vd-blur: var(--vd-blur-glass);
+  --vd-label-shadow: 0 1px 3px color-mix(in oklab, var(--vd-color-bg-deep) 55%, transparent);
+  --vd-font: var(--vd-font-sans);
 }
 
 /* ---------------------------------------------------------------------------
@@ -62,11 +80,11 @@
 
 .vela-button:hover:not(:disabled) {
   background: var(--vd-surface-strong);
-  border-color: oklch(0.9 0.02 264 / 0.24);
+  border-color: var(--vd-color-border-highlight);
 }
 
 .vela-button:focus-visible {
-  outline: 2px solid var(--vd-accent);
+  outline: 2px solid var(--vd-color-focus);
   outline-offset: 2px;
 }
 
@@ -98,10 +116,24 @@
   overflow: hidden;
   font-family: var(--vd-font);
   color: var(--vd-text);
+  /* The Dawn Chart startup ground: deep navy under the horizon's own
+     washes (cold blue aloft, apricot rising from below the fold). */
   background:
-    radial-gradient(120% 90% at 12% 8%, oklch(0.3 0.08 278 / 0.5), transparent 62%),
-    radial-gradient(110% 85% at 88% 16%, oklch(0.27 0.08 218 / 0.48), transparent 58%),
-    radial-gradient(130% 110% at 50% 112%, oklch(0.31 0.07 318 / 0.42), transparent 60%),
+    radial-gradient(
+      120% 90% at 12% 8%,
+      color-mix(in oklab, var(--vd-color-dawn-3) 30%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      110% 85% at 88% 16%,
+      color-mix(in oklab, var(--vd-color-dawn-2) 20%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      130% 110% at 50% 112%,
+      color-mix(in oklab, var(--vd-color-dawn-1) 24%, transparent),
+      transparent 60%
+    ),
     var(--vd-bg);
 }
 
@@ -111,8 +143,16 @@
   inset: -20%;
   pointer-events: none;
   background:
-    radial-gradient(38% 32% at 28% 34%, oklch(0.55 0.12 265 / 0.16), transparent 70%),
-    radial-gradient(34% 30% at 74% 62%, oklch(0.5 0.11 195 / 0.14), transparent 70%);
+    radial-gradient(
+      38% 32% at 28% 34%,
+      color-mix(in oklab, var(--vd-color-dawn-2) 14%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      34% 30% at 74% 62%,
+      color-mix(in oklab, var(--vd-color-dawn-3) 12%, transparent),
+      transparent 70%
+    );
   filter: blur(42px);
 }
 
@@ -138,7 +178,7 @@
   width: 132px;
   height: 2px;
   border-radius: 1px;
-  background: oklch(0.8 0.03 230 / 0.18);
+  background: color-mix(in oklab, var(--vd-color-focus) 18%, transparent);
   overflow: hidden;
   position: relative;
 }
@@ -163,9 +203,9 @@
   border: 1px solid var(--vd-border);
   border-radius: calc(var(--vd-radius) + 4px);
   background: var(--vd-surface-strong);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: 0 24px 70px oklch(0 0 0 / 0.4);
+  backdrop-filter: blur(var(--vd-blur-panel));
+  -webkit-backdrop-filter: blur(var(--vd-blur-panel));
+  box-shadow: var(--vd-shadow-panel);
 }
 
 .vela-screen__lead {
@@ -203,7 +243,7 @@
   padding: 10px 12px;
   border: 1px solid var(--vd-border);
   border-radius: 10px;
-  background: oklch(0.3 0.04 80 / 0.28);
+  background: color-mix(in oklab, var(--vd-color-accent) 28%, transparent);
 }
 
 .vela-notice p {
@@ -248,7 +288,7 @@
 .vela-form__error {
   margin: 2px 0 0;
   font-size: 12.5px;
-  color: oklch(0.82 0.14 25);
+  color: var(--vd-color-danger);
 }
 
 .vela-form .vela-button {
@@ -310,11 +350,12 @@
  * ------------------------------------------------------------------------- */
 
 /*
- * Workspace-scoped theme. The base values here are exactly the Task013
- * dark palette (no drift): DesktopShell feeds the resolved appearance —
- * persisted preferences or the Settings live preview — into these
- * variables via inline style, and `data-vd-color-mode` /
- * `data-vd-wallpaper` select the palette and wallpaper variant.
+ * Workspace-scoped theme. The Dawn Chart palette itself lives in the
+ * semantic token layer; the desktop root only carries the WALLPAPER BLOB
+ * PARAMETERS (preset hues + per-mode lightness/alpha) and the geometry
+ * controls DesktopShell feeds inline via `buildAppearanceTheme`.
+ * `data-vd-color-mode` resolves in JS (021-R1) and flips the semantic
+ * layer under the aliases; `data-vd-material` selects the tier.
  *
  * Wallpaper presets only set blob hues (and chroma factors); the mode
  * palettes set blob lightness/alpha, so every preset stays readable in
@@ -350,38 +391,12 @@
       var(--vd-wall-a3)
   );
 
-  --vd-bg: oklch(0.17 0.02 264);
-  --vd-accent-hue: 60;
-  --vd-surface-opacity: 0.55;
-  --vd-surface-strong-opacity: 0.78;
-  --vd-surface: oklch(0.24 0.02 264 / var(--vd-surface-opacity));
-  --vd-surface-strong: oklch(0.27 0.02 264 / var(--vd-surface-strong-opacity));
-  --vd-border: oklch(0.9 0.02 264 / 0.14);
-  --vd-text: oklch(0.95 0.01 260);
-  --vd-text-muted: oklch(0.74 0.02 264);
-  --vd-accent: oklch(0.78 0.12 var(--vd-accent-hue));
-  --vd-accent-strong: oklch(0.6 0.1 var(--vd-accent-hue) / 0.85);
-  --vd-accent-strong-hover: oklch(0.66 0.11 var(--vd-accent-hue) / 0.9);
-  --vd-accent-contrast: oklch(0.98 0.01 210);
-  --vd-accent-wash: oklch(0.6 0.1 var(--vd-accent-hue) / 0.2);
-  --vd-field: oklch(0.2 0.02 264 / 0.6);
-  --vd-chip: oklch(0.2 0.02 264 / 0.45);
-  --vd-blur: 18px;
-  --vd-radius: 14px;
   --vd-icon-size: 62px;
-  /* Interface style (019-D): the floating surfaces take their border from
-     the resolved border-strength token; strength 1 must equal the legacy
-     --vd-border look exactly. */
-  --vd-surface-border: oklch(0.9 0.02 264 / calc(0.14 * var(--vd-surface-border-strength, 1)));
-  /* Snap-lattice hint color: a tiny 4px dot can afford a higher alpha than
-     tile borders would — presence stays whisper-low. */
-  --vd-grid-line: oklch(0.92 0.03 260 / 0.38);
   /* Base slot size of the shared icon tile: the dock, the folder overlay and
      the visual editor preview size themselves from this; desktop canvas
      tiles size themselves from their rect instead (see .vela-canvas rules).
      The responsive shrink redefines the same variable. */
   --vd-slot-icon-size: var(--vd-icon-size);
-  --vd-label-shadow: 0 1px 3px oklch(0 0 0 / 0.55);
 
   position: fixed;
   inset: 0;
@@ -407,10 +422,13 @@
   background: var(--vd-bg);
 }
 
-/* Explicit light palette — complete, not just a white background.
-   The mobile shell and the shells' portal roots carry the same resolved
-   data-vd-color-mode but sit outside .vela-desktop, so they need it too
-   (otherwise phones stay on the :root dark tokens). */
+/*
+ * Light mode reaches the desktop through the semantic layer: the shell
+ * emits the EFFECTIVE mode on every themed root (021-R1) and the aliases
+ * above follow. Only the wallpaper blob parameters stay mode-scoped here
+ * (lighter, flatter blobs); the mobile shell and the portal roots carry
+ * the same resolved attribute and share the lightening.
+ */
 .vela-desktop[data-vd-color-mode="light"],
 .vela-mobile-shell[data-vd-color-mode="light"],
 [data-vd-portal-root][data-vd-color-mode="light"] {
@@ -424,21 +442,8 @@
   --vd-wall-c3: 0.05;
   --vd-wall-a3: 0.5;
 
-  --vd-bg: oklch(0.96 0.008 264);
-  --vd-surface: oklch(1 0 0 / var(--vd-surface-opacity));
-  --vd-surface-strong: oklch(1 0 0 / var(--vd-surface-strong-opacity));
-  --vd-border: oklch(0.35 0.02 264 / 0.18);
-  --vd-surface-border: oklch(0.35 0.02 264 / calc(0.18 * var(--vd-surface-border-strength, 1)));
-  --vd-text: oklch(0.24 0.02 264);
-  --vd-text-muted: oklch(0.42 0.02 264);
-  --vd-accent: oklch(0.56 0.16 var(--vd-accent-hue));
-  --vd-accent-strong: oklch(0.56 0.14 var(--vd-accent-hue) / 0.92);
-  --vd-accent-strong-hover: oklch(0.6 0.15 var(--vd-accent-hue) / 0.95);
-  --vd-accent-contrast: oklch(0.99 0.005 264);
-  --vd-accent-wash: oklch(0.56 0.14 var(--vd-accent-hue) / 0.16);
-  --vd-field: oklch(1 0 0 / 0.85);
-  --vd-chip: oklch(0.55 0.02 264 / 0.12);
-  --vd-grid-line: oklch(0.25 0.02 264 / 0.32);
+  /* Tile labels sit directly on the bright scene: the dark readability
+     shadow would smudge, the semantic ground carries enough contrast. */
   --vd-label-shadow: none;
 }
 
@@ -477,6 +482,20 @@
   --vd-wall-cf1: 0.3;
   --vd-wall-cf2: 0.28;
   --vd-wall-cf3: 0.32;
+}
+
+/*
+ * The scene root (P1): one pointer-transparent, clipped layer stacking
+ * the wallpaper, the Dawn horizon, the ambient drift and the opening
+ * veil — everything the eye sees BEHIND the chrome. Fixed-height inset 0;
+ * children position themselves absolutely inside it.
+ */
+.vela-desktop__scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: clip;
+  pointer-events: none;
 }
 
 /*
@@ -659,16 +678,165 @@
 /* The ambient wallpaper layer — a slow, soft drift behind everything.
    022: a REAL element (the desktop root renders .vela-desktop__ambient)
    so the GSAP ambient drift tween can own its transform — stylesheet
-   keyframes and pseudo-element animation are gone. */
+   keyframes and pseudo-element animation are gone. P1: the washes are the
+   dawn horizon's own hues (rose + cold blue at whisper alpha), composed
+   from the semantic stops so a re-hued accent or mode flip carries them. */
 .vela-desktop__ambient {
   position: absolute;
   inset: -20%;
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(36% 30% at 30% 30%, oklch(0.55 0.12 265 / 0.13), transparent 70%),
-    radial-gradient(32% 28% at 72% 64%, oklch(0.5 0.11 195 / 0.11), transparent 70%);
+    radial-gradient(
+      36% 30% at 30% 30%,
+      color-mix(in oklab, var(--vd-color-dawn-2) 13%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      32% 28% at 72% 64%,
+      color-mix(in oklab, var(--vd-color-dawn-3) 11%, transparent),
+      transparent 70%
+    );
+  /* A filter (not backdrop) blur — the material tiers do not collapse it. */
   filter: blur(46px);
+}
+
+/*
+ * The Dawn horizon (P1, motion-spec §2 visual layer + direction A): on the
+ * PRESET scenes the lower third carries the horizon — the dawn.1→dawn.3
+ * gradient stops from the semantic layer, a 1px highlight waterline and a
+ * whisper of chart graticule across the whole ground. It renders ONLY
+ * under preset wallpapers (a custom photo IS the scene; the renderer
+ * applies no preset tint there), sits above the wallpaper layers and
+ * below the workbench, and never takes pointers. GSAP owns the band
+ * wrapper's transform during the Dawn opening (data-motion-owner="gsap");
+ * at rest it is pure CSS.
+ */
+.vela-dawn-horizon {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* The chart graticule: hairline meridians/parallels at ~4% opacity
+   (visual-directions A: 经纬线 4%). */
+.vela-dawn-horizon__graticule {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      to right,
+      color-mix(in oklab, var(--vd-color-fg-primary) 4%, transparent) 0 1px,
+      transparent 1px 120px
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--vd-color-fg-primary) 4%, transparent) 0 1px,
+      transparent 1px 120px
+    );
+  mask-image: radial-gradient(120% 90% at 50% 70%, black 30%, transparent 90%);
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 70%, black 30%, transparent 90%);
+}
+
+/* The scalable BAND wrapper: the Dawn opening rises from scaleY 0 at the
+   waterline; transform-origin is the horizon itself. */
+.vela-dawn-horizon__band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34%;
+  transform-origin: 50% 100%;
+}
+
+/* The resting horizon glow: cold blue at the edges, apricot-rose core,
+   fading upward off the waterline. */
+.vela-dawn-horizon__glow {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      to top,
+      color-mix(in oklab, var(--vd-color-dawn-1) 30%, transparent),
+      color-mix(in oklab, var(--vd-color-dawn-2) 16%, transparent) 42%,
+      color-mix(in oklab, var(--vd-color-dawn-3) 10%, transparent) 74%,
+      transparent
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--vd-color-dawn-3) 26%, transparent),
+      color-mix(in oklab, var(--vd-color-dawn-2) 34%, transparent) 45%,
+      color-mix(in oklab, var(--vd-color-dawn-1) 42%, transparent) 78%,
+      color-mix(in oklab, var(--vd-color-dawn-3) 22%, transparent)
+    );
+  mask-image: linear-gradient(to top, black 0%, transparent 96%);
+  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 96%);
+}
+
+/* The waterline: one hairline highlight where the light band meets the
+   ground — the only crisp edge the horizon is allowed. */
+.vela-dawn-horizon__band::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--vd-color-dawn-1) 70%, transparent) 50%,
+    transparent
+  );
+}
+
+/* The opening BURST: the bright band the Dawn timeline raises; it sits at
+   opacity 0 at rest and only the timeline lights it (then fades it out
+   over the 280–300ms tail). */
+.vela-dawn-horizon__burst {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: linear-gradient(
+    to top,
+    color-mix(in oklab, var(--vd-color-dawn-1) 55%, transparent),
+    color-mix(in oklab, var(--vd-color-dawn-2) 34%, transparent) 46%,
+    transparent 88%
+  );
+  filter: blur(var(--vd-blur-glass));
+}
+
+/* The Dawn opening brightness veil: a full-frame ground-colored overlay
+   the timeline fades 0.6→0. It rests at opacity 0 (never painted unless
+   the timeline drives it) and never takes pointers. */
+.vela-dawn-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--vd-color-bg-deep);
+}
+
+/*
+ * The snap-drop ripple (P1, motion-spec §3): one 220ms ring stroke at the
+ * landing cells — opacity 0.35→0, scale 0.9→1.15 — rendered by Motion and
+ * removed on completion. Never rendered under reduced motion.
+ */
+.vela-drop-ripple-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.vela-drop-ripple {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid var(--vd-accent);
+  border-radius: var(--vd-radius-lg);
+  pointer-events: none;
 }
 
 /*
@@ -760,7 +928,7 @@
   flex-direction: column;
   min-width: 0;
   padding: 26px 10px 26px 22px;
-  text-shadow: 0 1px 3px oklch(0 0 0 / 0.35);
+  text-shadow: var(--vd-label-shadow);
 }
 
 .vela-rail__list {
@@ -820,12 +988,12 @@
 
 .vela-rail__item:hover {
   color: var(--vd-text);
-  background: oklch(1 0 0 / 0.03);
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 3%, transparent);
 }
 
 .vela-rail__item[data-active="true"] {
   color: var(--vd-text);
-  background: oklch(1 0 0 / 0.06);
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 6%, transparent);
 }
 
 .vela-rail__item:focus-visible {
@@ -833,35 +1001,9 @@
   outline-offset: -1px;
 }
 
-.vela-desktop[data-vd-color-mode="light"] .vela-rail__item {
-  color: var(--vd-text-muted);
-}
-
-.vela-desktop[data-vd-color-mode="light"] .vela-rail__item[data-active="true"] {
-  color: var(--vd-text);
-  background: oklch(0 0 0 / 0.045);
-}
-
-.vela-desktop[data-vd-color-mode="light"] .vela-rail,
-.vela-desktop[data-vd-color-mode="light"] .vela-rail__item {
-  text-shadow: none;
-}
-
-@media (prefers-color-scheme: light) {
-  .vela-desktop[data-vd-color-mode="system"] .vela-rail__item {
-    color: var(--vd-text-muted);
-  }
-
-  .vela-desktop[data-vd-color-mode="system"] .vela-rail__item[data-active="true"] {
-    color: var(--vd-text);
-    background: oklch(0 0 0 / 0.045);
-  }
-
-  .vela-desktop[data-vd-color-mode="system"] .vela-rail,
-  .vela-desktop[data-vd-color-mode="system"] .vela-rail__item {
-    text-shadow: none;
-  }
-}
+/* Light mode needs no rail overrides: the hover/active washes mix the
+   MODE-RESOLVED foreground, so they darken on the light scene by
+   themselves, and the label shadow flips through --vd-label-shadow. */
 
 /* --- Right workspace + section scroll ownership ---------------------------- */
 
@@ -990,7 +1132,7 @@
 
 .vela-section-scroller::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: oklch(0.7 0.02 260 / 0.28);
+  background: color-mix(in oklab, var(--vd-color-fg-muted) 28%, transparent);
 }
 
 .vela-section-scroller::-webkit-scrollbar-track {
@@ -1130,9 +1272,9 @@
   border: 1px solid var(--vd-surface-border, var(--vd-border));
   border-radius: 999px;
   background: var(--vd-surface);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: var(--vd-surface-shadow, 0 8px 24px oklch(0 0 0 / 0.22));
+  backdrop-filter: blur(var(--vd-blur-panel));
+  -webkit-backdrop-filter: blur(var(--vd-blur-panel));
+  box-shadow: var(--vd-surface-shadow, var(--vd-shadow-tile));
 }
 
 .vela-arrange-bar__modes {
@@ -1140,7 +1282,7 @@
   gap: 2px;
   padding: 2px;
   border-radius: 999px;
-  background: oklch(0 0 0 / 0.16);
+  background: color-mix(in oklab, var(--vd-color-bg-deep) 40%, transparent);
 }
 
 .vela-segmented__option {
@@ -1190,7 +1332,7 @@
   height: 24px;
   border: none;
   border-radius: 999px;
-  background: oklch(0 0 0 / 0.16);
+  background: color-mix(in oklab, var(--vd-color-bg-deep) 40%, transparent);
   color: var(--vd-text);
   font-family: var(--vd-font);
   font-size: 14px;
@@ -1246,7 +1388,7 @@
 }
 
 .vela-arrange-bar__history:hover:not(:disabled) {
-  background: oklch(0 0 0 / 0.16);
+  background: color-mix(in oklab, var(--vd-color-bg-deep) 40%, transparent);
   color: var(--vd-text);
 }
 
@@ -1278,7 +1420,7 @@
   padding: 3px 10px;
   border: none;
   border-radius: 999px;
-  background: oklch(0.25 0.02 264 / 0.4);
+  background: color-mix(in oklab, var(--vd-color-bg-well) 40%, transparent);
   font-family: var(--vd-font);
   font-size: 11px;
   color: var(--vd-text-muted);
@@ -1297,15 +1439,15 @@ button.vela-sync-status:focus-visible {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: oklch(0.8 0.13 80);
+  background: var(--vd-color-accent);
 }
 
 .vela-sync-status[data-state="offline"] .vela-sync-status__dot {
-  background: oklch(0.75 0.13 60);
+  background: color-mix(in oklab, var(--vd-color-accent) 80%, var(--vd-color-bg-deep));
 }
 
 .vela-sync-status[data-state="conflict"] .vela-sync-status__dot {
-  background: oklch(0.65 0.19 25);
+  background: var(--vd-color-danger);
 }
 
 /* --- Move-to-section dialog list ------------------------------------------ */
@@ -1430,6 +1572,13 @@ button.vela-sync-status:focus-visible {
 /* The fixed-slot tile base (019-B): folder-overlay tiles (AppIconTile)
    and the folder glyph. Desktop apps left this path — they render the
    full-geometry surface + adaptive content instead. */
+/*
+ * The Auto tile look is the Dawn Chart wash (P1): the horizon's cold blue
+ * blending toward the user's accent hue, composed from the semantic stops
+ * — never a literal. The on-tile glyph color is the one pre-existing
+ * literal kept on purpose: solid/gradient tiles are saturated in BOTH
+ * color modes, so their text may not follow the mode foreground.
+ */
 .vela-item__icon {
   display: grid;
   place-items: center;
@@ -1438,11 +1587,14 @@ button.vela-sync-status:focus-visible {
   width: var(--vd-slot-icon-size);
   height: var(--vd-slot-icon-size);
   border-radius: calc(var(--vd-slot-icon-size) * 0.26);
-  background:
-    linear-gradient(150deg, oklch(0.52 0.09 250 / 0.9), oklch(0.38 0.07 300 / 0.9));
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--vd-color-dawn-3) 58%, var(--vd-color-bg-deep)),
+    color-mix(in oklab, var(--vd-color-accent) 34%, var(--vd-color-bg-deep))
+  );
   box-shadow:
-    0 10px 26px oklch(0 0 0 / 0.35),
-    inset 0 1px 0 oklch(0.95 0.02 260 / 0.22);
+    0 10px 26px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 22%, transparent);
   font-size: calc(var(--vd-slot-icon-size) * 0.34);
   font-weight: 650;
   letter-spacing: 0.02em;
@@ -1450,7 +1602,7 @@ button.vela-sync-status:focus-visible {
 }
 
 .vela-item__icon--folder {
-  color: oklch(0.85 0.09 85);
+  color: color-mix(in oklab, var(--vd-color-dawn-1) 85%, var(--vd-color-fg-primary));
 }
 
 /* On the DESKTOP (freeform canvas AND grid host) a folder tile is a
@@ -1534,26 +1686,36 @@ button.vela-sync-status:focus-visible {
 }
 
 .vela-app-icon[data-decoration="gradient"] {
-  /* Auto = the pre-016 default tile, byte-for-byte. */
-  background: var(--vd-app-icon-bg, linear-gradient(150deg, oklch(0.52 0.09 250 / 0.9), oklch(0.38 0.07 300 / 0.9)));
+  /* Auto = the Dawn Chart wash, same as the fixed-slot tile above. */
+  background: var(
+    --vd-app-icon-bg,
+    linear-gradient(
+      150deg,
+      color-mix(in oklab, var(--vd-color-dawn-3) 58%, var(--vd-color-bg-deep)),
+      color-mix(in oklab, var(--vd-color-accent) 34%, var(--vd-color-bg-deep))
+    )
+  );
   box-shadow:
-    0 10px 26px oklch(0 0 0 / 0.35),
-    inset 0 1px 0 oklch(0.95 0.02 260 / 0.22);
+    0 10px 26px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 22%, transparent);
 }
 
 .vela-app-icon[data-decoration="solid"] {
-  background: var(--vd-app-icon-bg, oklch(0.45 0.08 275 / 0.92));
+  background: var(
+    --vd-app-icon-bg,
+    color-mix(in oklab, var(--vd-color-dawn-3) 78%, var(--vd-color-bg-deep))
+  );
   box-shadow:
-    0 10px 26px oklch(0 0 0 / 0.35),
-    inset 0 1px 0 oklch(0.95 0.02 260 / 0.22);
+    0 10px 26px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 22%, transparent);
 }
 
 .vela-app-icon[data-decoration="glass"] {
-  background: var(--vd-app-icon-bg, oklch(0.62 0.02 264 / 0.34));
-  border: 1px solid var(--vd-border);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: 0 8px 22px oklch(0 0 0 / 0.22);
+  background: var(--vd-app-icon-bg, var(--vd-color-bg-surface));
+  border: 1px solid var(--vd-color-border-highlight);
+  backdrop-filter: blur(var(--vd-blur-glass));
+  -webkit-backdrop-filter: blur(var(--vd-blur-glass));
+  box-shadow: 0 8px 22px color-mix(in oklab, var(--vd-color-bg-deep) 40%, transparent);
 }
 
 .vela-app-icon[data-decoration="none"] {
@@ -1649,21 +1811,31 @@ button.vela-sync-status:focus-visible {
    dock keeps its compact FIXED geometry; the deprecated per-app scale
    multiplier no longer applies (never emitted). */
 .vela-dock__item[data-decoration="gradient"] {
-  background: var(--vd-app-icon-bg, linear-gradient(150deg, oklch(0.5 0.08 250 / 0.85), oklch(0.36 0.06 300 / 0.85)));
+  background: var(
+    --vd-app-icon-bg,
+    linear-gradient(
+      150deg,
+      color-mix(in oklab, var(--vd-color-dawn-3) 55%, var(--vd-color-bg-deep)),
+      color-mix(in oklab, var(--vd-color-accent) 30%, var(--vd-color-bg-deep))
+    )
+  );
   color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
   font-size: 15px;
 }
 
 .vela-dock__item[data-decoration="solid"] {
-  background: var(--vd-app-icon-bg, oklch(0.43 0.07 275 / 0.88));
+  background: var(
+    --vd-app-icon-bg,
+    color-mix(in oklab, var(--vd-color-dawn-3) 75%, var(--vd-color-bg-deep))
+  );
   color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
   font-size: 15px;
 }
 
 .vela-dock__item[data-decoration="glass"] {
-  background: var(--vd-app-icon-bg, oklch(0.62 0.02 264 / 0.3));
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
+  background: var(--vd-app-icon-bg, var(--vd-color-bg-surface));
+  backdrop-filter: blur(var(--vd-blur-glass));
+  -webkit-backdrop-filter: blur(var(--vd-blur-glass));
   color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
   font-size: 15px;
 }
@@ -1690,8 +1862,9 @@ button.vela-sync-status:focus-visible {
   border: 1px solid var(--vd-border);
   border-radius: var(--vd-radius);
   background: var(--vd-surface);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
+  backdrop-filter: blur(var(--vd-blur-glass));
+  -webkit-backdrop-filter: blur(var(--vd-blur-glass));
+  box-shadow: var(--vd-surface-shadow, var(--vd-shadow-tile));
   cursor: default;
 }
 
@@ -1710,7 +1883,7 @@ button.vela-sync-status:focus-visible {
 
 .vela-item--missing {
   padding: 14px 16px;
-  border: 1px dashed oklch(0.75 0.1 60 / 0.5);
+  border: 1px dashed color-mix(in oklab, var(--vd-color-accent) 50%, transparent);
   border-radius: 12px;
   cursor: default;
 }
@@ -1729,11 +1902,11 @@ button.vela-sync-status:focus-visible {
   max-width: min(92vw, 860px);
   padding: 9px 12px;
   border: 1px solid var(--vd-surface-border, var(--vd-border));
-  border-radius: 20px;
+  border-radius: var(--vd-radius-xl);
   background: var(--vd-surface-strong);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: var(--vd-surface-shadow, 0 18px 44px oklch(0 0 0 / 0.4));
+  backdrop-filter: blur(var(--vd-blur-panel));
+  -webkit-backdrop-filter: blur(var(--vd-blur-panel));
+  box-shadow: var(--vd-surface-shadow, var(--vd-shadow-panel));
   /* Horizontal overflow is owned by [data-vd-scroll="x"] on the element
      (task 021-A): the quiet shared scrollbar replaces the native slab. */
 }
@@ -1748,8 +1921,11 @@ button.vela-sync-status:focus-visible {
   padding: 0;
   border: 1px solid var(--vd-border);
   border-radius: 12px;
-  background:
-    linear-gradient(150deg, oklch(0.5 0.08 250 / 0.85), oklch(0.36 0.06 300 / 0.85));
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--vd-color-dawn-3) 55%, var(--vd-color-bg-deep)),
+    color-mix(in oklab, var(--vd-color-accent) 30%, var(--vd-color-bg-deep))
+  );
   font-family: var(--vd-font);
   font-size: 15px;
   font-weight: 650;
@@ -1758,8 +1934,8 @@ button.vela-sync-status:focus-visible {
 }
 
 .vela-dock__item--folder {
-  background: oklch(0.32 0.03 264 / 0.85);
-  color: oklch(0.85 0.09 85);
+  background: color-mix(in oklab, var(--vd-color-bg-well) 85%, transparent);
+  color: color-mix(in oklab, var(--vd-color-dawn-1) 85%, var(--vd-color-fg-primary));
 }
 
 /* Dock hover lift is GSAP-owned (useVdHoverLift on the inner
@@ -1799,7 +1975,7 @@ button.vela-sync-status:focus-visible {
 .vela-item--widget[data-selected="true"] {
   box-shadow:
     0 0 0 2px var(--vd-accent),
-    0 10px 26px oklch(0 0 0 / 0.35);
+    0 10px 26px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent);
 }
 
 /* --- Arrange rect resize (016-C) ----------------------------------------
@@ -1829,10 +2005,10 @@ button.vela-sync-status:focus-visible {
   content: "";
   position: absolute;
   inset: 5px;
-  border: 1px solid oklch(0.98 0.01 260 / 0.85);
+  border: 1px solid color-mix(in oklab, var(--vd-color-fg-primary) 85%, transparent);
   border-radius: 2px;
   background: var(--vd-accent);
-  box-shadow: 0 1px 3px oklch(0 0 0 / 0.45);
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent);
 }
 
 .vela-item__resize-handle[data-handle="nw"] {
@@ -1907,9 +2083,9 @@ button.vela-sync-status:focus-visible {
   border: 1px solid var(--vd-border);
   border-radius: 12px;
   background: var(--vd-surface-strong);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: 0 16px 40px oklch(0 0 0 / 0.45);
+  backdrop-filter: blur(var(--vd-blur-panel));
+  -webkit-backdrop-filter: blur(var(--vd-blur-panel));
+  box-shadow: var(--vd-shadow-panel);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1955,7 +2131,7 @@ button.vela-sync-status:focus-visible {
 }
 
 .vela-context-menu__item:hover:not(:disabled) {
-  background: oklch(0.85 0.02 264 / 0.12);
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 10%, transparent);
 }
 
 .vela-context-menu__item:focus-visible {
@@ -1978,7 +2154,7 @@ button.vela-sync-status:focus-visible {
   z-index: 30;
   display: grid;
   place-items: center;
-  background: oklch(0 0 0 / 0.45);
+  background: color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent);
 }
 
 /* The panel surface is the GSAP-animated node (VdAnimatedSurface, 022);
@@ -1999,9 +2175,9 @@ button.vela-sync-status:focus-visible {
   border: 1px solid var(--vd-surface-border, var(--vd-border));
   border-radius: calc(var(--vd-radius) + 6px);
   background: var(--vd-surface-strong);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: var(--vd-surface-shadow, 0 24px 70px oklch(0 0 0 / 0.45));
+  backdrop-filter: blur(var(--vd-blur-panel));
+  -webkit-backdrop-filter: blur(var(--vd-blur-panel));
+  box-shadow: var(--vd-surface-shadow, var(--vd-shadow-panel));
 }
 
 .vela-folder-overlay__header {
@@ -2030,11 +2206,11 @@ button.vela-sync-status:focus-visible {
 .vela-folder-overlay__error {
   margin: 0;
   padding: 8px 12px;
-  border: 1px solid oklch(0.7 0.14 25 / 0.35);
+  border: 1px solid color-mix(in oklab, var(--vd-color-danger) 35%, transparent);
   border-radius: 10px;
-  background: oklch(0.35 0.08 25 / 0.35);
+  background: color-mix(in oklab, var(--vd-color-danger) 18%, transparent);
   font-size: 12.5px;
-  color: oklch(0.85 0.1 25);
+  color: color-mix(in oklab, var(--vd-color-danger) 60%, var(--vd-color-fg-primary));
 }
 
 /* The scroll owner (VdScrollArea, task 021-A); the grid inside is layout
@@ -2078,7 +2254,7 @@ button.vela-sync-status:focus-visible {
   z-index: 40;
   display: grid;
   place-items: center;
-  background: oklch(0 0 0 / 0.45);
+  background: color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent);
 }
 
 .vela-dialog {
@@ -2087,9 +2263,9 @@ button.vela-sync-status:focus-visible {
   border: 1px solid var(--vd-border);
   border-radius: calc(var(--vd-radius) + 4px);
   background: var(--vd-surface-strong);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: 0 24px 70px oklch(0 0 0 / 0.45);
+  backdrop-filter: blur(var(--vd-blur-panel));
+  -webkit-backdrop-filter: blur(var(--vd-blur-panel));
+  box-shadow: var(--vd-shadow-panel);
 }
 
 .vela-dialog__title {
@@ -2106,13 +2282,13 @@ button.vela-sync-status:focus-visible {
 }
 
 .vela-button--danger {
-  background: oklch(0.5 0.15 25 / 0.85);
+  background: color-mix(in oklab, var(--vd-color-danger) 85%, transparent);
   border-color: transparent;
-  color: oklch(0.98 0.01 30);
+  color: var(--vd-color-danger-fg);
 }
 
 .vela-button--danger:hover:not(:disabled) {
-  background: oklch(0.56 0.16 25 / 0.9);
+  background: color-mix(in oklab, var(--vd-color-danger-hover) 90%, transparent);
 }
 
 .vela-dialog__actions {
@@ -2132,7 +2308,7 @@ button.vela-sync-status:focus-visible {
   display: grid;
   place-items: start center;
   padding-top: 16vh;
-  background: oklch(0 0 0 / 0.45);
+  background: color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent);
 }
 
 .vela-launcher {
@@ -2144,9 +2320,9 @@ button.vela-sync-status:focus-visible {
   border: 1px solid var(--vd-surface-border, var(--vd-border));
   border-radius: calc(var(--vd-radius) + 6px);
   background: var(--vd-surface-strong);
-  backdrop-filter: blur(var(--vd-blur));
-  -webkit-backdrop-filter: blur(var(--vd-blur));
-  box-shadow: var(--vd-surface-shadow, 0 24px 70px oklch(0 0 0 / 0.5));
+  backdrop-filter: blur(var(--vd-blur-panel));
+  -webkit-backdrop-filter: blur(var(--vd-blur-panel));
+  box-shadow: var(--vd-surface-shadow, var(--vd-shadow-panel));
   /* Dialog/popover band (019-D tokens): opacity + 6px rise + subtle scale.
      No spring, no bounce; reduced motion kills it below. */
 }
@@ -2251,8 +2427,8 @@ button.vela-sync-status:focus-visible {
   --vd-slot-icon-size: 26px;
   /* A 26px tile cannot carry the desktop tile's deep shadow. */
   box-shadow:
-    0 2px 6px oklch(0 0 0 / 0.25),
-    inset 0 1px 0 oklch(0.95 0.02 260 / 0.18);
+    0 2px 6px color-mix(in oklab, var(--vd-color-bg-deep) 35%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 18%, transparent);
 }
 
 .vela-launcher__icon[data-decoration="none"] {
@@ -2447,20 +2623,24 @@ button.vela-sync-status:focus-visible {
   width: 34px;
   height: 34px;
   border-radius: 9px;
-  background: linear-gradient(150deg, oklch(0.52 0.09 250 / 0.9), oklch(0.38 0.07 300 / 0.9));
-  box-shadow: 0 6px 14px oklch(0 0 0 / 0.3);
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--vd-color-dawn-3) 58%, var(--vd-color-bg-deep)),
+    color-mix(in oklab, var(--vd-color-accent) 34%, var(--vd-color-bg-deep))
+  );
+  box-shadow: 0 6px 14px color-mix(in oklab, var(--vd-color-bg-deep) 40%, transparent);
 }
 
 .vela-appearance-inspector__decoration-tile[data-style="solid"] {
-  background: oklch(0.45 0.08 275 / 0.92);
+  background: color-mix(in oklab, var(--vd-color-dawn-3) 78%, var(--vd-color-bg-deep));
 }
 
 .vela-appearance-inspector__decoration-tile[data-style="glass"] {
-  background: oklch(0.62 0.02 264 / 0.34);
-  border: 1px solid var(--vd-border);
+  background: var(--vd-color-bg-surface);
+  border: 1px solid var(--vd-color-border-highlight);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  box-shadow: 0 6px 14px oklch(0 0 0 / 0.2);
+  box-shadow: 0 6px 14px color-mix(in oklab, var(--vd-color-bg-deep) 30%, transparent);
 }
 
 .vela-appearance-inspector__decoration-tile[data-style="none"] {
@@ -2810,7 +2990,7 @@ header.vela-inspector__subject {
   border-radius: var(--vd-radius);
   background: var(--vd-bg);
   color: var(--vd-text);
-  box-shadow: 0 8px 30px oklch(0 0 0 / 0.2);
+  box-shadow: 0 8px 30px color-mix(in oklab, var(--vd-color-bg-deep) 30%, transparent);
   font: 13px/1.6 var(--vd-font);
 }
 

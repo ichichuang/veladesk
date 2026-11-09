@@ -49,7 +49,11 @@ const SHELL_SPLIT_FILES = [
   "./tile-host/use-tile-session.ts",
 ] as const;
 
-const item = source("./desktop-item.tsx");
+/**
+ * P1 hygiene split: the resize gesture session moved from desktop-item.tsx
+ * into use-item-resize.ts; the item contract reads BOTH sources joined.
+ */
+const item = [source("./desktop-item.tsx"), source("./use-item-resize.ts")].join("\n");
 const grid = source("./desktop-grid.tsx");
 const shell = SHELL_SPLIT_FILES.map((file) => source(file)).join("\n");
 const stage = source("./section-view.tsx");
@@ -87,7 +91,9 @@ describe("desktop item — dual geometry", () => {
 
 describe("desktop item — eight resize handles", () => {
   it("renders the shared handle list, not a hardcoded corner subset", () => {
-    expect(item).toContain("CANVAS_RESIZE_HANDLES.map");
+    // The hook re-exports the shared list; the component maps it.
+    expect(item).toContain("ITEM_RESIZE_HANDLES.map");
+    expect(item).toContain("CANVAS_RESIZE_HANDLES");
     expect(item).not.toMatch(/RESIZE_CORNERS|data-corner/);
     expect(item).toContain('data-handle={handle}');
   });
@@ -101,14 +107,14 @@ describe("desktop item — eight resize handles", () => {
   it("never lets a handle start a drag or a click", () => {
     // Capture phase: dnd-kit's native pointerdown on the button fires before
     // React's bubble handlers, so a bubble-phase stop would be too late.
-    expect(item).toContain("onPointerDownCapture={handleResizePointerDown(handle)}");
+    expect(item).toContain("onPointerDownCapture={resize.handleResizePointerDown(handle)}");
     expect(item).toMatch(/event\.preventDefault\(\);\s*\n\s*event\.stopPropagation\(\);/);
   });
 
   it("owns the gesture with pointer capture and cancels cleanly", () => {
     expect(item).toContain("setPointerCapture(event.pointerId)");
-    expect(item).toContain("onLostPointerCapture={handleLostPointerCapture}");
-    expect(item).toContain("onPointerCancel={handleLostPointerCapture}");
+    expect(item).toContain("onLostPointerCapture={resize.handleLostPointerCapture}");
+    expect(item).toContain("onPointerCancel={resize.handleLostPointerCapture}");
     expect(item).toContain("cancelResize()");
     // Escape must be caught before the shell's own Escape handling consumes it
     // (a live resize owns the key).
@@ -126,7 +132,7 @@ describe("desktop item — resize stays a preview until release", () => {
     expect(pointerMove).toContain("applyGeometry(");
     expect(pointerMove).not.toContain("onResizeCommit");
     expect(item).not.toMatch(/stageWorkspace|syncCurrent|runtime\./);
-    expect(item).toContain("onResizeCommit(entity.id, finalGeometry)");
+    expect(item).toContain("onResizeCommit(entityId, finalGeometry)");
   });
 
   it("leaves the geometry untouched for a no-op gesture", () => {

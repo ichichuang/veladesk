@@ -24,6 +24,9 @@ describe("buildAppearanceTheme", () => {
     expect(buildAppearanceTheme(DEFAULT_WORKSPACE_APPEARANCE)).toEqual({
       colorMode: "system",
       wallpaperPreset: "dawn",
+      // The raw default surface values (0.55/18/14) sit nearest the
+      // 玻璃 glass preset — the tier the shell emits for a fresh snapshot.
+      materialTier: "glass",
       style: {
         "--vd-accent-hue": "60",
         "--vd-surface-opacity": "0.55",
@@ -34,6 +37,19 @@ describe("buildAppearanceTheme", () => {
         "--vd-icon-size": "62px",
       },
     });
+  });
+
+  it("resolves the material tier from the persisted interfaceStyle, or infers the nearest preset (P1)", () => {
+    // Persisted style wins verbatim.
+    expect(buildAppearanceTheme(appearanceWith({ interfaceStyle: "glass" })).materialTier).toBe("glass");
+    expect(buildAppearanceTheme(appearanceWith({ interfaceStyle: "clean" })).materialTier).toBe("clean");
+    // Pre-019-D raw values infer the nearest preset deterministically.
+    expect(
+      buildAppearanceTheme(appearanceWith({ surfaceOpacity: 0.9, blurPx: 0, radiusPx: 10 })).materialTier,
+    ).toBe("clean");
+    expect(
+      buildAppearanceTheme(appearanceWith({ surfaceOpacity: 0.5, blurPx: 24, radiusPx: 18 })).materialTier,
+    ).toBe("glass");
   });
 
   it("renders a pre-019-D appearance from its persisted raw values (no silent restyle)", () => {
