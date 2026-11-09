@@ -105,13 +105,13 @@ export function useSnapDropRipples(): {
         return { id: nonceRef.current, box };
       });
       setRipples((current) => [...current, ...played]);
-      // Retire each ring once its stroke has fully faded (plus a frame of
-      // slack so the exit paint always lands).
+      // Retire each ring once its stroke has fully faded (plus the
+      // dropRippleTail slack so the exit paint always lands).
       for (const ripple of played) {
         const timer = window.setTimeout(() => {
           timersRef.current.delete(timer);
           setRipples((current) => current.filter((entry) => entry.id !== ripple.id));
-        }, VD_MOTION_FLIP.dropRipple * 1000 + 40);
+        }, (VD_MOTION_FLIP.dropRipple + VD_MOTION_FLIP.dropRippleTail) * 1000);
         timersRef.current.add(timer);
       }
     },

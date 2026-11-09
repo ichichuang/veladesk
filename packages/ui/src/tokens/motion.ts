@@ -72,6 +72,12 @@ export const VD_MOTION_EASES = {
    * ordinary surface transitions.
    */
   drift: "sine.inOut",
+  /**
+   * No easing (GSAP `"none"`): constant-rate loops (the loading spinner)
+   * and the twin of the bezier group's `linear` (reduced-motion
+   * crossfades). Never on ordinary surface transitions.
+   */
+  linear: "none",
 } as const;
 
 /** A named ease role in {@link VD_MOTION_EASES}. */
@@ -86,7 +92,8 @@ export type VdMotionBezier = readonly [number, number, number, number];
 /**
  * The ease tokens for MOTION-owned surfaces (Motion cannot parse GSAP ease
  * names): every {@link VD_MOTION_EASES} role as the cubic-bezier twin of
- * its GSAP curve, plus `linear` for the reduced-motion crossfades. GSAP's
+ * its GSAP curve — the two groups carry exactly the same roles (`linear`
+ * ≙ GSAP `"none"`). GSAP's
  * `powerN` family maps onto the classic polynomial eases (power1 = quad,
  * power2 = cubic, power3 = quart), so the twins are the standard bezier
  * approximations of those curves. Motion components import these; GSAP
@@ -101,12 +108,21 @@ export const VD_MOTION_EASES_BEZIER = {
   exit: [0.32, 0, 0.67, 0],
   /** sine.inOut — ease-in-out sine (ambient loops only). */
   drift: [0.37, 0, 0.63, 1],
-  /** No easing: the reduced-motion opacity crossfades (§3). */
+  /** none — no easing: the reduced-motion opacity crossfades (§3). */
   linear: [0, 0, 1, 1],
-} as const satisfies Record<VdMotionEaseRole | "linear", VdMotionBezier>;
+} as const satisfies Record<VdMotionEaseRole, VdMotionBezier>;
 
 /** A named role in {@link VD_MOTION_EASES_BEZIER}. */
 export type VdMotionBezierRole = keyof typeof VD_MOTION_EASES_BEZIER;
+
+/*
+ * Compile-time role parity, BOTH directions: `satisfies` above already
+ * forces a bezier twin for every GSAP role; this forces a GSAP twin for
+ * every bezier role (an extra bezier-only role fails typecheck here).
+ */
+type VdEaseRoleParity = [VdMotionBezierRole] extends [VdMotionEaseRole] ? true : never;
+const VD_EASE_ROLE_PARITY: VdEaseRoleParity = true;
+void VD_EASE_ROLE_PARITY;
 
 /*
  * Named motion GROUPS (motion-spec-p1 §1, seconds unless noted). Each group
@@ -175,6 +191,8 @@ export const VD_MOTION_AMBIENT = {
   bootDrift: 26,
   /** One boot-screen pulse sweep across the status bar. */
   bootPulse: 1.6,
+  /** One full loading-spinner turn (constant rate, `linear` ease). */
+  spin: 1,
 } as const;
 
 /** Grid slot guides (GSAP): the one-shot fade-in when the guides mount. */
@@ -198,6 +216,11 @@ export const VD_MOTION_FLIP = {
    * drop and never under reduced motion.
    */
   dropRipple: 0.22,
+  /**
+   * Retire slack after the ripple stroke: one ~frame-plus (40ms) so the
+   * faded exit paint always lands before the ring unmounts.
+   */
+  dropRippleTail: 0.04,
   /**
    * The reduced-motion reorder downgrade: positions swap instantly, the
    * moved tiles crossfade their opacity over 120ms (§3).

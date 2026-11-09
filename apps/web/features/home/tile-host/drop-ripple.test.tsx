@@ -11,7 +11,7 @@ import { act, cleanup, render } from "@testing-library/react";
 
 import type { PagePlacement } from "@veladesk/domain";
 import { gsap } from "@components/vd/gsap";
-import { VD_MOTION_EASES, VD_MOTION_EASES_BEZIER } from "@components/vd/motion-tokens";
+import { VD_MOTION_EASES, VD_MOTION_EASES_BEZIER, VD_MOTION_FLIP } from "@components/vd/motion-tokens";
 import { DROP_RIPPLE_EASE, snapDropBoxes, SnapDropRipples, useSnapDropRipples } from "./drop-ripple";
 
 type GridItem = { id: string; column: number; row: number; columnSpan: number; rowSpan: number };
@@ -131,6 +131,30 @@ describe("useSnapDropRipples", () => {
       session().playSnapDrop(freeformMoved, freeformStart);
     });
     expect(session().ripples).toEqual([]);
+  });
+
+  it("retires a ring after the stroke plus its tail token, not before", () => {
+    vi.useFakeTimers();
+    try {
+      const { session } = mountSessionProbe(false);
+      act(() => {
+        session().playSnapDrop(
+          gridPlacement([{ id: "a", column: 3, row: 3, columnSpan: 1, rowSpan: 1 }]),
+          START,
+        );
+      });
+      const retireMs = (VD_MOTION_FLIP.dropRipple + VD_MOTION_FLIP.dropRippleTail) * 1000;
+      act(() => {
+        vi.advanceTimersByTime(retireMs - 5);
+      });
+      expect(session().ripples.length).toBe(1);
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      expect(session().ripples).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("never records under reduced motion", () => {

@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { Loader2 } from "lucide-react";
 
 import { gsap } from "./gsap";
+import { VD_MOTION_AMBIENT, VD_MOTION_EASES } from "./motion-tokens";
 import { cn } from "@components/ui/cn";
 import { useVdReducedMotion } from "./reduced-motion";
 
@@ -43,8 +44,8 @@ export function VdLoadingIndicator({
     }
     const tween = gsap.to(element, {
       rotation: 360,
-      duration: 1,
-      ease: "none",
+      duration: VD_MOTION_AMBIENT.spin,
+      ease: VD_MOTION_EASES.linear,
       repeat: -1,
       transformOrigin: "50% 50%",
     });
