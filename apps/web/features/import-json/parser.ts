@@ -27,11 +27,18 @@ import type {
 } from "./contract";
 import { normalizeImportDisplayName, resolveImportAppUrl } from "./normalization";
 import { adoptRecipeDocument, isRecipeDocument } from "./recipe-adapter";
+import type { RecipeImportExtras } from "./recipe-adapter";
 
 export interface ParsedImportDocument {
   readonly document: VelaDeskImportDocumentV1;
   /** Parser warnings (unknown fields); never contains errors. */
   readonly issues: readonly ImportIssue[];
+  /**
+   * Present ONLY for recipe (.deck.json) documents: the structure beyond
+   * sections/apps, passed through verbatim from the adapter and aligned
+   * 1:1 with `document.sections` / their apps.
+   */
+  readonly recipe?: RecipeImportExtras;
 }
 
 export type ParseImportResult =
@@ -94,6 +101,7 @@ export function parseImportDocument(text: string): ParseImportResult {
             parsed: {
               document: inner.parsed.document,
               issues: [adopted.notice, ...inner.parsed.issues],
+              recipe: adopted.extras,
             },
           }
         : {

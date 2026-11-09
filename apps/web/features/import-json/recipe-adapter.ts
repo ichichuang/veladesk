@@ -5,9 +5,11 @@
  * through the domain's pure `migrateRecipe`, distilled via `importRecipe`,
  * and re-entered as an ordinary Import JSON v1 document — so the whole
  * existing parse → plan → preview → confirm pipeline (limits, URL rules,
- * duplicate detection, one-revision write) applies unchanged. Theme and
- * motion travel on the payload for the caller; the P1 wiring imports
- * sections/apps only.
+ * duplicate detection, one-revision write) applies unchanged. The recipe's
+ * STRUCTURE (per-space layout mode, grid, tile geometry, wallpapers) plus
+ * theme and motion ride alongside as `extras` — positionally aligned with
+ * the adopted document (space i ↔ section i, tile j ↔ app j) — for
+ * `applyImportPlan`'s recipe option.
  *
  * Legacy `veladesk-import` documents keep their own direct path — the
  * domain function migrates them too, but the parser only routes documents
@@ -15,14 +17,30 @@
  */
 
 import { importRecipe, migrateRecipe, RECIPE_FORMAT_IDENTITY } from "@veladesk/domain";
-import type { RecipeV1 } from "@veladesk/domain";
+import type { RecipeImportSpace, RecipeMotionV1, RecipeThemeV1, RecipeV1 } from "@veladesk/domain";
 
 import type { ImportIssue, VelaDeskImportDocumentV1 } from "./contract";
 import { IMPORT_FORMAT_IDENTITY, IMPORT_FORMAT_VERSION } from "./contract";
 
+/**
+ * The recipe structure beyond sections/apps. `spaces[i]` describes the
+ * adopted document's `sections[i]` and `spaces[i].tiles[j]` its
+ * `apps[j]` — the parser keeps both 1:1 on success.
+ */
+export interface RecipeImportExtras {
+  readonly spaces: readonly RecipeImportSpace[];
+  readonly theme: RecipeThemeV1 | undefined;
+  readonly motion: RecipeMotionV1 | undefined;
+}
+
 export type AdoptRecipeResult =
   | { readonly kind: "not-a-recipe" }
-  | { readonly kind: "adopted"; readonly document: VelaDeskImportDocumentV1; readonly notice: ImportIssue }
+  | {
+      readonly kind: "adopted";
+      readonly document: VelaDeskImportDocumentV1;
+      readonly notice: ImportIssue;
+      readonly extras: RecipeImportExtras;
+    }
   | { readonly kind: "rejected"; readonly issues: readonly ImportIssue[] };
 
 /** True when a parsed JSON root declares the recipe format. */
@@ -65,5 +83,6 @@ export function adoptRecipeDocument(root: Record<string, unknown>): AdoptRecipeR
     kind: "adopted",
     document,
     notice: { severity: "warning", code: "RECIPE_MIGRATED", path: "format" },
+    extras: { spaces: payload.spaces, theme: payload.theme, motion: payload.motion },
   };
 }
