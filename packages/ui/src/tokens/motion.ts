@@ -74,6 +74,32 @@ export type VdMotionEaseRole = keyof typeof VD_MOTION_EASES;
 /** The literal ease value of a named role (a GSAP ease name). */
 export type VdMotionEaseName = (typeof VD_MOTION_EASES)[VdMotionEaseRole];
 
+/** A CSS/Motion cubic-bezier curve: `[x1, y1, x2, y2]`. */
+export type VdMotionBezier = readonly [number, number, number, number];
+
+/**
+ * The ease tokens for MOTION-owned surfaces (Motion cannot parse GSAP ease
+ * names): every {@link VD_MOTION_EASES} role as the cubic-bezier twin of
+ * its GSAP curve, plus `linear` for the reduced-motion crossfades. GSAP's
+ * `powerN` family maps onto the classic polynomial eases (power1 = quad,
+ * power2 = cubic, power3 = quart), so the twins are the standard bezier
+ * approximations of those curves. Motion components import these; GSAP
+ * timelines keep {@link VD_MOTION_EASES}.
+ */
+export const VD_MOTION_EASES_BEZIER = {
+  /** power2.out — ease-out cubic. */
+  standard: [0.33, 1, 0.68, 1],
+  /** power3.inOut — ease-in-out quart (Orbits camera only). */
+  travel: [0.76, 0, 0.24, 1],
+  /** power2.in — ease-in cubic (leave/exit). */
+  exit: [0.32, 0, 0.67, 0],
+  /** No easing: the reduced-motion opacity crossfades (§3). */
+  linear: [0, 0, 1, 1],
+} as const satisfies Record<VdMotionEaseRole | "linear", VdMotionBezier>;
+
+/** A named role in {@link VD_MOTION_EASES_BEZIER}. */
+export type VdMotionBezierRole = keyof typeof VD_MOTION_EASES_BEZIER;
+
 /*
  * Named motion GROUPS (motion-spec-p1 §1, seconds unless noted). Each group
  * belongs to one motion moment; Orbits and Wake stay behind the

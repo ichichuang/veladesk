@@ -11,7 +11,7 @@ import { act, cleanup, render } from "@testing-library/react";
 
 import type { PagePlacement } from "@veladesk/domain";
 import { gsap } from "@components/vd/gsap";
-import { VD_MOTION_EASES } from "@components/vd/motion-tokens";
+import { VD_MOTION_EASES, VD_MOTION_EASES_BEZIER } from "@components/vd/motion-tokens";
 import { DROP_RIPPLE_EASE, snapDropBoxes, SnapDropRipples, useSnapDropRipples } from "./drop-ripple";
 
 type GridItem = { id: string; column: number; row: number; columnSpan: number; rowSpan: number };
@@ -173,13 +173,35 @@ describe("SnapDropRipples layer", () => {
   });
 });
 
+/** Evaluates a CSS cubic-bezier at x (bisection on the x polynomial). */
+function bezierAt(curve: readonly [number, number, number, number], x: number): number {
+  const [x1, y1, x2, y2] = curve;
+  const axis = (t: number, a: number, b: number) =>
+    3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t;
+  let lo = 0;
+  let hi = 1;
+  for (let step = 0; step < 60; step += 1) {
+    const mid = (lo + hi) / 2;
+    if (axis(mid, x1, x2) < x) lo = mid;
+    else hi = mid;
+  }
+  return axis((lo + hi) / 2, y1, y2);
+}
+
 describe("drop ripple easing", () => {
-  it("rides the canonical standard ease token, not a literal curve", () => {
-    const standard = gsap.parseEase(VD_MOTION_EASES.standard);
-    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
-      expect(DROP_RIPPLE_EASE(t)).toBeCloseTo(standard(t), 10);
+  it("rides the standard bezier token (no literal curve)", () => {
+    expect(DROP_RIPPLE_EASE).toBe(VD_MOTION_EASES_BEZIER.standard);
+  });
+
+  it("the bezier twins track their GSAP curves closely", () => {
+    for (const role of Object.keys(VD_MOTION_EASES) as (keyof typeof VD_MOTION_EASES)[]) {
+      const gsapCurve = gsap.parseEase(VD_MOTION_EASES[role]);
+      for (const x of [0.1, 0.25, 0.5, 0.75, 0.9]) {
+        expect(
+          Math.abs(bezierAt(VD_MOTION_EASES_BEZIER[role], x) - gsapCurve(x)),
+          `${role} at ${x}`,
+        ).toBeLessThan(0.03);
+      }
     }
-    // power2.out is an ease-OUT: ahead of linear at mid-stroke.
-    expect(DROP_RIPPLE_EASE(0.5)).toBeGreaterThan(0.5);
   });
 });

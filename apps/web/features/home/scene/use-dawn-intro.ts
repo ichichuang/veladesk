@@ -112,9 +112,10 @@ function collectIntroTiles(scope: HTMLElement): readonly HTMLElement[] {
 
 export interface UseDawnIntroInput extends IntroTargets {
   /**
-   * Whether this mount may open with Dawn at all: true over a preset scene
-   * (the default), false over a custom image wallpaper. Independent of the
-   * helmMotion experiment switch. False renders the static scene.
+   * The PRESET-SCENE gate: true over a preset scene, false over a custom
+   * image wallpaper (a photo is its own scene). It is NOT the helmMotion
+   * experiment switch — Dawn is on by default. False renders the static
+   * scene; reduced motion is checked separately inside the hook.
    */
   readonly enabled: boolean;
 }

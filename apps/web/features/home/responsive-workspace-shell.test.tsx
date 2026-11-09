@@ -152,9 +152,24 @@ function Host({ record }: { readonly record: LocalWorkspaceRecord }) {
   );
 }
 
-beforeAll(() => {
+/**
+ * The shell's lazy chunks are pre-warmed here, OUTSIDE any test body.
+ * ResponsiveWorkspaceShell `React.lazy`-imports DesktopShell and
+ * MobileShell; the first test that mounts each one otherwise pays the whole
+ * module-graph transform+evaluate inside its own 5s test timeout. In
+ * isolation that is ~2s, but under the full parallel vitest run (every
+ * worker transforming at once) it pushed the first MOBILE/DESKTOP cases
+ * past 5s. Loading both modules once in setup puts them in the module
+ * cache, so the lazy() factories resolve immediately and the tests time
+ * only the render they assert. The hook gets an explicit budget because
+ * the cold transform is setup cost, not behaviour under test.
+ */
+const SHELL_PREWARM_TIMEOUT_MS = 30_000;
+
+beforeAll(async () => {
   Element.prototype.scrollIntoView = () => {};
-});
+  await Promise.all([import("./desktop-shell"), import("./mobile/mobile-shell")]);
+}, SHELL_PREWARM_TIMEOUT_MS);
 
 beforeEach(() => {
   window.localStorage.clear();

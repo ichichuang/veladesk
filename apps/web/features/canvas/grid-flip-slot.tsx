@@ -7,7 +7,7 @@ import type { CSSProperties, ReactNode, RefObject } from "react";
 import type { GridCanvasItem } from "@veladesk/canvas-engine";
 
 import { gridPlacementStyle } from "./square-grid-metrics";
-import { VD_MOTION_FLIP } from "@components/vd/motion-tokens";
+import { VD_MOTION_EASES_BEZIER, VD_MOTION_FLIP } from "@components/vd/motion-tokens";
 import { vdPrefersReducedMotion } from "@components/vd/reduced-motion";
 
 /**
@@ -127,7 +127,7 @@ export function GridFlipSlot({
     const controls = animate(
       element,
       { opacity: [0, 1] },
-      { duration: VD_MOTION_FLIP.reducedCrossfade, ease: "linear" },
+      { duration: VD_MOTION_FLIP.reducedCrossfade, ease: VD_MOTION_EASES_BEZIER.linear },
     );
     return () => {
       controls.stop();

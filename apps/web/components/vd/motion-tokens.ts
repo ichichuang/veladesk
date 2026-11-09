@@ -8,6 +8,7 @@ export {
   VD_MOTION,
   VD_MOTION_EASE,
   VD_MOTION_EASES,
+  VD_MOTION_EASES_BEZIER,
   VD_MOTION_FLIP,
   VD_MOTION_DAWN,
   VD_MOTION_ORBIT,
@@ -16,6 +17,8 @@ export {
   vdMotionDuration,
   type VdMotionDurationSeconds,
   type VdMotionEaseName,
+  type VdMotionBezier,
+  type VdMotionBezierRole,
   type VdMotionEaseRole,
   type VdMotionPreset,
 } from "@veladesk/ui";
