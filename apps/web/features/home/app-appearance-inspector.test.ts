@@ -18,10 +18,42 @@ const inspectorSource = readFileSync(
   "utf8"
 );
 
-const shellSource = readFileSync(
-  fileURLToPath(new URL("./desktop-shell.tsx", import.meta.url)),
-  "utf8"
-);
+/**
+ * P1-ENG-1: the former monolithic desktop-shell.tsx now spans the shell/,
+ * scene/ and tile-host/ layers (the root file is a thin re-export). The
+ * shell-ownership contract reads the joined successors — same assertions.
+ */
+const shellSource = [
+  "./desktop-shell.tsx",
+  "./shell/desktop-shell.tsx",
+  "./shell/no-pages-fallback.tsx",
+  "./shell/shell-context.tsx",
+  "./shell/shell-surfaces.tsx",
+  "./shell/shell-workspace.tsx",
+  "./shell/static-drop-feedback.tsx",
+  "./shell/use-appearance-projection.ts",
+  "./shell/use-before-change-guard.ts",
+  "./shell/use-desktop-menus.ts",
+  "./shell/use-desktop-shortcuts.ts",
+  "./shell/use-launcher-model.ts",
+  "./shell/use-shell-dialogs.ts",
+  "./shell/use-shell-settings.ts",
+  "./shell/use-shell-theme.ts",
+  "./scene/scene-backdrop.tsx",
+  "./scene/scene-viewport.tsx",
+  "./scene/use-dawn-intro.ts",
+  "./scene/use-desktop-scene.ts",
+  "./scene/use-pair-coordinator.ts",
+  "./scene/use-scene-wallpaper.ts",
+  "./scene/use-section-scroll-memory.ts",
+  "./tile-host/tile-host-layer.tsx",
+  "./tile-host/use-canvas-commits.ts",
+  "./tile-host/use-tile-session.ts",
+]
+  .map((file) =>
+    readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8")
+  )
+  .join("\n");
 
 const itemSource = readFileSync(
   fileURLToPath(new URL("./desktop-item.tsx", import.meta.url)),

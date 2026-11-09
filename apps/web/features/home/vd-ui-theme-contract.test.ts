@@ -32,7 +32,11 @@ import {
   resolveEffectiveColorMode,
 } from "./appearance-theme";
 
-const CSS_PATH = fileURLToPath(new URL("../../app/vd-ui.css", import.meta.url));
+// P1-ENG-1: the token layer moved from app/vd-ui.css into @veladesk/ui
+// (values unchanged) — the contract reads the package's tokens.css now.
+const CSS_PATH = fileURLToPath(
+  new URL("../../../../packages/ui/src/tokens.css", import.meta.url)
+);
 const css = readFileSync(CSS_PATH, "utf8");
 
 /** The body of a top-level CSS block whose selector list contains `needle`. */

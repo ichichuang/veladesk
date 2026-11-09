@@ -17,6 +17,43 @@ function readSource(path: string): string {
   return readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
 }
 
+/**
+ * P1-ENG-1: the former monolithic desktop-shell.tsx now spans the shell/,
+ * scene/ and tile-host/ layers (the root file is a thin re-export). The
+ * lifecycle contract reads the joined successors — same assertions.
+ */
+const SHELL_SPLIT_FILES = [
+  "./desktop-shell.tsx",
+  "./shell/desktop-shell.tsx",
+  "./shell/no-pages-fallback.tsx",
+  "./shell/shell-context.tsx",
+  "./shell/shell-surfaces.tsx",
+  "./shell/shell-workspace.tsx",
+  "./shell/static-drop-feedback.tsx",
+  "./shell/use-appearance-projection.ts",
+  "./shell/use-before-change-guard.ts",
+  "./shell/use-desktop-menus.ts",
+  "./shell/use-desktop-shortcuts.ts",
+  "./shell/use-launcher-model.ts",
+  "./shell/use-shell-dialogs.ts",
+  "./shell/use-shell-settings.ts",
+  "./shell/use-shell-theme.ts",
+  "./scene/scene-backdrop.tsx",
+  "./scene/scene-viewport.tsx",
+  "./scene/use-dawn-intro.ts",
+  "./scene/use-desktop-scene.ts",
+  "./scene/use-pair-coordinator.ts",
+  "./scene/use-scene-wallpaper.ts",
+  "./scene/use-section-scroll-memory.ts",
+  "./tile-host/tile-host-layer.tsx",
+  "./tile-host/use-canvas-commits.ts",
+  "./tile-host/use-tile-session.ts",
+] as const;
+
+function readShellSources(): string {
+  return SHELL_SPLIT_FILES.map((file) => readSource(file)).join("\n");
+}
+
 function ruleBlock(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // Anchored: a longer selector may END with the same substring (the glass
@@ -161,7 +198,7 @@ describe("the rail marker is GSAP-placed and never stretched by CSS (022-R2)", (
 });
 
 describe("the transition lifecycle is machine-owned (020-A2)", () => {
-  const shell = readSource("./desktop-shell.tsx");
+  const shell = readShellSources();
   const machine = readSource("./section-transition-machine.ts");
 
   it("publishes the transitioning flag for the whole machine gesture", () => {

@@ -7,7 +7,7 @@ import type { HTMLAttributes, Ref } from "react";
  *
  * A deliberately thin owner of NATIVE scrolling: it emits `data-vd-scroll`
  * (plus `data-vd-scroll` value = axis) and nothing else, and every visual
- * scrollbar rule lives in the token layer (`apps/web/app/vd-ui.css`,
+ * scrollbar rule lives in the token layer (`@veladesk/ui` tokens.css,
  * `[data-vd-ui] [data-vd-scroll]`). No custom scrollbar widgets, no scroll
  * event React state, no ResizeObserver — wheel, touch and keyboard
  * scrolling stay exactly the browser's, only restyled.

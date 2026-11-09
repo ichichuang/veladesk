@@ -25,7 +25,7 @@ import { useVdReducedMotion } from "./reduced-motion";
  * Task 022: the thumb travel is GSAP-owned. HeroUI's installed style
  * transitions the thumb's margin and the track's background over CSS —
  * on this exact slot those transitions are disabled (scoped override in
- * `vd-ui.css`, keyed on `data-vd-switch-gsap`) and the state flips are
+ * the token layer (tokens.css), keyed on `data-vd-switch-gsap`) and the state flips are
  * instant static changes; GSAP then interpolates ONLY the thumb's travel
  * from its previous visual position. `clearProps: "transform"` on
  * completion keeps the thumb clean for HeroUI's own (non-animated) state

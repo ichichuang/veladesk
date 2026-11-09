@@ -83,7 +83,11 @@ describe("core scrollers are migrated", () => {
 });
 
 describe("scrollbar styling stays in the token layer", () => {
-  const vdUi = readWebSource("app/vd-ui.css");
+  // P1-ENG-1: the token layer moved from app/vd-ui.css into @veladesk/ui.
+  const vdUi = readFileSync(
+    fileURLToPath(new URL("../../../../packages/ui/src/tokens.css", import.meta.url)),
+    "utf8"
+  );
   const globals = readWebSource("app/globals.css");
   const homeShell = readSource("./home-shell.css");
 

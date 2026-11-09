@@ -7,7 +7,9 @@
  * VelaDesk's --vdu-* tokens on the desktop and portal roots.
  */
 @import "@heroui/styles";
-@import "./vd-ui.css";
+/* The vd token layer (--vd and --vdu custom properties) moved to
+   @veladesk/ui (P1-ENG-1); the values are unchanged. */
+@import "@veladesk/ui/tokens.css";
 
 /*
  * Tailwind theme bridge (task 018): maps the [data-vd-ui] tokens onto

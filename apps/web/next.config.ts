@@ -59,6 +59,8 @@ const nextConfig: NextConfig = {
     "@veladesk/icon-catalog",
     "@veladesk/local-store",
     "@veladesk/sync",
+    // The token layer (TS constants + tokens.css) ships as raw source.
+    "@veladesk/ui",
   ],
   // Only surface the dev-origin allowlist in development and only when the
   // operator actually configured hostnames, so production builds (and dev

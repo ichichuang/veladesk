@@ -16,9 +16,42 @@ function source(file: string): string {
   return readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
 }
 
+/**
+ * P1-ENG-1: the former monolithic desktop-shell.tsx now spans the shell/,
+ * scene/ and tile-host/ layers (the root file is a thin re-export). The
+ * canvas-commit contract reads the joined successors — same assertions.
+ */
+const SHELL_SPLIT_FILES = [
+  "./desktop-shell.tsx",
+  "./shell/desktop-shell.tsx",
+  "./shell/no-pages-fallback.tsx",
+  "./shell/shell-context.tsx",
+  "./shell/shell-surfaces.tsx",
+  "./shell/shell-workspace.tsx",
+  "./shell/static-drop-feedback.tsx",
+  "./shell/use-appearance-projection.ts",
+  "./shell/use-before-change-guard.ts",
+  "./shell/use-desktop-menus.ts",
+  "./shell/use-desktop-shortcuts.ts",
+  "./shell/use-launcher-model.ts",
+  "./shell/use-shell-dialogs.ts",
+  "./shell/use-shell-settings.ts",
+  "./shell/use-shell-theme.ts",
+  "./scene/scene-backdrop.tsx",
+  "./scene/scene-viewport.tsx",
+  "./scene/use-dawn-intro.ts",
+  "./scene/use-desktop-scene.ts",
+  "./scene/use-pair-coordinator.ts",
+  "./scene/use-scene-wallpaper.ts",
+  "./scene/use-section-scroll-memory.ts",
+  "./tile-host/tile-host-layer.tsx",
+  "./tile-host/use-canvas-commits.ts",
+  "./tile-host/use-tile-session.ts",
+] as const;
+
 const item = source("./desktop-item.tsx");
 const grid = source("./desktop-grid.tsx");
-const shell = source("./desktop-shell.tsx");
+const shell = SHELL_SPLIT_FILES.map((file) => source(file)).join("\n");
 const stage = source("./section-view.tsx");
 
 describe("desktop item — dual geometry", () => {
