@@ -24,17 +24,29 @@ interface SceneBackdropProps {
    * under reduced motion.
    */
   readonly dawnIntroEnabled?: boolean | undefined;
+  /**
+   * The wallpaper layers' positioning/clipping class (desktop default;
+   * the mobile shell passes its own root-relative class).
+   */
+  readonly wallpaperClassName?: string | undefined;
 }
 
 /**
- * The desktop scene BACKDROP (P1-ENG-1): the full-desktop background
- * layers, the Dawn horizon and the ambient drift node. Behind the rail,
+ * The scene BACKDROP (P1-ENG-1): the full-frame background layers, the
+ * Dawn horizon and the ambient drift node — shared by the desktop and the
+ * mobile shell (the Dawn opening's once-per-tab memory is module-scoped,
+ * so a desktop↔mobile swap never replays it). Behind the rail,
  * workspace and dock; pointer-transparent, clipped. GSAP owns the ambient
  * drift (one yoyo on a real node) and — on by default over preset
  * scenes — the Dawn opening (use-dawn-intro.ts); reduced motion renders a
  * static backdrop.
  */
-export function SceneBackdrop({ wallpaper, assetUrl, dawnIntroEnabled = true }: SceneBackdropProps) {
+export function SceneBackdrop({
+  wallpaper,
+  assetUrl,
+  dawnIntroEnabled = true,
+  wallpaperClassName,
+}: SceneBackdropProps) {
   // Ambient wallpaper drift (022): one GSAP-owned yoyo on a real node.
   // Pure decoration behind everything; reduced motion renders a static
   // backdrop.
@@ -64,7 +76,11 @@ export function SceneBackdrop({ wallpaper, assetUrl, dawnIntroEnabled = true }: 
             prepared surfaces with a restrained accepted-generation
             crossfade. The ambient drift stays its own decorative layer
             above it. */}
-        <WorkspaceWallpaperLayers wallpaper={wallpaper} assetUrl={assetUrl} />
+        <WorkspaceWallpaperLayers
+          wallpaper={wallpaper}
+          assetUrl={assetUrl}
+          {...(wallpaperClassName === undefined ? {} : { className: wallpaperClassName })}
+        />
         {presetScene ? <DawnHorizon bandRef={horizonBandRef} /> : null}
         <div className="vela-desktop__ambient" aria-hidden="true" ref={desktopAmbientRef} />
       </div>

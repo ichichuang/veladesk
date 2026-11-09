@@ -21,10 +21,8 @@ import type {
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
-import {
-  WorkspaceWallpaperLayers,
-  useWallpaperAssetUrl,
-} from "../desktop-wallpaper";
+import { useWallpaperAssetUrl } from "../desktop-wallpaper";
+import { SceneBackdrop } from "../scene/scene-backdrop";
 import { buildAppearanceTheme, resolveEffectiveColorMode } from "../appearance-theme";
 import { useSystemPrefersLight } from "../use-system-prefers-light";
 import { useDocumentColorScheme } from "../use-document-color-scheme";
@@ -52,7 +50,8 @@ import "./mobile-shell.css";
  * desktop's authoring machinery (no DnD, no resize, no arrange, no
  * management dialogs — §28/§29).
  *
- * Layout (§11): themed root → wallpaper layers → header → category tabs →
+ * Layout (§11): themed root (data-vd-material like the desktop) → shared
+ * scene backdrop (wallpaper + Dawn) → header → category tabs →
  * natively scrolling content (regular derived grid) → pinned dock, with a
  * themed portal sibling for the sheet surfaces. The active section comes
  * from the SHARED owner above the shell switch; every mobile interaction
@@ -149,14 +148,19 @@ export function MobileShell({
       data-vd-ui=""
       data-vd-mobile-shell=""
       data-vd-color-mode={effectiveColorMode}
+      data-vd-material={theme.materialTier}
       data-vd-wallpaper={theme.wallpaperPreset}
       data-has-dock={hasDock ? "true" : "false"}
       style={theme.style as CSSProperties}
     >
-      <WorkspaceWallpaperLayers
+      {/* The SHARED scene backdrop (P1): wallpaper layers, the Dawn horizon
+          on preset scenes, the ambient drift and the Dawn opening (default
+          on, once per tab across both shells, static under reduced motion,
+          never over a custom wallpaper). */}
+      <SceneBackdrop
         wallpaper={effectiveWallpaper}
         assetUrl={wallpaperAssetUrl}
-        className="vela-mobile-shell__wallpaper"
+        wallpaperClassName="vela-mobile-shell__wallpaper"
       />
       <MobileHeader
         workspace={workspace}
@@ -215,6 +219,7 @@ export function MobileShell({
       data-vd-ui=""
       data-vd-portal-root=""
       data-vd-color-mode={effectiveColorMode}
+      data-vd-material={theme.materialTier}
       style={theme.style as CSSProperties}
     />
     </VdHeroOverlayScope>

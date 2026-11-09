@@ -87,3 +87,41 @@ describe("SceneBackdrop Dawn gate", () => {
     expect(veil!.style.length).toBe(0);
   });
 });
+
+describe("SceneBackdrop once per tab across shells", () => {
+  it("a desktop → mobile swap never replays the opening", async () => {
+    installMatchMedia(false);
+    // Desktop mounts first and plays.
+    const desktop = render(<SceneBackdrop wallpaper={PRESET} assetUrl={null} />);
+    const desktopBand = desktop.container.querySelector<HTMLElement>(".vela-dawn-horizon__band");
+    await waitFor(() => {
+      expect(desktopBand!.style.transform).not.toBe("");
+    });
+    desktop.unmount();
+    // The mobile shell mounts the SAME component (its own wallpaper class):
+    // the module-scoped session memory refuses a second play.
+    const mobile = render(
+      <SceneBackdrop wallpaper={PRESET} assetUrl={null} wallpaperClassName="vela-mobile-shell__wallpaper" />,
+    );
+    expect(mobile.container.querySelector(".vela-mobile-shell__wallpaper")).not.toBeNull();
+    const mobileBand = mobile.container.querySelector<HTMLElement>(".vela-dawn-horizon__band");
+    const mobileVeil = mobile.container.querySelector<HTMLElement>(".vela-dawn-veil");
+    expect(mobileBand!.style.length).toBe(0);
+    expect(mobileVeil!.style.length).toBe(0);
+  });
+
+  it("two shells mounted at once play at most one opening", async () => {
+    installMatchMedia(false);
+    const { container } = render(
+      <>
+        <SceneBackdrop wallpaper={PRESET} assetUrl={null} />
+        <SceneBackdrop wallpaper={PRESET} assetUrl={null} wallpaperClassName="vela-mobile-shell__wallpaper" />
+      </>,
+    );
+    const bands = Array.from(container.querySelectorAll<HTMLElement>(".vela-dawn-horizon__band"));
+    expect(bands).toHaveLength(2);
+    await waitFor(() => {
+      expect(bands.filter((band) => band.style.transform !== "")).toHaveLength(1);
+    });
+  });
+});

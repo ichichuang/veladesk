@@ -11,7 +11,7 @@ import { runtimeManagementStub } from "../../workspace-runtime/test-runtime-mana
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createEmptyWorkspace } from "@veladesk/domain";
+import { createEmptyWorkspace, DEFAULT_WORKSPACE_APPEARANCE, resolveWorkspaceAppearance } from "@veladesk/domain";
 import type {
   AppShortcut,
   DesktopPage,
@@ -26,6 +26,8 @@ import { WorkspaceRuntimeContextProvider } from "../../workspace-runtime/use-wor
 import { UiLocaleProvider } from "../../i18n/ui-locale-provider";
 import { launchApp } from "../launch-app";
 import type { WorkspaceActiveSection } from "../workspace-active-section";
+import { buildAppearanceTheme } from "../appearance-theme";
+import { resetDawnOpeningSessionForTests } from "../scene/use-dawn-intro";
 import { MobileShell } from "./mobile-shell";
 
 vi.mock("../launch-app", () => ({ launchApp: vi.fn() }));
@@ -132,8 +134,14 @@ const rejectRuntime: WorkspaceClientRuntime = {
 };
 
 /** A host that owns the active section like ResponsiveWorkspaceShell does. */
-function MobileHost({ initialPageId = "page-a" }: { readonly initialPageId?: string }) {
-  const snapshot = mobileWorkspace();
+function MobileHost({
+  initialPageId = "page-a",
+  snapshotOverride,
+}: {
+  readonly initialPageId?: string;
+  readonly snapshotOverride?: WorkspaceSnapshot;
+}) {
+  const snapshot = snapshotOverride ?? mobileWorkspace();
   const [pageId, setPageId] = useState<string | null>(initialPageId);
   const activeSection: WorkspaceActiveSection = {
     activePageId: pageId,
@@ -158,6 +166,7 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
   vi.clearAllMocks();
+  resetDawnOpeningSessionForTests();
 });
 
 describe("the mobile read-only contract (§74)", () => {
@@ -467,5 +476,51 @@ describe("the browse surface (§14/§24/§75)", () => {
     const imageSurface = container.querySelector('[data-wallpaper-image="asset-wx"]');
     expect(imageSurface).not.toBeNull();
     expect(imageSurface!.closest('[data-wallpaper-fit="cover"]')).not.toBeNull();
+  });
+});
+
+describe("material tier and the shared Dawn scene (P1)", () => {
+  it("emits data-vd-material on the themed root AND the portal root, from the same resolver as the desktop", () => {
+    const snapshot = mobileWorkspace();
+    const expected = buildAppearanceTheme(resolveWorkspaceAppearance(snapshot.preferences)).materialTier;
+    render(<MobileHost />);
+    const root = document.querySelector("[data-vd-mobile-shell]");
+    const portal = document.querySelector("[data-vd-portal-root]");
+    expect(root?.getAttribute("data-vd-material")).toBe(expected);
+    expect(portal?.getAttribute("data-vd-material")).toBe(expected);
+    expect(["clean", "soft", "glass"]).toContain(expected);
+  });
+
+  it("follows the persisted interface style", () => {
+    const base = mobileWorkspace();
+    const snapshot: WorkspaceSnapshot = {
+      ...base,
+      preferences: {
+        ...base.preferences,
+        appearance: { ...(base.preferences.appearance ?? DEFAULT_WORKSPACE_APPEARANCE), interfaceStyle: "soft" },
+      },
+    };
+    render(<MobileHost snapshotOverride={snapshot} />);
+    expect(document.querySelector("[data-vd-mobile-shell]")?.getAttribute("data-vd-material")).toBe("soft");
+    expect(document.querySelector("[data-vd-portal-root]")?.getAttribute("data-vd-material")).toBe("soft");
+  });
+
+  it("renders the shared scene layers inside the mobile root on a preset scene", () => {
+    render(<MobileHost />);
+    const root = document.querySelector("[data-vd-mobile-shell]")!;
+    const scene = root.querySelector(".vela-desktop__scene");
+    expect(scene).not.toBeNull();
+    // The wallpaper keeps the mobile root-relative positioning class.
+    expect(scene!.querySelector(".vela-mobile-shell__wallpaper")).not.toBeNull();
+    expect(scene!.querySelector(".vela-dawn-horizon__band")).not.toBeNull();
+    expect(scene!.querySelector(".vela-desktop__ambient")).not.toBeNull();
+    expect(root.querySelector(".vela-dawn-veil")).not.toBeNull();
+  });
+
+  it("renders no Dawn horizon over a custom image wallpaper", () => {
+    render(<MobileHost initialPageId="page-d" />);
+    const root = document.querySelector("[data-vd-mobile-shell]")!;
+    expect(root.querySelector(".vela-desktop__scene")).not.toBeNull();
+    expect(root.querySelector(".vela-dawn-horizon")).toBeNull();
   });
 });
