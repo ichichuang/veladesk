@@ -189,6 +189,11 @@ export const VD_MOTION_AMBIENT = {
   drift: 30,
   /** One boot-screen backdrop drift leg (yoyo) — a touch livelier. */
   bootDrift: 26,
+  /**
+   * One horizon-breathe leg (yoyo): the dawn glow band slowly swelling and
+   * settling over the lower third — the scene being ALIVE at rest.
+   */
+  breathe: 9,
   /** One boot-screen pulse sweep across the status bar. */
   bootPulse: 1.6,
   /** One full loading-spinner turn (constant rate, `linear` ease). */

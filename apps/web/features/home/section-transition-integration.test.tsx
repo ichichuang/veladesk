@@ -293,22 +293,22 @@ describe("initial rail selection through the workspace-entry policy (022-R2)", (
 
     // The rail highlights exactly the configured default — never the first
     // row as a guess, never a hover/focus artifact.
-    const activeRows = document.querySelectorAll('.vela-rail__item[data-active="true"]');
+    const activeRows = document.querySelectorAll('.vela-orbit__item[data-active="true"]');
     expect(activeRows).toHaveLength(1);
     expect((activeRows[0] as HTMLElement).dataset.pageId).toBe("page-c");
     expect((activeRows[0] as HTMLElement).getAttribute("aria-current")).toBe("page");
     expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
 
     // The displayed section is the same page (its warm neighbors are the
-    // pages around the DEFAULT, not around the first row), and the ONE
-    // marker carries a placed box (the pre-022-R2 marker never placed on
-    // first entry and painted the stylesheet's percent stretch instead).
+    // pages around the DEFAULT, not around the first row), and the orbit's
+    // comet rests ON the active waypoint — its transform is a real placed
+    // translate (the fallback/initial pose), never the unset origin.
     expect(layerOf("page-c").dataset.phase).toBe("active");
     expect(layerOf("page-b").dataset.warmHidden).toBe("true");
     expect(layerOf("page-d").dataset.warmHidden).toBe("true");
-    const markers = document.querySelectorAll("[data-vd-indicator]");
-    expect(markers).toHaveLength(1);
-    expect(Number(gsap.getProperty(markers[0] as HTMLElement, "opacity"))).toBe(1);
+    const comet = document.querySelector(".vela-orbit__comet") as HTMLElement | null;
+    expect(comet).not.toBeNull();
+    expect(comet!.style.transform).toMatch(/translate\(/);
   });
 
   it("a same-workspace snapshot replacement never re-applies the startup selection", async () => {
@@ -325,7 +325,7 @@ describe("initial rail selection through the workspace-entry policy (022-R2)", (
     expect(
       (
         document.querySelector(
-          '.vela-rail__item[data-active="true"]',
+          '.vela-orbit__item[data-active="true"]',
         ) as HTMLElement | null
       )?.dataset.pageId,
     ).toBe("page-b");

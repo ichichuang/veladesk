@@ -13,9 +13,9 @@ import { validateWorkspace } from "./validation";
 import type { WorkspaceAppearancePreferences } from "./types";
 
 describe("DEFAULT_WORKSPACE_APPEARANCE", () => {
-  it("is the exact Dawn Chart default contract (P1: accent hue 60)", () => {
+  it("is the exact Dawn Chart default contract (P1: accent hue 60, dark main scene)", () => {
     expect(DEFAULT_WORKSPACE_APPEARANCE).toEqual({
-      colorMode: "system",
+      colorMode: "dark",
       accentHue: 60,
       wallpaperPreset: "dawn",
       surfaceOpacity: 0.55,

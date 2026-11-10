@@ -154,51 +154,104 @@ const SAMPLE_IMPORT_DOCUMENT: VelaDeskImportDocumentV1 = {
 };
 
 
-/** Muted brand backgrounds, each meeting 4.5:1 against a white glyph. */
-const SAMPLE_COLORS: Readonly<Record<string, string>> = {
-  "MDN": "#30343B",
-  "GitHub": "#181B20",
-  "Stack": "#A44915",
-  "CSS": "#345997",
-  "React": "#126074",
-  "Vue": "#256346",
-  "TS": "#245E9B",
-  "Vite": "#62469A",
-  "npm": "#A3343C",
-  "微信开放文档": "#246B42",
-  "微信公众平台": "#286447",
-  "微信开放社区": "#39664F",
-  "开发者工具下载": "#3C586E",
-  "腾讯云": "#245E89",
-  "小程序码": "#586238",
-  "WeUI": "#326D58",
-  "TDesign 小程序": "#355CA1",
-  "微信云开发文档": "#29616C",
-  "Vant": "#47652E",
-  "ChatGPT": "#246356",
-  "Claude": "#89513B",
-  "DeepSeek": "#344F94",
-  "通义千问": "#60469A",
-  "文心一言": "#3E6085",
-  "Hugging": "#795A15",
-  "Gemini": "#415A92",
-  "Perplex": "#26616A",
-  "OpenAI": "#3C5450",
-  "Copilot": "#4B526B",
-  "Figma": "#674B85",
-  "Dribbble": "#95446A",
-  "Behance": "#284DAD",
-  "Canva": "#256C78",
-  "Unsplash": "#313D49",
-  "Iconfont": "#76519A",
-  "Coolors": "#345B85",
-  "Pexels": "#2E6751",
-  "Awwwards": "#434847",
-  "站酷": "#945436",
-  "React 文档": "#126074",
-  "Vue.js 指南": "#256346",
-  "TypeScript 手册": "#245E9B",
+/*
+ * Sample icon glyphs (the Helm first picture, 2026-11-10): sample apps wear
+ * their REAL monochrome brand glyphs from the bundled `simple-icons`
+ * collection — on glass tiles, per visual-directions A — instead of the
+ * retired solid-color blocks. Keyed by registrable-domain suffix (dot-
+ * boundary match, any subdomain depth), so one entry covers the whole
+ * brand host family; a couple of apps whose site has no icon map by NAME.
+ * Everything unmapped keeps the refined initials badge. Every key below
+ * exists in the bundled collection — a typo would degrade to the badge,
+ * and the sample test asserts the mapped set.
+ */
+const SAMPLE_HOST_ICONS: Readonly<Record<string, string>> = {
+  "developer.mozilla.org": "simple-icons:mdnwebdocs",
+  "stackoverflow.com": "simple-icons:stackoverflow",
+  "react.dev": "simple-icons:react",
+  "vuejs.org": "simple-icons:vuedotjs",
+  "typescriptlang.org": "simple-icons:typescript",
+  "vite.dev": "simple-icons:vite",
+  "npmjs.com": "simple-icons:npm",
+  "weixin.qq.com": "simple-icons:wechat",
+  "cloud.tencent.com": "simple-icons:tencentqq",
+  "chatgpt.com": "simple-icons:openai",
+  "claude.ai": "simple-icons:claude",
+  "deepseek.com": "simple-icons:deepseek",
+  "yiyan.baidu.com": "simple-icons:baidu",
+  "huggingface.co": "simple-icons:huggingface",
+  "gemini.google.com": "simple-icons:googlegemini",
+  "perplexity.ai": "simple-icons:perplexity",
+  "openai.com": "simple-icons:openai",
+  "figma.com": "simple-icons:figma",
+  "dribbble.com": "simple-icons:dribbble",
+  "behance.net": "simple-icons:behance",
+  "canva.com": "simple-icons:canva",
+  "unsplash.com": "simple-icons:unsplash",
+  "pexels.com": "simple-icons:pexels",
+  "awwwards.com": "simple-icons:awwwards",
+  "zcool.com.cn": "simple-icons:zcool",
+  "slack.com": "simple-icons:slack",
+  "notion.so": "simple-icons:notion",
+  "meet.google.com": "simple-icons:googlemeet",
+  "youtube.com": "simple-icons:youtube",
+  "spotify.com": "simple-icons:spotify",
+  "bilibili.com": "simple-icons:bilibili",
+  "steampowered.com": "simple-icons:steam",
+  "wikipedia.org": "simple-icons:wikipedia",
+  "duolingo.com": "simple-icons:duolingo",
+  "coursera.org": "simple-icons:coursera",
+  "maps.google.com": "simple-icons:googlemaps",
 };
+
+/** By-name glyphs for sample apps whose HOST has no icon of its own. */
+const SAMPLE_NAME_ICONS: Readonly<Record<string, string>> = {
+  "CSS": "simple-icons:css3",
+};
+
+/** The bundled-brand icon for an app's URL (dot-boundary suffix match). */
+function sampleIconForUrl(url: string): string | undefined {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return undefined;
+  }
+  for (const [domain, icon] of Object.entries(SAMPLE_HOST_ICONS)) {
+    if (hostname === domain || hostname.endsWith(`.${domain}`)) {
+      return icon;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The sample presentation pass (shared by the onboarding sample and the
+ * compact templates): localize names and upgrade every app whose site maps
+ * to a bundled brand glyph. Decoration stays AUTO — the Dawn Chart wash
+ * plate composed from theme tokens; no per-app solid colors are forced.
+ */
+function applySamplePresentation(
+  workspace: WorkspaceSnapshot,
+  localize: (name: string) => string
+): WorkspaceSnapshot {
+  return {
+    ...workspace,
+    entities: workspace.entities.map((entity) => {
+      if (entity.kind === "widget") {
+        return entity;
+      }
+      const name = localize(entity.name);
+      if (entity.kind !== "app") {
+        return { ...entity, name };
+      }
+      const icon = sampleIconForUrl(entity.url) ?? SAMPLE_NAME_ICONS[entity.name];
+      return icon === undefined
+        ? { ...entity, name }
+        : { ...entity, name, icon: { kind: "iconify", icon } };
+    }),
+  };
+}
 
 /** Kinds the sample builder needs fresh ids for. */
 export type SampleIdKind = "workspace" | "page" | "app" | "folder";
@@ -298,7 +351,7 @@ export function buildSampleWorkspace(idFactory: SampleWorkspaceIdFactory, locale
   }
 
   // Apply presentation after folder/dock wiring; entity ids stay unchanged.
-  return {
+  return applySamplePresentation({
     ...workspace,
     pages: workspace.pages.map((page) => {
       // Use the canonical canvas API so both desktop and mobile read one layout.
@@ -313,17 +366,7 @@ export function buildSampleWorkspace(idFactory: SampleWorkspaceIdFactory, locale
         name: localize(page.name),
       };
     }),
-    entities: workspace.entities.map((entity) =>
-      entity.kind === "widget" ? entity : {
-        ...entity, name: localize(entity.name),
-        ...(entity.kind === "app" ? { visual: {
-          decorationStyle: "solid" as const,
-          decorationColor: SAMPLE_COLORS[entity.name]!,
-          foregroundColor: "#FFFFFF",
-        } } : {}),
-      }
-    ),
-  };
+  }, localize);
 }
 
 /** The sample folder, exposed for tests/UI copy (null while absent). */
@@ -347,29 +390,29 @@ export function buildWorkspaceTemplate(template: WorkspaceTemplate, idFactory: S
   const work = template === "work";
   const sections = work ? [
     { name: translate(locale, "workspace.section.collaboration"), apps: [
-      { name: "Slack", url: "https://slack.com", color: "#62469A" },
-      { name: "Notion", url: "https://www.notion.so", color: "#30343B" },
-      { name: "Figma", url: "https://www.figma.com", color: SAMPLE_COLORS.Figma! },
-      { name: "Meet", url: "https://meet.google.com", color: "#256346" },
+      { name: "Slack", url: "https://slack.com" },
+      { name: "Notion", url: "https://www.notion.so" },
+      { name: "Figma", url: "https://www.figma.com" },
+      { name: "Meet", url: "https://meet.google.com" },
     ] },
     { name: translate(locale, "workspace.section.development"), apps: [
-      { name: "GitHub", url: "https://github.com", color: SAMPLE_COLORS.GitHub! },
-      { name: "MDN", url: "https://developer.mozilla.org", color: SAMPLE_COLORS.MDN! },
-      { name: "TS", url: "https://www.typescriptlang.org", color: SAMPLE_COLORS.TS! },
-      { name: "Vite", url: "https://vite.dev", color: SAMPLE_COLORS.Vite! },
+      { name: "GitHub", url: "https://github.com" },
+      { name: "MDN", url: "https://developer.mozilla.org" },
+      { name: "TS", url: "https://www.typescriptlang.org" },
+      { name: "Vite", url: "https://vite.dev" },
     ] },
   ] : [
     { name: translate(locale, "workspace.section.entertainment"), apps: [
-      { name: "YouTube", url: "https://www.youtube.com", color: "#A3343C" },
-      { name: "Spotify", url: "https://open.spotify.com", color: "#256346" },
-      { name: "Bilibili", url: "https://www.bilibili.com", color: "#245E89" },
-      { name: "Steam", url: "https://store.steampowered.com", color: "#3C586E" },
+      { name: "YouTube", url: "https://www.youtube.com" },
+      { name: "Spotify", url: "https://open.spotify.com" },
+      { name: "Bilibili", url: "https://www.bilibili.com" },
+      { name: "Steam", url: "https://store.steampowered.com" },
     ] },
     { name: translate(locale, "workspace.section.learning"), apps: [
-      { name: "Wiki", url: "https://www.wikipedia.org", color: "#30343B" },
-      { name: "Duolingo", url: "https://www.duolingo.com", color: "#586238" },
-      { name: "Coursera", url: "https://www.coursera.org", color: "#245E9B" },
-      { name: "Maps", url: "https://maps.google.com", color: "#326D58" },
+      { name: "Wiki", url: "https://www.wikipedia.org" },
+      { name: "Duolingo", url: "https://www.duolingo.com" },
+      { name: "Coursera", url: "https://www.coursera.org" },
+      { name: "Maps", url: "https://maps.google.com" },
     ] },
   ];
   const parsed = parseImportDocument(JSON.stringify({ format: IMPORT_FORMAT_IDENTITY, version: IMPORT_FORMAT_VERSION, sections }));
@@ -379,17 +422,14 @@ export function buildWorkspaceTemplate(template: WorkspaceTemplate, idFactory: S
   workspace = applied.workspace;
   const deleted = deleteEmptyPage(workspace, seed);
   if (deleted.ok) workspace = deleted.workspace;
-  const colors = new Map(sections.flatMap(section => section.apps.map(app => [app.name, app.color] as const)));
-  return { ...workspace, preferences: { ...workspace.preferences, appearance: {
+  return applySamplePresentation({ ...workspace, preferences: { ...workspace.preferences, appearance: {
     ...DEFAULT_WORKSPACE_APPEARANCE,
-    // Follow the OS like every other workspace; presets differ by hue, not by a forced mode.
-    colorMode: "system",
+    // Both templates are the dark dawn chart first picture; they differ by
+    // hue, not by a forced mode — the user can pick light/system in Settings.
     wallpaperPreset: work ? "midnight" : "dawn",
-    accentHue: work ? 205 : 28,
-    interfaceStyle: work ? "clean" : "soft",
-  } }, entities: workspace.entities.map(entity => entity.kind !== "app" ? entity : {
-    ...entity, visual: { decorationStyle: "solid", decorationColor: colors.get(entity.name)!, foregroundColor: "#FFFFFF" },
-  }), pages: workspace.pages.map(page => withPageCanvas(materializePagePlacement(page), {
+    accentHue: work ? 205 : 60,
+    interfaceStyle: "glass",
+  } }, pages: workspace.pages.map(page => withPageCanvas(materializePagePlacement(page), {
     version: 2, mode: "grid", columns: 5, items: pageItemIds(page).map((id, index) => ({ id, column: index % 5, row: Math.floor(index / 5), columnSpan: 1, rowSpan: 1 })),
-  })) };
+  })) }, (name) => name);
 }

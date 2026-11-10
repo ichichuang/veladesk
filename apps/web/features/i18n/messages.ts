@@ -376,6 +376,8 @@ const zhCNCatalog = {
 
 
   // --- Launcher -----------------------------------------------------------
+  "helm.commandbar": "搜索应用、分区、设置…",
+  "helm.commandbarKey": "⌘K",
   "launcher.dialogLabel": "搜索工作区",
   "launcher.placeholder": "搜索应用、分区和命令…",
   "launcher.kind.app": "应用",
@@ -782,6 +784,9 @@ export const enUS: MessageCatalog = {
   "dock.label": "Dock",
   "dock.openApp": "Open {name}",
   "dock.openFolder": "Open folder {name}",
+
+  "helm.commandbar": "Search apps, spaces, settings…",
+  "helm.commandbarKey": "⌘K",
 
   "nav.label": "Sections",
   "nav.more": "More commands",

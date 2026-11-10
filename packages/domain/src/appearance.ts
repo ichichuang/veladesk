@@ -8,8 +8,11 @@ import type {
  * Appearance defaults, resolution and semantic validation.
  *
  * `DEFAULT_WORKSPACE_APPEARANCE` is the Dawn Chart baseline (direction A,
- * P1): system color mode + the dawn horizon scene + the Dawn apricot accent
- * hue 60 + 0.55/18px/14px + medium icons. Snapshots persisted before the
+ * P1): the dark 拂晓海图 main scene + the dawn horizon preset + the Dawn
+ * apricot accent hue 60 + 0.55/18px/14px + medium icons. Dark is the
+ * DEFAULT main scene (the director's 2026-11-10 call: the first picture is
+ * the dark dawn chart; 白昼海图 light stays a first-class second tier the
+ * user can pick, including "system"). Snapshots persisted before the
  * palette adoption keep their stored values (aurora-era presets included)
  * verbatim — resolution never mutates and never stages a migration; old
  * snapshots gain a stored appearance only when the user actually saves
@@ -17,7 +20,7 @@ import type {
  */
 
 export const DEFAULT_WORKSPACE_APPEARANCE: WorkspaceAppearancePreferences = {
-  colorMode: "system",
+  colorMode: "dark",
   accentHue: 60,
   wallpaperPreset: "dawn",
   surfaceOpacity: 0.55,

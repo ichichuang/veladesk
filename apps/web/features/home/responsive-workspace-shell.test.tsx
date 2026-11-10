@@ -286,6 +286,6 @@ describe("active section continuity across shells (§73)", () => {
     // Desktop rail: 娱乐 is current — immediately, not after a flash.
     const activeRailRow = await screen.findByRole("button", { name: "娱乐" }, { timeout: 8000 });
     expect(activeRailRow.getAttribute("aria-current")).toBe("page");
-    expect(document.querySelector('.vela-rail__item[data-active="true"]')?.getAttribute("data-page-id")).toBe("page-c");
+    expect(document.querySelector('.vela-orbit__item[data-active="true"]')?.getAttribute("data-page-id")).toBe("page-c");
   });
 });

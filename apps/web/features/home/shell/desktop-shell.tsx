@@ -19,7 +19,8 @@ import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
 import { useWorkspaceRuntimeInstance } from "../../workspace-runtime/use-workspace-runtime";
 import { Dock } from "../dock";
-import { SectionRail } from "../section-rail";
+import { SectionOrbit } from "./section-orbit";
+import { HelmHeader } from "./helm-header";
 import { loadWorkspaceViewState } from "../workspace-view-state";
 import type { WorkspaceViewStateV1 } from "../workspace-view-state";
 import {
@@ -34,6 +35,7 @@ import { useWorkspaceManager } from "../workspace-manager";
 import type { ContextMenuState } from "../context-menu";
 import type { BackgroundPreview } from "../desktop-wallpaper";
 import { SceneBackdrop } from "../scene/scene-backdrop";
+import { WakeTrail } from "../scene/wake-trail";
 import { useDesktopScene } from "../scene/use-desktop-scene";
 import { useTileSession, EMPTY_SELECTION } from "../tile-host/use-tile-session";
 import { useDesktopShortcuts } from "./use-desktop-shortcuts";
@@ -489,6 +491,12 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         wallpaper={scene.effectiveWallpaper}
         assetUrl={scene.wallpaperAssetUrl}
       />
+      {/* The Helm top landmark: clock + ⌘K command bar, over the scene and
+          under nothing — pointer-transparent except the bar itself. */}
+      <HelmHeader onOpenCommands={() => setLauncherOpen(true)} />
+      {/* The Wake trail: only while a tile drag is live (the drag state the
+          tile session already tracks). */}
+      <WakeTrail active={tiles.dragging} />
       <DragDropProvider
         onDragStart={tiles.wrappedHandleDragStart}
         onDragMove={tiles.handleDragMove}
@@ -496,7 +504,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       >
         <StaticDropFeedback />
         <div className="vela-workbench">
-          <SectionRail
+          <SectionOrbit
             pages={pages}
             activePageId={effectiveActivePageId}
             onSelectSection={(pageId) => scene.switchSection(pageId)}

@@ -71,7 +71,7 @@ describe("VD_MOTION_EASES_BEZIER", () => {
 
 describe("ambient and grid-guide duration tokens (seconds)", () => {
   it("pins the ambient loop table in SECONDS", () => {
-    expect(VD_MOTION_AMBIENT).toEqual({ drift: 30, bootDrift: 26, bootPulse: 1.6, spin: 1 });
+    expect(VD_MOTION_AMBIENT).toEqual({ drift: 30, bootDrift: 26, breathe: 9, bootPulse: 1.6, spin: 1 });
   });
 
   it("pins the grid guides fade-in in SECONDS (140ms)", () => {

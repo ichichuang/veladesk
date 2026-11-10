@@ -287,8 +287,10 @@ describe("theme + motion are opt-in", () => {
     });
     expect(applied.ok).toBe(true);
     if (applied.ok) {
-      // Illegal mode/material never land; the LEGAL accent does; motion still applies.
-      expect(applied.workspace.preferences.appearance?.colorMode).toBe("system");
+      // Illegal mode/material never land (the workspace keeps its own mode
+      // — the fixture rides the dark default); the LEGAL accent does;
+      // motion still applies.
+      expect(applied.workspace.preferences.appearance?.colorMode).toBe("dark");
       expect(applied.workspace.preferences.appearance?.accentHue).toBe(60);
       expect(applied.workspace.preferences.appearance?.interfaceStyle).toBeUndefined();
       expect(applied.workspace.preferences.motion).toEqual({ reducedMotion: "on" });
@@ -618,7 +620,7 @@ describe("export → import round trip", () => {
     const material = inferInterfaceStyle(resolveWorkspaceAppearance(source.preferences));
     const style = resolveInterfaceStyle(material);
     expect(next.preferences.appearance).toMatchObject({
-      colorMode: "system",
+      colorMode: "dark",
       accentHue: 60,
       interfaceStyle: material,
       surfaceOpacity: style.surfaceOpacity,

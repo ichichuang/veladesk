@@ -72,8 +72,9 @@ describe("buildSampleWorkspace", () => {
     const npm = byName.get("npm");
     expect(github?.icon).toEqual({ kind: "iconify", icon: "simple-icons:github" });
     expect(figma?.icon).toEqual({ kind: "iconify", icon: "simple-icons:figma" });
-    // Not in the brand table → the shared generated-text icon.
-    expect(npm?.icon).toMatchObject({ kind: "generated", source: "auto" });
+    // Outside the recognition seed table but inside the sample glyph map —
+    // the sample presentation upgrades it to the bundled collection glyph.
+    expect(npm?.icon).toEqual({ kind: "iconify", icon: "simple-icons:npm" });
   });
 
   it("includes the folder example on «前端开发» with its own apps", () => {
@@ -163,23 +164,25 @@ describe("sample presentation", () => {
       const folder = findSampleFolder(sample)!;
       expect(pageItemIds(sample.pages[0]!)[0]).toBe(folder.id);
     });
-    it(`${locale}: uses short names and distinct solid colors with accessible white glyphs`, () => {
+    it(`${locale}: wears bundled brand glyphs on Auto glass, never forced solid blocks`, () => {
       const sample = buildSampleWorkspace(makeIdFactory(), locale);
-      const colors = new Set<string>();
+      let glyphCount = 0;
       for (const entity of sample.entities) {
         if (entity.kind === "widget") continue;
         expect([...entity.name].length).toBeLessThanOrEqual(/[\u4e00-\u9fff]/.test(entity.name) ? 6 : 8);
         if (entity.kind !== "app") continue;
-        expect(entity.visual?.decorationStyle).toBe("solid");
-        expect(entity.visual?.foregroundColor).toBe("#FFFFFF");
-        const hex = entity.visual!.decorationColor!;
-        colors.add(hex);
-        const rgb = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255)
-          .map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-        const luminance = rgb[0]! * 0.2126 + rgb[1]! * 0.7152 + rgb[2]! * 0.0722;
-        expect(1.05 / (luminance + 0.05)).toBeGreaterThanOrEqual(4.5);
+        // The Helm first picture: no per-app solid color block is forced \u2014
+        // tiles compose from the theme's Dawn Chart tokens alone.
+        expect(entity.visual?.decorationStyle).toBeUndefined();
+        if (entity.icon.kind === "iconify") {
+          glyphCount += 1;
+          // Every sample glyph must come from the BUNDLED simple-icons set
+          // (never a remote collection), or it would degrade to initials.
+          expect(entity.icon.icon).toMatch(/^simple-icons:[a-z0-9]+$/);
+        }
       }
-      expect(colors.size).toBeGreaterThanOrEqual(15);
+      // Most curated sites have a real glyph; the rest keep the badge.
+      expect(glyphCount).toBeGreaterThanOrEqual(20);
     });
   }
 });

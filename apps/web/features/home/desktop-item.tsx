@@ -194,6 +194,45 @@ function DesktopEntity({
     },
     [arrange, liftEnter],
   );
+
+  /*
+   * The pointer-following glass reflection (Helm first picture): while a
+   * tile is hovered in view mode, the pointer's position inside the body is
+   * written (rAF-coalesced) as --vd-tile-px/--vd-tile-py on the item — the
+   * stylesheet turns them into the soft bloom under the cursor. Never in
+   * arrange mode: during a drag the pointer feeds the gesture, not the
+   * gloss. Values live on the item root so the ::after on the BODY inherits
+   * them; leaving clears them so the next hover starts dim-center.
+   */
+  const pointerGlowFrameRef = useRef(0);
+  const handlePointerMoveForGlow = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (arrange) {
+        return;
+      }
+      const item = event.currentTarget;
+      const body = liftInnerRef.current;
+      if (body === null) {
+        return;
+      }
+      const clientX = event.clientX;
+      const clientY = event.clientY;
+      cancelAnimationFrame(pointerGlowFrameRef.current);
+      pointerGlowFrameRef.current = requestAnimationFrame(() => {
+        const rect = body.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+          return;
+        }
+        item.style.setProperty("--vd-tile-px", `${clientX - rect.left}px`);
+        item.style.setProperty("--vd-tile-py", `${clientY - rect.top}px`);
+      });
+    },
+    [arrange, liftInnerRef],
+  );
+  useEffect(
+    () => () => cancelAnimationFrame(pointerGlowFrameRef.current),
+    [],
+  );
   // The snap-mode FLIP slot (P1): in Grid geometry the SLOT owns the cell
   // placement (and receives the live resize preview); the button fills it.
   const slotRef = useRef<HTMLDivElement | null>(null);
@@ -346,13 +385,22 @@ function DesktopEntity({
         onPointerDown={event => { if (!arrange) liftDown(event); }}
         onPointerUp={event => { if (!arrange) liftUp(event); }}
         onPointerEnter={handleLiftEnter}
-        onPointerLeave={liftLeave}
+        onPointerLeave={(event) => {
+          liftLeave(event);
+          event.currentTarget.style.removeProperty("--vd-tile-px");
+          event.currentTarget.style.removeProperty("--vd-tile-py");
+        }}
         onPointerCancel={liftCancel}
+        onPointerMove={handlePointerMoveForGlow}
       >
         <span className="vela-item__body" ref={liftInnerRef}>
           <AppIconSurface app={entity} />
           <span className="vela-app-content" data-layout={contentLayout?.mode ?? "stack"}>
-            <span className="vela-app-content__icon">
+            <span
+              className="vela-app-content__icon"
+              data-icon-kind={appContentIconKind(entity)}
+              data-decoration={presentation.decorationStyle}
+            >
               <AppIconGlyph app={entity} />
             </span>
             {label.visible ? <span className="vela-item__label">{entity.name}</span> : null}

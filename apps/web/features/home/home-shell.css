@@ -466,13 +466,44 @@
   --vd-wall-cf3: 1;
 }
 
+/*
+ * DAWN — the default 拂晓海图 ground (Helm first picture, 2026-11-10): a
+ * deep ink-blue sea with a cold violet-blue sky and ONE warm amber breath
+ * rising from below the waterline. The horizon band itself carries the
+ * apricot→rose→cold-blue gradient (DawnHorizon); the blobs only set the
+ * depth, so lightness/alpha are re-declared HERE (dark values) rather than
+ * riding the aurora-era root defaults.
+ */
 .vela-desktop[data-vd-wallpaper="dawn"] {
-  --vd-wall-h1: 60;
-  --vd-wall-h2: 35;
-  --vd-wall-h3: 15;
-  --vd-wall-cf1: 0.75;
-  --vd-wall-cf2: 0.85;
-  --vd-wall-cf3: 0.7;
+  --vd-wall-h1: 262;
+  --vd-wall-h2: 232;
+  --vd-wall-h3: 30;
+  --vd-wall-l1: 0.24;
+  --vd-wall-c1: 0.05;
+  --vd-wall-a1: 0.3;
+  --vd-wall-l2: 0.21;
+  --vd-wall-c2: 0.05;
+  --vd-wall-a2: 0.26;
+  --vd-wall-l3: 0.29;
+  --vd-wall-c3: 0.07;
+  --vd-wall-a3: 0.24;
+  --vd-wall-cf1: 0.55;
+  --vd-wall-cf2: 0.6;
+  --vd-wall-cf3: 0.85;
+}
+
+/* The light dawn ground (白昼海图): flatter, cooler blobs — the gold stays
+   in the horizon band, the sea becomes mist. */
+.vela-desktop[data-vd-color-mode="light"][data-vd-wallpaper="dawn"] {
+  --vd-wall-l1: 0.88;
+  --vd-wall-c1: 0.025;
+  --vd-wall-a1: 0.5;
+  --vd-wall-l2: 0.86;
+  --vd-wall-c2: 0.03;
+  --vd-wall-a2: 0.45;
+  --vd-wall-l3: 0.9;
+  --vd-wall-c3: 0.05;
+  --vd-wall-a3: 0.5;
 }
 
 .vela-desktop[data-vd-wallpaper="mist"] {
@@ -580,6 +611,10 @@
   --vds-wall-h1: 278;
   --vds-wall-h2: 218;
   --vds-wall-h3: 318;
+  /* The GROUND under the blobs: the flat token base by default; the dawn
+     night sky below overrides just this layer (the blob geometry above it
+     stays the one shared definition). */
+  --vds-wall-ground: var(--vd-bg);
   background:
     radial-gradient(
       120% 90% at 12% 8%,
@@ -605,7 +640,7 @@
       ),
       transparent 60%
     ),
-    var(--vd-bg);
+    var(--vds-wall-ground);
 }
 
 .vela-wallpaper-surface--preset[data-wallpaper-preset="midnight"] {
@@ -617,13 +652,43 @@
   --vds-wall-cf3: 1;
 }
 
+/* The dawn preset (dark values) mirrors the desktop root's parameters so
+   Settings thumbnails render the SAME ground the desktop shows. */
 .vela-wallpaper-surface--preset[data-wallpaper-preset="dawn"] {
-  --vds-wall-h1: 60;
-  --vds-wall-h2: 35;
-  --vds-wall-h3: 15;
-  --vds-wall-cf1: 0.75;
-  --vds-wall-cf2: 0.85;
-  --vds-wall-cf3: 0.7;
+  --vds-wall-h1: 262;
+  --vds-wall-h2: 232;
+  --vds-wall-h3: 30;
+  --vds-wall-l1: 0.24;
+  --vds-wall-c1: 0.05;
+  --vds-wall-a1: 0.34;
+  --vds-wall-l2: 0.21;
+  --vds-wall-c2: 0.05;
+  --vds-wall-a2: 0.3;
+  --vds-wall-l3: 0.31;
+  --vds-wall-c3: 0.07;
+  --vds-wall-a3: 0.3;
+  --vds-wall-cf1: 0.55;
+  --vds-wall-cf2: 0.6;
+  --vds-wall-cf3: 0.85;
+}
+
+/*
+ * The dawn NIGHT SKY (Helm first picture, round 2): the dark ground is a
+ * real sky, not a near-black slab — deep indigo overhead, lifting through
+ * cold blue toward a rose-tinged pre-horizon, then the dark sea at the
+ * very bottom. Every stop is a token mix (bg-deep ← dawn-3/dawn-2), so
+ * nothing is hardcoded; the light 白昼海图 keeps its mist ground — the
+ * override is scoped to the RESOLVED dark mode on any themed root.
+ */
+[data-vd-color-mode="dark"] .vela-wallpaper-surface--preset[data-wallpaper-preset="dawn"] {
+  --vds-wall-ground: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--vd-color-dawn-3) 13%, var(--vd-color-bg-deep)),
+    color-mix(in oklab, var(--vd-color-dawn-3) 21%, var(--vd-color-bg-deep)) 46%,
+    color-mix(in oklab, var(--vd-color-dawn-3) 33%, var(--vd-color-bg-deep)) 74%,
+    color-mix(in oklab, var(--vd-color-dawn-2) 17%, var(--vd-color-bg-deep)) 84%,
+    var(--vd-color-bg-deep) 97%
+  );
 }
 
 .vela-wallpaper-surface--preset[data-wallpaper-preset="mist"] {
@@ -718,24 +783,29 @@
   pointer-events: none;
 }
 
-/* The chart graticule: hairline meridians/parallels at ~4% opacity
-   (visual-directions A: 经纬线 4%). */
-.vela-dawn-horizon__graticule {
+/*
+ * The chart graticule (Helm first picture): curved meridians/parallels at
+ * a whisper (visual-directions A: 经纬线 4%) — a hint of spherical
+ * perspective, drawn as one stretched SVG so the hairlines stay 1px at any
+ * viewport. Round 2 lifts the line mix so the chart actually READS over
+ * the night sky (a 4% print over near-black vanished); clearest around
+ * the horizon, gone at the very top.
+ */
+.vela-dawn-horizon__chart {
   position: absolute;
   inset: 0;
-  background:
-    repeating-linear-gradient(
-      to right,
-      color-mix(in oklab, var(--vd-color-fg-primary) 4%, transparent) 0 1px,
-      transparent 1px 120px
-    ),
-    repeating-linear-gradient(
-      to bottom,
-      color-mix(in oklab, var(--vd-color-fg-primary) 4%, transparent) 0 1px,
-      transparent 1px 120px
-    );
-  mask-image: radial-gradient(120% 90% at 50% 70%, black 30%, transparent 90%);
-  -webkit-mask-image: radial-gradient(120% 90% at 50% 70%, black 30%, transparent 90%);
+  width: 100%;
+  height: 100%;
+  color: color-mix(in oklab, var(--vd-color-fg-primary) 23%, transparent);
+  mask-image: radial-gradient(170% 108% at 50% 64%, black 30%, transparent 95%);
+  -webkit-mask-image: radial-gradient(170% 108% at 50% 64%, black 30%, transparent 95%);
+}
+
+.vela-dawn-horizon__chart-lines {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 /* The scalable BAND wrapper: the Dawn opening rises from scaleY 0 at the
@@ -749,32 +819,84 @@
   transform-origin: 50% 100%;
 }
 
-/* The resting horizon glow: cold blue at the edges, apricot-rose core,
-   fading upward off the waterline. */
+/*
+ * The resting horizon glow: cold blue at the edges, apricot-rose core —
+ * brightest just LEFT of center (the coming sun), fading upward off the
+ * waterline. Round 3 adds the sun's radial hotspot just under the
+ * waterline so the dawn has a SOURCE, not only a band. GSAP breathes this
+ * node (opacity + a 5% swell); at rest it is pure CSS.
+ */
 .vela-dawn-horizon__glow {
   position: absolute;
   inset: 0;
   background:
+    radial-gradient(
+      30% 36% at 41% 100%,
+      color-mix(in oklab, var(--vd-color-dawn-1) 50%, transparent),
+      transparent 72%
+    ),
     linear-gradient(
       to top,
-      color-mix(in oklab, var(--vd-color-dawn-1) 30%, transparent),
-      color-mix(in oklab, var(--vd-color-dawn-2) 16%, transparent) 42%,
-      color-mix(in oklab, var(--vd-color-dawn-3) 10%, transparent) 74%,
+      color-mix(in oklab, var(--vd-color-dawn-1) 58%, transparent),
+      color-mix(in oklab, var(--vd-color-dawn-2) 34%, transparent) 30%,
+      color-mix(in oklab, var(--vd-color-dawn-3) 22%, transparent) 58%,
       transparent
     ),
     linear-gradient(
       90deg,
-      color-mix(in oklab, var(--vd-color-dawn-3) 26%, transparent),
-      color-mix(in oklab, var(--vd-color-dawn-2) 34%, transparent) 45%,
-      color-mix(in oklab, var(--vd-color-dawn-1) 42%, transparent) 78%,
-      color-mix(in oklab, var(--vd-color-dawn-3) 22%, transparent)
+      transparent,
+      color-mix(in oklab, var(--vd-color-dawn-3) 46%, transparent) 16%,
+      color-mix(in oklab, var(--vd-color-dawn-2) 48%, transparent) 36%,
+      color-mix(in oklab, var(--vd-color-dawn-1) 66%, transparent) 42%,
+      color-mix(in oklab, var(--vd-color-dawn-1) 52%, transparent) 62%,
+      color-mix(in oklab, var(--vd-color-dawn-3) 40%, transparent) 84%,
+      transparent
     );
   mask-image: linear-gradient(to top, black 0%, transparent 96%);
   -webkit-mask-image: linear-gradient(to top, black 0%, transparent 96%);
 }
 
+/*
+ * The sea below the waterline (round 3): a distinctly darker, cooler
+ * plane than the sky so the horizon gains a waterline you can FEEL. Layer
+ * order matters — the sun's mirrored streak rides ON TOP, then the
+ * warm-to-cold vertical, then the bg-deep shading wash that pulls the sea
+ * under the sky's brightness.
+ */
+.vela-dawn-horizon__band::before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    /* The sun's mirrored streak: a narrow warm column descending from the
+       waterline under the hotspot, fading with depth — the water visibly
+       RECEIVES the dawn light. */
+    radial-gradient(
+      10% 62% at 41% 0%,
+      color-mix(in oklab, var(--vd-color-dawn-1) 42%, transparent),
+      color-mix(in oklab, var(--vd-color-dawn-2) 20%, transparent) 46%,
+      transparent 72%
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--vd-color-dawn-1) 22%, transparent),
+      color-mix(in oklab, var(--vd-color-dawn-3) 8%, transparent) 26%,
+      color-mix(in oklab, var(--vd-color-dawn-3) 26%, transparent)
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--vd-color-bg-deep) 34%, transparent),
+      transparent 78%
+    );
+}
+
 /* The waterline: one hairline highlight where the light band meets the
-   ground — the only crisp edge the horizon is allowed. */
+   ground — the only crisp edge the horizon is allowed — at full dawn
+   brightness against the darkened sea just below, with a tight warm
+   bloom: the sun's first light on the water. */
 .vela-dawn-horizon__band::after {
   content: "";
   position: absolute;
@@ -785,9 +907,11 @@
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in oklab, var(--vd-color-dawn-1) 70%, transparent) 50%,
+    color-mix(in oklab, var(--vd-color-dawn-1) 100%, transparent) 38%,
+    color-mix(in oklab, var(--vd-color-dawn-1) 72%, transparent) 58%,
     transparent
   );
+  box-shadow: 0 1px 14px 2px color-mix(in oklab, var(--vd-color-dawn-1) 55%, transparent);
 }
 
 /* The opening BURST: the bright band the Dawn timeline raises; it sits at
@@ -819,6 +943,74 @@
 }
 
 /*
+ * The stars (Helm first picture): deterministic dot families over the sky,
+ * masked away toward the waterline. 白昼海图 (light) has no stars — the
+ * dawn preset's light ground is daytime mist. The dots paint in a low-alpha
+ * foreground; sizes/positions are geometry, not color.
+ */
+.vela-desktop__stars {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  color: color-mix(in oklab, var(--vd-color-fg-primary) 55%, transparent);
+  fill: currentColor;
+  mask-image: linear-gradient(to bottom, black 0%, black 44%, transparent 68%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 44%, transparent 68%);
+}
+
+.vela-desktop__stars-family {
+  opacity: 0.7;
+}
+
+.vela-desktop[data-vd-color-mode="light"] .vela-desktop__stars {
+  display: none;
+}
+
+/*
+ * The film grain: colorless luminance noise (an inline feTurbulence SVG —
+ * the one place a raw data URI appears; it carries NO color, the alpha and
+ * blend live in the token below). One static layer; the deep ground never
+ * reads as a flat gradient print.
+ */
+.vela-desktop__grain {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: var(--vd-scene-grain-alpha);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 240px 240px;
+}
+
+/*
+ * Depth vignette on the scene box itself: the corners and the very top of
+ * the frame fall into the deep ground, so the lit horizon reads as the one
+ * light source in the room (景深). Pure mask work over the wallpaper and
+ * atmosphere layers, below every chrome surface.
+ */
+.vela-desktop__scene::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      125% 105% at 50% 44%,
+      transparent 52%,
+      color-mix(in oklab, var(--vd-color-bg-deep) 34%, transparent) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--vd-color-bg-deep) 26%, transparent),
+      transparent 24%
+    );
+}
+
+/*
  * The snap-drop ripple (P1, motion-spec §3): one 220ms ring stroke at the
  * landing cells — opacity 0.35→0, scale 0.9→1.15 — rendered by Motion and
  * removed on completion. Never rendered under reduced motion.
@@ -835,6 +1027,18 @@
   box-sizing: border-box;
   border: 1.5px solid var(--vd-accent);
   border-radius: var(--vd-radius-lg);
+  pointer-events: none;
+}
+
+/* The Wake trail canvas (Helm first picture): fixed, pointer-transparent,
+   mounted ONLY while a tile drag is live — the node itself never exists at
+   rest, so there is no idle cost. */
+.vela-wake-trail {
+  position: fixed;
+  inset: 0;
+  z-index: 26;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
 
@@ -916,10 +1120,157 @@
 /* --- Left section rail ---------------------------------------------------- */
 
 /*
+ * The space ORBIT (Helm first picture): a fixed strip over the desktop's
+ * right edge — the ring itself is pointer-transparent decoration; the
+ * waypoint buttons are the only hit targets. The workbench no longer has a
+ * left column: the workspace IS the desktop, full-bleed under the horizon.
+ */
+.vela-orbit {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 12;
+  width: 300px;
+  pointer-events: none;
+  text-shadow: var(--vd-label-shadow);
+}
+
+.vela-orbit__ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* The ring: a quiet chart hairline — fg at 12%, 1.5px, slightly stronger
+   than the graticule (it is a NAVIGATION element, not ground texture). */
+.vela-orbit__ring-path {
+  fill: none;
+  stroke: color-mix(in oklab, var(--vd-color-fg-primary) 26%, transparent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+/*
+ * The comet: the glowing traveller that rides the ring to the active
+ * waypoint. Its transform is GSAP-owned (translate from the strip's own
+ * origin — the node itself sits at 0,0). Accent glow at wake strength; a
+ * soft trailing bloom via the box-shadow's blur.
+ */
+.vela-orbit__comet {
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: var(--vd-accent);
+  box-shadow:
+    0 0 0 4px var(--vd-accent-wash),
+    var(--vd-glow-wake);
+  opacity: 0.9;
+}
+
+/*
+ * A waypoint: a 12px visual dot inside a 28px hit area centered on the
+ * ring. Inactive dots are quiet fg ghosts; the active dot lights accent
+ * (the comet rests on it). The chip names the ACTIVE space (and any
+ * hovered/focused one) to the dot's left — the rail's always-visible
+ * titles traded for the one label that matters.
+ */
+.vela-orbit__item {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+}
+
+.vela-orbit__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 34%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent);
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+/* Hover/focus grows the dot's halo ring (box-shadow, paint-only — the
+   transform contract stays GSAP-owned). */
+.vela-orbit__item:hover .vela-orbit__dot,
+.vela-orbit__item:focus-visible .vela-orbit__dot {
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 62%, transparent);
+  box-shadow:
+    0 0 0 5px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent),
+    0 0 12px color-mix(in oklab, var(--vd-color-fg-primary) 22%, transparent);
+}
+
+.vela-orbit__item[data-active="true"] .vela-orbit__dot {
+  background: var(--vd-accent);
+  box-shadow:
+    0 0 0 5px var(--vd-accent-wash),
+    0 0 14px color-mix(in oklab, var(--vd-color-accent) 45%, transparent);
+}
+
+.vela-orbit__item:focus-visible {
+  outline: 2px solid var(--vd-color-focus);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+/* The name chip: hidden for quiet dots, shown for the active waypoint and
+   on hover/focus — a small glass pill to the LEFT of the dot. */
+.vela-orbit__chip {
+  position: absolute;
+  right: 30px;
+  display: block;
+  max-width: 140px;
+  overflow: hidden;
+  padding: 4px 10px;
+  border: 1px solid var(--vd-color-border-hairline);
+  border-radius: 999px;
+  background: var(--vd-color-bg-surface);
+  backdrop-filter: blur(var(--vd-blur-glass));
+  -webkit-backdrop-filter: blur(var(--vd-blur-glass));
+  box-shadow: inset 0 1px 0 var(--vd-color-border-highlight);
+  color: var(--vd-text);
+  font-family: var(--vd-font);
+  font-size: var(--vd-type-sm);
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+.vela-orbit__item[data-active="true"] .vela-orbit__chip,
+.vela-orbit__item:hover .vela-orbit__chip,
+.vela-orbit__item:focus-visible .vela-orbit__chip {
+  opacity: 1;
+}
+
+/* Light mode: the same mixes flip through the resolved tokens; the dot's
+   ground-tinted halo keys off the light bg-deep automatically. */
+
+/*
  * A real fixed column of titles only: no footer, no ⋯ button, no sync
  * status. The list can scroll just enough to keep the active title visible
  * (scrollIntoView) — users never freely scroll it; wheel input belongs to
  * section navigation (JS, non-passive) and is otherwise suppressed.
+ * (The rail component remains available; the desktop shell mounts the
+ * SectionOrbit instead — Helm first picture decision.)
  */
 .vela-rail {
   flex: 0 0 200px;
@@ -1006,6 +1357,130 @@
 
 /* --- Right workspace + section scroll ownership ---------------------------- */
 
+/* --- The Helm header: clock + ⌘K command bar (Helm first picture) ------- */
+
+/*
+ * The one top-center landmark: large thin clock, date, glass command bar.
+ * The band is pointer-transparent except the bar itself — tiles travel
+ * under the clock during drags and section switches without it ever
+ * stealing a click. It floats over the workspace column; the section
+ * viewport reserves the vertical band below (padding-top).
+ */
+.vela-helm-header {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(8px, 1.5vh, 12px);
+  padding-top: clamp(18px, 4vh, 40px);
+  pointer-events: none;
+  text-align: center;
+}
+
+.vela-helm-clock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The ONLY consumer of the 72px type token: thin mono digits, tabular so
+   the colon never breathes while minutes tick over. */
+.vela-helm-clock__time {
+  font-family: var(--vd-font-mono);
+  font-variant-numeric: var(--vd-font-numeric);
+  font-size: var(--vd-type-clock);
+  font-weight: 220;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  color: var(--vd-text);
+  text-shadow: var(--vd-label-shadow);
+}
+
+.vela-helm-clock__date {
+  font-family: var(--vd-font);
+  font-size: var(--vd-type-md);
+  letter-spacing: 0.12em;
+  color: var(--vd-text-muted);
+  text-shadow: var(--vd-label-shadow);
+}
+
+/* The ⌘K command bar: the launcher's always-visible door. Glass pill, the
+   same material family as tiles (top sheen included); hover brightens the
+   rim, focus rings. */
+.vela-helm-commandbar {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: min(52vw, 470px);
+  height: calc(var(--vd-control-height) + 10px);
+  padding: 0 8px 0 16px;
+  border: 1px solid var(--vd-color-border-hairline);
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--vd-color-fg-primary) 6%, transparent),
+      transparent 42%
+    ),
+    var(--vd-color-bg-surface);
+  backdrop-filter: blur(var(--vd-blur-glass));
+  -webkit-backdrop-filter: blur(var(--vd-blur-glass));
+  box-shadow:
+    inset 0 1px 0 var(--vd-color-border-highlight),
+    var(--vd-shadow-tile);
+  color: var(--vd-text-muted);
+  font-family: var(--vd-font);
+  cursor: pointer;
+  transition:
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+.vela-helm-commandbar:hover {
+  border-color: var(--vd-color-border-highlight);
+  color: var(--vd-text);
+}
+
+.vela-helm-commandbar:focus-visible {
+  outline: 2px solid var(--vd-color-focus);
+  outline-offset: 2px;
+}
+
+.vela-helm-commandbar__icon {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  opacity: 0.85;
+}
+
+.vela-helm-commandbar__placeholder {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--vd-type-md);
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vela-helm-commandbar__kbd {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in oklab, var(--vd-color-fg-primary) 26%, transparent);
+  border-radius: var(--vd-radius-sm);
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 12%, transparent);
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-type-xs);
+  color: var(--vd-text);
+}
+
+/* --- Right workspace + section scroll ownership ---------------------------- */
+
 /*
  * The right workspace owns the rest of the width: a compact Arrange-only
  * toolbar band on top (reserved space — it never covers application
@@ -1030,8 +1505,12 @@
  * dock actually exists.
  */
 .vela-section-viewport {
-  --vd-section-padding-right: 34px;
-  --vd-section-padding-top: 56px;
+  /* The orbit ring's closest approach is ~120px off the right edge; content
+     clears the waypoints with a breath of space. */
+  --vd-section-padding-right: clamp(110px, 10vw, 176px);
+  /* The Helm header band (clock + ⌘K bar) floats above the viewport; the
+     scroller reserves it so content never slides under the clock. */
+  --vd-section-padding-top: clamp(150px, 23vh, 220px);
   --vd-section-padding-bottom: 30px;
 
   position: relative;
@@ -1122,7 +1601,7 @@
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   padding: var(--vd-section-padding-top) var(--vd-section-padding-right)
-    var(--vd-section-padding-bottom) 18px;
+    var(--vd-section-padding-bottom) clamp(20px, 2.6vw, 42px);
 }
 
 .vela-section-scroller::-webkit-scrollbar {
@@ -1572,11 +2051,11 @@ button.vela-sync-status:focus-visible {
    and the folder glyph. Desktop apps left this path — they render the
    full-geometry surface + adaptive content instead. */
 /*
- * The Auto tile look is the Dawn Chart wash (P1): the horizon's cold blue
- * blending toward the user's accent hue, composed from the semantic stops
- * — never a literal. The on-tile glyph color is the one pre-existing
- * literal kept on purpose: solid/gradient tiles are saturated in BOTH
- * color modes, so their text may not follow the mode foreground.
+ * The Auto plate look (Helm first picture): the LOW-SATURATION dawn wash —
+ * the horizon's cold blue breathing toward the accent, mixed deep into the
+ * ground so it reads as a frosted badge, never a saturated block. The
+ * on-plate glyph color is the one pre-existing literal kept on purpose:
+ * the badge keeps its own light foreground in BOTH color modes.
  */
 .vela-item__icon {
   display: grid;
@@ -1588,28 +2067,38 @@ button.vela-sync-status:focus-visible {
   border-radius: calc(var(--vd-slot-icon-size) * 0.26);
   background: linear-gradient(
     150deg,
-    color-mix(in oklab, var(--vd-color-dawn-3) 58%, var(--vd-color-bg-deep)),
-    color-mix(in oklab, var(--vd-color-accent) 34%, var(--vd-color-bg-deep))
+    color-mix(in oklab, var(--vd-color-dawn-3) 46%, var(--vd-color-bg-deep)),
+    color-mix(in oklab, var(--vd-color-accent) 22%, var(--vd-color-bg-deep))
   );
   box-shadow:
-    0 10px 26px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent),
-    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 22%, transparent);
+    0 6px 18px color-mix(in oklab, var(--vd-color-bg-deep) 38%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 16%, transparent);
   font-size: calc(var(--vd-slot-icon-size) * 0.34);
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0.02em;
-  color: oklch(0.97 0.01 260);
+  color: oklch(0.96 0.01 250);
 }
 
 .vela-item__icon--folder {
-  color: color-mix(in oklab, var(--vd-color-dawn-1) 85%, var(--vd-color-fg-primary));
+  color: var(--vd-text);
 }
 
-/* On the DESKTOP (freeform canvas AND grid host) a folder tile is a
-   surface too: it fills the placement box and keeps its glyph centered
-   and proportional. The tile is also the QUERY CONTAINER for its svg —
-   the folder branch has no other container, so without container-type
-   here the cqmin below would fall back to the viewport and always sit at
-   the 180px cap. */
+/* Hover returns the folder its dawn-amber identity (the keyframe's lit
+   folder) while the glyph family stays monochrome at rest. */
+@media (hover: hover) {
+  .vela-desktop:not([data-arrange="true"]) .vela-item[data-kind="folder"]:hover .vela-item__icon--folder {
+    color: color-mix(in oklab, var(--vd-color-dawn-1) 82%, var(--vd-color-fg-primary));
+  }
+}
+
+/*
+ * On the DESKTOP (freeform canvas AND grid host) a folder tile is the SAME
+ * frosted-glass surface as app tiles: it fills the placement box, keeps its
+ * glyph centered and proportional, and carries the dawn-amber folder tint.
+ * The tile is also the QUERY CONTAINER for its svg — the folder branch has
+ * no other container, so without container-type here the cqmin below would
+ * fall back to the viewport and always sit at the 180px cap.
+ */
 .vela-canvas .vela-item__icon--folder,
 .vela-grid-host .vela-item__icon--folder {
   position: absolute;
@@ -1617,6 +2106,25 @@ button.vela-sync-status:focus-visible {
   width: auto;
   height: auto;
   container-type: size;
+  border: 1px solid var(--vd-color-border-hairline);
+  border-radius: clamp(8px, 22cqmin, 26px);
+  background: var(--vd-color-bg-surface);
+  backdrop-filter: blur(var(--vd-blur-glass));
+  -webkit-backdrop-filter: blur(var(--vd-blur-glass));
+  box-shadow:
+    inset 0 1px 0 var(--vd-color-border-highlight),
+    var(--vd-shadow-tile);
+}
+
+/* The folder drag glow matches the app tiles' apricot wake. */
+.vela-item[data-dragging="true"] .vela-item__icon--folder {
+  border-color: color-mix(in oklab, var(--vd-color-accent) 65%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--vd-color-border-highlight),
+    0 0 0 1.5px color-mix(in oklab, var(--vd-color-accent) 40%, transparent),
+    var(--vd-glow-wake),
+    0 0 46px color-mix(in oklab, var(--vd-color-accent) 42%, transparent),
+    var(--vd-shadow-tile);
 }
 
 .vela-canvas .vela-item__icon--folder svg,
@@ -1685,28 +2193,29 @@ button.vela-sync-status:focus-visible {
 }
 
 .vela-app-icon[data-decoration="gradient"] {
-  /* Auto = the Dawn Chart wash, same as the fixed-slot tile above. */
+  /* Auto = the low-saturation dawn badge, same as the fixed-slot plate
+     above; a custom color paints it outright. */
   background: var(
     --vd-app-icon-bg,
     linear-gradient(
       150deg,
-      color-mix(in oklab, var(--vd-color-dawn-3) 58%, var(--vd-color-bg-deep)),
-      color-mix(in oklab, var(--vd-color-accent) 34%, var(--vd-color-bg-deep))
+      color-mix(in oklab, var(--vd-color-dawn-3) 46%, var(--vd-color-bg-deep)),
+      color-mix(in oklab, var(--vd-color-accent) 22%, var(--vd-color-bg-deep))
     )
   );
   box-shadow:
-    0 10px 26px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent),
-    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 22%, transparent);
+    0 6px 18px color-mix(in oklab, var(--vd-color-bg-deep) 38%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 16%, transparent);
 }
 
 .vela-app-icon[data-decoration="solid"] {
   background: var(
     --vd-app-icon-bg,
-    color-mix(in oklab, var(--vd-color-dawn-3) 78%, var(--vd-color-bg-deep))
+    color-mix(in oklab, var(--vd-color-dawn-3) 52%, var(--vd-color-bg-deep))
   );
   box-shadow:
-    0 10px 26px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent),
-    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 22%, transparent);
+    0 6px 18px color-mix(in oklab, var(--vd-color-bg-deep) 38%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 16%, transparent);
 }
 
 .vela-app-icon[data-decoration="glass"] {
@@ -1723,20 +2232,35 @@ button.vela-sync-status:focus-visible {
   color: var(--vd-app-icon-fg, var(--vd-text));
 }
 
-/* Solid/gradient tiles are saturated in BOTH color modes, so the icon and
-   title composed on top use the tile foreground (light by default) instead
-   of inheriting the mode text color, which is dark in the light theme and
-   made short names illegible. Glass/none keep the mode text color. */
-.vela-app-icon--surface[data-decoration="gradient"] ~ .vela-app-content,
-.vela-app-icon--surface[data-decoration="solid"] ~ .vela-app-content {
-  color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
+/*
+ * Glass-tile content color (Helm first picture): the label always rides the
+ * GLASS, so it follows the mode foreground; only a custom per-app
+ * foreground reaches the glyphs, through the plate's own color (the badge
+ * rule above keeps its light fallback for the saturated dawn wash).
+ */
+.vela-canvas .vela-app-content,
+.vela-grid-host .vela-app-content {
+  color: var(--vd-text);
+}
+
+.vela-canvas .vela-app-content__icon,
+.vela-grid-host .vela-app-content__icon {
+  color: var(--vd-app-icon-fg, var(--vd-text));
 }
 
 /*
- * 019-B adaptive surface: the decoration fills the ENTIRE outer geometry
- * (grid span box / freeform rect) — gradient, solid,
- * glass or none paint the exact user-owned box and never shrink to the
- * icon size. The icon + title compose in the sibling .vela-app-content.
+ * 019-B adaptive surface: the decoration layer fills the ENTIRE outer
+ * geometry (grid span box / freeform rect) — the exact user-owned box,
+ * never shrinking to the icon size. The icon + title compose in the
+ * sibling .vela-app-content.
+ *
+ * THE GLASS TILE (Helm first picture, 2026-11-10): on the desktop hosts
+ * every decoration except "none" paints the SAME frosted-glass surface —
+ * translucent ground, backdrop blur, a 1px top inner highlight and the tile
+ * elevation — while the app's own color moves DOWN onto the icon plate
+ * (`.vela-app-content__icon` below). Per-app decoration styles keep their
+ * meaning at plate scale: a saturated plate for gradient/solid with a
+ * custom color, the Auto dawn-wash badge or a neutral well otherwise.
  */
 .vela-canvas .vela-app-icon--surface,
 .vela-grid-host .vela-app-icon--surface {
@@ -1745,6 +2269,150 @@ button.vela-sync-status:focus-visible {
   width: auto;
   height: auto;
   border-radius: clamp(8px, 22cqmin, 26px);
+}
+
+.vela-canvas .vela-app-icon--surface[data-decoration="gradient"],
+.vela-canvas .vela-app-icon--surface[data-decoration="solid"],
+.vela-canvas .vela-app-icon--surface[data-decoration="glass"],
+.vela-grid-host .vela-app-icon--surface[data-decoration="gradient"],
+.vela-grid-host .vela-app-icon--surface[data-decoration="solid"],
+.vela-grid-host .vela-app-icon--surface[data-decoration="glass"] {
+  border: 1px solid color-mix(in oklab, var(--vd-color-fg-primary) 20%, transparent);
+  /* Round 3: the glass LIGHTS — a diagonal specular sheen from the upper
+     left over the translucent ground, and a warm inner underglow at the
+     bottom edge: the dawn lighting every tile from the horizon. */
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in oklab, var(--vd-color-fg-primary) 14%, transparent),
+      transparent 40%
+    ),
+    var(--vd-color-bg-surface);
+  backdrop-filter: blur(var(--vd-blur-glass));
+  -webkit-backdrop-filter: blur(var(--vd-blur-glass));
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 38%, transparent),
+    inset 0 -20px 32px -16px color-mix(in oklab, var(--vd-color-dawn-1) 50%, transparent),
+    var(--vd-shadow-tile);
+  /* Border/shadow responses are paint-only — the transform stays owned by
+     the GSAP hover lift on .vela-item__body (never transitioned here). */
+  transition:
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+/* Hover: the hairline becomes the brighter highlight rim (the 2px lift is
+   GSAP's on the body). */
+@media (hover: hover) {
+  .vela-desktop:not([data-arrange="true"])
+    .vela-item[data-kind="app"]:hover
+    .vela-app-icon--surface[data-decoration="gradient"],
+  .vela-desktop:not([data-arrange="true"])
+    .vela-item[data-kind="app"]:hover
+    .vela-app-icon--surface[data-decoration="solid"],
+  .vela-desktop:not([data-arrange="true"])
+    .vela-item[data-kind="app"]:hover
+    .vela-app-icon--surface[data-decoration="glass"] {
+    border-color: var(--vd-color-border-highlight);
+  }
+}
+
+/* Dragging: the apricot wake glow — the one saturated moment a tile is
+   allowed while it flies (glow.wake from the token layer). */
+.vela-item[data-dragging="true"] .vela-app-icon--surface[data-decoration="gradient"],
+.vela-item[data-dragging="true"] .vela-app-icon--surface[data-decoration="solid"],
+.vela-item[data-dragging="true"] .vela-app-icon--surface[data-decoration="glass"] {
+  border-color: color-mix(in oklab, var(--vd-color-accent) 65%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--vd-color-border-highlight),
+    0 0 0 1.5px color-mix(in oklab, var(--vd-color-accent) 40%, transparent),
+    var(--vd-glow-wake),
+    0 0 46px color-mix(in oklab, var(--vd-color-accent) 42%, transparent),
+    var(--vd-shadow-tile);
+}
+
+/*
+ * The icon PLATE: the rounded base the glyph sits on — favicons and
+ * monochrome brand glyphs get a neutral well so even noisy icons read as
+ * one family; generated initials get the Auto dawn-wash badge (low
+ * saturation, theme-coordinated). A custom --vd-app-icon-bg/fg (per-app
+ * appearance) paints the plate instead — the feature lives, at plate
+ * scale.
+ */
+.vela-canvas .vela-app-content__icon,
+.vela-grid-host .vela-app-content__icon {
+  border-radius: 30%;
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+/* Real glyphs (library SVGs, uploaded images): the neutral well plate —
+   round 2 firms it up (well 64% + a brighter inner rim) so favicons and
+   monochrome brand glyphs read as ONE family next to the Auto badges. */
+.vela-canvas .vela-app-content__icon[data-icon-kind="library"],
+.vela-canvas .vela-app-content__icon[data-icon-kind="image"],
+.vela-grid-host .vela-app-content__icon[data-icon-kind="library"],
+.vela-grid-host .vela-app-content__icon[data-icon-kind="image"] {
+  background: var(
+    --vd-app-icon-bg,
+    color-mix(in oklab, var(--vd-color-bg-well) 64%, transparent)
+  );
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 18%, transparent);
+}
+
+/* Generated initials: the Auto badge — the dawn horizon's own wash at low
+   saturation, a monochrome glyph riding it. */
+.vela-canvas .vela-app-content__icon[data-icon-kind="generated"],
+.vela-grid-host .vela-app-content__icon[data-icon-kind="generated"] {
+  background: var(
+    --vd-app-icon-bg,
+    linear-gradient(
+      150deg,
+      color-mix(in oklab, var(--vd-color-dawn-3) 46%, var(--vd-color-bg-deep)),
+      color-mix(in oklab, var(--vd-color-accent) 22%, var(--vd-color-bg-deep))
+    )
+  );
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 16%, transparent);
+  color: var(--vd-app-icon-fg, oklch(0.96 0.01 250));
+}
+
+/* "none" decoration: glyph straight on the glass, no plate at all. */
+.vela-canvas .vela-app-content__icon[data-decoration="none"],
+.vela-grid-host .vela-app-content__icon[data-decoration="none"] {
+  background: transparent;
+  box-shadow: none;
+  color: var(--vd-app-icon-fg, var(--vd-text));
+}
+
+/*
+ * The pointer-following glass reflection: a soft light bloom under the
+ * pointer, written by the item's rAF pointer handler as
+ * --vd-tile-px/--vd-tile-py (px, relative to the body) and lit only while
+ * hovered. Paint-only — the radial position re-resolves per frame without
+ * layout.
+ */
+.vela-item__body::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: clamp(8px, 22cqmin, 26px);
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    55% 55% at var(--vd-tile-px, 50%) var(--vd-tile-py, 42%),
+    color-mix(in oklab, var(--vd-color-fg-primary) 9%, transparent),
+    transparent 68%
+  );
+  transition: opacity var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+@media (hover: hover) {
+  .vela-desktop:not([data-arrange="true"])
+    .vela-item[data-kind="app"]:hover
+    .vela-item__body::after {
+    opacity: 1;
+  }
 }
 
 /*
@@ -1805,29 +2473,26 @@ button.vela-sync-status:focus-visible {
   letter-spacing: 0;
   white-space: nowrap;
 }
-/* Dock: the button itself is the tile — same decoration contract, dock-
-   tuned Auto fallbacks that reproduce the pre-016 dock look. 019-B: the
-   dock keeps its compact FIXED geometry; the deprecated per-app scale
-   multiplier no longer applies (never emitted). */
+/* Dock: the button itself is the plate — same decoration contract, with the
+   Auto fallbacks keyed to the quiet well above (a user-chosen
+   --vd-app-icon-bg still paints the plate). 019-B: the dock keeps its
+   compact FIXED geometry; the deprecated per-app scale multiplier no longer
+   applies (never emitted). */
 .vela-dock__item[data-decoration="gradient"] {
   background: var(
     --vd-app-icon-bg,
-    linear-gradient(
-      150deg,
-      color-mix(in oklab, var(--vd-color-dawn-3) 55%, var(--vd-color-bg-deep)),
-      color-mix(in oklab, var(--vd-color-accent) 30%, var(--vd-color-bg-deep))
-    )
+    color-mix(in oklab, var(--vd-color-bg-well) 62%, transparent)
   );
-  color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
+  color: var(--vd-app-icon-fg, var(--vd-text));
   font-size: 15px;
 }
 
 .vela-dock__item[data-decoration="solid"] {
   background: var(
     --vd-app-icon-bg,
-    color-mix(in oklab, var(--vd-color-dawn-3) 75%, var(--vd-color-bg-deep))
+    color-mix(in oklab, var(--vd-color-bg-well) 62%, transparent)
   );
-  color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
+  color: var(--vd-app-icon-fg, var(--vd-text));
   font-size: 15px;
 }
 
@@ -1835,7 +2500,7 @@ button.vela-sync-status:focus-visible {
   background: var(--vd-app-icon-bg, var(--vd-color-bg-surface));
   backdrop-filter: blur(var(--vd-blur-glass));
   -webkit-backdrop-filter: blur(var(--vd-blur-glass));
-  color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
+  color: var(--vd-app-icon-fg, var(--vd-text));
   font-size: 15px;
 }
 
@@ -1851,8 +2516,8 @@ button.vela-sync-status:focus-visible {
    BUTTON is the outer geometry and never changes. */
 .vela-dock__item .vela-app-icon__glyph,
 .vela-dock__item .vela-app-icon__image {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
 }
 
 /* The widget is the one entity rendered as a surface, filling its rect. */
@@ -1891,7 +2556,7 @@ button.vela-sync-status:focus-visible {
 
 .vela-dock {
   position: absolute;
-  bottom: 14px;
+  bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
@@ -1899,41 +2564,79 @@ button.vela-sync-status:focus-visible {
   align-items: center;
   gap: 10px;
   max-width: min(92vw, 860px);
-  padding: 9px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--vd-surface-border, var(--vd-border));
   border-radius: var(--vd-radius-xl);
-  background: var(--vd-surface-strong);
+  /* Round 3: the dock joins the tile material — top sheen + inner rim, so
+     it reads as the same glass floating over the horizon. */
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--vd-color-fg-primary) 8%, transparent),
+      transparent 40%
+    ),
+    var(--vd-surface-strong);
   backdrop-filter: blur(var(--vd-blur-panel));
   -webkit-backdrop-filter: blur(var(--vd-blur-panel));
-  box-shadow: var(--vd-surface-shadow, var(--vd-shadow-panel));
+  box-shadow:
+    inset 0 1px 0 var(--vd-color-border-highlight),
+    var(--vd-surface-shadow, var(--vd-shadow-panel));
   /* Horizontal overflow is owned by [data-vd-scroll="x"] on the element
      (task 021-A): the quiet shared scrollbar replaces the native slab. */
 }
 
+/*
+ * Dock items (Helm first picture): quiet well plates inside the glass dock —
+ * the saturated per-app gradient stays available only as a user-chosen
+ * color (--vd-app-icon-bg); Auto reads as calm frosted wells so the brand
+ * glyphs/favicons themselves carry the color. The active dot (::after)
+ * lights under the hovered/focused icon — the dock's restrained "you are
+ * here" signal, echoing the orbit comet's accent.
+ */
 .vela-dock__item,
 .vela-dock__utility {
+  position: relative;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   padding: 0;
-  border: 1px solid var(--vd-border);
+  border: 1px solid color-mix(in oklab, var(--vd-color-fg-primary) 15%, transparent);
   border-radius: 12px;
-  background: linear-gradient(
-    150deg,
-    color-mix(in oklab, var(--vd-color-dawn-3) 55%, var(--vd-color-bg-deep)),
-    color-mix(in oklab, var(--vd-color-accent) 30%, var(--vd-color-bg-deep))
-  );
+  background: color-mix(in oklab, var(--vd-color-bg-well) 62%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 16%, transparent);
   font-family: var(--vd-font);
   font-size: 15px;
   font-weight: 650;
-  color: oklch(0.97 0.01 260);
+  color: var(--vd-text);
   cursor: pointer;
 }
 
+.vela-dock__item::after,
+.vela-dock__utility::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--vd-accent);
+  box-shadow: 0 0 8px color-mix(in oklab, var(--vd-color-accent) 55%, transparent);
+  opacity: 0;
+  transition: opacity var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+.vela-dock__item:hover::after,
+.vela-dock__item:focus-visible::after,
+.vela-dock__utility:hover::after,
+.vela-dock__utility:focus-visible::after {
+  opacity: 1;
+}
+
 .vela-dock__item--folder {
-  background: color-mix(in oklab, var(--vd-color-bg-well) 85%, transparent);
   color: color-mix(in oklab, var(--vd-color-dawn-1) 85%, var(--vd-color-fg-primary));
 }
 
@@ -2552,8 +3255,8 @@ button.vela-sync-status:focus-visible {
   }
 
   .vela-section-viewport {
-    --vd-section-padding-right: 20px;
-    --vd-section-padding-top: 48px;
+    --vd-section-padding-right: 72px;
+    --vd-section-padding-top: clamp(138px, 21vh, 190px);
     --vd-section-padding-bottom: 22px;
   }
 
@@ -2624,14 +3327,14 @@ button.vela-sync-status:focus-visible {
   border-radius: 9px;
   background: linear-gradient(
     150deg,
-    color-mix(in oklab, var(--vd-color-dawn-3) 58%, var(--vd-color-bg-deep)),
-    color-mix(in oklab, var(--vd-color-accent) 34%, var(--vd-color-bg-deep))
+    color-mix(in oklab, var(--vd-color-dawn-3) 46%, var(--vd-color-bg-deep)),
+    color-mix(in oklab, var(--vd-color-accent) 22%, var(--vd-color-bg-deep))
   );
   box-shadow: 0 6px 14px color-mix(in oklab, var(--vd-color-bg-deep) 40%, transparent);
 }
 
 .vela-appearance-inspector__decoration-tile[data-style="solid"] {
-  background: color-mix(in oklab, var(--vd-color-dawn-3) 78%, var(--vd-color-bg-deep));
+  background: color-mix(in oklab, var(--vd-color-dawn-3) 52%, var(--vd-color-bg-deep));
 }
 
 .vela-appearance-inspector__decoration-tile[data-style="glass"] {
@@ -3057,6 +3760,10 @@ header.vela-inspector__subject {
 .vela-workspace-templates label { position: relative; isolation: isolate; }
 .vela-template-selected { opacity: 0; position: absolute; inset: 0; z-index: -1; background: var(--vdu-accent-wash); border-radius: inherit; pointer-events: none; }
 .vela-toast-stack { position: fixed; z-index: 100; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
+/* Desktop: toasts clear the orbit ring's bulge (~120px off the right edge). */
+@media (min-width: 1024px) {
+  .vela-toast-stack { right: clamp(96px, 9vw, 160px); }
+}
 .vela-toast-stack > div { max-width: 100%; }
 .vela-toast-stack .vela-onboarding-success { position: relative; inset: auto; max-width: 100%; pointer-events: auto; }
 .vela-onboarding-success[data-exiting="true"], .vela-toast-stack .vela-onboarding-success[data-exiting="true"] { pointer-events: none; }

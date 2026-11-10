@@ -8,6 +8,7 @@ import type { EffectiveWallpaper } from "@veladesk/domain";
 
 import { WorkspaceWallpaperLayers } from "../desktop-wallpaper";
 import { DawnHorizon } from "./dawn-horizon";
+import { SceneStars } from "./scene-stars";
 import { useDawnIntro } from "./use-dawn-intro";
 import "../home-shell.css";
 
@@ -80,8 +81,15 @@ export function SceneBackdrop({
           assetUrl={assetUrl}
           {...(wallpaperClassName === undefined ? {} : { className: wallpaperClassName })}
         />
+        {/* The night sky's stars: above the ground, below the horizon glow;
+            hidden in light mode by the stylesheet. */}
+        <SceneStars />
         <DawnHorizon bandRef={horizonBandRef} />
         <div className="vela-desktop__ambient" aria-hidden="true" ref={desktopAmbientRef} />
+        {/* The film grain: a whisper of noise so the deep ground never reads
+            as a flat gradient print. Colorless luminance noise — every tint
+            stays in the tokens below it. */}
+        <div className="vela-desktop__grain" aria-hidden="true" />
       </div>
       {/* The Dawn opening's brightness veil (spec §2: 整张画面的亮度遮罩):
           a sibling ABOVE the chrome bands, painted at opacity 0 unless the

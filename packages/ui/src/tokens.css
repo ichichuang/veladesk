@@ -107,6 +107,12 @@
   --vd-blur-scene: 60px;
 
   /*
+   * Scene atmosphere (Helm first picture): the film-grain strength over the
+   * deep ground. Colorless noise — this token only carries alpha.
+   */
+  --vd-scene-grain-alpha: 0.05;
+
+  /*
    * Glows — focus, drag and the Wake trail ONLY. They compose from the
    * semantic accent/focus colors, so re-huing the accent re-hues every
    * glow; light mode runs them at ×0.6 intensity.
@@ -118,7 +124,7 @@
   /* Elevation: every tile shadow leads with the 1px highlight rim. */
   --vd-shadow-tile:
     0 1px 0 var(--vd-color-border-highlight),
-    0 8px 24px oklch(0.16 0.03 255 / 0.4);
+    0 18px 44px oklch(0.16 0.03 255 / 0.55);
   --vd-shadow-panel: 0 24px 64px oklch(0.16 0.03 255 / 0.55);
 
   /* Typography: mixed CJK/Latin stacks; no font files ship with the app. */
@@ -328,6 +334,9 @@
   --vd-blur-glass: 12px;
   --vd-blur-panel: 20px;
   --vd-blur-scene: 40px;
+
+  /* Light scene: the grain almost vanishes over mist-white. */
+  --vd-scene-grain-alpha: 0.028;
 
   --vd-glow-soft: 0 0 24px color-mix(in oklab, var(--vd-color-accent) 13%, transparent);
   --vd-glow-focus: 0 0 0 3px color-mix(in oklab, var(--vd-color-focus) 27%, transparent);

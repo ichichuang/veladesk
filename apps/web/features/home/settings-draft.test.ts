@@ -149,9 +149,10 @@ describe("preferencesFromSettingsDraft", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(validateWorkspace(result.workspace)).toEqual([]);
-      // The legacy baseline normalizes into the canonical glass preset.
+      // The legacy baseline normalizes into the canonical glass preset (the
+      // fresh-snapshot default rides the dark main scene).
       expect(result.workspace.preferences.appearance).toEqual({
-        colorMode: "system",
+        colorMode: "dark",
         accentHue: 60,
         wallpaperPreset: "dawn",
         surfaceOpacity: 0.5,

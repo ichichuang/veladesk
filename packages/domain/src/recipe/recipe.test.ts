@@ -75,7 +75,7 @@ describe("exportRecipe", () => {
     expect(recipe.app).toEqual({ minVersion: "1.2.0" });
     // No persisted interfaceStyle → the nearest preset is inferred.
     expect(recipe.theme).toEqual({
-      mode: "system",
+      mode: "dark",
       accent: 60,
       material: "glass",
     });

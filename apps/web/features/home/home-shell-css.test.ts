@@ -77,7 +77,10 @@ describe("home-shell.css geometry contract (task 017)", () => {
     expect(workbench).toMatch(/display:\s*flex/);
 
     const viewport = ruleBlock(".vela-section-viewport");
-    expect(viewport).toMatch(/--vd-section-padding-top:\s*56px/);
+    // The Helm header band (clock + ⌘K bar, Helm first picture): the
+    // scroller reserves the top band with a viewport-scaled clamp instead
+    // of the old flat 56px.
+    expect(viewport).toMatch(/--vd-section-padding-top:\s*clamp\(150px,\s*23vh,\s*220px\)/);
     expect(viewport).toMatch(/--vd-section-padding-bottom:\s*30px/);
     // The artificial 186px left padding for the floating rail is gone: the
     // rail is a real flex column now.
@@ -204,13 +207,13 @@ describe("home-shell.css geometry contract (task 017)", () => {
     const glyphs = ruleBlock(
       ".vela-dock__item .vela-app-icon__glyph, .vela-dock__item .vela-app-icon__image"
     );
-    expect(glyphs).toMatch(/width:\s*24px/);
-    expect(glyphs).toMatch(/height:\s*24px/);
+    expect(glyphs).toMatch(/width:\s*26px/);
+    expect(glyphs).toMatch(/height:\s*26px/);
     // The button box itself stays presentation-free: no per-app var may
-    // size the dock button.
+    // size the dock button. (48px buttons since the Helm first picture.)
     const dock = ruleBlock(".vela-dock__item, .vela-dock__utility");
-    expect(dock).toMatch(/width:\s*44px/);
-    expect(dock).toMatch(/height:\s*44px/);
+    expect(dock).toMatch(/width:\s*48px/);
+    expect(dock).toMatch(/height:\s*48px/);
     expect(dock).not.toMatch(/var\(--vd-app-icon-scale/);
   });
 });

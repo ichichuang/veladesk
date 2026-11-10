@@ -1,15 +1,19 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   Ref,
+  RefObject,
 } from "react";
 import type { EntityId, WorkspaceSnapshot } from "@veladesk/domain";
 
+import { gsap } from "@components/vd/gsap";
+import { VD_MOTION_EASE, vdMotionDuration } from "@components/vd/motion-tokens";
+import { useVdReducedMotion } from "@components/vd/reduced-motion";
 import { VdTooltip, VdTooltipProvider } from "@components/vd/tooltip";
 import { useVdHoverLift } from "@components/vd/hover-lift";
 
@@ -24,6 +28,80 @@ import { generatedIconText } from "./generated-icon";
 import { IconText } from "./icon-text";
 import { launchApp } from "./launch-app";
 import "./home-shell.css";
+
+/*
+ * The magnetic dock (Helm first picture): restrained proximity
+ * magnification — each icon's VISUAL node scales by how close the pointer
+ * is (never the button, so hit geometry and the dock's spacing stay exact),
+ * interpolated by GSAP quickTo on the hover-press token. The transform
+ * shares the visual node with the hover lift (y), different properties —
+ * the two engines-in-one-rule never fight. Reduced motion: no magnification.
+ */
+const DOCK_MAGNIFY_REACH_PX = 130;
+const DOCK_MAGNIFY_MAX_SCALE_ADD = 0.22;
+
+function useDockMagnetism(dockRef: RefObject<HTMLElement | null>): void {
+  const reducedMotion = useVdReducedMotion();
+  useEffect(() => {
+    const dock = dockRef.current;
+    if (dock === null || reducedMotion) {
+      return;
+    }
+    /** One quickTo scaler per visual node, built lazily on first pass. */
+    const scalers = new Map<HTMLElement, (value: number) => void>();
+    let frame = 0;
+    const scalerFor = (node: HTMLElement) => {
+      let scaler = scalers.get(node);
+      if (scaler === undefined) {
+        scaler = gsap.quickTo(node, "scale", {
+          duration: vdMotionDuration("hoverPress"),
+          ease: VD_MOTION_EASE,
+        });
+        scalers.set(node, scaler);
+      }
+      return scaler;
+    };
+    const visuals = () =>
+      Array.from(dock.querySelectorAll<HTMLElement>(".vela-dock__item-visual"));
+    const applyAt = (clientX: number) => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        for (const node of visuals()) {
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 0) {
+            continue;
+          }
+          const distance = Math.abs(clientX - (rect.left + rect.width / 2));
+          const proximity = Math.max(0, 1 - distance / DOCK_MAGNIFY_REACH_PX);
+          scalerFor(node)(1 + DOCK_MAGNIFY_MAX_SCALE_ADD * proximity);
+        }
+      });
+    };
+    const settle = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        for (const node of visuals()) {
+          scalerFor(node)(1);
+        }
+      });
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      applyAt(event.clientX);
+    };
+    dock.addEventListener("pointermove", onPointerMove);
+    dock.addEventListener("pointerleave", settle);
+    dock.addEventListener("pointercancel", settle);
+    return () => {
+      cancelAnimationFrame(frame);
+      dock.removeEventListener("pointermove", onPointerMove);
+      dock.removeEventListener("pointerleave", settle);
+      dock.removeEventListener("pointercancel", settle);
+      for (const node of visuals()) {
+        gsap.set(node, { clearProps: "scale" });
+      }
+    };
+  }, [dockRef, reducedMotion]);
+}
 
 /** Runs injected and own handlers in order; a handler may be absent. */
 function composed<P extends { defaultPrevented?: boolean }>(
@@ -157,6 +235,8 @@ function DockEntityButton({
 
 export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopContextMenu }: DockProps) {
   const { t } = useI18n();
+  const dockRef = useRef<HTMLElement | null>(null);
+  useDockMagnetism(dockRef);
 
   const dockEntities = useMemo(() => resolveDockEntities(workspace), [workspace]);
 
@@ -186,6 +266,7 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
         className="vela-dock"
         data-vd-scroll="x"
         aria-label={t("dock.label")}
+        ref={dockRef}
         onContextMenu={(event) => {
           // Dock surface: never the browser menu; empty dock chrome falls
           // through to the desktop command menu.
