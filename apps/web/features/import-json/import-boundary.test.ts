@@ -30,6 +30,11 @@ const DIALOG_SOURCE = readFileSync(
   "utf8"
 );
 
+const RECIPE_ASSETS_SOURCE = readFileSync(
+  fileURLToPath(new URL("./recipe-assets.ts", import.meta.url)),
+  "utf8"
+);
+
 const SETTINGS_SOURCE = readFileSync(
   fileURLToPath(new URL("../home/settings-center.tsx", import.meta.url)),
   "utf8"
@@ -63,6 +68,18 @@ describe("import pipeline purity (§35, §71)", () => {
     expect(DIALOG_SOURCE).not.toMatch(/\bfetch\(/);
     // Imported content renders as React text only — never dangerouslySetInnerHTML.
     expect(DIALOG_SOURCE).not.toMatch(/dangerouslySetInnerHTML/);
+  });
+
+  it("recipe-assets keeps decoding and notices persistence-free (D1)", () => {
+    const decodeHalf = RECIPE_ASSETS_SOURCE;
+    for (const forbidden of [
+      /from\s+"[^"]*browser-assets/,
+      /from\s+"[^"]*local-store/,
+      /from\s+"@veladesk\/sync/,
+      /\bfetch\(/,
+    ]) {
+      expect(decodeHalf).not.toMatch(forbidden);
+    }
   });
 
   it("SettingsCenter itself stays persistence-free (the import dialog owns the write)", () => {

@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { CANVAS_UNITS } from "@veladesk/canvas-engine";
 import type { CanvasLayout } from "@veladesk/canvas-engine";
+import { createContentAssetId } from "@veladesk/assets/core";
 import type { DesktopPage, RecipeThemeV1, WorkspaceSnapshot } from "@veladesk/domain";
 import {
   addAppToPage,
@@ -31,6 +32,7 @@ import type { ApplyImportOptions } from "./apply-import";
 import { addApp, makeTestIdFactory, officeWorkspace } from "./fixtures";
 import { parseImportDocument } from "./parser";
 import { planImport } from "./planner";
+import { decodeRecipeAssets } from "./recipe-assets";
 
 const NIGHT_ID = `asset-sha256-${"b".repeat(64)}`;
 
@@ -242,27 +244,34 @@ describe("theme + motion are opt-in", () => {
     expect(next.preferences.appearance?.wallpaper).toEqual({ kind: "asset", assetId: NIGHT_ID, fit: "cover", position: "center" });
   });
 
-  it("an illegal theme is ignored (warning at parse; apply never fails over it)", () => {
+  it("an illegal theme FIELD drops at parse with a warning; the legal rest still applies (D1)", () => {
     const { workspace } = officeWorkspace();
     const parsed = parseImportDocument(
       recipeDoc([{ name: "AI", layout: "grid", tiles: [] }], { theme: { mode: "dark", accent: 999, material: "glass" } }),
     );
     if (!parsed.ok) throw new Error("parse");
-    expect(parsed.parsed.issues.some((issue) => issue.code === "RECIPE_THEME_IGNORED")).toBe(true);
-    expect(parsed.parsed.recipe?.theme).toBeUndefined();
+    expect(parsed.parsed.issues).toContainEqual({
+      severity: "warning",
+      code: "RECIPE_THEME_FIELD_IGNORED",
+      path: "theme.accent",
+    });
+    expect(parsed.parsed.recipe?.theme).toEqual({ mode: "dark", material: "glass" });
     const plan = planImport(workspace, parsed.parsed.document, parsed.parsed.issues);
-    // Even opted in, the import succeeds and preferences stay untouched.
+    // Even opted in, the import succeeds — the accent keeps the workspace's
+    // value while the legal mode + material apply.
     const applied = applyImportPlan(workspace, plan, makeTestIdFactory(), {
       recipe: parsed.parsed.recipe,
       applyTheme: true,
     });
     expect(applied.ok).toBe(true);
     if (applied.ok) {
-      expect(applied.workspace.preferences).toEqual(workspace.preferences);
+      expect(applied.workspace.preferences.appearance?.accentHue).toBe(resolveWorkspaceAppearance(workspace.preferences).accentHue);
+      expect(applied.workspace.preferences.appearance?.colorMode).toBe("dark");
+      expect(applied.workspace.preferences.appearance?.interfaceStyle).toBe("glass");
     }
   });
 
-  it("a hand-built illegal theme (no adapter sanitization) is skipped defensively", () => {
+  it("a hand-built illegal theme (no adapter sanitization) applies per field, defensively", () => {
     const { workspace } = officeWorkspace();
     const parsed = parseImportDocument(
       recipeDoc([{ name: "AI", layout: "grid", tiles: [{ name: "A", url: "https://a.example/" }] }], {
@@ -278,9 +287,94 @@ describe("theme + motion are opt-in", () => {
     });
     expect(applied.ok).toBe(true);
     if (applied.ok) {
-      expect(applied.workspace.preferences.appearance).toEqual(workspace.preferences.appearance); // theme skipped…
-      expect(applied.workspace.preferences.motion).toEqual({ reducedMotion: "on" }); // …motion still applied
+      // Illegal mode/material never land; the LEGAL accent does; motion still applies.
+      expect(applied.workspace.preferences.appearance?.colorMode).toBe("system");
+      expect(applied.workspace.preferences.appearance?.accentHue).toBe(60);
+      expect(applied.workspace.preferences.appearance?.interfaceStyle).toBeUndefined();
+      expect(applied.workspace.preferences.motion).toEqual({ reducedMotion: "on" });
     }
+  });
+});
+
+describe("wallpaper asset availability (D1)", () => {
+  const MISSING_ID = `asset-sha256-${"d".repeat(64)}`;
+
+  it("a created space's ref outside availableAssetIds lands as the deck-default preset", () => {
+    const next = importRecipeText(
+      officeWorkspace().workspace,
+      recipeDoc([{ name: "AI", layout: "grid", wallpaper: { light: "preset:aurora", dark: `asset:${MISSING_ID}` }, tiles: [] }]),
+      { availableAssetIds: new Set() },
+    );
+    expect(pageNamed(next, "AI").wallpaperByMode).toEqual({
+      light: { kind: "preset", presetId: "aurora" },
+      dark: { kind: "preset", presetId: "dawn" },
+    });
+  });
+
+  it("an available ref lands verbatim; without availability knowledge refs land verbatim (slice B)", () => {
+    const doc = recipeDoc([{ name: "AI", layout: "grid", wallpaper: { dark: `asset:${MISSING_ID}` }, tiles: [] }]);
+    const available = importRecipeText(officeWorkspace().workspace, doc, { availableAssetIds: new Set([MISSING_ID]) });
+    expect(pageNamed(available, "AI").wallpaperByMode).toEqual({
+      dark: { kind: "asset", assetId: MISSING_ID, fit: "cover", position: "center" },
+    });
+    const verbatim = importRecipeText(officeWorkspace().workspace, doc);
+    expect(pageNamed(verbatim, "AI").wallpaperByMode).toEqual({
+      dark: { kind: "asset", assetId: MISSING_ID, fit: "cover", position: "center" },
+    });
+  });
+
+  it("the theme wallpaper falls back the same way, only when applied", () => {
+    const text = recipeDoc([{ name: "AI", layout: "grid", tiles: [] }], {
+      theme: { mode: "dark", accent: 42, material: "glass", wallpaper: { dark: `asset:${MISSING_ID}` } },
+    });
+    const applied = importRecipeText(officeWorkspace().workspace, text, {
+      applyTheme: true,
+      availableAssetIds: new Set(),
+    });
+    expect(applied.preferences.appearance?.wallpaper).toEqual({ kind: "preset", presetId: "dawn" });
+    const untouched = importRecipeText(officeWorkspace().workspace, text, { availableAssetIds: new Set() });
+    expect(untouched.preferences.appearance?.wallpaper).toBeUndefined();
+  });
+});
+
+describe("embedded wallpaper binaries: export sample → import lands (D1)", () => {
+  it("verifies, decodes and lands a deck-embedded wallpaper reference", async () => {
+    // The D2 export shape: the space's ref points at an id the optional
+    // assets map carries base64-embedded.
+    const bytes = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=", "base64"));
+    const id = await createContentAssetId(bytes);
+    const text = JSON.stringify({
+      format: "vela.recipe",
+      version: 1,
+      spaces: [
+        { name: "Desk", layout: "grid", wallpaper: { dark: `asset:${id}` }, tiles: [{ name: "A", url: "https://a.example/" }] },
+      ],
+      plugins: [],
+      assets: { [id]: { mediaType: "image/png", data: Buffer.from(bytes).toString("base64") } },
+    });
+    const parsed = parseImportDocument(text);
+    if (!parsed.ok) throw new Error("parse");
+    expect(parsed.parsed.recipe?.assets).toEqual({ [id]: { mediaType: "image/png", data: Buffer.from(bytes).toString("base64") } });
+
+    const decoded = await decodeRecipeAssets(parsed.parsed.recipe!.assets!, {
+      decodeDimensions: async () => ({ width: 1024, height: 768 }),
+      yieldControl: async () => {},
+    });
+    if (!decoded.ok) throw new Error(`decode failed: ${decoded.issue.reason}`);
+    expect(decoded.assets[0]).toMatchObject({ id, mediaType: "image/png", byteLength: bytes.byteLength, width: 1024, height: 768 });
+
+    const target = createEmptyWorkspace({ workspaceId: "ws-dst", workspaceName: "Target", pageId: "p-start", pageName: "Start", grid: { columns: 10, rows: 6 } });
+    const plan = planImport(target, parsed.parsed.document, parsed.parsed.issues);
+    const applied = applyImportPlan(target, plan, makeTestIdFactory(), {
+      recipe: parsed.parsed.recipe,
+      availableAssetIds: new Set(decoded.assets.map((asset) => asset.id)),
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(validateWorkspace(applied.workspace)).toEqual([]);
+    expect(pageNamed(applied.workspace, "Desk").wallpaperByMode).toEqual({
+      dark: { kind: "asset", assetId: id, fit: "cover", position: "center" },
+    });
   });
 });
 

@@ -16,8 +16,10 @@
  * planned apps POSITIONALLY: a plan section is the concatenation (in
  * document order) of every document section sharing its name key — the
  * planner's own fold — and document section i / app j IS recipe space i /
- * tile j. Theme + motion apply only with `applyTheme: true`. Everything is
- * computed in memory; the caller still stages ONE revision.
+ * tile j. Theme + motion apply only with `applyTheme: true`. Wallpaper
+ * asset refs resolve only against `availableAssetIds` (D1): a ref whose
+ * binary is neither embedded nor resolvable lands as the default preset.
+ * Everything is computed in memory; the caller still stages ONE revision.
  */
 
 import { CANVAS_UNITS, MIN_CANVAS_SIZE } from "@veladesk/canvas-engine";
@@ -28,7 +30,6 @@ import type {
   DesktopPageId,
   RecipeImportTile,
   RecipeMotionV1,
-  RecipeThemeV1,
   RecipeWallpaperV1,
   WallpaperConfig,
   WorkspaceMotionPreferences,
@@ -38,6 +39,7 @@ import type {
 import {
   addAppToPage,
   addPage,
+  DEFAULT_WALLPAPER,
   findDesktopPage,
   gridPlacementOf,
   isRecipeWallpaperRef,
@@ -53,8 +55,8 @@ import { resolveBrandFromHostname } from "../app-recognition/brand-aliases";
 import { generatedIconText } from "../home/generated-icon";
 import { normalizeImportNameKey } from "./normalization";
 import type { ImportPlan, ImportSectionPlan } from "./planner";
-import { isLegalRecipeTheme } from "./recipe-adapter";
-import type { RecipeImportExtras } from "./recipe-adapter";
+import { isRecipeAccentHue, isRecipeColorMode, isRecipeMaterial } from "./recipe-adapter";
+import type { RecipeAppliedTheme, RecipeImportExtras } from "./recipe-adapter";
 
 /** Creates fresh entity/page ids at apply-time only. */
 export type ImportIdFactory = (kind: "page" | "app") => string;
@@ -66,6 +68,13 @@ export interface ApplyImportOptions {
   readonly recipe?: RecipeImportExtras | undefined;
   /** Apply the recipe theme (+ its wallpaper) and motion. Default false. */
   readonly applyTheme?: boolean;
+  /**
+   * Asset ids that actually resolve at apply time (embedded+staged, local,
+   * or fetched — the dialog resolves them through the asset runtime, D1).
+   * A wallpaper ref whose id is absent falls back to the default preset;
+   * undefined = no availability knowledge, refs land verbatim (slice B).
+   */
+  readonly availableAssetIds?: ReadonlySet<string>;
 }
 
 /**
@@ -160,10 +169,11 @@ export function applyImportPlan(
     }
     current = placed.workspace;
 
-    // 3. A created recipe space's light/dark wallpapers.
+    // 3. A created recipe space's light/dark wallpapers. An asset ref that
+    //    does not resolve (availableAssetIds) lands as the default preset.
     if (aligned !== undefined) {
       for (const mode of ["light", "dark"] as const) {
-        const config = wallpaperConfigOf(aligned.space.wallpaper?.[mode]);
+        const config = wallpaperConfigOf(aligned.space.wallpaper?.[mode], options.availableAssetIds);
         if (config === undefined) {
           continue;
         }
@@ -178,7 +188,7 @@ export function applyImportPlan(
 
   // 4. Theme + motion: opt-in only.
   if (recipe !== undefined && options.applyTheme === true) {
-    const themed = applyRecipeTheme(current, recipe.theme, recipe.motion);
+    const themed = applyRecipeTheme(current, recipe.theme, recipe.motion, options.availableAssetIds);
     if (!themed.ok) {
       return themed;
     }
@@ -198,8 +208,10 @@ type RecipeSpace = RecipeImportExtras["spaces"][number];
  * display name wins"), and the tiles of every same-key section concatenate
  * in document order — exactly how the planner folds the apps. A length
  * mismatch (never expected) drops the geometry rather than misalign it.
+ * Exported for the dialog's D1 wallpaper-notice lists, which must name
+ * exactly the wallpapers this alignment lands.
  */
-function recipeSectionOf(
+export function recipeSectionOf(
   plan: ImportPlan,
   recipe: RecipeImportExtras,
   section: ImportSectionPlan
@@ -376,15 +388,26 @@ function placeFreeformSection(
 
 // --- wallpapers + theme ---------------------------------------------------------
 
-/** A recipe wallpaper ref as a domain config (asset fit defaults to cover). */
-function wallpaperConfigOf(ref: string | undefined): WallpaperConfig | undefined {
+/**
+ * A recipe wallpaper ref as a domain config (asset fit defaults to cover).
+ * An asset ref whose id is not in `availableAssetIds` (when provided)
+ * falls back to the deck-default preset — the D1 missing-binary rule.
+ */
+function wallpaperConfigOf(
+  ref: string | undefined,
+  availableAssetIds?: ReadonlySet<string>
+): WallpaperConfig | undefined {
   if (ref === undefined || !isRecipeWallpaperRef(ref)) {
     return undefined;
   }
   if (ref.startsWith("preset:")) {
     return { kind: "preset", presetId: ref.slice("preset:".length) as Extract<WallpaperConfig, { kind: "preset" }>["presetId"] };
   }
-  return { kind: "asset", assetId: ref.slice("asset:".length), fit: "cover", position: "center" };
+  const assetId = ref.slice("asset:".length);
+  if (availableAssetIds !== undefined && !availableAssetIds.has(assetId)) {
+    return DEFAULT_WALLPAPER;
+  }
+  return { kind: "asset", assetId, fit: "cover", position: "center" };
 }
 
 const REDUCED_MOTION: readonly WorkspaceReducedMotionPreference[] = ["system", "on", "off"];
@@ -392,13 +415,16 @@ const REDUCED_MOTION: readonly WorkspaceReducedMotionPreference[] = ["system", "
 /**
  * The workspace default is ONE mode-agnostic wallpaper: a `dark` theme
  * takes the dark ref, `light`/`system` the light one, each falling back to
- * the other mode.
+ * the other mode. An unresolvable asset ref lands as the default preset.
  */
-function themeWallpaperOf(theme: RecipeThemeV1): WallpaperConfig | undefined {
+function themeWallpaperOf(
+  theme: RecipeAppliedTheme,
+  availableAssetIds?: ReadonlySet<string>
+): WallpaperConfig | undefined {
   const refs: RecipeWallpaperV1 | undefined = theme.wallpaper;
   if (refs === undefined) return undefined;
   const ref = theme.mode === "dark" ? refs.dark ?? refs.light : refs.light ?? refs.dark;
-  return wallpaperConfigOf(ref);
+  return wallpaperConfigOf(ref, availableAssetIds);
 }
 
 /** Known motion fields only, each structurally checked. */
@@ -416,35 +442,47 @@ function motionOf(motion: RecipeMotionV1 | undefined): WorkspaceMotionPreference
 }
 
 /**
- * Theme + motion through the Settings write path: color mode, accent and
- * the material's canonical surface parameters (`resolveInterfaceStyle`,
- * like a Settings save), the theme wallpaper as the workspace default.
- * An illegal theme is SKIPPED (the adapter already stripped it with a
- * warning; this is the defense for hand-built extras) — an import never
+ * Theme + motion through the Settings write path, PER FIELD (D1): each
+ * legal field overwrites its slice of the appearance (color mode, accent,
+ * the material's canonical surface parameters via `resolveInterfaceStyle`,
+ * the theme wallpaper as the workspace default); an illegal field — the
+ * adapter already dropped the ones it saw with a warning, so this is the
+ * defense for hand-built extras — simply does not apply. An import never
  * fails over theme values.
  */
 function applyRecipeTheme(
   workspace: WorkspaceSnapshot,
-  theme: RecipeThemeV1 | undefined,
-  motion: RecipeMotionV1 | undefined
+  theme: RecipeAppliedTheme | undefined,
+  motion: RecipeMotionV1 | undefined,
+  availableAssetIds?: ReadonlySet<string>
 ): WorkspaceEditResult {
   let preferences = workspace.preferences;
-  if (theme !== undefined && isLegalRecipeTheme(theme)) {
-    const style = resolveInterfaceStyle(theme.material);
-    const wallpaper = themeWallpaperOf(theme);
-    preferences = {
-      ...preferences,
-      appearance: {
-        ...resolveWorkspaceAppearance(preferences),
-        colorMode: theme.mode,
-        accentHue: theme.accent,
-        surfaceOpacity: style.surfaceOpacity,
-        blurPx: style.blurPx,
-        radiusPx: style.radiusPx,
-        interfaceStyle: style.style,
-        ...(wallpaper !== undefined ? { wallpaper } : {}),
-      },
-    };
+  if (theme !== undefined) {
+    const modeOk = isRecipeColorMode(theme.mode);
+    const accentOk = isRecipeAccentHue(theme.accent);
+    const materialOk = isRecipeMaterial(theme.material);
+    const hasWallpaper = theme.wallpaper !== undefined;
+    if (modeOk || accentOk || materialOk || hasWallpaper) {
+      const style = materialOk ? resolveInterfaceStyle(theme.material) : undefined;
+      const wallpaper = themeWallpaperOf(theme, availableAssetIds);
+      preferences = {
+        ...preferences,
+        appearance: {
+          ...resolveWorkspaceAppearance(preferences),
+          ...(modeOk ? { colorMode: theme.mode } : {}),
+          ...(accentOk ? { accentHue: theme.accent } : {}),
+          ...(style !== undefined
+            ? {
+                surfaceOpacity: style.surfaceOpacity,
+                blurPx: style.blurPx,
+                radiusPx: style.radiusPx,
+                interfaceStyle: style.style,
+              }
+            : {}),
+          ...(wallpaper !== undefined ? { wallpaper } : {}),
+        },
+      };
+    }
   }
   const nextMotion = motionOf(motion);
   if (nextMotion !== undefined) {

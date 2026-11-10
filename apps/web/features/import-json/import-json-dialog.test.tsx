@@ -6,9 +6,16 @@ import { runtimeManagementStub } from "../workspace-runtime/test-runtime-managem
  * import performs exactly ONE stage + one sync; a materially changed
  * workspace forces a re-confirmation instead of writing; errors disable
  * the Import button; file handling rejects oversized input before reading.
+ *
+ * Recipe D1 adds the binary wiring: embedded wallpapers decode before the
+ * preview (an invalid one blocks at input), the preview lists embedded /
+ * needs-download wallpapers, and the confirm path stages embedded bytes
+ * asset-before-workspace, fetches the missing ones and falls unresolvable
+ * refs back to the preset with a done-phase note.
  */
 
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { webcrypto } from "node:crypto";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type { RenderResult } from "@testing-library/react";
 import type { WorkspaceSnapshot } from "@veladesk/domain";
@@ -22,6 +29,14 @@ import { VdPortalContainerProvider } from "@components/ui/overlay-scope";
 import { IMPORT_MAX_FILE_BYTES, IMPORT_MAX_JSON_TEXT_LENGTH } from "./contract";
 import { ImportJsonDialog } from "./import-json-dialog";
 import { addApp, addSection, officeWorkspace } from "./fixtures";
+
+/** The browser asset runtime, mocked at the module the dialog's gateway imports. */
+const assetsGateway = vi.hoisted(() => ({
+  stageAsset: vi.fn(),
+  getLocalAsset: vi.fn(),
+  loadAsset: vi.fn(),
+}));
+vi.mock("../assets/browser-assets", () => ({ getBrowserAssetRuntime: async () => assetsGateway }));
 
 function makeRuntime(spies?: {
   stageWorkspaceUpdate: (snapshot: WorkspaceSnapshot) => Promise<unknown>;
@@ -73,6 +88,13 @@ async function pasteAndParse(view: RenderResult, text: string): Promise<void> {
   await act(async () => {
     fireEvent.click(view.getByRole("button", { name: "Parse and preview" }));
   });
+  // Recipe documents verify their embedded binaries (async) before the
+  // preview renders — wait for EITHER outcome, like a user would see it.
+  await waitFor(() => {
+    if (view.queryByText("Ready to import") === null && view.queryAllByRole("alert").length === 0) {
+      throw new Error("parse outcome not rendered yet");
+    }
+  });
 }
 
 /** jsdom Blob/File lack .text() — give the instance a real one. */
@@ -122,13 +144,26 @@ const twentyAppsText = (): string =>
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
+});
+
+beforeEach(() => {
   window.localStorage.setItem(UI_LOCALE_STORAGE_KEY, "en-US");
+  // jsdom's crypto lacks subtle (no hashing); the node Web Crypto fills in.
+  // Re-stubbed every test — afterEach unstubAllGlobals restores jsdom's.
+  if (typeof globalThis.crypto?.subtle !== "object") {
+    vi.stubGlobal("crypto", webcrypto);
+  }
+  // Nothing local, every fetch misses — individual tests override per case.
+  assetsGateway.getLocalAsset.mockReset().mockResolvedValue(undefined);
+  assetsGateway.loadAsset.mockReset().mockResolvedValue({ ok: false, reason: "not-found" });
+  assetsGateway.stageAsset.mockReset();
 });
 
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("ImportJsonDialog: input modes", () => {
@@ -334,7 +369,7 @@ describe("ImportJsonDialog: recipe preview & options", () => {
     expect(view.getByText("Will create: 1 spaces · 3 tiles")).toBeDefined();
     expect(view.getByText("Will merge: 1 spaces")).toBeDefined();
     expect(
-      view.getByText("Snap · 8×5 grid · 2 tiles · Light wallpaper: Aurora · Dark wallpaper: custom image")
+      view.getByText("Snap · 8×5 grid · 2 tiles · Light wallpaper: Aurora · Dark wallpaper: custom image (download needed)")
     ).toBeDefined();
     expect(view.getByText("Merge into existing space · 1 new apps")).toBeDefined();
     expect(
@@ -399,7 +434,7 @@ describe("ImportJsonDialog: recipe preview & options", () => {
     expect(view.queryByText("The deck carries theme and motion settings.")).toBeNull();
   });
 
-  it("ignores an illegal theme with a warning instead of failing the import", async () => {
+  it("drops an illegal theme FIELD with a warning; the legal rest still applies", async () => {
     const stageWorkspaceUpdate = vi.fn((snapshot: WorkspaceSnapshot) => {
       void snapshot;
       return Promise.resolve({ ok: true });
@@ -413,20 +448,218 @@ describe("ImportJsonDialog: recipe preview & options", () => {
       view,
       deckText({ theme: { mode: "dark", accent: 999, material: "glass" }, motion: undefined })
     );
-    // Theme dropped → nothing left to opt into, and the warning says so.
-    expect(view.queryByRole("checkbox")).toBeNull();
+    // Legal mode/material survive → the offer stays; only the accent dropped.
+    expect(view.getByRole("checkbox")).toBeDefined();
     await act(async () => {
       fireEvent.click(view.getByText("2 notices"));
     });
-    expect(
-      view.getByText(/The deck's theme carries invalid values; it is ignored/)
-    ).toBeDefined();
+    expect(view.getByText(/Invalid theme field ignored: theme\.accent/)).toBeDefined();
     await act(async () => {
       fireEvent.click(view.getByRole("button", { name: "Import" }));
     });
     await waitFor(() => expect(view.getByText("Imported")).toBeDefined());
     const staged = stageWorkspaceUpdate.mock.calls[0]?.[0] as WorkspaceSnapshot;
+    // Unchecked → nothing applied, preferences untouched.
     expect(staged.preferences).toEqual(workspace.preferences);
+  });
+
+  it("hides the theme offer entirely when every theme field is illegal", async () => {
+    const { view } = renderDialog(officeWorkspace().workspace, makeRuntime());
+    await pasteAndParse(
+      view,
+      deckText({ theme: { mode: "blue", accent: -5, material: "diamond" }, motion: undefined })
+    );
+    expect(view.queryByRole("checkbox")).toBeNull();
+    await act(async () => {
+      fireEvent.click(view.getByText("4 notices"));
+    });
+    expect(view.getByText(/Invalid theme field ignored: theme\.mode/)).toBeDefined();
+    expect(view.getByText(/Invalid theme field ignored: theme\.accent/)).toBeDefined();
+    expect(view.getByText(/Invalid theme field ignored: theme\.material/)).toBeDefined();
+  });
+});
+
+describe("ImportJsonDialog: recipe embedded wallpapers (D1)", () => {
+  const PNG_BYTES = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=", "base64"));
+
+  /** A deck whose "Shots" space references an asset embedded in `assets`. */
+  async function embeddedDeck(mediaType = "image/png"): Promise<{ text: string; id: string }> {
+    const digest = await crypto.subtle.digest("SHA-256", PNG_BYTES);
+    const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const id = `asset-sha256-${hex}`;
+    const text = JSON.stringify({
+      format: "vela.recipe",
+      version: 1,
+      spaces: [{ name: "Shots", layout: "grid", wallpaper: { dark: `asset:${id}` }, tiles: [] }],
+      plugins: [],
+      assets: { [id]: { mediaType, data: Buffer.from(PNG_BYTES).toString("base64") } },
+    });
+    return { text, id };
+  }
+
+  function stubBitmap(width = 800, height = 600): void {
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ width, height, close: () => {} })),
+    );
+  }
+
+  it("previews an embedded wallpaper, stages its bytes once and lands the asset ref", async () => {
+    stubBitmap();
+    const deck = await embeddedDeck();
+    assetsGateway.stageAsset.mockResolvedValue({
+      ok: true,
+      status: "staged",
+      record: { id: deck.id, blob: new Blob([]), mediaType: "image/png", byteLength: PNG_BYTES.byteLength, createdAt: 0, syncState: "pending" },
+    });
+    const stageWorkspaceUpdate = vi.fn((snapshot: WorkspaceSnapshot) => {
+      void snapshot;
+      return Promise.resolve({ ok: true });
+    });
+    const { view } = renderDialog(
+      officeWorkspace().workspace,
+      makeRuntime({ stageWorkspaceUpdate, syncCurrent: vi.fn(() => Promise.resolve({ status: "synced" })) }),
+    );
+    await pasteAndParse(view, deck.text);
+    expect(view.getByText("Snap · default grid · 0 tiles · Dark wallpaper: embedded image")).toBeDefined();
+    // Embedded ≠ cloud: no download list, no probe hit needed.
+    expect(view.queryByText(/Wallpapers needing download/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Import" }));
+    });
+    await waitFor(() => expect(view.getByText("Imported")).toBeDefined());
+    // The verified bytes were staged through the asset runtime exactly once
+    // (jsdom's Blob lacks arrayBuffer — byte equality is covered in the
+    // node-env recipe-assets suite; here type + size pin the wiring).
+    expect(assetsGateway.stageAsset).toHaveBeenCalledTimes(1);
+    const stagedBlob = assetsGateway.stageAsset.mock.calls[0]?.[0] as Blob;
+    expect(stagedBlob.type).toBe("image/png");
+    expect(stagedBlob.size).toBe(PNG_BYTES.byteLength);
+    // …never fetched remotely, and the ONE revision carries the asset ref.
+    expect(assetsGateway.loadAsset).not.toHaveBeenCalled();
+    const staged = stageWorkspaceUpdate.mock.calls[0]?.[0] as WorkspaceSnapshot;
+    expect(staged.pages.find((page) => page.name === "Shots")?.wallpaperByMode).toEqual({
+      dark: { kind: "asset", assetId: deck.id, fit: "cover", position: "center" },
+    });
+    expect(view.queryByText(/fell back to the preset/)).toBeNull();
+  });
+
+  it("leaves the workspace untouched when embedded asset staging fails", async () => {
+    stubBitmap();
+    const deck = await embeddedDeck();
+    assetsGateway.stageAsset.mockResolvedValue({ ok: false, reason: "storage-error" });
+    const stageWorkspaceUpdate = vi.fn();
+    const syncCurrent = vi.fn();
+    const { view } = renderDialog(officeWorkspace().workspace, makeRuntime({ stageWorkspaceUpdate, syncCurrent }));
+    await pasteAndParse(view, deck.text);
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Import" }));
+    });
+    await waitFor(() => expect(view.getByText("Saving the embedded wallpapers failed; please try again.")).toBeDefined());
+    expect(stageWorkspaceUpdate).not.toHaveBeenCalled();
+    expect(syncCurrent).not.toHaveBeenCalled();
+  });
+
+  it("requires review when the workspace changes during cloud IO", async () => {
+    let resolveLoad!: (result: { ok: false; reason: string }) => void;
+    assetsGateway.loadAsset.mockImplementation(() => new Promise((resolve) => { resolveLoad = resolve; }));
+    const workspace = officeWorkspace().workspace;
+    const stageWorkspaceUpdate = vi.fn();
+    const { view, rerender } = renderDialog(workspace, makeRuntime({ stageWorkspaceUpdate, syncCurrent: vi.fn() }));
+    const id = `asset-sha256-${"b".repeat(64)}`;
+    await pasteAndParse(view, JSON.stringify({
+      format: "vela.recipe", version: 1, plugins: [],
+      spaces: [{ name: "AI", layout: "grid", wallpaper: { dark: `asset:${id}` }, tiles: [{ name: "A", url: "https://a.example/" }] }],
+    }));
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Import" })); });
+    await waitFor(() => expect(assetsGateway.loadAsset).toHaveBeenCalled());
+    rerender(addApp(workspace, "page-office", "app-a", "A", "https://a.example/"));
+    await act(async () => { resolveLoad({ ok: false, reason: "not-found" }); });
+    await waitFor(() => expect(view.getByText("The workspace changed. Please review the import again.")).toBeDefined());
+    expect(stageWorkspaceUpdate).not.toHaveBeenCalled();
+  });
+
+  it("lists a non-embedded ref as needing download, then falls back to the preset when the fetch fails", async () => {
+    const NIGHT_ID = `asset-sha256-${"b".repeat(64)}`;
+    const stageWorkspaceUpdate = vi.fn((snapshot: WorkspaceSnapshot) => {
+      void snapshot;
+      return Promise.resolve({ ok: true });
+    });
+    const { view } = renderDialog(
+      officeWorkspace().workspace,
+      makeRuntime({ stageWorkspaceUpdate, syncCurrent: vi.fn(() => Promise.resolve({ status: "synced" })) }),
+    );
+    await pasteAndParse(
+      view,
+      JSON.stringify({
+        format: "vela.recipe",
+        version: 1,
+        spaces: [{ name: "Shots", layout: "grid", wallpaper: { light: "preset:aurora", dark: `asset:${NIGHT_ID}` }, tiles: [] }],
+        plugins: [],
+      }),
+    );
+    // Preview: neither embedded nor local → the download list names it.
+    expect(view.getByText("Wallpapers needing download (1)")).toBeDefined();
+    expect(view.getByText("Shots · Dark")).toBeDefined();
+    expect(assetsGateway.getLocalAsset).toHaveBeenCalledWith(NIGHT_ID);
+
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Import" }));
+    });
+    await waitFor(() => expect(view.getByText("Imported")).toBeDefined());
+    // The fetch was attempted (default mock: not-found) and the ref fell back.
+    expect(assetsGateway.loadAsset).toHaveBeenCalledWith(NIGHT_ID);
+    const staged = stageWorkspaceUpdate.mock.calls[0]?.[0] as WorkspaceSnapshot;
+    expect(staged.pages.find((page) => page.name === "Shots")?.wallpaperByMode).toEqual({
+      light: { kind: "preset", presetId: "aurora" },
+      dark: { kind: "preset", presetId: "dawn" },
+    });
+    expect(view.getByText("1 wallpapers could not be fetched and fell back to the preset.")).toBeDefined();
+    expect(view.getByText("Shots · Dark")).toBeDefined();
+  });
+
+  it("resolves a non-embedded ref from the cloud at confirm time", async () => {
+    const NIGHT_ID = `asset-sha256-${"b".repeat(64)}`;
+    assetsGateway.loadAsset.mockResolvedValue({ ok: true, blob: new Blob(["x"]), mediaType: "image/png", source: "remote" });
+    const stageWorkspaceUpdate = vi.fn((snapshot: WorkspaceSnapshot) => {
+      void snapshot;
+      return Promise.resolve({ ok: true });
+    });
+    const { view } = renderDialog(
+      officeWorkspace().workspace,
+      makeRuntime({ stageWorkspaceUpdate, syncCurrent: vi.fn(() => Promise.resolve({ status: "synced" })) }),
+    );
+    await pasteAndParse(
+      view,
+      JSON.stringify({
+        format: "vela.recipe",
+        version: 1,
+        spaces: [{ name: "Shots", layout: "grid", wallpaper: { dark: `asset:${NIGHT_ID}` }, tiles: [] }],
+        plugins: [],
+      }),
+    );
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Import" }));
+    });
+    await waitFor(() => expect(view.getByText("Imported")).toBeDefined());
+    const staged = stageWorkspaceUpdate.mock.calls[0]?.[0] as WorkspaceSnapshot;
+    expect(staged.pages.find((page) => page.name === "Shots")?.wallpaperByMode).toEqual({
+      dark: { kind: "asset", assetId: NIGHT_ID, fit: "cover", position: "center" },
+    });
+    expect(view.queryByText(/fell back to the preset/)).toBeNull();
+  });
+
+  it("blocks an invalid embedded asset at input with its reason and path", async () => {
+    stubBitmap();
+    const deck = await embeddedDeck("image/jpeg"); // PNG bytes declared image/jpeg
+    const { view } = renderDialog(officeWorkspace().workspace, makeRuntime());
+    await pasteAndParse(view, deck.text);
+    const alert = view.getByRole("alert");
+    expect(alert.textContent).toContain("Invalid embedded wallpaper asset (magic bytes disagree with the declared media type)");
+    expect(alert.textContent).toContain(`assets.asset-sha256-${deck.id.slice("asset-sha256-".length, "asset-sha256-".length + 12)}…`);
+    expect(view.queryByText("Ready to import")).toBeNull();
+    expect(assetsGateway.stageAsset).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { ensureRecipeAssetIds, probeLocalRecipeAssetIds, stageDecodedRecipeAssets } from "./recipe-asset-runtime";
+
+import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import type { WorkspaceSnapshot, WorkspaceWallpaperPreset } from "@veladesk/domain";
 
@@ -17,8 +19,21 @@ import { importPlanIsBlocked, importPlanIsNoOp, planImport, plansMateriallyEqual
 import type { ImportPlan } from "./planner";
 import { parseImportDocument } from "./parser";
 import type { ParseImportOptions } from "./parser";
+import {
+  decodeRecipeAssets,
+  missingRecipeAssetIds,
+  recipeAssetCloudNotices,
+  recipeAssetDecodeIssue,
+  recipeAssetFallbackNotices,
+} from "./recipe-assets";
+import type { DecodedRecipeAsset, RecipeAssetNotice, RecipeAssetRejectionReason } from "./recipe-assets";
 import { recipeSpacePreviews } from "./recipe-adapter";
-import type { RecipeImportExtras, RecipeSpacePreview, RecipeWallpaperPreview } from "./recipe-adapter";
+import type {
+  RecipeAssetPreviewStatus,
+  RecipeImportExtras,
+  RecipeSpacePreview,
+  RecipeWallpaperPreview,
+} from "./recipe-adapter";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@components/ui/dialog";
 import { Button } from "@components/ui/button";
 import { Checkbox } from "@components/ui/checkbox";
@@ -38,7 +53,8 @@ const ISSUE_MESSAGE_KEY: Readonly<Record<ImportIssueCode, TranslationKey>> = {
   INVALID_FORMAT: "import.issue.INVALID_FORMAT",
   UNSUPPORTED_VERSION: "import.issue.UNSUPPORTED_VERSION",
   RECIPE_MIGRATED: "import.issue.RECIPE_MIGRATED",
-  RECIPE_THEME_IGNORED: "import.issue.RECIPE_THEME_IGNORED",
+  RECIPE_THEME_FIELD_IGNORED: "import.issue.RECIPE_THEME_FIELD_IGNORED",
+  RECIPE_ASSET_INVALID: "import.issue.RECIPE_ASSET_INVALID",
   MISSING_SECTIONS: "import.issue.MISSING_SECTIONS",
   INVALID_SECTIONS: "import.issue.INVALID_SECTIONS",
   TOO_MANY_SECTIONS: "import.issue.TOO_MANY_SECTIONS",
@@ -73,6 +89,10 @@ const MIB = 1024 * 1024;
  * Recipe (.deck.json) documents ride the same pipeline and additionally
  * preview each space's structure (layout mode, grid, tiles, wallpapers)
  * with an opt-in "apply theme & motion" checkbox — unchecked by default.
+ * Their embedded wallpaper binaries (D1) are decoded + verified before the
+ * preview shows, listed by availability (embedded / on this device / needs
+ * cloud fetch), and staged asset-before-workspace at confirm; a ref that
+ * resolves neither way lands as the default preset with a done-phase note.
  */
 export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
@@ -87,13 +107,23 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
   const [parseSectionNames, setParseSectionNames] = useState<readonly (string | undefined)[]>([]);
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [recipeExtras, setRecipeExtras] = useState<RecipeImportExtras | null>(null);
+  /** Binary availability of the current recipe's asset refs (D1 preview). */
+  const [assetStatus, setAssetStatus] = useState<RecipeAssetPreviewStatus | null>(null);
   const [applyTheme, setApplyTheme] = useState(false);
   const [workspaceChanged, setWorkspaceChanged] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [doneSummary, setDoneSummary] = useState<ImportPlan["summary"] | null>(null);
+  const [doneAssetFallbacks, setDoneAssetFallbacks] = useState<readonly RecipeAssetNotice[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  /** Guards the async asset steps against a superseded parse (last one wins). */
+  const parseSeqRef = useRef(0);
+  const latestWorkspaceRef = useRef(workspace);
+  useEffect(() => {
+    latestWorkspaceRef.current = workspace;
+  }, [workspace]);
 
   function requestClose(): void {
     // Never abandon a save in flight.
@@ -103,16 +133,76 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
     onClose();
   }
 
-  function parseAndPreview(text: string, maxLength: number = IMPORT_MAX_JSON_TEXT_LENGTH): void {
+  /**
+   * Verifies a parsed document's embedded binaries and probes which
+   * non-embedded refs already sit on this device (D1). Pure of workspace
+   * writes; the preview path uses the status, the confirm path also uses
+   * the decoded binaries for staging.
+   */
+  async function verifyRecipeAssets(recipe: RecipeImportExtras | null): Promise<
+    | { readonly kind: "none" }
+    | { readonly kind: "invalid"; readonly issue: { readonly path: string; readonly reason: RecipeAssetRejectionReason } }
+    | {
+        readonly kind: "ready";
+        readonly decoded: readonly DecodedRecipeAsset[];
+        readonly status: RecipeAssetPreviewStatus;
+      }
+  > {
+    if (recipe === null) {
+      return { kind: "none" };
+    }
+    let decoded: readonly DecodedRecipeAsset[] = [];
+    if (recipe.assets !== undefined && Object.keys(recipe.assets).length > 0) {
+      const result = await decodeRecipeAssets(recipe.assets);
+      if (!result.ok) {
+        return { kind: "invalid", issue: result.issue };
+      }
+      decoded = result.assets;
+    }
+    const embeddedIds = new Set(decoded.map((asset) => asset.id));
+    const device = await probeLocalRecipeAssetIds(missingRecipeAssetIds(recipe, embeddedIds));
+    return { kind: "ready", decoded, status: { embedded: embeddedIds, device } };
+  }
+
+  async function parseAndPreview(text: string, maxLength: number = IMPORT_MAX_JSON_TEXT_LENGTH): Promise<void> {
+    const seq = parseSeqRef.current + 1;
+    parseSeqRef.current = seq;
     setSourceText(text);
     setSourceBudget(maxLength);
     const options: ParseImportOptions = { maxLength };
     const result = parseImportDocument(text, options);
     if (!result.ok) {
+      if (seq !== parseSeqRef.current) {
+        return;
+      }
       setParseIssues(result.issues);
       setParseSectionNames(result.sectionNames);
       setPlan(null);
       setRecipeExtras(null);
+      setAssetStatus(null);
+      setWorkspaceChanged(false);
+      setPhase("input");
+      return;
+    }
+    setVerifying(true);
+    let verification: Awaited<ReturnType<typeof verifyRecipeAssets>>;
+    try {
+      verification = await verifyRecipeAssets(result.parsed.recipe ?? null);
+    } catch {
+      if (seq === parseSeqRef.current) setInputError(t("import.error.saveFailed"));
+      return;
+    } finally {
+      if (seq === parseSeqRef.current) setVerifying(false);
+    }
+    if (seq !== parseSeqRef.current) {
+      return;
+    }
+    if (verification.kind === "invalid") {
+      setParseIssues([recipeAssetDecodeIssue(verification.issue)]);
+      setParseSectionNames([]);
+      setPlan(null);
+      setRecipeExtras(null);
+      setAssetStatus(null);
       setWorkspaceChanged(false);
       setPhase("input");
       return;
@@ -120,10 +210,12 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
     setParseIssues(null);
     setParseSectionNames([]);
     setInputError(null);
-    setPlan(planImport(workspace, result.parsed.document, result.parsed.issues));
+    setPlan(planImport(latestWorkspaceRef.current, result.parsed.document, result.parsed.issues));
     setRecipeExtras(result.parsed.recipe ?? null);
+    setAssetStatus(verification.kind === "ready" ? verification.status : null);
     setApplyTheme(false);
     setWorkspaceChanged(false);
+    setDoneAssetFallbacks([]);
     setPhase("preview");
   }
 
@@ -133,7 +225,7 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
       return;
     }
     const text = await file.text();
-    parseAndPreview(text, IMPORT_MAX_FILE_BYTES);
+    await parseAndPreview(text, IMPORT_MAX_FILE_BYTES);
   }
 
   function handleDrop(event: DragEvent<HTMLDivElement>): void {
@@ -165,27 +257,81 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
         setParseSectionNames(result.sectionNames);
         setPlan(null);
         setRecipeExtras(null);
+        setAssetStatus(null);
         setPhase("input");
         return;
       }
-      const current = workspace;
-      const replanned = planImport(current, result.parsed.document, result.parsed.issues);
-      if (current !== plan.baseWorkspace && !plansMateriallyEqual(plan, replanned)) {
+      const extras = result.parsed.recipe ?? null;
+      const verification = await verifyRecipeAssets(extras);
+      if (verification.kind === "invalid") {
+        setParseIssues([recipeAssetDecodeIssue(verification.issue)]);
+        setParseSectionNames([]);
+        setPlan(null);
+        setRecipeExtras(null);
+        setAssetStatus(null);
+        setWorkspaceChanged(false);
+        setPhase("input");
+        return;
+      }
+      let current = latestWorkspaceRef.current;
+      let replanned = planImport(current, result.parsed.document, result.parsed.issues);
+      if (current.id !== plan.baseWorkspace.id || (current !== plan.baseWorkspace && !plansMateriallyEqual(plan, replanned))) {
         // Material change: update the preview and require a second confirm.
         setPlan(replanned);
-        setRecipeExtras(result.parsed.recipe ?? null);
+        setRecipeExtras(extras);
+        setAssetStatus(verification.kind === "ready" ? verification.status : null);
         setWorkspaceChanged(true);
         return;
       }
       if (importPlanIsBlocked(replanned) || importPlanIsNoOp(replanned)) {
         setPlan(replanned);
-        setRecipeExtras(result.parsed.recipe ?? null);
+        setRecipeExtras(extras);
+        setAssetStatus(verification.kind === "ready" ? verification.status : null);
         setWorkspaceChanged(false);
         return;
+      }
+      // D1, the Settings save ordering: verified embedded binaries land in
+      // the asset store FIRST, then the non-embedded refs resolve (local
+      // hit or verified remote fetch), and only then does ONE workspace
+      // revision carry every landed wallpaper reference. A staging failure
+      // aborts before any workspace write.
+      const available = new Set<string>();
+      let missing: readonly string[] = [];
+      if (verification.kind === "ready") {
+        for (const asset of verification.decoded) {
+          available.add(asset.id);
+        }
+        if (verification.decoded.length > 0) {
+          const stagedAssets = await stageDecodedRecipeAssets(verification.decoded);
+          if (!stagedAssets.ok) {
+            setSaveError(t("import.error.assetStageFailed"));
+            return;
+          }
+        }
+        if (extras !== null) {
+          missing = missingRecipeAssetIds(extras, available);
+          const ensured = await ensureRecipeAssetIds(missing);
+          for (const id of ensured.available) {
+            available.add(id);
+          }
+        }
+      }
+      // Asset IO can outlive a workspace edit. Replan against the latest
+      // snapshot before the single write so that edit is never overwritten.
+      if (latestWorkspaceRef.current !== current) {
+        current = latestWorkspaceRef.current;
+        const latestPlan = planImport(current, result.parsed.document, result.parsed.issues);
+        if (current.id !== plan.baseWorkspace.id || !plansMateriallyEqual(replanned, latestPlan)) {
+          setPlan(latestPlan);
+          setWorkspaceChanged(true);
+          return;
+        }
+        replanned = latestPlan;
       }
       const applied = applyImportPlan(current, replanned, (kind) => createBrowserId(kind), {
         recipe: result.parsed.recipe,
         applyTheme,
+        availableAssetIds: available,
       });
       if (!applied.ok) {
         setSaveError(t("import.error.saveFailed"));
@@ -197,6 +343,12 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
         setSaveError(t("import.error.saveFailed"));
         return;
       }
+      const unavailable = new Set(missing.filter((id) => !available.has(id)));
+      setDoneAssetFallbacks(
+        extras !== null && unavailable.size > 0
+          ? recipeAssetFallbackNotices(replanned, extras, unavailable, applyTheme)
+          : [],
+      );
       setDoneSummary(replanned.summary);
       setWorkspaceChanged(false);
       setPhase("done");
@@ -213,7 +365,13 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
   const noOp = plan !== null && importPlanIsNoOp(plan);
   const importDisabled = busy || blocked || noOp;
   const spacePreviews =
-    plan !== null && recipeExtras !== null ? recipeSpacePreviews(plan.document, recipeExtras) : undefined;
+    plan !== null && recipeExtras !== null
+      ? recipeSpacePreviews(plan.document, recipeExtras, assetStatus ?? undefined)
+      : undefined;
+  const cloudNotices =
+    plan !== null && recipeExtras !== null && spacePreviews !== undefined
+      ? recipeAssetCloudNotices(plan, recipeExtras, spacePreviews, assetStatus ?? {}, applyTheme)
+      : [];
 
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : requestClose())}>
@@ -304,14 +462,21 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
                     <Button
                       type="button"
                       variant="primary"
-                      disabled={pasteText.trim().length === 0}
-                      onClick={() => parseAndPreview(pasteText)}
+                      disabled={verifying || pasteText.trim().length === 0}
+                      aria-busy={verifying}
+                      onClick={() => {
+                        void parseAndPreview(pasteText);
+                      }}
                     >
                       {t("import.parseAndPreview")}
                     </Button>
                   </div>
                 </div>
               )}
+
+              {verifying ? (
+                <p className="text-xs text-vdu-fg-muted" role="status">{t("import.verifying")}</p>
+              ) : null}
 
               {inputError !== null ? (
                 <p className="text-xs text-vdu-danger" role="alert">
@@ -400,6 +565,25 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
                 </div>
               ) : null}
 
+              {cloudNotices.length > 0 ? (
+                <div
+                  className="flex flex-col gap-1.5 rounded-vdu border border-vdu-border bg-vdu-bg-raised px-3 py-2.5"
+                  data-import-asset-fetch=""
+                >
+                  <p className="text-xs text-vdu-fg-muted">
+                    {t("import.recipe.assetFetch.title", { count: cloudNotices.length })}
+                  </p>
+                  <p className="text-xs text-vdu-fg-muted">{t("import.recipe.assetFetch.hint")}</p>
+                  <ul className="flex flex-col gap-0.5 pl-4">
+                    {cloudNotices.map((notice, index) => (
+                      <li key={index} className="list-disc text-xs text-vdu-fg-muted">
+                        {assetNoticeLabel(notice, t)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
               {workspaceChanged ? (
                 <p className="rounded-vdu border border-vdu-border bg-vdu-bg-raised px-3 py-2 text-xs text-vdu-fg" role="status">
                   {t("import.workspaceChanged")}
@@ -480,6 +664,20 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
               <p className="text-xs text-vdu-fg-muted">
                 {t("import.doneDuplicates", { count: doneSummary.duplicateApps })}
               </p>
+              {doneAssetFallbacks.length > 0 ? (
+                <div className="flex flex-col gap-1" data-import-asset-fallback="">
+                  <p className="text-xs text-vdu-fg-muted">
+                    {t("import.done.assetFallbacks", { count: doneAssetFallbacks.length })}
+                  </p>
+                  <ul className="flex flex-col gap-0.5 pl-4">
+                    {doneAssetFallbacks.map((notice, index) => (
+                      <li key={index} className="list-disc text-xs text-vdu-fg-muted">
+                        {assetNoticeLabel(notice, t)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </VdScrollArea>
@@ -521,10 +719,22 @@ const PRESET_NAME_KEY: Readonly<Record<WorkspaceWallpaperPreset, TranslationKey>
 
 type Translate = (key: TranslationKey, params?: Record<string, string | number>) => string;
 
+/** A wallpaper's preview name: the preset, or the custom image's availability (D1). */
+function wallpaperPreviewName(wallpaper: RecipeWallpaperPreview, t: Translate): string {
+  if (wallpaper.kind === "preset") {
+    return t(PRESET_NAME_KEY[wallpaper.presetId]);
+  }
+  return t(
+    wallpaper.source === "embedded"
+      ? "import.recipe.wallpaper.embedded"
+      : wallpaper.source === "cloud"
+        ? "import.recipe.wallpaper.cloud"
+        : "import.recipe.wallpaper.asset"
+  );
+}
+
 /** `Snap · 8×5 grid · 2 tiles · Light wallpaper: Aurora · Dark wallpaper: custom image`. */
 function spaceStructureLine(space: RecipeSpacePreview, t: Translate): string {
-  const wallpaperName = (wallpaper: RecipeWallpaperPreview): string =>
-    wallpaper.kind === "preset" ? t(PRESET_NAME_KEY[wallpaper.presetId]) : t("import.recipe.wallpaper.asset");
   const parts = [
     space.layoutMode === "free" ? t("import.recipe.layout.free") : t("import.recipe.layout.snap"),
     space.grid === undefined
@@ -533,13 +743,43 @@ function spaceStructureLine(space: RecipeSpacePreview, t: Translate): string {
     t("import.recipe.tiles", { count: space.tileCount }),
   ];
   if (space.light !== undefined) {
-    parts.push(t("import.recipe.wallpaper.light", { name: wallpaperName(space.light) }));
+    parts.push(t("import.recipe.wallpaper.light", { name: wallpaperPreviewName(space.light, t) }));
   }
   if (space.dark !== undefined) {
-    parts.push(t("import.recipe.wallpaper.dark", { name: wallpaperName(space.dark) }));
+    parts.push(t("import.recipe.wallpaper.dark", { name: wallpaperPreviewName(space.dark, t) }));
   }
   return parts.join(" · ");
 }
+
+/** One cloud-fetch/fallback row: the space's mode, or the theme default. */
+function assetNoticeLabel(notice: RecipeAssetNotice, t: Translate): string {
+  return "theme" in notice
+    ? t("import.recipe.assetFetch.themeEntry")
+    : t("import.recipe.assetFetch.entry", {
+        name: notice.spaceName,
+        mode: t(
+          notice.mode === "light"
+            ? "import.recipe.wallpaper.lightShort"
+            : "import.recipe.wallpaper.darkShort"
+        ),
+      });
+}
+
+/** `assets.asset-sha256-0123456789ab….data` — the 64-hex id stays readable. */
+function truncateAssetPath(path: string): string {
+  return path.replace(/(asset-sha256-[0-9a-f]{12})[0-9a-f]+/, "$1…");
+}
+
+/** Rejection reason → localized detail (total over the reason union). */
+const ASSET_REASON_KEY: Readonly<Record<string, TranslationKey>> = {
+  "invalid-base64": "import.recipe.asset.reason.invalid-base64",
+  "asset-too-large": "import.recipe.asset.reason.asset-too-large",
+  "unsupported-image-type": "import.recipe.asset.reason.unsupported-image-type",
+  "media-type-mismatch": "import.recipe.asset.reason.media-type-mismatch",
+  "asset-id-mismatch": "import.recipe.asset.reason.asset-id-mismatch",
+  "decode-failed": "import.recipe.asset.reason.decode-failed",
+  "dimensions-too-large": "import.recipe.asset.reason.dimensions-too-large",
+};
 
 /** Renders `AI → app 3 · Invalid url`-style context + message pairs. */
 function describeIssue(
@@ -557,8 +797,12 @@ function describeIssue(
   if (issue.code === "INVALID_JSON" && typeof issue.value === "string") {
     params.detail = issue.value;
   }
-  if (issue.code === "UNSUPPORTED_FIELD_IGNORED") {
+  if (issue.code === "UNSUPPORTED_FIELD_IGNORED" || issue.code === "RECIPE_THEME_FIELD_IGNORED") {
     params.path = issue.path;
+  }
+  if (issue.code === "RECIPE_ASSET_INVALID") {
+    params.path = truncateAssetPath(issue.path);
+    params.detail = t(ASSET_REASON_KEY[issue.value as string] ?? "import.recipe.asset.reason.invalid-base64");
   }
   const message = t(ISSUE_MESSAGE_KEY[issue.code], params);
   return location === "" ? message : `${location} · ${message}`;
