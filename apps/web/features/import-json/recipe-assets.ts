@@ -219,7 +219,7 @@ export function recipeAssetDecodeIssue(issue: {
 
 /** Every asset id the recipe's wallpaper refs point at, deduplicated, document order. */
 export function collectRecipeAssetRefs(
-  extras: Pick<RecipeImportExtras, "spaces" | "theme">
+  extras: { readonly spaces: readonly { readonly wallpaper?: RecipeImportExtras["spaces"][number]["wallpaper"] }[]; readonly theme?: RecipeImportExtras["theme"] }
 ): readonly string[] {
   const seen = new Set<string>();
   const ordered: string[] = [];

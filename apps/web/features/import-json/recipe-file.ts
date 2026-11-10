@@ -10,6 +10,10 @@ import type { WorkspaceSnapshot } from "@veladesk/domain";
 
 import { VELADESK_VERSION } from "../../lib/app-version";
 
+export { prepareWorkspaceRecipe } from "./recipe-export-assets";
+export type { PreparedRecipeExport } from "./recipe-export-assets";
+import type { PreparedRecipeExport } from "./recipe-export-assets";
+
 const RECIPE_BLOB_TYPE = "application/json;charset=utf-8";
 
 /** Filesystem-safe base for a deck filename (fallback: `veladesk`). */
@@ -32,12 +36,12 @@ export function deckFilename(workspaceName: string): string {
  * downloads it as a UTF-8 `.deck.json` file through a temporary object
  * URL. The clock is read HERE so the domain function stays pure.
  */
-export function downloadWorkspaceRecipe(workspace: WorkspaceSnapshot): void {
+export function downloadWorkspaceRecipe(workspace: WorkspaceSnapshot, prepared?: PreparedRecipeExport): void {
   const recipe = exportRecipe(workspace, {
     createdAt: new Date().toISOString(),
     appMinVersion: VELADESK_VERSION,
   });
-  const blob = new Blob([JSON.stringify(recipe, null, 2)], { type: RECIPE_BLOB_TYPE });
+  const blob = new Blob([prepared?.text ?? JSON.stringify(recipe, null, 2)], { type: RECIPE_BLOB_TYPE });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

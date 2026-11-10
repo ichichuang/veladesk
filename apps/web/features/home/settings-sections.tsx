@@ -32,7 +32,7 @@ import { VELADESK_VERSION } from "../../lib/app-version";
 import { buildImportAiPrompt } from "../import-json/ai-prompt";
 import { copyTextToClipboard } from "../import-json/clipboard";
 import { downloadVelaDeskImportTemplate } from "../import-json/template";
-import { downloadWorkspaceRecipe } from "../import-json/recipe-file";
+import { prepareWorkspaceRecipe, type PreparedRecipeExport, downloadWorkspaceRecipe } from "../import-json/recipe-file";
 import { ImportJsonDialog } from "../import-json/import-json-dialog";
 import {
   COLOR_MODE_OPTIONS,
@@ -345,6 +345,20 @@ export function GeneralSection({
   const { t } = useI18n();
   const [importOpen, setImportOpen] = useState(false);
   const [promptStatus, setPromptStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const [embedWallpapers, setEmbedWallpapers] = useState(false);
+  const [preparedExport, setPreparedExport] = useState<{ workspace: WorkspaceSnapshot; file: PreparedRecipeExport }>();
+  const [exportFailed, setExportFailed] = useState(false);
+  const exportReady = preparedExport?.workspace === workspace ? preparedExport.file : undefined;
+  useEffect(() => {
+    if (!embedWallpapers) return;
+    let cancelled = false;
+    void prepareWorkspaceRecipe(workspace, { embedWallpapers: true }).then((file) => {
+      if (!cancelled) setPreparedExport({ workspace, file });
+    }).catch(() => {
+      if (!cancelled) setExportFailed(true);
+    });
+    return () => { cancelled = true; };
+  }, [embedWallpapers, workspace]);
   const dataActionsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -419,7 +433,7 @@ export function GeneralSection({
           </Button>
           {/* RecipeV1 (P1): export the public deck config — also readable by
               the import flow above. Never writes the workspace. */}
-          <Button size="sm" variant="secondary" onPress={() => downloadWorkspaceRecipe(workspace)}>
+          <Button size="sm" variant="secondary" isDisabled={embedWallpapers && !exportReady} onPress={() => downloadWorkspaceRecipe(workspace, embedWallpapers ? exportReady : undefined)}>
             {t("settings.data.exportDeck")}
           </Button>
           <Button size="sm" variant="primary" onPress={() => setImportOpen(true)} data-import-json-trigger="">
@@ -427,6 +441,23 @@ export function GeneralSection({
           </Button>
         </div>
       </SettingsRow>
+      <SettingsRow title={t("settings.data.embedWallpapers")}>
+        <VdSwitch isSelected={embedWallpapers} onChange={(value) => {
+          setPreparedExport(undefined);
+          setExportFailed(false);
+          setEmbedWallpapers(value);
+        }} aria-label={t("settings.data.embedWallpapers")} />
+      </SettingsRow>
+      <p className="text-xs text-vdu-fg-muted" aria-live="polite">
+        {embedWallpapers ? exportFailed ? t("settings.data.exportFailed") : exportReady
+          ? t("settings.data.exportSize", { size: (exportReady.byteLength / (1024 * 1024)).toFixed(2) })
+          : t("settings.data.exportPreparing") : ""}
+      </p>
+      <p className="text-xs text-vdu-fg-muted break-all" aria-live="polite">
+        {embedWallpapers && exportReady?.skipped.length ? t("settings.data.exportSkipped", {
+          assets: exportReady.skipped.map(({ id, reason }) => `${id} (${t(`settings.data.exportReason.${reason}` as TranslationKey)})`).join("; "),
+        }) : ""}
+      </p>
       <p className="text-xs leading-relaxed text-vdu-fg-muted">{t("settings.data.formatNote")}</p>
       <p className="text-xs text-vdu-fg-muted" aria-live="polite">
         {promptStatus === "copied"
