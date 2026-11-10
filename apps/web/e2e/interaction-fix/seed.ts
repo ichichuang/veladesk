@@ -31,6 +31,64 @@ const AI_APPS: readonly SeedApp[] = [
   { id: "app-figma", name: "Figma", url: "https://figma.com" },
 ];
 
+/**
+ * The RICH scene (viewport-matrix evidence): real favicon glyphs from the
+ * self-hosted collections plus a mix of custom tile sizes — the layout-fill
+ * composition as a user actually curates it (two 2×2 heroes, 2×1 strips, a
+ * folder, plain 1×1s, one monogram holdout) filling all 8 stored columns
+ * across 3 rows. Every icon id ships in @iconify-json packages bundled
+ * with the standalone server, so the scene renders fully offline. The
+ * extra row-2 apps exist ONLY in this scene — the behavior specs' fixture
+ * stays byte-identical without `richScene`.
+ */
+interface RichTile {
+  readonly column: number;
+  readonly row: number;
+  readonly columnSpan: number;
+  readonly rowSpan: number;
+}
+
+const RICH_FRONTEND_TILES: readonly (readonly [string, RichTile])[] = [
+  ["app-mdn", { column: 0, row: 0, columnSpan: 1, rowSpan: 1 }],
+  ["app-github", { column: 1, row: 0, columnSpan: 2, rowSpan: 1 }],
+  ["app-stack", { column: 3, row: 0, columnSpan: 1, rowSpan: 1 }],
+  ["app-css", { column: 4, row: 0, columnSpan: 1, rowSpan: 1 }],
+  ["app-react", { column: 5, row: 0, columnSpan: 1, rowSpan: 1 }],
+  ["app-vue", { column: 6, row: 0, columnSpan: 1, rowSpan: 1 }],
+  ["app-ts", { column: 7, row: 0, columnSpan: 1, rowSpan: 1 }],
+  ["app-vite", { column: 0, row: 1, columnSpan: 2, rowSpan: 2 }],
+  ["app-npm", { column: 2, row: 1, columnSpan: 2, rowSpan: 1 }],
+  ["folder-frameworks", { column: 4, row: 1, columnSpan: 2, rowSpan: 1 }],
+  ["app-docker", { column: 6, row: 1, columnSpan: 2, rowSpan: 2 }],
+  ["app-yarn", { column: 2, row: 2, columnSpan: 2, rowSpan: 1 }],
+  ["app-eslint", { column: 4, row: 2, columnSpan: 2, rowSpan: 1 }],
+];
+
+/** Rich-scene-only extra apps filling the second and third rows. */
+const RICH_EXTRA_APPS: readonly SeedApp[] = [
+  { id: "app-docker", name: "Docker", url: "https://docker.com" },
+  { id: "app-yarn", name: "Yarn", url: "https://yarnpkg.com" },
+  { id: "app-eslint", name: "ESLint", url: "https://eslint.org" },
+];
+
+/** favicon glyph per app id (generated monogram stays the default). */
+const RICH_FAVICONS: Readonly<Record<string, string>> = {
+  "app-github": "simple-icons:github",
+  "app-stack": "simple-icons:stackoverflow",
+  "app-css": "vscode-icons:file-type-css",
+  "app-react": "simple-icons:react",
+  "app-vue": "vscode-icons:file-type-vue",
+  "app-ts": "vscode-icons:file-type-typescript-official",
+  "app-vite": "simple-icons:vite",
+  "app-npm": "simple-icons:npm",
+  "app-docker": "simple-icons:docker",
+  "app-yarn": "vscode-icons:file-type-yarn",
+  "app-eslint": "simple-icons:eslint",
+  "app-chatgpt": "simple-icons:openai",
+  "app-claude": "simple-icons:claude",
+  "app-figma": "simple-icons:figma",
+};
+
 const DESIGN_APPS: readonly SeedApp[] = [
   { id: "app-dribbble", name: "Dribbble", url: "https://dribbble.com" },
   { id: "app-awwwards", name: "Awwwards", url: "https://awwwards.com" },
@@ -42,19 +100,28 @@ const FOLDER_APPS: readonly SeedApp[] = [
   { id: "app-vue-docs", name: "Vue Docs", url: "https://vuejs.org/guide" },
 ];
 
-function entity(app: SeedApp) {
+function entity(app: SeedApp, favicon?: string) {
   return {
     kind: "app",
     id: app.id,
     name: app.name,
     url: app.url,
-    icon: { kind: "generated", text: app.name.slice(0, 1).toUpperCase(), source: "auto" },
+    icon:
+      favicon === undefined
+        ? { kind: "generated", text: app.name.slice(0, 1).toUpperCase(), source: "auto" }
+        : { kind: "iconify", icon: favicon },
     openMode: "new-tab",
     tags: [],
   };
 }
 
-function gridPage(id: string, name: string, apps: readonly SeedApp[], columns: number) {
+function gridPage(
+  id: string,
+  name: string,
+  apps: readonly SeedApp[],
+  columns: number,
+  tiles?: readonly (readonly [string, RichTile])[],
+) {
   return {
     id,
     name,
@@ -63,13 +130,16 @@ function gridPage(id: string, name: string, apps: readonly SeedApp[], columns: n
       version: 2,
       mode: "grid",
       columns,
-      items: apps.map((app, index) => ({
-        id: app.id,
-        column: index % columns,
-        row: Math.floor(index / columns),
-        columnSpan: 1,
-        rowSpan: 1,
-      })),
+      items:
+        tiles !== undefined
+          ? tiles.map(([appId, tile]) => ({ id: appId, ...tile }))
+          : apps.map((app, index) => ({
+              id: app.id,
+              column: index % columns,
+              row: Math.floor(index / columns),
+              columnSpan: 1,
+              rowSpan: 1,
+            })),
     },
   };
 }
@@ -81,11 +151,14 @@ let seedSequence = 0;
 /**
  * Seeds the interaction-fix workspace and returns its id. With
  * `manySections`, twelve extra one-app sections ride along — the rail's
- * overflow behavior needs more rows than a tall viewport can show.
+ * overflow behavior needs more rows than a tall viewport can show. With
+ * `richScene`, the frontend section swaps to the favicon + custom-size
+ * tile scene (see RICH_FRONTEND_TILES) — the layout-fill evidence look;
+ * ids, sections and names stay identical so every spec keeps its targets.
  */
 export async function seedInteractionWorkspace(
   request: APIRequestContext,
-  options: { readonly manySections?: boolean } = {},
+  options: { readonly manySections?: boolean; readonly richScene?: boolean } = {},
 ): Promise<string> {
   seedSequence += 1;
   // The NAME carries the sequence: every boot picks ITS OWN workspace from
@@ -93,10 +166,17 @@ export async function seedInteractionWorkspace(
   // fixtures from earlier tests survive the workspace-limit guard).
   fixtureName = `Interaction Fix ${seedSequence}`;
   const entities = [
-    ...FRONTEND_APPS.map(entity),
-    ...AI_APPS.map(entity),
-    ...DESIGN_APPS.map(entity),
-    ...FOLDER_APPS.map(entity),
+    ...FRONTEND_APPS.map((app) =>
+      entity(app, options.richScene === true ? RICH_FAVICONS[app.id] : undefined),
+    ),
+    ...AI_APPS.map((app) =>
+      entity(app, options.richScene === true ? RICH_FAVICONS[app.id] : undefined),
+    ),
+    ...(options.richScene === true
+      ? RICH_EXTRA_APPS.map((app) => entity(app, RICH_FAVICONS[app.id]))
+      : []),
+    ...DESIGN_APPS.map((app) => entity(app)),
+    ...FOLDER_APPS.map((app) => entity(app)),
     {
       kind: "folder",
       id: "folder-frameworks",
@@ -108,7 +188,13 @@ export async function seedInteractionWorkspace(
     id: `ws-interaction-fix-${Date.now()}-${seedSequence}`,
     name: fixtureName,
     pages: [
-      gridPage("sec-frontend", "前端开发", FRONTEND_APPS, 8),
+      gridPage(
+        "sec-frontend",
+        "前端开发",
+        FRONTEND_APPS,
+        8,
+        options.richScene === true ? RICH_FRONTEND_TILES : undefined,
+      ),
       gridPage("sec-ai", "AI 工具", AI_APPS, 8),
       gridPage("sec-design", "设计灵感", DESIGN_APPS, 8),
       ...(options.manySections === true
@@ -164,7 +250,7 @@ let fixtureName = "Interaction Fix";
 export async function bootSeededDesktop(
   page: Page,
   request: APIRequestContext,
-  options: { readonly manySections?: boolean } = {},
+  options: { readonly manySections?: boolean; readonly richScene?: boolean } = {},
 ): Promise<void> {
   await seedInteractionWorkspace(request, options);
   await page.addInitScript(() => {

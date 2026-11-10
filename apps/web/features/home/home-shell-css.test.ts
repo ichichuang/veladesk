@@ -120,17 +120,20 @@ describe("home-shell.css geometry contract (task 017)", () => {
     expect(host).toMatch(/gap:\s*var\(--vd-grid-gap\)/);
   });
 
-  it("centers the capped grid in the stage via the frame (Helm r2)", () => {
+  it("centers the capped grid in the stage via the frame (Helm r2, layout-fill anchor)", () => {
     const stage = ruleBlock(".vela-grid-stage");
     expect(stage).toMatch(/display:\s*flex/);
     expect(stage).toMatch(/flex-direction:\s*column/);
     const frame = ruleBlock(".vela-grid-frame");
-    // The frame shrink-wraps to the metrics content width and centers on
-    // BOTH axes; the overlays inside it share the tiles' origin.
+    // The frame shrink-wraps to the metrics' OCCUPIED content width and
+    // centers horizontally; the vertical anchor is the measured-share top
+    // margin with plain auto-centering as the fallback, and the bottom
+    // stays auto so overflowing content top-aligns. The overlays inside the
+    // frame share the tiles' origin.
     expect(frame).toMatch(/position:\s*relative/);
     expect(frame).toMatch(/width:\s*min\(100%,\s*var\(--vd-grid-content-width,\s*100%\)\)/);
     expect(frame).toMatch(/margin-inline:\s*auto/);
-    expect(frame).toMatch(/margin-block:\s*auto/);
+    expect(frame).toMatch(/margin-block:\s*var\(--vd-grid-frame-top,\s*auto\)\s*auto/);
   });
 
   it("grounds the desktop tile on the tile-glass token, never a solid slab (Helm r2)", () => {

@@ -54,8 +54,14 @@ const GAP_SHARE = 0.055;
 const GAP_MIN_PX = 3;
 const GAP_MAX_PX = 14;
 
-/** Generated-text glyph: fraction of the icon box a single code point fills. */
-const GENERATED_TEXT_SHARE = 0.56;
+/**
+ * Generated-text glyph: fraction of the icon box a single code point fills.
+ * 0.48 is the layout-fill retune: the monogram converges on the favicon
+ * glyph's optical weight (which insets at 82% of the plate with its own
+ * intrinsic padding) instead of towering over the label, while the solid
+ * letterform keeps enough presence to hold the plate next to brand marks.
+ */
+const GENERATED_TEXT_SHARE = 0.48;
 /** Smallest icon box the resolver will ever produce (degenerate inputs). */
 const ICON_BOX_MIN_PX = 12;
 /** Smallest title strip width before ellipsis takes over completely. */

@@ -3,14 +3,19 @@ import type { GridCanvasItem } from "@veladesk/canvas-engine";
 
 import {
   GRID_CELL_MAX_PX,
+  GRID_CELL_WIDE_MAX_PX,
   calculateSquareGridMetrics,
+  gridContentColumns,
   gridContentHeightPx,
   gridContentRows,
+  gridFrameContentWidthPx,
+  gridFrameTopOffsetPx,
   gridPlacementStyle,
   fluidGridCellCap,
   gridSpanExtentPx,
   isSubpixelEqual,
   pixelsToCellDelta,
+  withMeasuredStageHeight,
 } from "./square-grid-metrics";
 
 function gitem(
@@ -125,6 +130,56 @@ describe("gap geometry", () => {
     expect(gridContentHeightPx(0, 100, 16)).toBe(0);
     expect(gridContentHeightPx(3, 100, 16)).toBeCloseTo(3 * 100 + 2 * 16, 8);
   });
+
+  it("computes the occupied column edge from the greatest column + span", () => {
+    expect(gridContentColumns([])).toBe(0);
+    expect(gridContentColumns([gitem("a", 0, 0)])).toBe(1);
+    expect(
+      gridContentColumns([gitem("a", 0, 0), gitem("b", 5, 0, 2, 1)]),
+    ).toBe(7);
+  });
+});
+
+describe("frame anchors (layout fill)", () => {
+  it("shrink-wraps the frame to the OCCUPIED columns, not the stored width", () => {
+    const items = [gitem("a", 0, 0), gitem("b", 2, 0, 2, 1)];
+    // 4 of 8 stored columns occupied: the frame centers by the real span.
+    expect(gridFrameContentWidthPx(items, 8, 100, 16)).toBeCloseTo(4 * 100 + 3 * 16, 8);
+    // Full occupancy keeps the whole stored width (the uncapped fill case).
+    const full = [gitem("a", 0, 0, 8, 1)];
+    expect(gridFrameContentWidthPx(full, 8, 100, 16)).toBeCloseTo(8 * 100 + 7 * 16, 8);
+    // An empty page keeps the full stored width so the lattice still paints.
+    expect(gridFrameContentWidthPx([], 6, 90, 12)).toBeCloseTo(6 * 90 + 5 * 12, 8);
+  });
+
+  it("anchors the frame at the top share of the FREE vertical space", () => {
+    const twoRows = [gitem("a", 0, 0), gitem("b", 0, 1)];
+    const contentHeight = 2 * 100 + 16;
+    const free = 700 - contentHeight;
+    expect(gridFrameTopOffsetPx(twoRows, 700, 100, 16)).toBeCloseTo(free * 0.36, 6);
+    // Overflowing content top-aligns (offset 0), never negative.
+    expect(gridFrameTopOffsetPx(twoRows, contentHeight - 10, 100, 16)).toBe(0);
+    // Unmeasured stage heights hand anchoring back to the CSS fallback.
+    expect(gridFrameTopOffsetPx(twoRows, 0, 100, 16)).toBeNull();
+    expect(gridFrameTopOffsetPx(twoRows, Number.NaN, 100, 16)).toBeNull();
+  });
+
+  it("carries the measured stage height through the metrics", () => {
+    const base = calculateSquareGridMetrics({
+      availableWidthPx: 900,
+      columns: 6,
+      gapPx: 16,
+    });
+    expect(base!.stageHeightPx).toBe(0);
+    const measured = withMeasuredStageHeight(base!, 640);
+    expect(measured!.stageHeightPx).toBe(640);
+    // Degenerate heights stay unmeasured (the caller keeps the width-only
+    // metrics instead of a lie).
+    expect(withMeasuredStageHeight(base!, 0)).toBeNull();
+    expect(withMeasuredStageHeight(base!, Number.NaN)).toBeNull();
+    // Same-height re-measures return the SAME object (the hook's dedupe).
+    expect(withMeasuredStageHeight(measured!, 640)).toBe(measured);
+  });
 });
 
 describe("pixelsToCellDelta", () => {
@@ -160,22 +215,24 @@ describe("gridPlacementStyle", () => {
   });
 });
 
-describe("fluidGridCellCap (Helm r3)", () => {
+describe("fluidGridCellCap (Helm r3, layout-fill retune)", () => {
   it("holds the spec floor on laptop stages", () => {
     expect(fluidGridCellCap(null)).toBe(GRID_CELL_MAX_PX);
     expect(fluidGridCellCap(0)).toBe(GRID_CELL_MAX_PX);
     expect(fluidGridCellCap(Number.NaN)).toBe(GRID_CELL_MAX_PX);
-    // ~900px stage: 900/11 ≈ 82 — below the floor.
+    // ~900px stage: 900/9.5 ≈ 95 — below the floor.
     expect(fluidGridCellCap(900)).toBe(GRID_CELL_MAX_PX);
-    // 1232px stage: 112 — exactly the floor.
-    expect(fluidGridCellCap(1232)).toBe(GRID_CELL_MAX_PX);
+    // 1064px stage: 1064/9.5 = 112 — exactly the floor; one px under stays floored.
+    expect(fluidGridCellCap(1064)).toBe(GRID_CELL_MAX_PX);
+    expect(fluidGridCellCap(1063)).toBe(GRID_CELL_MAX_PX);
   });
 
-  it("lets the cell breathe with the stage up to the 160px ceiling", () => {
-    expect(fluidGridCellCap(1540)).toBe(140);
-    expect(fluidGridCellCap(1760)).toBe(160);
-    // Wide screens saturate — never past the ceiling.
-    expect(fluidGridCellCap(2560)).toBe(160);
+  it("lets the cell breathe with the stage up to the wide ceiling", () => {
+    // A 1920-class stage (≈1588px of tile area) plates ≈167px cells.
+    expect(fluidGridCellCap(1588)).toBe(167);
+    // A 2560-class stage saturates at the wide ceiling — never past it.
+    expect(fluidGridCellCap(2228)).toBe(GRID_CELL_WIDE_MAX_PX);
+    expect(fluidGridCellCap(4000)).toBe(GRID_CELL_WIDE_MAX_PX);
   });
 
   it("carries the measured stage width through the metrics", () => {

@@ -1690,9 +1690,9 @@
 /*
  * The square-cell Grid stage: the scroller's content box sizes it, the
  * square cell metrics derive from its width. Since Helm r2 the cell is
- * CAPPED (96–112px spec band), so the content may be narrower and shorter
- * than the stage — the stage is a flex column and the frame below centers
- * in it (both axes), keeping the grid in the available area with real
+ * CAPPED (fluid 112–200px band), so the content may be narrower and
+ * shorter than the stage — the stage is a flex column and the frame below
+ * centers in it, keeping the grid in the available area with real
  * breathing room. Over-long content top-aligns and scrolls as before
  * (auto margins collapse to 0 when there is no free space). min-height
  * keeps empty grid pages filling the visible content height, and the
@@ -1707,19 +1707,24 @@
 }
 
 /*
- * The centered grid FRAME: shrink-wraps to the metrics' content width
- * (columns·cell + gaps) and centers horizontally; `margin-block: auto`
- * over the flex-column stage centers it vertically when it fits. The
- * overlays (slot lattice, target feedback, drop ripples) are positioned
- * inside the FRAME, so their origin is always the tiles' origin however
- * far the content is inset. An empty page keeps a full-height frame so
- * the arrange lattice still paints the whole area.
+ * The centered grid FRAME: shrink-wraps to the content width the metrics
+ * resolved (the OCCUPIED columns' span, layout-fill) and centers
+ * horizontally. Vertically the anchored `--vd-grid-frame-top` (the share
+ * of the measured free space, written by the view from the same metrics)
+ * rests the block at a stable upper-third point between the header band
+ * and the dock — plain auto margins remain the fallback until the metrics
+ * settle, and the bottom margin stays `auto` so overflowing content
+ * top-aligns exactly as before. The overlays (slot lattice, target
+ * feedback, drop ripples) are positioned inside the FRAME, so their origin
+ * is always the tiles' origin however far the content is inset. An empty
+ * page keeps a full-height frame so the arrange lattice still paints the
+ * whole area.
  */
 .vela-grid-frame {
   position: relative;
   width: min(100%, var(--vd-grid-content-width, 100%));
   margin-inline: auto;
-  margin-block: auto;
+  margin-block: var(--vd-grid-frame-top, auto) auto;
 }
 
 /*

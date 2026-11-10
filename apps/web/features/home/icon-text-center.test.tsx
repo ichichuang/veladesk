@@ -176,6 +176,8 @@ describe("adaptive desktop tile sizes a single character", () => {
     const one = resolveAppContentLayout({ width: 200, height: 200, labelVisible: true, iconKind: "generated", generatedTextLength: 1 });
     const unset = resolveAppContentLayout({ width: 200, height: 200, labelVisible: true, iconKind: "generated" });
     expect(unset.generatedTextSize).toBe(one.generatedTextSize);
-    expect(one.generatedTextSize! / one.iconBoxSize).toBeCloseTo(0.56, 2);
+    // 0.48 since the layout-fill retune: the monogram converges on the
+    // favicon glyph's optical weight instead of towering over the label.
+    expect(one.generatedTextSize! / one.iconBoxSize).toBeCloseTo(0.48, 2);
   });
 });

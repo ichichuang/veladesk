@@ -14,6 +14,7 @@ import type { ResizeCommitGeometry } from "../canvas/canvas-resize";
 import type { GridItemGeometry } from "../canvas/canvas-resize";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
 import type { SquareGridMetrics } from "../canvas/square-grid-metrics";
+import { gridFrameContentWidthPx, gridFrameTopOffsetPx } from "../canvas/square-grid-metrics";
 import "./home-shell.css";
 
 interface DesktopCanvasViewProps {
@@ -70,14 +71,15 @@ interface DesktopCanvasViewProps {
 /**
  * One section's placed content — the task 017 dual renderer.
  *
- * GRID mode is a real CSS Grid: `repeat(columns, minmax(0, 1fr))` columns,
- * `grid-auto-rows: var(--vd-grid-cell-size)` rows and `gap:
- * var(--vd-grid-gap)`; content rows grow without a fixed row count, so the
- * section scroller (the parent) owns vertical scrolling. Since Helm r2 the
- * cell carries a spec ceiling, so the grid content may be NARROWER than
- * the stage: the `.vela-grid-frame` centers it and hosts the overlays (see
- * the render). In Arrange the frame paints the visible square slots as one
- * pointer-transparent SVG pattern (task 017-A) — isolated squares
+ * GRID mode is a real CSS Grid: `repeat(columns, var(--vd-grid-cell-size))`
+ * fixed cell tracks (so a shrink-wrapped frame can never compress the
+ * stored columns), `grid-auto-rows: var(--vd-grid-cell-size)` rows and
+ * `gap: var(--vd-grid-gap)`; content rows grow without a fixed row count,
+ * so the section scroller (the parent) owns vertical scrolling. Since Helm
+ * r2 the cell carries a spec ceiling, so the grid content may be NARROWER
+ * than the stage: the `.vela-grid-frame` centers it and hosts the overlays
+ * (see the render). In Arrange the frame paints the visible square slots
+ * as one pointer-transparent SVG pattern (task 017-A) — isolated squares
  * separated by the real gap, never marker nodes, never a pointer target.
  *
  * FREEFORM keeps the continuous percent-space canvas: absolutely positioned
@@ -112,6 +114,30 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
   onCanvasPointerUp,
 }: DesktopCanvasViewProps) {
   if (placement.mode === "grid") {
+    // Layout-fill anchors (pure view layer — never stored geometry): the
+    // frame width follows the span the content ACTUALLY occupies (a sparse
+    // section centers by its real columns, not the stored full width), and
+    // the vertical offset anchors the block between the header and the
+    // dock instead of floating low-mid. Both need the measured metrics;
+    // unmeasured first frames keep the CSS auto-centering fallback.
+    const frameWidthPx =
+      gridMetrics === null
+        ? null
+        : gridFrameContentWidthPx(
+            placement.items,
+            placement.columns,
+            gridMetrics.cellPx,
+            gridMetrics.gapPx,
+          );
+    const frameTopPx =
+      gridMetrics === null
+        ? null
+        : gridFrameTopOffsetPx(
+            placement.items,
+            gridMetrics.stageHeightPx,
+            gridMetrics.cellPx,
+            gridMetrics.gapPx,
+          );
     return (
       <div
         ref={gridStageRef}
@@ -121,9 +147,10 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
           {
             "--vd-grid-cell-size": `${gridMetrics?.cellPx ?? 0}px`,
             "--vd-grid-gap": `${gridMetrics?.gapPx ?? 0}px`,
-            ...(gridMetrics === null
+            ...(frameWidthPx === null
               ? {}
-              : { "--vd-grid-content-width": `${gridMetrics.contentWidthPx}px` }),
+              : { "--vd-grid-content-width": `${frameWidthPx}px` }),
+            ...(frameTopPx === null ? {} : { "--vd-grid-frame-top": `${frameTopPx}px` }),
           } as CSSProperties
         }
         onPointerDown={onCanvasPointerDown}
@@ -131,13 +158,17 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
         onPointerUp={onCanvasPointerUp}
       >
         {/*
-          The centered FRAME (Helm r2): when the spec ceiling caps the cell,
-          the content no longer fills the stage — the frame shrink-wraps to
-          the content width, centers in the stage (both axes via auto
-          margins over the flex-column stage), and hosts the overlays so the
-          slot lattice, target feedback and drop ripples all share the
-          tiles' origin. An empty page keeps a full-height frame so the
-          arrange lattice still paints.
+          The centered FRAME (Helm r2, anchors retuned for layout fill):
+          when the spec ceiling caps the cell, the content no longer fills
+          the stage — the frame shrink-wraps to the OCCUPIED content width
+          (not the stored full column count), centers horizontally, and
+          hosts the overlays so the slot lattice, target feedback and drop
+          ripples all share the tiles' origin. Vertically the anchored top
+          margin (--vd-grid-frame-top, from the measured free space) rests
+          the block at a stable upper-third point; auto margins (the CSS
+          fallback) still plain-center until the metrics settle, and an
+          empty page keeps a full-height frame so the arrange lattice still
+          paints.
         */}
         <div
           className="vela-grid-frame"
@@ -162,7 +193,9 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
           ) : null}
           <div
             className="vela-grid-host"
-            style={{ gridTemplateColumns: `repeat(${placement.columns}, minmax(0, 1fr))` }}
+            style={{
+              gridTemplateColumns: `repeat(${placement.columns}, var(--vd-grid-cell-size))`,
+            }}
           >
             {placement.items.map((item) => (
               <DesktopItem

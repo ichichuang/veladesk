@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import {
   calculateSquareGridMetrics,
+  withMeasuredStageHeight,
 } from "./square-grid-metrics";
 import type { SquareGridMetrics } from "./square-grid-metrics";
 
@@ -18,9 +19,11 @@ import type { SquareGridMetrics } from "./square-grid-metrics";
  * viewport-fluid ceiling; the stage width is layout-fixed, so deriving the
  * cap inside the measurement converges without extra state). On wide
  * stages the capped content centers inside the stage instead of filling
- * it. Metrics state is only replaced when a value actually changed, so
- * re-measuring can never cause a render loop. The column count is
- * persistent layout structure — it is NEVER recomputed from the width.
+ * it. The stage HEIGHT rides along (layout-fill): the frame's vertical
+ * anchor derives from the free space it leaves. Metrics state is only
+ * replaced when a value actually changed, so re-measuring can never cause
+ * a render loop. The column count is persistent layout structure — it is
+ * NEVER recomputed from the width.
  */
 export function useSquareGridMetrics(
   columns: number,
@@ -47,14 +50,16 @@ export function useSquareGridMetrics(
         gapPx,
         ...(ceiling === undefined ? {} : { maxCellPx: ceiling }),
       });
+      const measured = next === null ? null : withMeasuredStageHeight(next, node.clientHeight);
       setMetrics((previous) =>
         previous !== null &&
-        next !== null &&
-        previous.cellPx === next.cellPx &&
-        previous.pitchPx === next.pitchPx &&
-        previous.contentWidthPx === next.contentWidthPx
+        measured !== null &&
+        previous.cellPx === measured.cellPx &&
+        previous.pitchPx === measured.pitchPx &&
+        previous.contentWidthPx === measured.contentWidthPx &&
+        previous.stageHeightPx === measured.stageHeightPx
           ? previous
-          : next,
+          : measured,
       );
     };
 

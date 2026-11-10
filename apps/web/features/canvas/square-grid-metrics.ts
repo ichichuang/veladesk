@@ -25,6 +25,30 @@ import type { GridCanvasItem } from "@veladesk/canvas-engine";
  */
 export const GRID_CELL_MAX_PX = 112;
 
+/**
+ * The layout-fill retune (Helm r4): the fluid band's WIDE ceiling. A
+ * 2560-class stage plates cells up to 200px — the wide desktop stops
+ * reading as a small tile island in a wide sea (see {@link fluidGridCellCap}).
+ */
+export const GRID_CELL_WIDE_MAX_PX = 200;
+
+/**
+ * Stage width divided by this yields the fluid cell target: one 1×1 tile
+ * keeps roughly a tenth of the available width, so an 8-column grid fills
+ * ≈91% of the stage at 1920 and ≈77% at 2560 (where the ceiling clamps).
+ */
+export const GRID_CELL_STAGE_DIVISOR = 9.5;
+
+/**
+ * The vertical resting point of the grid frame between the Helm header and
+ * the dock (layout-fill): the share of the FREE vertical space that rides
+ * ABOVE the content. 0.36 anchors the block at a stable upper-third-ish
+ * spot — visually centered against the dawn band that owns the bottom
+ * quarter, never floating low against the waterline. Pure view layer: the
+ * stored row geometry is never touched.
+ */
+export const GRID_ANCHOR_TOP_SHARE = 0.36;
+
 /** Inputs of {@link calculateSquareGridMetrics}. */
 export interface SquareGridMetricsArgs {
   readonly availableWidthPx: number;
@@ -53,6 +77,8 @@ export interface SquareGridMetrics {
   readonly gapPx: number;
   /** The measured stage width the metrics derived from (the cap input). */
   readonly stageWidthPx: number;
+  /** The measured stage height (the frame anchor's free-space input). */
+  readonly stageHeightPx: number;
 }
 
 /**
@@ -92,22 +118,45 @@ export function calculateSquareGridMetrics(
     contentWidthPx: columns * cellPx + gapPx * (columns - 1),
     gapPx,
     stageWidthPx: availableWidthPx,
+    stageHeightPx: 0,
   };
 }
 
 /**
- * The viewport-fluid cell ceiling (Helm r3): the spec band's 112px floor
- * holds on laptop stages, and wide stages let the cell breathe up to
- * 160px — the wide-screen grid stops reading as a tiny island in a wide
- * sea. The stage width is the input (it is layout-fixed: the centered
- * frame never feeds back into it), so one re-measure after the first
- * observation settles the value.
+ * The measured stage HEIGHT companion of
+ * {@link calculateSquareGridMetrics}: the width-derived metrics plus the
+ * observed client height, which the frame's vertical anchor needs (free
+ * space = stage height − content height). Returns `null` on a non-positive
+ * height (not laid out yet).
+ */
+export function withMeasuredStageHeight(
+  metrics: SquareGridMetrics,
+  stageHeightPx: number,
+): SquareGridMetrics | null {
+  if (!Number.isFinite(stageHeightPx) || stageHeightPx <= 0) {
+    return null;
+  }
+  return metrics.stageHeightPx === stageHeightPx ? metrics : { ...metrics, stageHeightPx };
+}
+
+/**
+ * The viewport-fluid cell ceiling (Helm r3, retuned for layout fill): the
+ * spec band's 112px floor holds on laptop stages, and wide stages let the
+ * cell breathe proportionally up to {@link GRID_CELL_WIDE_MAX_PX} — at
+ * 1920 the cell plates ≈167px (≈91% stage fill for an 8-column grid), at
+ * 2560 it saturates at 200px, so a wide screen stops reading as a small
+ * tile island in a wide sea. The stage width is the input (it is
+ * layout-fixed: the centered frame never feeds back into it), so one
+ * re-measure after the first observation settles the value.
  */
 export function fluidGridCellCap(stageWidthPx: number | null): number {
   if (stageWidthPx === null || !Number.isFinite(stageWidthPx) || stageWidthPx <= 0) {
     return GRID_CELL_MAX_PX;
   }
-  return Math.min(160, Math.max(GRID_CELL_MAX_PX, Math.round(stageWidthPx / 11)));
+  return Math.min(
+    GRID_CELL_WIDE_MAX_PX,
+    Math.max(GRID_CELL_MAX_PX, Math.round(stageWidthPx / GRID_CELL_STAGE_DIVISOR)),
+  );
 }
 
 /**
@@ -147,6 +196,54 @@ export function gridContentRows(items: readonly GridCanvasItem[]): number {
 export function gridContentHeightPx(rows: number, cellPx: number, gapPx: number): number {
   const count = Math.max(0, Math.trunc(rows));
   return count === 0 ? 0 : count * cellPx + (count - 1) * gapPx;
+}
+
+/** The greatest occupied column edge: max(column + columnSpan), 0 when empty. */
+export function gridContentColumns(items: readonly GridCanvasItem[]): number {
+  let max = 0;
+  for (const item of items) {
+    max = Math.max(max, item.column + item.columnSpan);
+  }
+  return max;
+}
+
+/**
+ * The width the centered frame shrink-wraps to (layout-fill): the span the
+ * content ACTUALLY occupies — max(column + columnSpan) columns — not the
+ * stored column count, so a sparse section centers by its real extent
+ * instead of hugging the left of a full-width frame. An empty page keeps
+ * the full stored width so the arrange lattice still paints the stage.
+ */
+export function gridFrameContentWidthPx(
+  items: readonly GridCanvasItem[],
+  columns: number,
+  cellPx: number,
+  gapPx: number,
+): number {
+  const occupied = gridContentColumns(items);
+  return gridSpanExtentPx(occupied > 0 ? occupied : columns, cellPx, gapPx);
+}
+
+/**
+ * The frame's top offset in the stage (layout-fill): the anchored share of
+ * the FREE vertical space, so the content rests at a stable upper-third
+ * point between the Helm header and the dock instead of floating
+ * low-mid. `null` while the stage height is unmeasured (the CSS auto-
+ * margin fallback centers, then one re-measure settles the anchor).
+ * Over-long content top-aligns (offset 0) exactly as before.
+ */
+export function gridFrameTopOffsetPx(
+  items: readonly GridCanvasItem[],
+  stageHeightPx: number,
+  cellPx: number,
+  gapPx: number,
+): number | null {
+  if (!Number.isFinite(stageHeightPx) || stageHeightPx <= 0) {
+    return null;
+  }
+  const contentHeightPx = gridContentHeightPx(gridContentRows(items), cellPx, gapPx);
+  const freePx = Math.max(0, stageHeightPx - contentHeightPx);
+  return freePx * GRID_ANCHOR_TOP_SHARE;
 }
 
 /**
