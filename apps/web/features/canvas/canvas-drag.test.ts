@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { GridCanvasItem, CanvasLayoutItem } from "@veladesk/canvas-engine";
 import type { PagePlacement } from "@veladesk/domain";
 
-import { commitCanvasDrag, isCanvasDragNoop, previewCanvasDrag } from "./canvas-drag";
+import {
+  commitCanvasDrag,
+  isCanvasDragNoop,
+  previewCanvasDrag,
+  settledGridDropPlacement,
+} from "./canvas-drag";
 import type { CanvasPixelMetrics } from "./canvas-metrics";
 
 /** Freeform: 10 units per pixel horizontally, 12.5 vertically. */
@@ -207,5 +212,59 @@ describe("commitCanvasDrag — freeform", () => {
       pitchPx: 1,
     });
     expect(noop).toBeNull();
+  });
+});
+
+describe("settledGridDropPlacement — the Helm r2 grid drop settle", () => {
+  function gridItems(placement: PagePlacement): readonly GridCanvasItem[] {
+    expect(placement.mode).toBe("grid");
+    return placement.mode === "grid" ? placement.items : [];
+  }
+
+  it("keeps the dropped tile's cells and displaces the bystander it landed on", () => {
+    const start = grid([
+      { id: "a", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "b", column: 1, row: 0, columnSpan: 1, rowSpan: 1 },
+    ]);
+    // "a" is dragged one cell right, straight onto "b".
+    const moved = commitCanvasDrag({
+      placement: start,
+      itemIds: ["a"],
+      deltaX: 100,
+      deltaY: 0,
+      metrics,
+      pitchPx: 100,
+    });
+    expect(moved).not.toBeNull();
+    const settled = settledGridDropPlacement(moved!, start);
+    const byId = new Map(gridItems(settled).map((item) => [item.id, item]));
+    // The drop is authoritative: "a" stays at its feedback cell…
+    expect(byId.get("a")).toMatchObject({ column: 1, row: 0 });
+    // …and "b" hops to the next free cell instead of stacking beneath it.
+    expect(byId.get("b")).toMatchObject({ column: 2, row: 0 });
+  });
+
+  it("passes freeform placements through untouched (that path raises z-order instead)", () => {
+    const moved = freeform([
+      { id: "a", rect: { x: 500, y: 0, width: 1000, height: 1000 } },
+    ]);
+    expect(settledGridDropPlacement(moved, freeformPair)).toBe(moved);
+  });
+
+  it("returns the input reference when the drag landed on no one", () => {
+    const start = grid([
+      { id: "a", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "b", column: 3, row: 0, columnSpan: 1, rowSpan: 1 },
+    ]);
+    const moved = commitCanvasDrag({
+      placement: start,
+      itemIds: ["a"],
+      deltaX: 200,
+      deltaY: 0,
+      metrics,
+      pitchPx: 100,
+    });
+    expect(moved).not.toBeNull();
+    expect(settledGridDropPlacement(moved!, start)).toBe(moved);
   });
 });

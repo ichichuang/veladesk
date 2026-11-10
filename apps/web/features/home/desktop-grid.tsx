@@ -73,10 +73,12 @@ interface DesktopCanvasViewProps {
  * GRID mode is a real CSS Grid: `repeat(columns, minmax(0, 1fr))` columns,
  * `grid-auto-rows: var(--vd-grid-cell-size)` rows and `gap:
  * var(--vd-grid-gap)`; content rows grow without a fixed row count, so the
- * section scroller (the parent) owns vertical scrolling. In Arrange the
- * stage paints the visible square slots as one pointer-transparent SVG
- * pattern (task 017-A) — isolated squares separated by the real gap,
- * never marker nodes, never a pointer target.
+ * section scroller (the parent) owns vertical scrolling. Since Helm r2 the
+ * cell carries a spec ceiling, so the grid content may be NARROWER than
+ * the stage: the `.vela-grid-frame` centers it and hosts the overlays (see
+ * the render). In Arrange the frame paints the visible square slots as one
+ * pointer-transparent SVG pattern (task 017-A) — isolated squares
+ * separated by the real gap, never marker nodes, never a pointer target.
  *
  * FREEFORM keeps the continuous percent-space canvas: absolutely positioned
  * rects inside one viewport-height stage, exactly the pre-017 model.
@@ -119,56 +121,73 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
           {
             "--vd-grid-cell-size": `${gridMetrics?.cellPx ?? 0}px`,
             "--vd-grid-gap": `${gridMetrics?.gapPx ?? 0}px`,
+            ...(gridMetrics === null
+              ? {}
+              : { "--vd-grid-content-width": `${gridMetrics.contentWidthPx}px` }),
           } as CSSProperties
         }
         onPointerDown={onCanvasPointerDown}
         onPointerMove={onCanvasPointerMove}
         onPointerUp={onCanvasPointerUp}
       >
-        {arrange && gridMetrics !== null ? (
-          <GridSlotOverlay cellPx={gridMetrics.cellPx} gapPx={gridMetrics.gapPx} />
-        ) : null}
-        {arrange && gridMetrics !== null && gridFeedbackBoxes !== undefined ? (
-          <GridTargetFeedback
-            boxes={gridFeedbackBoxes}
-            cellPx={gridMetrics.cellPx}
-            gapPx={gridMetrics.gapPx}
-          />
-        ) : null}
-        {gridMetrics !== null && snapDropRipples !== undefined && snapDropRipples.length > 0 ? (
-          <SnapDropRipples
-            ripples={snapDropRipples}
-            cellPx={gridMetrics.cellPx}
-            gapPx={gridMetrics.gapPx}
-          />
-        ) : null}
+        {/*
+          The centered FRAME (Helm r2): when the spec ceiling caps the cell,
+          the content no longer fills the stage — the frame shrink-wraps to
+          the content width, centers in the stage (both axes via auto
+          margins over the flex-column stage), and hosts the overlays so the
+          slot lattice, target feedback and drop ripples all share the
+          tiles' origin. An empty page keeps a full-height frame so the
+          arrange lattice still paints.
+        */}
         <div
-          className="vela-grid-host"
-          style={{ gridTemplateColumns: `repeat(${placement.columns}, minmax(0, 1fr))` }}
+          className="vela-grid-frame"
+          data-grid-empty={placement.items.length === 0 ? "true" : undefined}
         >
-          {placement.items.map((item) => (
-            <DesktopItem
-              key={item.id}
-              item={item}
-              workspace={workspace}
-              arrange={arrange}
-              dragEnabled={dragEnabled}
-              metrics={null}
-              gridPitchPx={gridMetrics?.pitchPx ?? null}
-              gridColumns={placement.columns}
-              geometry="grid"
-              editingAppearance={appearanceEditingId === item.id}
-              selected={selectedIds.has(item.id)}
-              resizable={resizableIds.has(item.id)}
-              resizeActiveId={resizeActiveId}
-              onResizeCommit={onResizeCommit}
-              onResizeSessionChange={onResizeSessionChange}
-              onResizePreview={onResizePreview}
-              onItemSelect={onItemSelect}
-              onEntityContextMenu={onEntityContextMenu}
-              onOpenFolder={onOpenFolder}
+          {arrange && gridMetrics !== null ? (
+            <GridSlotOverlay cellPx={gridMetrics.cellPx} gapPx={gridMetrics.gapPx} />
+          ) : null}
+          {arrange && gridMetrics !== null && gridFeedbackBoxes !== undefined ? (
+            <GridTargetFeedback
+              boxes={gridFeedbackBoxes}
+              cellPx={gridMetrics.cellPx}
+              gapPx={gridMetrics.gapPx}
             />
-          ))}
+          ) : null}
+          {gridMetrics !== null && snapDropRipples !== undefined && snapDropRipples.length > 0 ? (
+            <SnapDropRipples
+              ripples={snapDropRipples}
+              cellPx={gridMetrics.cellPx}
+              gapPx={gridMetrics.gapPx}
+            />
+          ) : null}
+          <div
+            className="vela-grid-host"
+            style={{ gridTemplateColumns: `repeat(${placement.columns}, minmax(0, 1fr))` }}
+          >
+            {placement.items.map((item) => (
+              <DesktopItem
+                key={item.id}
+                item={item}
+                workspace={workspace}
+                arrange={arrange}
+                dragEnabled={dragEnabled}
+                metrics={null}
+                gridPitchPx={gridMetrics?.pitchPx ?? null}
+                gridColumns={placement.columns}
+                geometry="grid"
+                editingAppearance={appearanceEditingId === item.id}
+                selected={selectedIds.has(item.id)}
+                resizable={resizableIds.has(item.id)}
+                resizeActiveId={resizeActiveId}
+                onResizeCommit={onResizeCommit}
+                onResizeSessionChange={onResizeSessionChange}
+                onResizePreview={onResizePreview}
+                onItemSelect={onItemSelect}
+                onEntityContextMenu={onEntityContextMenu}
+                onOpenFolder={onOpenFolder}
+              />
+            ))}
+          </div>
         </div>
       </div>
     );

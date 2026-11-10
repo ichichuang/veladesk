@@ -71,6 +71,7 @@ export {
   canConvertGridToFreeform,
   canvasRectToGridGeometry,
   clampGridTranslation,
+  displaceGridOverlaps,
   firstFreeGridPlacement,
   findGridItem,
   freeformLayoutFromV1,

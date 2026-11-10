@@ -114,6 +114,43 @@
   gap: 4px;
 }
 
+/* ---------------------------------------------------------------------------
+ * Clock band (Helm r2): the desktop Helm clock's compact twin — one small
+ * centered landmark between the header and the category tabs. Decorative
+ * (aria-hidden at the source), never interactive, never scrolls.
+ * ---------------------------------------------------------------------------
+ */
+.vela-mobile-clockband {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 2px 12px 10px;
+  z-index: 2;
+}
+
+.vela-mobile-clockband .vela-helm-clock[data-variant="compact"] {
+  gap: 2px;
+}
+
+.vela-mobile-clockband .vela-helm-clock__time {
+  font-family: var(--vd-font-mono, var(--vd-font, ui-monospace, monospace));
+  font-variant-numeric: var(--vd-font-numeric, tabular-nums);
+  font-size: 30px;
+  font-weight: 240;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--vd-text, inherit);
+  text-shadow: var(--vd-label-shadow, none);
+}
+
+.vela-mobile-clockband .vela-helm-clock__date {
+  font-family: var(--vd-font, inherit);
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  color: var(--vd-text-muted, inherit);
+  text-shadow: var(--vd-label-shadow, none);
+}
+
 /* Icon-only header/dock buttons: ≥44px touch targets (§83). */
 .vela-mobile-icon-button {
   display: inline-flex;

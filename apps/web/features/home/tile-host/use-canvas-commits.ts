@@ -7,6 +7,7 @@ import {
   areCanvasLayoutsEqual,
   canvasCellSize,
   canConvertGridToFreeform,
+  displaceGridOverlaps,
   replaceCanvasItem,
   replaceGridItem,
   translateCanvasItems,
@@ -35,7 +36,7 @@ import {
 import type { ArrangeCanvasHistories } from "../../canvas/arrange-history";
 import { reconcileCanvasHandoff, resolveDisplayPlacement } from "../../canvas/canvas-handoff";
 import type { PendingCanvasHandoff } from "../../canvas/canvas-handoff";
-import { freeformRaisedPlacement } from "../../canvas/canvas-drag";
+import { freeformRaisedPlacement, settledGridDropPlacement } from "../../canvas/canvas-drag";
 import type { ResizeCommitGeometry } from "../../canvas/canvas-resize";
 import { resolvePlacementSwitch } from "./placement-switch-commit";
 import { stageWorkspaceAndTrySync } from "../workspace-commit";
@@ -301,9 +302,14 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
       if (areCanvasLayoutsEqual(movedPlacement, placementAtStart)) {
         return;
       }
-      // Freeform z-order (P1): the moved tiles rise to the top of the
-      // stacking order; snap mode never reorders.
-      commitCanvasEdit(pageId, freeformRaisedPlacement(movedPlacement, placementAtStart));
+      // Drop settlement (P1 freeform / Helm r2 grid): freeform raises the
+      // moved tiles in the stacking order; grid displaces any bystander the
+      // moved set landed on, so a drop can never stack two tiles in one cell.
+      const settled =
+        movedPlacement.mode === "grid"
+          ? settledGridDropPlacement(movedPlacement, placementAtStart)
+          : freeformRaisedPlacement(movedPlacement, placementAtStart);
+      commitCanvasEdit(pageId, settled);
     },
     [commitCanvasEdit, workspaceRef, pageIdRef]
   );
@@ -339,7 +345,15 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
         ) {
           return;
         }
-        commitCanvasEdit(pageId, replaceGridItem(placement, { id: entityId, ...geometry.geometry }));
+        // Helm r2 settle: a resize that swallows a neighbour displaces that
+        // neighbour to its nearest free cell, never stacks beneath the resize.
+        commitCanvasEdit(
+          pageId,
+          displaceGridOverlaps(
+            replaceGridItem(placement, { id: entityId, ...geometry.geometry }),
+            [entityId],
+          ),
+        );
         return;
       }
       if (geometry.kind !== "freeform") {
@@ -442,7 +456,10 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
       const ids = [...selectionRef.current];
       const moved =
         placement.mode === "grid"
-          ? translateGridItems(placement, ids, columnStep, rowStep)
+          ? displaceGridOverlaps(
+              translateGridItems(placement, ids, columnStep, rowStep),
+              ids,
+            )
           : (() => {
               const cell = canvasCellSize(page.layout.grid);
               const step = {

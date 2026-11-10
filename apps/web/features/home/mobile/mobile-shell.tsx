@@ -27,6 +27,7 @@ import { buildAppearanceTheme, resolveEffectiveColorMode } from "../appearance-t
 import { useSystemPrefersLight } from "../use-system-prefers-light";
 import { useDocumentColorScheme } from "../use-document-color-scheme";
 import { getBrowserAssetRuntime } from "../../assets/browser-assets";
+import { useI18n } from "../../i18n/use-i18n";
 import { launchApp } from "../launch-app";
 import { resolveDockEntities } from "../dock-model";
 import type { WorkspaceActiveSection } from "../workspace-active-section";
@@ -34,6 +35,7 @@ import { resolveMobileSectionItems } from "./mobile-section-items";
 import { swipePaneSlots } from "./mobile-swipe-model";
 import { useSectionSwipe } from "./use-mobile-section-swipe";
 import { MobileHeader } from "./mobile-header";
+import { HelmClock } from "../shell/helm-clock";
 import { MobileCategoryTabs, MOBILE_SECTION_PANEL_ID } from "./mobile-category-tabs";
 import { MobileAppGrid } from "./mobile-app-grid";
 import { MobileDock } from "./mobile-dock";
@@ -68,6 +70,7 @@ export function MobileShell({
 }) {
   const snapshot = workspace.snapshot;
   const reducedMotion = useVdReducedMotion();
+  const { locale } = useI18n();
 
   // --- Theme (shared resolver, no mobile preview state — §49) --------------
   const resolvedAppearance = useMemo(
@@ -168,6 +171,12 @@ export function MobileShell({
         onOpenSearch={() => setSearchOpen(true)}
         onOpenMenu={() => setMenuOpen(true)}
       />
+      {/* The Helm clock's compact twin (Helm r2): the same landmark the
+          desktop carries, shrunken — consumption stays glanceable without
+          adding a control. */}
+      <div className="vela-mobile-clockband" aria-hidden="true">
+        <HelmClock locale={locale} variant="compact" />
+      </div>
       <MobileCategoryTabs
         pages={snapshot.pages}
         activePageId={activePageId}

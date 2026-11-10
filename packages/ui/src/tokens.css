@@ -43,6 +43,14 @@
   --vd-alpha-raised: 0.78;
   --vd-color-bg-surface: oklch(0.22 0.03 255 / var(--vd-alpha-surface));
   --vd-color-bg-raised: oklch(0.27 0.03 255 / var(--vd-alpha-raised));
+  /*
+   * The DESKTOP TILE ground (Helm r2): lighter than a surface so the tile
+   * reads as glass over the scene, never a near-solid dark slab — the
+   * backdrop blur and the 1px inner highlight carry the material. Panels,
+   * bars and controls keep bg-surface/bg-raised.
+   */
+  --vd-alpha-tile: 0.44;
+  --vd-color-bg-tile: oklch(0.22 0.03 255 / var(--vd-alpha-tile));
   /* Opaque control wells (base / raised / hover / active). */
   --vd-color-bg-well: oklch(0.24 0.03 255);
   --vd-color-bg-well-raised: oklch(0.28 0.03 255);
@@ -299,6 +307,9 @@
   --vd-alpha-raised: 0.92;
   --vd-color-bg-surface: oklch(1 0 0 / var(--vd-alpha-surface));
   --vd-color-bg-raised: oklch(1 0 0 / var(--vd-alpha-raised));
+  /* 白昼海图 tile: mist glass keeps a whisper of the scene through it. */
+  --vd-alpha-tile: 0.68;
+  --vd-color-bg-tile: oklch(1 0 0 / var(--vd-alpha-tile));
   --vd-color-bg-well: oklch(0.955 0.008 250);
   --vd-color-bg-well-raised: oklch(0.92 0.01 250);
   --vd-color-bg-well-hover: oklch(0.895 0.012 250);
@@ -364,6 +375,7 @@
   --vd-blur-scene: 0px;
   --vd-alpha-surface: 1;
   --vd-alpha-raised: 1;
+  --vd-alpha-tile: 1;
 }
 
 /* 柔和 soft: blur ×0.6, surface alpha 0.82 (raised keeps its mode value). */
@@ -372,12 +384,14 @@
   --vd-blur-panel: 16.8px;
   --vd-blur-scene: 36px;
   --vd-alpha-surface: 0.82;
+  --vd-alpha-tile: 0.66;
 }
 
 [data-vd-ui][data-vd-color-mode="light"][data-vd-material="soft"] {
   --vd-blur-glass: 7.2px;
   --vd-blur-panel: 12px;
   --vd-blur-scene: 24px;
+  --vd-alpha-tile: 0.84;
 }
 
 /*

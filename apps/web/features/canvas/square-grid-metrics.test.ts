@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GridCanvasItem } from "@veladesk/canvas-engine";
 
 import {
+  GRID_CELL_MAX_PX,
   calculateSquareGridMetrics,
   gridContentHeightPx,
   gridContentRows,
@@ -52,6 +53,47 @@ describe("calculateSquareGridMetrics", () => {
       expect(Number.isFinite(metrics!.cellPx)).toBe(true);
       expect(metrics!.cellPx).toBeGreaterThan(0);
       expect(isSubpixelEqual(metrics!.cellPx, metrics!.cellPx)).toBe(true);
+    }
+  });
+
+  it("caps the cell at the Helm r2 spec ceiling on wide stages (96–112 band)", () => {
+    // 1600-class stage, 5 columns, 16px gap: the derived cell would be
+    // ~272px — the ceiling holds it at 112 and the content no longer fills
+    // the stage (the frame centers the narrower grid).
+    const capped = calculateSquareGridMetrics({
+      availableWidthPx: 1388,
+      columns: 5,
+      gapPx: 16,
+      maxCellPx: GRID_CELL_MAX_PX,
+    });
+    expect(capped).not.toBeNull();
+    expect(capped!.cellPx).toBe(GRID_CELL_MAX_PX);
+    expect(capped!.pitchPx).toBe(GRID_CELL_MAX_PX + 16);
+    expect(capped!.contentWidthPx).toBe(5 * GRID_CELL_MAX_PX + 4 * 16);
+    expect(capped!.contentWidthPx).toBeLessThan(1388);
+    // The ceiling is a real cap, not a floor: narrow stages keep shrinking
+    // below it, and the content still exactly refills the width.
+    const narrow = calculateSquareGridMetrics({
+      availableWidthPx: 600,
+      columns: 5,
+      gapPx: 16,
+      maxCellPx: GRID_CELL_MAX_PX,
+    });
+    expect(narrow).not.toBeNull();
+    expect(narrow!.cellPx).toBeCloseTo((600 - 4 * 16) / 5, 8);
+    expect(narrow!.contentWidthPx).toBeCloseTo(600, 6);
+  });
+
+  it("treats a non-finite or absent maxCellPx as no ceiling at all", () => {
+    for (const maxCellPx of [Number.POSITIVE_INFINITY, undefined] as const) {
+      const metrics = calculateSquareGridMetrics({
+        availableWidthPx: 1388,
+        columns: 5,
+        gapPx: 16,
+        ...(maxCellPx === undefined ? {} : { maxCellPx }),
+      });
+      expect(metrics).not.toBeNull();
+      expect(metrics!.cellPx).toBeCloseTo((1388 - 4 * 16) / 5, 8);
     }
   });
 

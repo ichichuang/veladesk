@@ -1,6 +1,7 @@
 import {
   clampCanvasTranslation,
   clampGridTranslation,
+  displaceGridOverlaps,
   raiseCanvasItems,
   translateCanvasItems,
   translateGridItems,
@@ -147,4 +148,36 @@ export function freeformRaisedPlacement(
     })
     .filter((id): id is string => id !== null);
   return raiseCanvasItems(movedPlacement, movedIds) as PagePlacement;
+}
+
+/**
+ * The GRID drop's settle commit (Helm r2): the dragged tiles keep exactly
+ * the cells the target feedback showed, while every bystander they landed
+ * on is displaced to its nearest free cell by the engine — a Grid drop can
+ * never end with two tiles stacked in one cell. Pure: the moved set's
+ * geometry is untouched, only overlapped bystanders relocate.
+ */
+export function settledGridDropPlacement(
+  movedPlacement: PagePlacement,
+  placementAtStart: PagePlacement,
+): PagePlacement {
+  if (movedPlacement.mode !== "grid" || placementAtStart.mode !== "grid") {
+    return movedPlacement;
+  }
+  const startById = new Map(
+    placementAtStart.items.map((item) => [item.id, item] as const),
+  );
+  const movedIds = movedPlacement.items
+    .filter((item) => {
+      const before = startById.get(item.id);
+      return (
+        before === undefined ||
+        before.column !== item.column ||
+        before.row !== item.row ||
+        before.columnSpan !== item.columnSpan ||
+        before.rowSpan !== item.rowSpan
+      );
+    })
+    .map((item) => item.id);
+  return displaceGridOverlaps(movedPlacement, movedIds);
 }

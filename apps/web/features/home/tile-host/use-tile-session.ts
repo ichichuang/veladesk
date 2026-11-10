@@ -17,6 +17,7 @@ import type { LayoutItemId } from "@veladesk/desktop-engine";
 import { resolveDragItemIds } from "../../desktop-grid/group-drag";
 import { useCanvasDrag } from "../../canvas/use-canvas-drag";
 import { useCanvasMetrics } from "../../canvas/use-canvas-metrics";
+import { GRID_CELL_MAX_PX } from "../../canvas/square-grid-metrics";
 import { useSquareGridMetrics } from "../../canvas/use-square-grid-metrics";
 import type { GridItemGeometry } from "../../canvas/canvas-resize";
 import { scopedToLayer } from "../section-layer-query";
@@ -155,13 +156,16 @@ export function useTileSession(input: UseTileSessionInput) {
   // --- Metrics ---------------------------------------------------------------
   // Freeform measures the canvas box; Grid measures the stage width and
   // derives the square cells. Both hooks run unconditionally; their refs
-  // only attach to whichever model the active section renders.
+  // only attach to whichever model the active section renders. The Grid
+  // cell carries the Helm r2 ceiling (96–112 spec band): wide stages cap
+  // at GRID_CELL_MAX_PX and the centered frame carries the breathing room.
   const { canvasRef, metrics: freeformMetrics } = useCanvasMetrics();
   const activeColumns =
     displayPlacement !== null && displayPlacement.mode === "grid" ? displayPlacement.columns : 0;
   const { stageRef: gridStageRef, metrics: gridMetrics } = useSquareGridMetrics(
     activeColumns,
     displayGapPx,
+    GRID_CELL_MAX_PX,
   );
 
   // --- Grid target-slot feedback (task 017-B) ---------------------------------

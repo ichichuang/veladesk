@@ -809,13 +809,16 @@
 }
 
 /* The scalable BAND wrapper: the Dawn opening rises from scaleY 0 at the
-   waterline; transform-origin is the horizon itself. */
+   waterline; transform-origin is the horizon itself. Helm r2 pins the band
+   to the bottom quarter of the frame — the waterline (and its bloom) stays
+   in the picture's lower third, clear of the vertically centered tile grid
+   (Helm r2 direction: the light may never cut a bright line across tiles). */
 .vela-dawn-horizon__band {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 34%;
+  height: 24%;
   transform-origin: 50% 100%;
 }
 
@@ -894,9 +897,10 @@
 }
 
 /* The waterline: one hairline highlight where the light band meets the
-   ground — the only crisp edge the horizon is allowed — at full dawn
-   brightness against the darkened sea just below, with a tight warm
-   bloom: the sun's first light on the water. */
+   ground — the only crisp edge the horizon is allowed — at dawn
+   brightness against the darkened sea just below, with a soft warm bloom.
+   Helm r2 keeps the bloom diffuse (no hard glow): tiles that DO reach the
+   band must see the light softened behind their glass, never a lit blade. */
 .vela-dawn-horizon__band::after {
   content: "";
   position: absolute;
@@ -907,11 +911,11 @@
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in oklab, var(--vd-color-dawn-1) 100%, transparent) 38%,
-    color-mix(in oklab, var(--vd-color-dawn-1) 72%, transparent) 58%,
+    color-mix(in oklab, var(--vd-color-dawn-1) 88%, transparent) 38%,
+    color-mix(in oklab, var(--vd-color-dawn-1) 62%, transparent) 58%,
     transparent
   );
-  box-shadow: 0 1px 14px 2px color-mix(in oklab, var(--vd-color-dawn-1) 55%, transparent);
+  box-shadow: 0 1px 18px 3px color-mix(in oklab, var(--vd-color-dawn-1) 38%, transparent);
 }
 
 /* The opening BURST: the bright band the Dawn timeline raises; it sits at
@@ -1626,14 +1630,48 @@
 
 /*
  * The square-cell Grid stage: the scroller's content box sizes it, the
- * square cell metrics derive from its width. min-height keeps empty grid
- * pages filling the visible content height, and the arrange-mode visible
- * grid is the SVG slot overlay (never marker nodes, never a pointer
- * target — pointer-events:none).
+ * square cell metrics derive from its width. Since Helm r2 the cell is
+ * CAPPED (96–112px spec band), so the content may be narrower and shorter
+ * than the stage — the stage is a flex column and the frame below centers
+ * in it (both axes), keeping the grid in the available area with real
+ * breathing room. Over-long content top-aligns and scrolls as before
+ * (auto margins collapse to 0 when there is no free space). min-height
+ * keeps empty grid pages filling the visible content height, and the
+ * arrange-mode visible grid is the SVG slot overlay (never marker nodes,
+ * never a pointer target — pointer-events:none).
  */
 .vela-grid-stage {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 100%;
+}
+
+/*
+ * The centered grid FRAME: shrink-wraps to the metrics' content width
+ * (columns·cell + gaps) and centers horizontally; `margin-block: auto`
+ * over the flex-column stage centers it vertically when it fits. The
+ * overlays (slot lattice, target feedback, drop ripples) are positioned
+ * inside the FRAME, so their origin is always the tiles' origin however
+ * far the content is inset. An empty page keeps a full-height frame so
+ * the arrange lattice still paints the whole area.
+ */
+.vela-grid-frame {
+  position: relative;
+  width: min(100%, var(--vd-grid-content-width, 100%));
+  margin-inline: auto;
+  margin-block: auto;
+}
+
+/*
+ * An empty page keeps a FULL-HEIGHT frame so the arrange lattice still
+ * paints the whole visible area. `flex: 1`, not `min-height: 100%`: the
+ * stage is a flex column whose height is itself min-height-driven, and a
+ * percentage min-height on the flex item resolves to 0 against it.
+ */
+.vela-grid-frame[data-grid-empty="true"] {
+  flex: 1;
+  margin-block: 0;
 }
 
 .vela-grid-host {
@@ -2108,11 +2146,12 @@ button.vela-sync-status:focus-visible {
   container-type: size;
   border: 1px solid var(--vd-color-border-hairline);
   border-radius: clamp(8px, 22cqmin, 26px);
-  background: var(--vd-color-bg-surface);
+  /* Helm r2: folders ride the SAME tile glass as app tiles. */
+  background: var(--vd-color-bg-tile);
   backdrop-filter: blur(var(--vd-blur-glass));
   -webkit-backdrop-filter: blur(var(--vd-blur-glass));
   box-shadow:
-    inset 0 1px 0 var(--vd-color-border-highlight),
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 46%, transparent),
     var(--vd-shadow-tile);
 }
 
@@ -2127,10 +2166,12 @@ button.vela-sync-status:focus-visible {
     var(--vd-shadow-tile);
 }
 
+/* Helm r2: the folder glyph rides its glass tile at the same optical scale
+   as the app plates (≈48cqmin ≈ the plate share of the tile). */
 .vela-canvas .vela-item__icon--folder svg,
 .vela-grid-host .vela-item__icon--folder svg {
-  width: min(58cqmin, 180px);
-  height: min(58cqmin, 180px);
+  width: min(48cqmin, 180px);
+  height: min(48cqmin, 180px);
 }
 
 /*
@@ -2156,10 +2197,12 @@ button.vela-sync-status:focus-visible {
 }
 
 /* Folder tiles on the DESKTOP hosts keep the responsive cqmin upgrade of
-   the legacy baseline. Purely presentational — a label never sizes a
-   track or a rect. */
-.vela-canvas .vela-item__label,
-.vela-grid-host .vela-item__label {
+   the legacy baseline. Scoped to [data-kind="folder"] (Helm r2): the
+   unscoped selector sat AFTER the adaptive content rule and silently
+   overrode the resolver's label size for APP tiles too. Purely
+   presentational — a label never sizes a track or a rect. */
+.vela-canvas .vela-item[data-kind="folder"] .vela-item__label,
+.vela-grid-host .vela-item[data-kind="folder"] .vela-item__label {
   font-size: clamp(9px, 14cqmin, 24px);
 }
 
@@ -2234,9 +2277,10 @@ button.vela-sync-status:focus-visible {
 
 /*
  * Glass-tile content color (Helm first picture): the label always rides the
- * GLASS, so it follows the mode foreground; only a custom per-app
- * foreground reaches the glyphs, through the plate's own color (the badge
- * rule above keeps its light fallback for the saturated dawn wash).
+ * GLASS, so it follows the mode foreground; the glyph default is the Helm
+ * r2 SOFTENED foreground (≈86% of the mode fg) so the solid brand
+ * silhouettes stop reading heavier than the favicons — one visual weight
+ * for the whole family. A custom per-app foreground still wins.
  */
 .vela-canvas .vela-app-content,
 .vela-grid-host .vela-app-content {
@@ -2245,7 +2289,10 @@ button.vela-sync-status:focus-visible {
 
 .vela-canvas .vela-app-content__icon,
 .vela-grid-host .vela-app-content__icon {
-  color: var(--vd-app-icon-fg, var(--vd-text));
+  color: var(
+    --vd-app-icon-fg,
+    color-mix(in oklab, var(--vd-color-fg-primary) 86%, transparent)
+  );
 }
 
 /*
@@ -2278,21 +2325,23 @@ button.vela-sync-status:focus-visible {
 .vela-grid-host .vela-app-icon--surface[data-decoration="solid"],
 .vela-grid-host .vela-app-icon--surface[data-decoration="glass"] {
   border: 1px solid color-mix(in oklab, var(--vd-color-fg-primary) 20%, transparent);
-  /* Round 3: the glass LIGHTS — a diagonal specular sheen from the upper
-     left over the translucent ground, and a warm inner underglow at the
-     bottom edge: the dawn lighting every tile from the horizon. */
+  /* Helm r2 glass: the TILE-ALPHA token ground (lighter than a surface —
+     the tile must read as glass over the scene, never a dark slab), the
+     backdrop blur, a diagonal specular sheen from the upper left and a
+     warm inner underglow at the bottom edge: the dawn lighting every tile
+     from the horizon. */
   background:
     linear-gradient(
       165deg,
       color-mix(in oklab, var(--vd-color-fg-primary) 14%, transparent),
       transparent 40%
     ),
-    var(--vd-color-bg-surface);
+    var(--vd-color-bg-tile);
   backdrop-filter: blur(var(--vd-blur-glass));
   -webkit-backdrop-filter: blur(var(--vd-blur-glass));
   box-shadow:
-    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 38%, transparent),
-    inset 0 -20px 32px -16px color-mix(in oklab, var(--vd-color-dawn-1) 50%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 52%, transparent),
+    inset 0 -22px 34px -16px color-mix(in oklab, var(--vd-color-dawn-1) 48%, transparent),
     var(--vd-shadow-tile);
   /* Border/shadow responses are paint-only — the transform stays owned by
      the GSAP hover lift on .vela-item__body (never transitioned here). */
@@ -2332,12 +2381,13 @@ button.vela-sync-status:focus-visible {
 }
 
 /*
- * The icon PLATE: the rounded base the glyph sits on — favicons and
- * monochrome brand glyphs get a neutral well so even noisy icons read as
- * one family; generated initials get the Auto dawn-wash badge (low
- * saturation, theme-coordinated). A custom --vd-app-icon-bg/fg (per-app
- * appearance) paints the plate instead — the feature lives, at plate
- * scale.
+ * The icon PLATE (Helm r2 unification): every icon kind — favicon,
+ * monochrome brand glyph, generated monogram — rides the SAME
+ * semi-transparent rounded well plate, so the whole grid reads as one
+ * family at one visual weight (the old saturated Auto badge for
+ * monograms is retired at tile scale). A custom --vd-app-icon-bg/fg
+ * (per-app appearance) still paints the plate outright — the feature
+ * lives, at plate scale.
  */
 .vela-canvas .vela-app-content__icon,
 .vela-grid-host .vela-app-content__icon {
@@ -2347,34 +2397,30 @@ button.vela-sync-status:focus-visible {
     box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
-/* Real glyphs (library SVGs, uploaded images): the neutral well plate —
-   round 2 firms it up (well 64% + a brighter inner rim) so favicons and
-   monochrome brand glyphs read as ONE family next to the Auto badges. */
 .vela-canvas .vela-app-content__icon[data-icon-kind="library"],
 .vela-canvas .vela-app-content__icon[data-icon-kind="image"],
+.vela-canvas .vela-app-content__icon[data-icon-kind="generated"],
 .vela-grid-host .vela-app-content__icon[data-icon-kind="library"],
-.vela-grid-host .vela-app-content__icon[data-icon-kind="image"] {
+.vela-grid-host .vela-app-content__icon[data-icon-kind="image"],
+.vela-grid-host .vela-app-content__icon[data-icon-kind="generated"] {
+  /* The well at 64% presence: translucent enough to sit IN the glass,
+     still a step lighter than the tile ground so the plate READS. */
   background: var(
     --vd-app-icon-bg,
     color-mix(in oklab, var(--vd-color-bg-well) 64%, transparent)
   );
-  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 18%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 24%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, var(--vd-color-fg-primary) 6%, transparent);
 }
 
-/* Generated initials: the Auto badge — the dawn horizon's own wash at low
-   saturation, a monochrome glyph riding it. */
+/* Text monograms are the optically LIGHTEST glyphs in the family (thin
+   strokes against solid brand silhouettes), so they keep the FULL mode
+   foreground — the Helm r2 weight unification is about the plates and the
+   solid-glyph softening above, never about making text faint. */
 .vela-canvas .vela-app-content__icon[data-icon-kind="generated"],
 .vela-grid-host .vela-app-content__icon[data-icon-kind="generated"] {
-  background: var(
-    --vd-app-icon-bg,
-    linear-gradient(
-      150deg,
-      color-mix(in oklab, var(--vd-color-dawn-3) 46%, var(--vd-color-bg-deep)),
-      color-mix(in oklab, var(--vd-color-accent) 22%, var(--vd-color-bg-deep))
-    )
-  );
-  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 16%, transparent);
-  color: var(--vd-app-icon-fg, oklch(0.96 0.01 250));
+  color: var(--vd-app-icon-fg, var(--vd-text));
 }
 
 /* "none" decoration: glyph straight on the glass, no plate at all. */
@@ -2427,6 +2473,21 @@ button.vela-sync-status:focus-visible {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/*
+ * Helm r2 plate inset: on the DESKTOP hosts the plate is a real base the
+ * glyph sits ON, so the glyph breathes at ~82% inside it — a spec 1×1 cell
+ * plates a 44–48px glyph, never an edge-to-edge silhouette. The pinned
+ * 100% contract above still serves the preview and any host without
+ * plates.
+ */
+.vela-canvas .vela-app-content__icon .vela-app-icon__glyph,
+.vela-canvas .vela-app-content__icon .vela-app-icon__image,
+.vela-grid-host .vela-app-content__icon .vela-app-icon__glyph,
+.vela-grid-host .vela-app-content__icon .vela-app-icon__image {
+  width: 82%;
+  height: 82%;
 }
 
 /* Generated text: the resolver's optical size (code-point aware). The

@@ -5,6 +5,7 @@ import {
   canConvertGridToFreeform,
   canvasRectToGridGeometry,
   clampGridTranslation,
+  displaceGridOverlaps,
   firstFreeGridPlacement,
   freeformLayoutFromV1,
   gridItemToCanvasRect,
@@ -250,6 +251,98 @@ describe("firstFreeGridPlacement", () => {
     expect(
       firstFreeGridPlacement(layout, { columnSpan: 1, rowSpan: 1 }, { column: 1, row: 0 }),
     ).toEqual({ column: 2, row: 0 });
+  });
+});
+
+describe("displaceGridOverlaps — the Helm r2 drop settle", () => {
+  it("keeps the dropped set exactly where it landed and hops the bystander aside", () => {
+    // "m" is dropped onto "b" (1,0).
+    const landed = grid([gitem("a", 0, 0), gitem("b", 1, 0), gitem("m", 1, 0), gitem("c", 2, 0)]);
+    const settled = displaceGridOverlaps(landed, ["m"]);
+    expect(settled.items.find((item) => item.id === "m")).toEqual(gitem("m", 1, 0));
+    // "b" scans from its own origin: (1,0) is taken, (2,0) is taken → (3,0).
+    expect(settled.items.find((item) => item.id === "b")).toEqual(gitem("b", 3, 0));
+    expect(settled.items.find((item) => item.id === "a")).toEqual(gitem("a", 0, 0));
+    expect(settled.items.find((item) => item.id === "c")).toEqual(gitem("c", 2, 0));
+  });
+
+  it("returns the input reference when nothing overlaps the settled set", () => {
+    const landed = grid([gitem("a", 0, 0), gitem("m", 1, 0)]);
+    expect(displaceGridOverlaps(landed, ["m"])).toBe(landed);
+  });
+
+  it("displaces a bystander that only PARTIALLY overlaps a settled span", () => {
+    // "m" (2×2 at 0,0) swallows the cells of "b" (1,0) and "c" (0,1).
+    const landed = grid([
+      gitem("b", 1, 0),
+      gitem("c", 0, 1),
+      gitem("m", 0, 0, 2, 2),
+      gitem("d", 2, 0),
+    ]);
+    const settled = displaceGridOverlaps(landed, ["m"]);
+    const byId = new Map(settled.items.map((item) => [item.id, item]));
+    expect(byId.get("m")).toEqual(gitem("m", 0, 0, 2, 2));
+    // "b" scans from (1,0): (2,0) taken by d, (3,0) free.
+    expect(byId.get("b")).toEqual(gitem("b", 3, 0));
+    // "c" scans from (0,1): (1,1) is inside m, (2,1) free.
+    expect(byId.get("c")).toEqual(gitem("c", 2, 1));
+    expect(byId.get("d")).toEqual(gitem("d", 2, 0));
+  });
+
+  it("keeps a displaced item's SPAN and scans around the settled set", () => {
+    // 8 columns; row 0 is full; "m" lands on "f" (6,0).
+    const landed = grid([
+      gitem("a", 0, 0), gitem("b", 1, 0), gitem("c", 2, 0),
+      gitem("d", 4, 0, 2, 1), gitem("f", 6, 0, 2, 2),
+      gitem("m", 6, 0),
+    ], 8);
+    const settled = displaceGridOverlaps(landed, ["m"]);
+    const f = settled.items.find((item) => item.id === "f");
+    // "f" keeps its 2×2 span; from its origin (6,0) nothing fits in row 0,
+    // so the scan continues row-major and lands at (0,1).
+    expect(f).toEqual(gitem("f", 0, 1, 2, 2));
+  });
+
+  it("settles a whole moved GROUP rigidly (each bystander resolves once)", () => {
+    // "x" and "y" both move onto "b" and "c".
+    const landed = grid([
+      gitem("b", 0, 0), gitem("c", 1, 0),
+      gitem("x", 0, 0), gitem("y", 1, 0),
+    ]);
+    const settled = displaceGridOverlaps(landed, ["x", "y"]);
+    const byId = new Map(settled.items.map((item) => [item.id, item]));
+    expect(byId.get("x")).toEqual(gitem("x", 0, 0));
+    expect(byId.get("y")).toEqual(gitem("y", 1, 0));
+    // "b" and "c" relocate in array order, each against the working layout.
+    expect(byId.get("b")).toEqual(gitem("b", 2, 0));
+    expect(byId.get("c")).toEqual(gitem("c", 3, 0));
+  });
+
+  it("never produces a final layout with two items sharing a cell", () => {
+    const landed = grid([
+      gitem("a", 0, 0, 2, 2), gitem("m", 0, 0, 2, 2), gitem("b", 1, 1),
+    ]);
+    const settled = displaceGridOverlaps(landed, ["m"]);
+    for (const one of settled.items) {
+      for (const other of settled.items) {
+        if (one.id === other.id) continue;
+        const overlaps =
+          one.column < other.column + other.columnSpan &&
+          other.column < one.column + one.columnSpan &&
+          one.row < other.row + other.rowSpan &&
+          other.row < one.row + one.rowSpan;
+        expect(overlaps, `${one.id} vs ${other.id}`).toBe(false);
+      }
+    }
+  });
+
+  it("leaves the settled set's own geometry untouched even if it predates the settle", () => {
+    // Pre-existing overlap between two NON-settled items is none of this
+    // pass's business: only bystanders under the settled set move.
+    const landed = grid([gitem("a", 0, 0), gitem("b", 0, 0), gitem("m", 3, 3)]);
+    const settled = displaceGridOverlaps(landed, ["m"]);
+    expect(settled.items.find((item) => item.id === "a")).toEqual(gitem("a", 0, 0));
+    expect(settled.items.find((item) => item.id === "b")).toEqual(gitem("b", 0, 0));
   });
 });
 

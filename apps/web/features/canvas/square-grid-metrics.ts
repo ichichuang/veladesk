@@ -10,16 +10,31 @@ import type { GridCanvasItem } from "@veladesk/canvas-engine";
  *
  *   cellPx = (availableWidthPx - gapPx * (columns - 1)) / columns
  *
- * Everything the browser needs (drag pitch, resize pitch, content height,
- * the visible grid pattern) comes from cellPx + gapPx. These helpers are
- * pure: React rendering only consumes them, never computes them.
+ * The spec baseline (visual-directions A: 1×1 基准 96px) caps how large a
+ * cell may grow on wide stages: `cellPx` clamps to `maxCellPx`, and the
+ * content then no longer fills the stage — the frame centers it (see
+ * home-shell.css). Everything the browser needs (drag pitch, resize pitch,
+ * content height, the visible grid pattern) comes from cellPx + gapPx.
+ * These helpers are pure: React rendering only consumes them, never
+ * computes them.
  */
+
+/**
+ * The Helm r2 tile ceiling: a 1×1 tile never exceeds 112 CSS px (spec
+ * band 96–112); narrow stages still shrink the cell below it.
+ */
+export const GRID_CELL_MAX_PX = 112;
 
 /** Inputs of {@link calculateSquareGridMetrics}. */
 export interface SquareGridMetricsArgs {
   readonly availableWidthPx: number;
   readonly columns: number;
   readonly gapPx: number;
+  /**
+   * Ceiling for `cellPx` (spec baseline). Omit (or pass +Infinity) to let
+   * the derived size fill the whole stage width, the pre-r2 behavior.
+   */
+  readonly maxCellPx?: number;
 }
 
 /** The physical geometry of one rendered Grid. */
@@ -28,7 +43,11 @@ export interface SquareGridMetrics {
   readonly cellPx: number;
   /** Distance between two cell origins: cellPx + gapPx. */
   readonly pitchPx: number;
-  /** columns * cellPx + (columns - 1) * gapPx — equals availableWidthPx. */
+  /**
+   * columns * cellPx + (columns - 1) * gapPx — equals availableWidthPx while
+   * the cell is width-derived; below it once `maxCellPx` clamps (the frame
+   * centers the narrower content).
+   */
   readonly contentWidthPx: number;
   /** The persisted gap input, echoed for style consumption. */
   readonly gapPx: number;
@@ -41,7 +60,7 @@ export interface SquareGridMetrics {
 export function calculateSquareGridMetrics(
   args: SquareGridMetricsArgs,
 ): SquareGridMetrics | null {
-  const { availableWidthPx, columns, gapPx } = args;
+  const { availableWidthPx, columns, gapPx, maxCellPx } = args;
 
   if (
     !Number.isFinite(availableWidthPx) ||
@@ -54,7 +73,12 @@ export function calculateSquareGridMetrics(
     return null;
   }
 
-  const cellPx = (availableWidthPx - gapPx * (columns - 1)) / columns;
+  const derived = (availableWidthPx - gapPx * (columns - 1)) / columns;
+  const ceiling =
+    maxCellPx === undefined || !Number.isFinite(maxCellPx)
+      ? Number.POSITIVE_INFINITY
+      : Math.max(1, maxCellPx);
+  const cellPx = Math.min(derived, ceiling);
 
   if (!Number.isFinite(cellPx) || cellPx <= 0) {
     return null;

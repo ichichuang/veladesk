@@ -209,6 +209,24 @@ describe("adaptive app content layout (019-B)", () => {
     expect(wide.mode).toBe("inline");
     expect(tall.mode).toBe("stack");
   });
+
+  it("plates the Helm r2 spec baseline: 96–112px cell, 13px label, glyph share", () => {
+    // The Helm r2 tile retune: a spec 1×1 cell (96–112px) plates its icon
+    // at ~50–58px (the glyph then insets to ~44–48px on the plate) and
+    // keeps the title at the 13px Helm label size.
+    for (const side of [96, 104, 112]) {
+      const layout = resolve(side, side);
+      expect(layout.mode, `${side}px cell`).toBe("stack");
+      expect(layout.iconBoxSize).toBeGreaterThanOrEqual(side * 0.5 - 0.51);
+      expect(layout.iconBoxSize).toBeLessThanOrEqual(side * 0.55 + 0.51);
+      expect(layout.labelFontSize).toBeGreaterThanOrEqual(side * 0.12 - 0.51);
+      expect(layout.labelFontSize).toBeLessThanOrEqual(side * 0.135 + 0.51);
+    }
+    // The named anchors: 104px cell → 13px label, ~54px plate.
+    const anchor = resolve(104, 104);
+    expect(anchor.labelFontSize).toBeCloseTo(13, 1);
+    expect(anchor.iconBoxSize).toBeCloseTo(54, 1);
+  });
 });
 
 describe("generated-text optical sizing (019-B §7)", () => {

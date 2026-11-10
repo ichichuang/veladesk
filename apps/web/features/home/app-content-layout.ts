@@ -25,22 +25,23 @@ import type { AppShortcut } from "@veladesk/domain";
 export const INLINE_ASPECT_THRESHOLD = 1.55;
 
 /**
- * Share of the smaller side used by the icon box in stack mode, before
- * the available-space bound. 0.62 keeps the historical desktop glyph
- * share (a 1×1 cell painted its glyph at 62cqmin).
+ * Share of the smaller side used by the icon box (the plate) in stack
+ * mode, before the available-space bound. 0.52 is the Helm r2 retune: the
+ * glyph no longer fills the tile — a spec-baseline 1×1 cell (96–112px)
+ * plates its icon at ~50–58px with the glyph inset inside the plate.
  */
-const STACK_ICON_SHARE = 0.62;
+const STACK_ICON_SHARE = 0.52;
 /** Icon box share in inline mode — a landscape strip may use more height. */
-const INLINE_ICON_SHARE = 0.8;
+const INLINE_ICON_SHARE = 0.72;
 /** Icon box share in solo mode (no title strip to reserve space for). */
-const SOLO_ICON_SHARE = 0.68;
+const SOLO_ICON_SHARE = 0.56;
 
 /**
- * Title font size = LABEL_FONT_SHARE × the smaller side, clamped. 0.145
- * keeps a default 1×1 cell (≈90px) at the historical ~13px desktop
- * label; the caps keep 3×3 restrained and tiny cells readable.
+ * Title font size = LABEL_FONT_SHARE × the smaller side, clamped. 0.125
+ * puts a spec-baseline 1×1 cell (96–112px) at the 13px Helm label; the
+ * caps keep 3×3 restrained and tiny cells readable.
  */
-const LABEL_FONT_SHARE = 0.145;
+const LABEL_FONT_SHARE = 0.125;
 const LABEL_FONT_MIN_PX = 10;
 const LABEL_FONT_MAX_PX = 30;
 const LABEL_LINE_HEIGHT_FACTOR = 1.25;

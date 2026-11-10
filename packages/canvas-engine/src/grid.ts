@@ -248,6 +248,58 @@ export function translateGridItems(
   };
 }
 
+/**
+ * Settles a Grid canvas after a COMMITTED geometry edit: the items in
+ * `settledIds` (the moved/dragged/resized set) keep exactly the geometry the
+ * gesture produced — the target-slot feedback the user saw is never
+ * rewritten — while every OTHER item that now sits under one of them is
+ * displaced to the first row-major free location scanned from its own
+ * origin (so a bystander hops aside, never across the canvas).
+ *
+ * This is the COMMIT-side policy that keeps "overlap stays legal" from
+ * becoming "two tiles stacked in one cell": the pure translation/resize
+ * primitives above still permit overlap during a gesture (previews must
+ * show the raw landing), and this pass runs once at commit. Displacement
+ * preserves each item's span, processes bystanders in array order against
+ * the working layout (already-displaced items included), and a layout with
+ * no bystander overlap returns the input reference.
+ */
+export function displaceGridOverlaps(
+  layout: GridCanvasLayoutV2,
+  settledIds: readonly string[],
+): GridCanvasLayoutV2 {
+  const settled = new Set(settledIds);
+  let next = layout;
+  let changed = false;
+
+  for (const item of layout.items) {
+    if (settled.has(item.id)) {
+      continue;
+    }
+    const overlapped = next.items.some(
+      (other) => other.id !== item.id && settled.has(other.id) && cellsOverlap(item, other),
+    );
+    if (!overlapped) {
+      continue;
+    }
+    // Scan against the layout WITHOUT this item so its own cell does not
+    // block the nearest free location (which may be the very next cell).
+    const without = {
+      ...next,
+      items: next.items.filter((candidate) => candidate.id !== item.id),
+    };
+    const position = firstFreeGridPlacement(
+      without,
+      { columnSpan: item.columnSpan, rowSpan: item.rowSpan },
+      { column: item.column, row: item.row },
+    );
+    next = replaceGridItem(next, { ...item, ...position });
+    changed = true;
+  }
+
+  return changed ? next : layout;
+}
+
 /** The rigid delta a group drag may apply, after bounds clamping. */
 export function clampGridTranslation(
   layout: GridCanvasLayoutV2,

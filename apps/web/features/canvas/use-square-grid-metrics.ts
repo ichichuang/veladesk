@@ -13,11 +13,17 @@ import type { SquareGridMetrics } from "./square-grid-metrics";
  *
  * The stage fills the section scroller's content width, and the scroller
  * keeps a stable scrollbar gutter, so `clientWidth` does not change when a
- * scrollbar appears. Metrics state is only replaced when a value actually
+ * scrollbar appears. `maxCellPx` caps how large the derived cell may grow —
+ * on wide stages the capped content centers inside the stage instead of
+ * filling it. Metrics state is only replaced when a value actually
  * changed, so re-measuring can never cause a render loop. The column count
  * is persistent layout structure — it is NEVER recomputed from the width.
  */
-export function useSquareGridMetrics(columns: number, gapPx: number): {
+export function useSquareGridMetrics(
+  columns: number,
+  gapPx: number,
+  maxCellPx?: number,
+): {
   stageRef: (node: HTMLDivElement | null) => void;
   metrics: SquareGridMetrics | null;
 } {
@@ -34,6 +40,7 @@ export function useSquareGridMetrics(columns: number, gapPx: number): {
         availableWidthPx: node.clientWidth,
         columns,
         gapPx,
+        ...(maxCellPx === undefined ? {} : { maxCellPx }),
       });
       setMetrics((previous) =>
         previous !== null &&
@@ -50,7 +57,7 @@ export function useSquareGridMetrics(columns: number, gapPx: number): {
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [node, columns, gapPx]);
+  }, [node, columns, gapPx, maxCellPx]);
 
   return { stageRef: setNode, metrics };
 }

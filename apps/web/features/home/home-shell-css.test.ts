@@ -115,6 +115,67 @@ describe("home-shell.css geometry contract (task 017)", () => {
     expect(host).toMatch(/gap:\s*var\(--vd-grid-gap\)/);
   });
 
+  it("centers the capped grid in the stage via the frame (Helm r2)", () => {
+    const stage = ruleBlock(".vela-grid-stage");
+    expect(stage).toMatch(/display:\s*flex/);
+    expect(stage).toMatch(/flex-direction:\s*column/);
+    const frame = ruleBlock(".vela-grid-frame");
+    // The frame shrink-wraps to the metrics content width and centers on
+    // BOTH axes; the overlays inside it share the tiles' origin.
+    expect(frame).toMatch(/position:\s*relative/);
+    expect(frame).toMatch(/width:\s*min\(100%,\s*var\(--vd-grid-content-width,\s*100%\)\)/);
+    expect(frame).toMatch(/margin-inline:\s*auto/);
+    expect(frame).toMatch(/margin-block:\s*auto/);
+  });
+
+  it("grounds the desktop tile on the tile-glass token, never a solid slab (Helm r2)", () => {
+    const tile = ruleBlock(
+      [
+        ".vela-canvas .vela-app-icon--surface[data-decoration=\"gradient\"]",
+        ".vela-canvas .vela-app-icon--surface[data-decoration=\"solid\"]",
+        ".vela-canvas .vela-app-icon--surface[data-decoration=\"glass\"]",
+        ".vela-grid-host .vela-app-icon--surface[data-decoration=\"gradient\"]",
+        ".vela-grid-host .vela-app-icon--surface[data-decoration=\"solid\"]",
+        ".vela-grid-host .vela-app-icon--surface[data-decoration=\"glass\"]",
+      ].join(", "),
+    );
+    expect(tile).toMatch(/var\(--vd-color-bg-tile\)/);
+    expect(tile).toMatch(/backdrop-filter:\s*blur\(var\(--vd-blur-glass\)\)/);
+    // The 1px inner top highlight is part of the material.
+    expect(tile).toMatch(/inset 0 1px 0/);
+    const folder = ruleBlock(
+      ".vela-canvas .vela-item__icon--folder, .vela-grid-host .vela-item__icon--folder",
+    );
+    expect(folder).toMatch(/var\(--vd-color-bg-tile\)/);
+  });
+
+  it("plates every desktop icon kind on ONE translucent well (Helm r2)", () => {
+    const plate = ruleBlock(
+      [
+        ".vela-canvas .vela-app-content__icon[data-icon-kind=\"library\"]",
+        ".vela-canvas .vela-app-content__icon[data-icon-kind=\"image\"]",
+        ".vela-canvas .vela-app-content__icon[data-icon-kind=\"generated\"]",
+        ".vela-grid-host .vela-app-content__icon[data-icon-kind=\"library\"]",
+        ".vela-grid-host .vela-app-content__icon[data-icon-kind=\"image\"]",
+        ".vela-grid-host .vela-app-content__icon[data-icon-kind=\"generated\"]",
+      ].join(", "),
+    );
+    expect(plate).toMatch(/var\(\s*--vd-app-icon-bg,/);
+    // The retired saturated monogram badge must not come back.
+    expect(css).not.toMatch(/vela-app-content__icon\[data-icon-kind="generated"\][^{]*\{[^}]*dawn-3/);
+    // The glyph insets on the desktop plate instead of running edge-to-edge.
+    const inset = ruleBlock(
+      [
+        ".vela-canvas .vela-app-content__icon .vela-app-icon__glyph",
+        ".vela-canvas .vela-app-content__icon .vela-app-icon__image",
+        ".vela-grid-host .vela-app-content__icon .vela-app-icon__glyph",
+        ".vela-grid-host .vela-app-content__icon .vela-app-icon__image",
+      ].join(", "),
+    );
+    expect(inset).toMatch(/width:\s*82%/);
+    expect(inset).toMatch(/height:\s*82%/);
+  });
+
   it("sizes every item from its box and keeps the body as the visual layer", () => {
     const body = ruleBlock(".vela-item__body");
     expect(body).toMatch(/position:\s*absolute/);
@@ -158,8 +219,18 @@ describe("home-shell.css geometry contract (task 017)", () => {
   });
 
   it("scales the desktop FOLDER label off the item box through cqmin", () => {
-    const desktop = ruleBlock(".vela-canvas .vela-item__label, .vela-grid-host .vela-item__label");
+    // Helm r2: the cqmin upgrade is FOLDER-only — unscoped it overrode the
+    // resolver's app label size (equal specificity, later in the sheet).
+    const desktop = ruleBlock(
+      [
+        ".vela-canvas .vela-item[data-kind=\"folder\"] .vela-item__label",
+        ".vela-grid-host .vela-item[data-kind=\"folder\"] .vela-item__label",
+      ].join(", "),
+    );
     expect(desktop).toMatch(/clamp\(9px,\s*14cqmin,\s*24px\)/);
+    // The unscoped desktop override is gone: app labels size from the
+    // resolver var alone.
+    expect(css).not.toMatch(/^\.vela-grid-host \.vela-item__label\s*\{[^}]*cqmin/m);
     // The body is the folder glyph's query container.
     expect(ruleBlock(".vela-item__body")).toMatch(/container-type:\s*size/);
     // No media override may pin the label font again on small screens.
