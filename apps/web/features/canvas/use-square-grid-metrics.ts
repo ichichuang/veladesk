@@ -14,15 +14,18 @@ import type { SquareGridMetrics } from "./square-grid-metrics";
  * The stage fills the section scroller's content width, and the scroller
  * keeps a stable scrollbar gutter, so `clientWidth` does not change when a
  * scrollbar appears. `maxCellPx` caps how large the derived cell may grow —
- * on wide stages the capped content centers inside the stage instead of
- * filling it. Metrics state is only replaced when a value actually
- * changed, so re-measuring can never cause a render loop. The column count
- * is persistent layout structure — it is NEVER recomputed from the width.
+ * a plain number, or a function OF THE MEASURED WIDTH (the Helm r3
+ * viewport-fluid ceiling; the stage width is layout-fixed, so deriving the
+ * cap inside the measurement converges without extra state). On wide
+ * stages the capped content centers inside the stage instead of filling
+ * it. Metrics state is only replaced when a value actually changed, so
+ * re-measuring can never cause a render loop. The column count is
+ * persistent layout structure — it is NEVER recomputed from the width.
  */
 export function useSquareGridMetrics(
   columns: number,
   gapPx: number,
-  maxCellPx?: number,
+  maxCellPx?: number | ((availableWidthPx: number) => number),
 ): {
   stageRef: (node: HTMLDivElement | null) => void;
   metrics: SquareGridMetrics | null;
@@ -36,11 +39,13 @@ export function useSquareGridMetrics(
     }
 
     const measure = () => {
+      const ceiling =
+        typeof maxCellPx === "function" ? maxCellPx(node.clientWidth) : maxCellPx;
       const next = calculateSquareGridMetrics({
         availableWidthPx: node.clientWidth,
         columns,
         gapPx,
-        ...(maxCellPx === undefined ? {} : { maxCellPx }),
+        ...(ceiling === undefined ? {} : { maxCellPx: ceiling }),
       });
       setMetrics((previous) =>
         previous !== null &&

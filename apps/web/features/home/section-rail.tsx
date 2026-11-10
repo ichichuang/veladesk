@@ -22,6 +22,13 @@ import {
 import type { WheelNavState } from "./section-wheel-nav";
 import "./home-shell.css";
 
+/**
+ * Below this viewport width the rail becomes the horizontal section bar
+ * (the mobile shell's tab language): one scrollable strip of pills above
+ * the tiles instead of a right-side column beside them.
+ */
+const RAIL_HORIZONTAL_QUERY = "(max-width: 899px)";
+
 interface SectionRailProps {
   readonly pages: readonly DesktopPage[];
   readonly activePageId: DesktopPageId | null;
@@ -39,33 +46,26 @@ interface SectionRailProps {
 }
 
 /**
- * The left section rail (task 017, wheel interaction rebuilt in 018):
- * titles only, no footer, no ⋯ button, no sync status.
+ * The section rail (Helm r3): the always-visible section switcher as a
+ * REAL column of the workbench — every section is a labelled waypoint row,
+ * clickable and keyboard-reachable without any hover (the r2 orbit ring
+ * hid labels behind hover and floated over the tile grid; this occupies
+ * its own layout space, so it can never cover a tile).
  *
- * WHEEL NAVIGATION (task 018 contract): the ENTIRE reserved left column
- * owns section-wheel navigation — the non-passive listener binds to the
- * full-height rail root, not just the title list, so the padding, the gaps
- * between titles and the blank space below them all navigate. No prior
- * click, focus or hover is required, and hover alone never selects; only
- * wheel movement does. One deliberate gesture (a detent, a clear flick)
- * advances one adjacent section; continued deliberate input keeps paging;
- * a decaying momentum tail is swallowed by the pure intent model in
- * section-wheel-nav.ts. Browser zoom gestures (ctrl+wheel) and horizontal
- * scrolling are left to the browser. A modal/gesture lock resets the
- * accumulated intent instead of replaying it later.
+ * Inputs, all hover-free:
+ *  - CLICK / Enter / Space on any row switches sections;
+ *  - WHEEL over the rail pages through sections (the 018 intent model);
+ *    when the row list overflows (many sections) the wheel scrolls the
+ *    list natively instead, and the active row scrolls into view;
+ *  - ArrowUp/ArrowDown (and Left/Right on the horizontal bar),
+ *    Home/End roving-tabindex focus, Tab reaches the active row first;
+ *  - per-section context menu (right-click / Menu key).
  *
- * The listener is registered ONCE (empty dependency array) and reads the
- * latest pages/selection/lock through refs — the old dependency-driven
- * teardown both re-registered on every selection change and cancelled the
- * in-flight settle timer, which could leave navigation locked forever.
- *
- * The active indicator is ONE absolutely-positioned marker in the list
- * that glides to the active title (task 022, GSAP VdAnimatedIndicator —
- * the Motion shared-layout pill is gone); the marker is decoration and
- * never moves the text/rows.
- *
- * With focus inside the rail, ArrowUp/ArrowDown move focus (roving
- * tabindex), Home/End jump to the ends, Enter/Space activates.
+ * Below 900px the same component renders as a horizontal bar — the workbench
+ * flips to a column and the rail's list becomes the pill strip. The GSAP
+ * waypoint indicator (the comet's glow bar) follows the active row on
+ * whichever axis is live. Reduced motion: instant indicator placement,
+ * everything else is already state, not animation.
  */
 export function SectionRail({
   pages,
@@ -89,12 +89,9 @@ export function SectionRail({
   const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
   /**
    * Direct row refs keyed by page id (022-R2): the indicator measures the
-   * SELECTED row element itself — never a selector that could match a
-   * hovered or focused row. ONE stable callback (identity never changes, so
-   * React never detaches rows mid-commit) derives the page id from the
-   * node's own attribute in the commit phase — writing a ref there is
-   * legal, and reading the map only from effects and the resolver keeps
-   * render pure. Vanished rows are pruned after each structural change.
+   * ACTIVE row element itself. ONE stable callback derives the page id from
+   * the node's own attribute in the commit phase; vanished rows are pruned
+   * after each structural change.
    */
   const rowElementsRef = useRef(new Map<string, HTMLButtonElement>());
   const registerRow = useCallback((node: HTMLButtonElement | null) => {
@@ -114,18 +111,15 @@ export function SectionRail({
       }
     }
   }, [pages]);
-  /**
-   * Row-set identity for the indicator's geometry re-validation: reordered,
-   * added or removed rows re-measure the SAME active row (its position
-   * moved without an activation change — first-entry font swaps arrive via
-   * the indicator's ResizeObserver instead).
-   */
+  /** Row-set identity for the indicator's geometry re-validation. */
   const rowOrderToken = pages.map((page) => page.id).join(" ");
   // Latest-value mirrors: the wheel listener is stable across renders.
   const pagesRef = useRef(pages);
   const activePageIdRef = useRef(activePageId);
   const onSelectSectionRef = useRef(onSelectSection);
   const lockedRef = useRef(navigationLocked);
+  /** The live orientation, read by the wheel handler (post-hydration only). */
+  const orientationQueryRef = useRef<MediaQueryList | null>(null);
 
   useEffect(() => {
     pagesRef.current = pages;
@@ -141,6 +135,21 @@ export function SectionRail({
     }
   }, [navigationLocked]);
 
+  // The horizontal-bar orientation flips via CSS at 900px; the indicator's
+  // axis follows the SAME query so the comet never glides the wrong way.
+  const [horizontal, setHorizontal] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") {
+      return;
+    }
+    const query = window.matchMedia(RAIL_HORIZONTAL_QUERY);
+    orientationQueryRef.current = query;
+    const sync = () => setHorizontal(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
   // Keep the active title visible when it changes (the rail's own list
   // scrolls just enough to reveal it — never a parent/body scroll).
   useEffect(() => {
@@ -150,10 +159,13 @@ export function SectionRail({
     const activeButton = listElement.querySelector<HTMLButtonElement>(
       `[data-page-id="${CSS.escape(activePageId ?? "")}"]`,
     );
-    activeButton?.scrollIntoView({ block: "nearest" });
-  }, [listElement, activePageId]);
+    activeButton?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [listElement, activePageId, horizontal]);
 
-  // One stable, non-passive wheel listener on the FULL-HEIGHT rail root.
+  // One stable, non-passive wheel listener on the FULL rail (the 018
+  // contract: deliberate wheel input pages through spaces). When the row
+  // list itself overflows — many sections — the wheel belongs to the list's
+  // native scrolling instead, on either axis.
   useEffect(() => {
     const rail = railRef.current;
     if (rail === null) {
@@ -161,9 +173,19 @@ export function SectionRail({
     }
 
     function onWheel(event: WheelEvent): void {
-      // Browser zoom stays native; horizontal intent is not section
-      // navigation.
-      if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+      // Browser zoom stays native; cross-axis intent is not navigation.
+      if (event.ctrlKey) {
+        return;
+      }
+      const horizontalBar = orientationQueryRef.current?.matches === true;
+      const along =
+        horizontalBar ? Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : event.deltaY
+          : Math.abs(event.deltaY) > Math.abs(event.deltaX)
+            ? event.deltaY
+            : event.deltaX;
+      if (along === 0) {
         return;
       }
       // A local wheel scope (interactive overlay) over the rail keeps its
@@ -173,17 +195,26 @@ export function SectionRail({
           return;
         }
       }
-      // The rail column never scrolls natively — its wheel is either
-      // navigation or suppressed (a locked/ignored gesture is still ours
-      // to swallow, so no page-level scroll ever leaks through).
+      const list = railRef.current?.querySelector<HTMLElement>(".vela-rail__list") ?? null;
+      if (
+        list !== null &&
+        ((horizontalBar && list.scrollWidth > list.clientWidth + 1) ||
+          (!horizontalBar && list.scrollHeight > list.clientHeight + 1))
+      ) {
+        // The list has its own scrolling to do — never hijack it.
+        return;
+      }
       event.preventDefault();
       if (lockedRef.current) {
         return;
       }
-      // One normalization path (019-E §5): the helper re-checks ctrlKey
-      // defensively; the early guard above already returned zoom to the
-      // browser BEFORE preventDefault.
-      const normalized = normalizeWheelEvent(event);
+      // The intent model is axis-agnostic: feed whichever axis the rail
+      // currently lives on as the "vertical" input.
+      const normalized = normalizeWheelEvent({
+        deltaY: along,
+        deltaMode: event.deltaMode,
+        ctrlKey: false,
+      });
       const { state, action } = advanceWheelNav(
         wheelStateRef.current,
         normalized,
@@ -220,7 +251,8 @@ export function SectionRail({
 
   function handleListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     // Arrows move FOCUS from the focused item (fallback: the active one);
-    // Enter/Space stay native button activation.
+    // Enter/Space stay native button activation. Both axis pairs work in
+    // both orientations — the bar and the column share one contract.
     const buttons = Array.from(
       listElement?.querySelectorAll<HTMLButtonElement>(".vela-rail__item") ?? [],
     );
@@ -229,10 +261,12 @@ export function SectionRail({
     const base = focusedIndex >= 0 ? focusedIndex : activeIndex;
     switch (event.key) {
       case "ArrowUp":
+      case "ArrowLeft":
         event.preventDefault();
         focusRailItem(base - 1);
         return;
       case "ArrowDown":
+      case "ArrowRight":
         event.preventDefault();
         focusRailItem(base + 1);
         return;
@@ -274,6 +308,7 @@ export function SectionRail({
   return (
     <nav
       className="vela-rail"
+      data-orientation={horizontal ? "horizontal" : "vertical"}
       aria-label={t("nav.label")}
       ref={railRef}
       onContextMenu={(event) => {
@@ -289,13 +324,14 @@ export function SectionRail({
         ref={setListElement}
         onKeyDown={handleListKeyDown}
       >
-        {/* One GSAP-owned marker glides to the active title (022); it is
-            absolutely positioned and never affects the rows. */}
+        {/* One GSAP-owned marker glides to the active title on the live
+            axis — the comet's resting glow; never affects the rows. */}
         <VdAnimatedIndicator
           container={listElement}
           activeKey={activePageId}
+          axis={horizontal ? "horizontal" : "vertical"}
           resolveTarget={(key) => rowElementsRef.current.get(key) ?? null}
-          remeasureToken={rowOrderToken}
+          remeasureToken={`${rowOrderToken}|${horizontal ? "h" : "v"}`}
           className="vela-rail__indicator"
         />
         {pages.map((page) => {
@@ -315,6 +351,7 @@ export function SectionRail({
               onContextMenu={(event) => handleItemContextMenu(event, page.id)}
               onKeyDown={(event) => handleItemKeyDown(event, page.id)}
             >
+              <span className="vela-rail__waypoint" aria-hidden="true" />
               <span className="vela-rail__item-label">{page.name}</span>
             </button>
           );

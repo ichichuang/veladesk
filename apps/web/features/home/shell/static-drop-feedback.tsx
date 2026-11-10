@@ -3,19 +3,19 @@
 import { useEffect } from "react";
 import { useDragDropManager } from "@dnd-kit/react";
 
-import { disableDndDropAnimation } from "../dnd-static-drop";
+import { installDndDropSettle } from "../dnd-static-drop";
 
 /**
- * Mounts inside the DragDropProvider and configures its manager once:
- * decorative drop animation off (official Feedback#dropAnimation = null),
- * so an arrange drop paints straight into its target geometry and stays
- * still. See dnd-static-drop.ts for the product rationale.
+ * Mounts inside the DragDropProvider and configures its manager once: the
+ * drop settle (Helm r3) replaces dnd-kit's decorative drop animation, so a
+ * released tile continues FROM ITS RELEASE POSITION into its committed
+ * geometry. See dnd-static-drop.ts for the mechanism and product rationale.
  */
 export function StaticDropFeedback() {
   const manager = useDragDropManager();
   useEffect(() => {
     if (manager !== null) {
-      disableDndDropAnimation(manager);
+      installDndDropSettle(manager);
     }
   }, [manager]);
   return null;

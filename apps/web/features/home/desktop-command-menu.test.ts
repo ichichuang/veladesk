@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { translate } from "../i18n/messages";
 import type { TranslationKey } from "../i18n/messages";
@@ -302,5 +302,78 @@ describe("buildFolderMenuEntries", () => {
     expect(ids).toEqual(["open", "rename", "pin-toggle", "dissolve-folder"]);
     const dissolve = entries.find((entry) => entry.kind === "action" && entry.id === "dissolve-folder");
     expect(dissolve?.kind === "action" && dissolve.label).toBe("解散到当前分区");
+  });
+});
+
+describe("buildAppMenuEntries size controls (Helm r3)", () => {
+  const base = {
+    t: (key: TranslationKey) => translate("zh-CN", key),
+    callbacks: {
+      onOpen: noop,
+      onEdit: noop,
+      onEditAppearance: noop,
+      onMoveToSection: noop,
+      onPinToggle: noop,
+      onDelete: noop,
+    },
+  };
+
+  it("omits the 尺寸 group entirely without size controls (view mode)", () => {
+    const ids = actionIds(buildAppMenuEntries({ ...base, pinned: false }));
+    expect(ids).not.toContain("size");
+  });
+
+  it("offers the designed grid steps as a radio group on the current one", () => {
+    const entries = buildAppMenuEntries({
+      ...base,
+      pinned: false,
+      sizeControls: {
+        kind: "grid",
+        steps: [
+          { id: "1x1", label: "1×1", checked: true, onSelect: noop },
+          { id: "2x1", label: "2×1", checked: false, onSelect: noop },
+          { id: "2x2", label: "2×2", checked: false, onSelect: noop },
+        ],
+      },
+    });
+    const submenu = entries.find((entry) => entry.kind === "submenu" && entry.id === "size");
+    expect(submenu?.kind).toBe("submenu");
+    if (submenu?.kind !== "submenu") {
+      return;
+    }
+    expect(submenu.label).toBe("尺寸");
+    const ids = submenu.entries
+      .filter((entry) => entry.kind === "action")
+      .map((entry) => (entry.kind === "action" ? entry.id : ""));
+    expect(ids).toEqual(["size-1x1", "size-2x1", "size-2x2"]);
+    expect(
+      submenu.entries.find((entry) => entry.kind === "action" && entry.checked === true)?.kind ===
+        "action",
+    ).toBe(true);
+  });
+
+  it("offers the four freeform grow/shrink directions and reports selections", () => {
+    const onWider = vi.fn();
+    const entries = buildAppMenuEntries({
+      ...base,
+      pinned: false,
+      sizeControls: {
+        kind: "freeform",
+        onWider,
+        onNarrower: noop,
+        onTaller: noop,
+        onShorter: noop,
+      },
+    });
+    const submenu = entries.find((entry) => entry.kind === "submenu" && entry.id === "size");
+    expect(submenu?.kind).toBe("submenu");
+    const wider = submenu?.kind === "submenu"
+      ? submenu.entries.find((entry) => entry.kind === "action" && entry.id === "size-wider")
+      : undefined;
+    expect(wider?.kind === "action" && wider.label).toBe("放宽");
+    if (wider?.kind === "action") {
+      wider.onSelect();
+    }
+    expect(onWider).toHaveBeenCalledTimes(1);
   });
 });

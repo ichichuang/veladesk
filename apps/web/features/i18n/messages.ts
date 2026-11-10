@@ -185,6 +185,11 @@ const zhCNCatalog = {
   "menu.rename": "重命名",
   "menu.editAppearance": "编辑外观…",
   "menu.widgetLater": "小组件编辑将在后续版本提供",
+  "menu.size": "尺寸",
+  "menu.sizeWider": "放宽",
+  "menu.sizeNarrower": "缩窄",
+  "menu.sizeTaller": "增高",
+  "menu.sizeShorter": "降低",
   "arrange.resizeIcon": "调整图标大小",
 
   // --- Icon catalog picker (016-A, v2 in 016-C) -----------------------------
@@ -828,6 +833,11 @@ export const enUS: MessageCatalog = {
   "menu.rename": "Rename",
   "menu.editAppearance": "Edit appearance…",
   "menu.widgetLater": "Widget editing later",
+  "menu.size": "Size",
+  "menu.sizeWider": "Wider",
+  "menu.sizeNarrower": "Narrower",
+  "menu.sizeTaller": "Taller",
+  "menu.sizeShorter": "Shorter",
   "arrange.resizeIcon": "Resize icon",
 
   "iconPicker.searchLabel": "Search icons",

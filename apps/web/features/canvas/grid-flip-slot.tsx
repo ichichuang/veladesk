@@ -14,19 +14,27 @@ import { vdPrefersReducedMotion } from "@components/vd/reduced-motion";
  * The snap-mode FLIP slot (P1, motion-spec-p1 §3): ONE Motion-owned layout
  * wrapper around every Grid tile. When the tile's committed geometry
  * changes between renders (a resize to the next size step, a keyboard
- * nudge, an undo/redo), Motion animates the slot from its previous visual
- * box with the flip.reorder spring — critically damped, no overshoot.
+ * nudge, an undo/redo, a displaced bystander after a drop), Motion
+ * animates the slot from its previous visual box with the flip.reorder
+ * spring — critically damped, no overshoot.
  *
  * Freeform NEVER animates: its tiles stay 1:1 with the pointer (no spring,
  * no overshoot, no layout animation) — that model renders the plain
- * button, no slot. The slot is also inert while its tile is being DRAGGED:
- * dnd-kit owns that element's transform, and the drop already lands where
- * the snapped preview showed, so a layout animation there could only jump
- * the tile back to its pre-drag cell.
+ * button, no slot.
+ *
+ * The slot goes INERT while its tile is being DRAGGED (`layout={false}`
+ * for the whole gesture, Helm r3): dnd-kit owns that element's transform,
+ * and the drag preview already shows the tile on its resolved target — the
+ * drop settle (dnd-static-drop.ts) lands it there directly. A slot layout
+ * animation across the drop would re-introduce the pre-drag cell as the
+ * animation origin — the "bounces home first, then flies to the target"
+ * artifact. Re-enabling `layout` after the gesture re-measures from the
+ * settled cell, so the NEXT geometry change (nudge, resize, undo) springs
+ * again as before.
  *
  * Reduced motion renders a plain div that REPOSITIONS INSTANTLY, with a
- * direct drop in place: no
- * spring, no ripple, no remount (focus and hover state survive the swap).
+ * direct drop in place: no spring, no ripple, no remount (focus and hover
+ * state survive the swap).
  *
  * `data-motion-owner="motion"` marks the engine split (motion-spec §0):
  * GSAP never touches this node, Motion never touches anything else.
@@ -120,7 +128,7 @@ export function GridFlipSlot({
       className="vela-item-slot"
       ref={slotRef}
       style={style as MotionStyle}
-      layout
+      layout={!dragging}
       transition={GRID_FLIP_TRANSITION}
       data-motion-owner="motion"
     >

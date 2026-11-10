@@ -105,6 +105,25 @@ export function reconcilePageCanvasHistory(
 }
 
 /**
+ * Seeds a page's arrange-history BASELINE when none exists yet (Helm r3),
+ * then reconciles as usual. Without the seed, a page's FIRST edit became
+ * the history's baseline — an empty undo stack — so undo stayed disabled
+ * until a second edit: a user who drags one tile and hits ⌘Z got nothing.
+ * The baseline is the authoritative placement observed at activation, so
+ * undo of the first edit returns exactly to what the user saw before it.
+ */
+export function seedPageCanvasHistory(
+  histories: ArrangeCanvasHistories,
+  pageId: string,
+  currentCanvas: CanvasLayout,
+): ArrangeCanvasHistories {
+  if (histories[pageId] === undefined) {
+    return { ...histories, [pageId]: createCanvasHistory(currentCanvas) };
+  }
+  return reconcilePageCanvasHistory(histories, pageId, currentCanvas);
+}
+
+/**
  * Resets a page's history to a fresh branch rooted at `canvas` — used by the
  * structural edits that are deliberately NOT undoable: placement-mode
  * switches, and any edit that changes the page's item set.

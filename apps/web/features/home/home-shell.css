@@ -398,6 +398,35 @@
      The responsive shrink redefines the same variable. */
   --vd-slot-icon-size: var(--vd-icon-size);
 
+  /*
+   * The Helm band geometry (Helm r3) — ONE token source shared by the
+   * header itself and the section viewport's reserved top padding, so the
+   * clock can never overlap the tiles at any viewport. Every term is a
+   * clamp over the viewport's own units; the compact and collapse modes
+   * (below) only re-derive the band from the same terms.
+   */
+  --vd-helm-clock-size: clamp(30px, 4.6vh + 1.2vw, 72px);
+  --vd-helm-clock-gap: clamp(2px, 0.6vh, 6px);
+  --vd-helm-date-size: clamp(10.5px, 0.5vh + 0.5vw, var(--vd-type-md));
+  --vd-helm-date-line: 1.4;
+  --vd-helm-gap: clamp(6px, 1.4vh, 12px);
+  --vd-helm-pad-top: clamp(14px, 3.4vh, 40px);
+  --vd-helm-pad-bottom: clamp(12px, 2.6vh, 28px);
+  --vd-helm-bar-width: min(52vw, 470px);
+  --vd-helm-bar-height: calc(var(--vd-control-height) + 10px);
+  --vd-helm-band: calc(
+    var(--vd-helm-pad-top) + var(--vd-helm-clock-size) + var(--vd-helm-clock-gap) +
+      var(--vd-helm-date-size) * var(--vd-helm-date-line) + var(--vd-helm-gap) +
+      var(--vd-helm-bar-height) + var(--vd-helm-pad-bottom)
+  );
+
+  /*
+   * The section rail's column width (≥900px) and the horizontal bar's
+   * height (below that). The helm header centers over the tile column.
+   */
+  --vd-rail-width: clamp(196px, 15vw, 236px);
+  --vd-railbar-height: 46px;
+
   position: fixed;
   inset: 0;
   /*
@@ -1102,187 +1131,74 @@
   container-type: inline-size;
 }
 
-/* --- Two-column workspace composition (task 017) ------------------------- */
+/* --- Two-column workspace composition (task 017; rail as real column, r3) -- */
 
 /*
- * Desktop = fixed left section rail + right workspace. The rail takes its
- * own column and application content NEVER flows under it (the old
- * artificial 186px canvas left padding is gone). The right layout width is
- * whatever remains AFTER the rail took its space; dock placement never
- * forces the rail to reserve desktop content space.
+ * Desktop = the tile workspace + the section rail's own column on the
+ * right (Helm r3). The rail is LAYOUT, never an overlay: it can never
+ * cover a tile, and the grid's measured width simply excludes it. Below
+ * 900px the workbench flips to a column and the rail renders as the
+ * horizontal section bar above the tiles.
  */
 .vela-workbench {
   padding-right: 0;
   position: relative;
   z-index: 1;
   display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   align-items: stretch;
 }
 
-/* --- Left section rail ---------------------------------------------------- */
+@media (min-width: 900px) {
+  .vela-workbench {
+    flex-direction: row;
+  }
+
+  /* The helm landmark centers over the TILE column (the rail owns the
+     right edge), not the raw window center. */
+  .vela-desktop {
+    --vd-helm-center: calc((100% - var(--vd-rail-width)) / 2);
+  }
+}
+
+/* --- The section rail (Helm r3: always visible, hover-free) -------------- */
 
 /*
- * The space ORBIT (Helm first picture): a fixed strip over the desktop's
- * right edge — the ring itself is pointer-transparent decoration; the
- * waypoint buttons are the only hit targets. The workbench no longer has a
- * left column: the workspace IS the desktop, full-bleed under the horizon.
- */
-.vela-orbit {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 12;
-  width: 300px;
-  pointer-events: none;
-  text-shadow: var(--vd-label-shadow);
-}
-
-.vela-orbit__ring {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-/* The ring: a quiet chart hairline — fg at 12%, 1.5px, slightly stronger
-   than the graticule (it is a NAVIGATION element, not ground texture). */
-.vela-orbit__ring-path {
-  fill: none;
-  stroke: color-mix(in oklab, var(--vd-color-fg-primary) 26%, transparent);
-  stroke-width: 1.5;
-  vector-effect: non-scaling-stroke;
-}
-
-/*
- * The comet: the glowing traveller that rides the ring to the active
- * waypoint. Its transform is GSAP-owned (translate from the strip's own
- * origin — the node itself sits at 0,0). Accent glow at wake strength; a
- * soft trailing bloom via the box-shadow's blur.
- */
-.vela-orbit__comet {
-  position: absolute;
-  top: -5px;
-  left: -5px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  pointer-events: none;
-  background: var(--vd-accent);
-  box-shadow:
-    0 0 0 4px var(--vd-accent-wash),
-    var(--vd-glow-wake);
-  opacity: 0.9;
-}
-
-/*
- * A waypoint: a 12px visual dot inside a 28px hit area centered on the
- * ring. Inactive dots are quiet fg ghosts; the active dot lights accent
- * (the comet rests on it). The chip names the ACTIVE space (and any
- * hovered/focused one) to the dot's left — the rail's always-visible
- * titles traded for the one label that matters.
- */
-.vela-orbit__item {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  pointer-events: auto;
-  transform: translate(-50%, -50%);
-}
-
-.vela-orbit__dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: color-mix(in oklab, var(--vd-color-fg-primary) 34%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent);
-  transition:
-    background-color var(--vd-motion-fast) var(--vd-motion-ease),
-    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
-}
-
-/* Hover/focus grows the dot's halo ring (box-shadow, paint-only — the
-   transform contract stays GSAP-owned). */
-.vela-orbit__item:hover .vela-orbit__dot,
-.vela-orbit__item:focus-visible .vela-orbit__dot {
-  background: color-mix(in oklab, var(--vd-color-fg-primary) 62%, transparent);
-  box-shadow:
-    0 0 0 5px color-mix(in oklab, var(--vd-color-bg-deep) 45%, transparent),
-    0 0 12px color-mix(in oklab, var(--vd-color-fg-primary) 22%, transparent);
-}
-
-.vela-orbit__item[data-active="true"] .vela-orbit__dot {
-  background: var(--vd-accent);
-  box-shadow:
-    0 0 0 5px var(--vd-accent-wash),
-    0 0 14px color-mix(in oklab, var(--vd-color-accent) 45%, transparent);
-}
-
-.vela-orbit__item:focus-visible {
-  outline: 2px solid var(--vd-color-focus);
-  outline-offset: 2px;
-  border-radius: 50%;
-}
-
-/* The name chip: hidden for quiet dots, shown for the active waypoint and
-   on hover/focus — a small glass pill to the LEFT of the dot. */
-.vela-orbit__chip {
-  position: absolute;
-  right: 30px;
-  display: block;
-  max-width: 140px;
-  overflow: hidden;
-  padding: 4px 10px;
-  border: 1px solid var(--vd-color-border-hairline);
-  border-radius: 999px;
-  background: var(--vd-color-bg-surface);
-  backdrop-filter: blur(var(--vd-blur-glass));
-  -webkit-backdrop-filter: blur(var(--vd-blur-glass));
-  box-shadow: inset 0 1px 0 var(--vd-color-border-highlight);
-  color: var(--vd-text);
-  font-family: var(--vd-font);
-  font-size: var(--vd-type-sm);
-  line-height: 1.3;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--vd-motion-fast) var(--vd-motion-ease);
-}
-
-.vela-orbit__item[data-active="true"] .vela-orbit__chip,
-.vela-orbit__item:hover .vela-orbit__chip,
-.vela-orbit__item:focus-visible .vela-orbit__chip {
-  opacity: 1;
-}
-
-/* Light mode: the same mixes flip through the resolved tokens; the dot's
-   ground-tinted halo keys off the light bg-deep automatically. */
-
-/*
- * A real fixed column of titles only: no footer, no ⋯ button, no sync
- * status. The list can scroll just enough to keep the active title visible
- * (scrollIntoView) — users never freely scroll it; wheel input belongs to
- * section navigation (JS, non-passive) and is otherwise suppressed.
- * (The rail component remains available; the desktop shell mounts the
- * SectionOrbit instead — Helm first picture decision.)
+ * One labelled waypoint row per section — clickable, keyboard- and
+ * wheel-reachable with no hover; the active row carries the accent and the
+ * GSAP indicator (the comet's resting glow) glides between rows. The list
+ * scrolls when there are many sections (the wheel switches to scrolling
+ * then); below 900px the whole rail becomes the horizontal bar.
  */
 .vela-rail {
-  flex: 0 0 200px;
+  --vd-rail-row-height: 38px;
+  position: relative;
+  z-index: 12;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 26px 10px 26px 22px;
+  padding: 10px 12px 14px;
   text-shadow: var(--vd-label-shadow);
+}
+
+@media (min-width: 900px) {
+  .vela-rail {
+    /* The Helm first-picture side: the orbit's old edge. In the row
+       workbench the rail is the LAST (right) column. */
+    order: 2;
+    flex: 0 0 var(--vd-rail-width);
+    padding: clamp(18px, 4vh, 40px) 14px 18px 8px;
+  }
+
+  /* The list owns the rail's full remaining height, so MANY sections make
+     it actually overflow (its own quiet scrolling) instead of growing the
+     rail past the viewport. */
+  .vela-rail .vela-rail__list {
+    flex: 1;
+  }
 }
 
 .vela-rail__list {
@@ -1292,25 +1208,71 @@
   gap: 2px;
   min-height: 0;
   /* Scroll styling is owned by the canonical [data-vd-scroll] layer (task
-     021-A) via the attribute on this element: quiet thin scrollbar instead
-     of the old fully-hidden one. The rail's WHEEL is still section
-     navigation (019/020) — the attribute adds no wheel scope, and the
-     full-rail listener keeps swallowing wheel input. */
+     021-A) via the attribute on this element. When the rows overflow, the
+     component's wheel handler yields to this native scrolling. */
   padding: 2px;
 }
 
+/* The horizontal bar (below 900px): one strip of pills the width of the
+   workbench — the mobile shell's tab language. */
+@media (max-width: 899px) {
+  .vela-rail {
+    padding: 6px 12px;
+  }
+
+  .vela-rail__list {
+    flex-direction: row;
+    gap: 6px;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    padding: 2px;
+  }
+}
+
 .vela-rail__item {
-  min-height: 36px;
   position: relative;
-  padding: 8px 12px 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--vd-rail-row-height);
+  flex: 0 0 auto;
+  padding: 7px 14px 7px 12px;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--vd-text-muted);
   font-family: var(--vd-font);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+}
+
+/* The waypoint dot: a quiet chart point; the active one lights accent
+   (the comet rests there). */
+.vela-rail__waypoint {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 38%, transparent);
+  box-shadow: 0 0 0 2.5px color-mix(in oklab, var(--vd-color-bg-deep) 35%, transparent);
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+.vela-rail__item:hover .vela-rail__waypoint,
+.vela-rail__item:focus-visible .vela-rail__waypoint {
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 70%, transparent);
+}
+
+.vela-rail__item[data-active="true"] .vela-rail__waypoint {
+  background: var(--vd-accent);
+  box-shadow:
+    0 0 0 3px var(--vd-accent-wash),
+    0 0 12px color-mix(in oklab, var(--vd-color-accent) 48%, transparent);
 }
 
 .vela-rail__item-label {
@@ -1323,31 +1285,41 @@
 
 /*
  * The active indicator (022): ONE absolutely-positioned accent bar that
- * glides between titles (static under reduced motion). Positioning
- * (top/height in px) is written ONLY by the GSAP indicator
- * (VdAnimatedIndicator, 022-R2) inside the list; until a valid row box
- * exists the marker stays hidden (opacity 0) — there is deliberately NO
- * percent-size fallback, which painted the bar stretched across several
- * rows whenever inline geometry was absent (first entry / re-entry).
+ * glides between titles on the live axis (GSAP VdAnimatedIndicator).
+ * Until a valid row box exists the marker stays hidden (opacity 0) —
+ * deliberately NO percent-size fallback.
  */
 .vela-rail__indicator {
   position: absolute;
   left: 0;
-  width: 2.5px;
-  border-radius: 2px;
+  width: 3px;
+  border-radius: 3px;
   background: var(--vd-accent);
+  box-shadow: var(--vd-glow-wake);
   opacity: 0;
   pointer-events: none;
 }
 
+@media (max-width: 899px) {
+  .vela-rail__indicator {
+    /* Horizontal mode: the marker is an underline that glides between
+       pills (GSAP writes x + width; the vertical slot stays unset). */
+    left: 0;
+    bottom: 0;
+    width: auto;
+    height: 3px;
+    border-radius: 999px;
+  }
+}
+
 .vela-rail__item:hover {
   color: var(--vd-text);
-  background: color-mix(in oklab, var(--vd-color-fg-primary) 3%, transparent);
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 5%, transparent);
 }
 
 .vela-rail__item[data-active="true"] {
   color: var(--vd-text);
-  background: color-mix(in oklab, var(--vd-color-fg-primary) 6%, transparent);
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 8%, transparent);
 }
 
 .vela-rail__item:focus-visible {
@@ -1361,26 +1333,35 @@
 
 /* --- Right workspace + section scroll ownership ---------------------------- */
 
-/* --- The Helm header: clock + ⌘K command bar (Helm first picture) ------- */
+/* --- The Helm header: clock + ⌘K command bar (Helm first picture; r3 fluid) - */
 
 /*
  * The one top-center landmark: large thin clock, date, glass command bar.
  * The band is pointer-transparent except the bar itself — tiles travel
  * under the clock during drags and section switches without it ever
- * stealing a click. It floats over the workspace column; the section
- * viewport reserves the vertical band below (padding-top).
+ * stealing a click.
+ *
+ * FLUID BY VIEWPORT (Helm r3): every dimension is a clamp token and the
+ * reserved section padding composes from the SAME tokens, so the band and
+ * the space it reserves can never disagree at any viewport — the tiles can
+ * never slide under the clock on short windows again. Short viewports
+ * (<700px tall) go COMPACT (date joins the command bar row); very short
+ * ones (<560px) COLLAPSE (date hidden, search shrinks to the ⌘ icon
+ * button — the shortcut still opens it).
  */
 .vela-helm-header {
   position: absolute;
   top: 0;
-  left: 50%;
+  /* Centered over the TILE COLUMN (the rail takes the right edge at
+     ≥900px); the plain window center below that. */
+  left: var(--vd-helm-center, 50%);
   transform: translateX(-50%);
   z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(8px, 1.5vh, 12px);
-  padding-top: clamp(18px, 4vh, 40px);
+  gap: var(--vd-helm-gap);
+  padding-top: var(--vd-helm-pad-top);
   pointer-events: none;
   text-align: center;
 }
@@ -1388,15 +1369,15 @@
 .vela-helm-clock {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--vd-helm-clock-gap);
 }
 
-/* The ONLY consumer of the 72px type token: thin mono digits, tabular so
-   the colon never breathes while minutes tick over. */
+/* The ONLY consumer of the clock type token, at its fluid size: thin mono
+   digits, tabular so the colon never breathes while minutes tick over. */
 .vela-helm-clock__time {
   font-family: var(--vd-font-mono);
   font-variant-numeric: var(--vd-font-numeric);
-  font-size: var(--vd-type-clock);
+  font-size: var(--vd-helm-clock-size);
   font-weight: 220;
   letter-spacing: 0.03em;
   line-height: 1;
@@ -1406,8 +1387,9 @@
 
 .vela-helm-clock__date {
   font-family: var(--vd-font);
-  font-size: var(--vd-type-md);
+  font-size: var(--vd-helm-date-size);
   letter-spacing: 0.12em;
+  line-height: var(--vd-helm-date-line);
   color: var(--vd-text-muted);
   text-shadow: var(--vd-label-shadow);
 }
@@ -1420,8 +1402,8 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  width: min(52vw, 470px);
-  height: calc(var(--vd-control-height) + 10px);
+  width: var(--vd-helm-bar-width);
+  height: var(--vd-helm-bar-height);
   padding: 0 8px 0 16px;
   border: 1px solid var(--vd-color-border-hairline);
   border-radius: 999px;
@@ -1483,6 +1465,75 @@
   color: var(--vd-text);
 }
 
+/*
+ * COMPACT mode (short viewports, <700px tall): the date leaves its own
+ * line and joins the command bar's row — the band loses a whole text row.
+ * The clock keeps sliding down through its clamp floor on its own.
+ */
+@media (max-height: 699px) {
+  .vela-desktop {
+    --vd-helm-gap: clamp(6px, 1.2vh, 10px);
+    --vd-helm-pad-bottom: clamp(8px, 1.8vh, 16px);
+    --vd-helm-band: calc(
+      var(--vd-helm-pad-top) + var(--vd-helm-clock-size) + var(--vd-helm-gap) +
+        max(var(--vd-helm-date-size) * var(--vd-helm-date-line), var(--vd-helm-bar-height)) +
+        var(--vd-helm-pad-bottom)
+    );
+  }
+
+  .vela-helm-header {
+    flex-direction: column;
+  }
+
+  .vela-helm-clock {
+    flex-direction: row;
+    align-items: baseline;
+    gap: clamp(8px, 1.4vw, 16px);
+  }
+
+  .vela-helm-clock__date {
+    letter-spacing: 0.08em;
+  }
+
+  /* The date rides with the clock, so the bar narrows to keep the whole
+     band within the tile column's width. */
+  .vela-desktop {
+    --vd-helm-bar-width: min(42vw, 380px);
+  }
+}
+
+/*
+ * COLLAPSE mode (very short viewports, <560px tall): the date hides, the
+ * clock keeps only its clamp floor and the command bar shrinks to the
+ * round ⌘ icon button — ⌘K and the click still open the palette. The band
+ * is one control row tall.
+ */
+@media (max-height: 559px) {
+  .vela-desktop {
+    --vd-helm-clock-size: clamp(22px, 3.6vh, 34px);
+    --vd-helm-band: calc(
+      var(--vd-helm-pad-top) + max(var(--vd-helm-clock-size), var(--vd-helm-bar-height)) +
+        var(--vd-helm-pad-bottom)
+    );
+  }
+
+  .vela-helm-clock__date {
+    display: none;
+  }
+
+  .vela-helm-commandbar {
+    justify-content: center;
+    width: var(--vd-helm-bar-height);
+    padding: 0;
+    border-radius: 999px;
+  }
+
+  .vela-helm-commandbar__placeholder,
+  .vela-helm-commandbar__kbd {
+    display: none;
+  }
+}
+
 /* --- Right workspace + section scroll ownership ---------------------------- */
 
 /*
@@ -1509,18 +1560,26 @@
  * dock actually exists.
  */
 .vela-section-viewport {
-  /* The orbit ring's closest approach is ~120px off the right edge; content
-     clears the waypoints with a breath of space. */
-  --vd-section-padding-right: clamp(110px, 10vw, 176px);
+  /* The rail is a real column since r3 — the content only clears the
+     scroller's own edge padding now. */
+  --vd-section-padding-right: clamp(20px, 2.6vw, 44px);
   /* The Helm header band (clock + ⌘K bar) floats above the viewport; the
-     scroller reserves it so content never slides under the clock. */
-  --vd-section-padding-top: clamp(150px, 23vh, 220px);
+     scroller reserves EXACTLY the token-derived band height so content can
+     never slide under the clock at any viewport (Helm r3). Below 900px the
+     horizontal section bar adds its own row on top. */
+  --vd-section-padding-top: calc(var(--vd-helm-band));
   --vd-section-padding-bottom: 30px;
 
   position: relative;
   flex: 1;
   min-height: 0;
   overflow: clip;
+}
+
+@media (max-width: 899px) {
+  .vela-section-viewport {
+    --vd-section-padding-top: calc(var(--vd-helm-band) + var(--vd-railbar-height));
+  }
 }
 
 .vela-desktop[data-has-dock="true"] .vela-section-viewport {
@@ -3310,27 +3369,10 @@ button.vela-sync-status:focus-visible {
     max-width: 92px;
   }
 
-  .vela-rail {
-    flex-basis: 136px;
-    padding: 18px 6px 18px 14px;
-  }
-
-  .vela-section-viewport {
-    --vd-section-padding-right: 72px;
-    --vd-section-padding-top: clamp(138px, 21vh, 190px);
-    --vd-section-padding-bottom: 22px;
-  }
-
-  .vela-desktop[data-has-dock="true"] .vela-section-viewport {
-    --vd-section-padding-bottom: 96px;
-  }
-
   .vela-section-scroller {
     padding-left: 10px;
   }
 
-  /* Narrow screens keep the two-column shape usable — the rail shrinks,
-     never disappears: wheel navigation is its primary input. */
   .vela-arrange-bar {
     top: 8px;
     right: 14px;
@@ -3821,9 +3863,9 @@ header.vela-inspector__subject {
 .vela-workspace-templates label { position: relative; isolation: isolate; }
 .vela-template-selected { opacity: 0; position: absolute; inset: 0; z-index: -1; background: var(--vdu-accent-wash); border-radius: inherit; pointer-events: none; }
 .vela-toast-stack { position: fixed; z-index: 100; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
-/* Desktop: toasts clear the orbit ring's bulge (~120px off the right edge). */
-@media (min-width: 1024px) {
-  .vela-toast-stack { right: clamp(96px, 9vw, 160px); }
+/* Desktop: toasts clear the rail column on the right edge (Helm r3). */
+@media (min-width: 900px) {
+  .vela-toast-stack { right: calc(var(--vd-rail-width) + 16px); }
 }
 .vela-toast-stack > div { max-width: 100%; }
 .vela-toast-stack .vela-onboarding-success { position: relative; inset: auto; max-width: 100%; pointer-events: auto; }

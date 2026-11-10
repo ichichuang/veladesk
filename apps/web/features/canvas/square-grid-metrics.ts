@@ -51,6 +51,8 @@ export interface SquareGridMetrics {
   readonly contentWidthPx: number;
   /** The persisted gap input, echoed for style consumption. */
   readonly gapPx: number;
+  /** The measured stage width the metrics derived from (the cap input). */
+  readonly stageWidthPx: number;
 }
 
 /**
@@ -89,7 +91,23 @@ export function calculateSquareGridMetrics(
     pitchPx: cellPx + gapPx,
     contentWidthPx: columns * cellPx + gapPx * (columns - 1),
     gapPx,
+    stageWidthPx: availableWidthPx,
   };
+}
+
+/**
+ * The viewport-fluid cell ceiling (Helm r3): the spec band's 112px floor
+ * holds on laptop stages, and wide stages let the cell breathe up to
+ * 160px — the wide-screen grid stops reading as a tiny island in a wide
+ * sea. The stage width is the input (it is layout-fixed: the centered
+ * frame never feeds back into it), so one re-measure after the first
+ * observation settles the value.
+ */
+export function fluidGridCellCap(stageWidthPx: number | null): number {
+  if (stageWidthPx === null || !Number.isFinite(stageWidthPx) || stageWidthPx <= 0) {
+    return GRID_CELL_MAX_PX;
+  }
+  return Math.min(160, Math.max(GRID_CELL_MAX_PX, Math.round(stageWidthPx / 11)));
 }
 
 /**

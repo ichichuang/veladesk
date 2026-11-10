@@ -19,7 +19,7 @@ import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
 import { useWorkspaceRuntimeInstance } from "../../workspace-runtime/use-workspace-runtime";
 import { Dock } from "../dock";
-import { SectionOrbit } from "./section-orbit";
+import { SectionRail } from "../section-rail";
 import { HelmHeader } from "./helm-header";
 import { loadWorkspaceViewState } from "../workspace-view-state";
 import type { WorkspaceViewStateV1 } from "../workspace-view-state";
@@ -325,6 +325,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     switchMode,
     setPlacementMode: tiles.commits.setPlacementMode,
     applyHistoryStep: tiles.commits.applyHistoryStep,
+    commitResizedGeometry: tiles.commits.commitResizedGeometry,
     freeformBlockedReason: tiles.commits.freeformBlockedReason,
     arrangeHistoriesRef: tiles.commits.arrangeHistoriesRef,
     draggingRef: tiles.draggingRef,
@@ -504,7 +505,13 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       >
         <StaticDropFeedback />
         <div className="vela-workbench">
-          <SectionOrbit
+          {/*
+            The always-visible section rail (Helm r3): a REAL layout column
+            beside the tiles — every section labelled, clickable, keyboard-
+            and wheel-reachable with no hover, never overlapping content.
+            Below 900px it becomes the horizontal section bar.
+          */}
+          <SectionRail
             pages={pages}
             activePageId={effectiveActivePageId}
             onSelectSection={(pageId) => scene.switchSection(pageId)}

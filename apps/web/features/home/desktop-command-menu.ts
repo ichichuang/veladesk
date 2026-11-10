@@ -147,6 +147,30 @@ export interface AppMenuInput {
   readonly t: TranslateFn;
   /** Whether the app is dock-pinned (decides pin vs unpin). */
   readonly pinned: boolean;
+  /**
+   * Explicit size controls (Helm r3), present only in arrange mode: the
+   * designed size steps for Grid sections (checked on the current step),
+   * or the four freeform grow/shrink directions. Resize stays reachable
+   * without depending on the eight-handle selection state.
+   */
+  readonly sizeControls?:
+    | {
+        readonly kind: "grid";
+        readonly steps: readonly {
+          readonly id: string;
+          readonly label: string;
+          readonly checked: boolean;
+          readonly onSelect: () => void;
+        }[];
+      }
+    | {
+        readonly kind: "freeform";
+        readonly onWider: () => void;
+        readonly onNarrower: () => void;
+        readonly onTaller: () => void;
+        readonly onShorter: () => void;
+      }
+    | undefined;
   readonly callbacks: {
     readonly onOpen: () => void;
     readonly onEdit: () => void;
@@ -161,11 +185,12 @@ export interface AppMenuInput {
  * Builds the app context menu (task 015 model + 016 visual entry): open/
  * edit/edit-appearance, then the move and dock group, then delete. The
  * folder-first primary actions are gone — no "Move to Folder", and "Move
- * to Desktop" became "Move to Section…".
+ * to Desktop" became "Move to Section…". In arrange mode a 尺寸 group
+ * gives deterministic resizing beside the eight handles.
  */
 export function buildAppMenuEntries(input: AppMenuInput): readonly DesktopMenuEntry[] {
-  const { t, pinned, callbacks } = input;
-  return [
+  const { t, pinned, sizeControls, callbacks } = input;
+  const entries: DesktopMenuEntry[] = [
     { kind: "action", id: "open", label: t("menu.open"), onSelect: callbacks.onOpen },
     { kind: "action", id: "edit", label: t("menu.edit"), onSelect: callbacks.onEdit },
     {
@@ -174,6 +199,29 @@ export function buildAppMenuEntries(input: AppMenuInput): readonly DesktopMenuEn
       label: t("menu.editAppearance"),
       onSelect: callbacks.onEditAppearance,
     },
+  ];
+  if (sizeControls !== undefined) {
+    const sizeEntries: DesktopMenuEntry[] =
+      sizeControls.kind === "grid"
+        ? sizeControls.steps.map((step) => ({
+            kind: "action",
+            id: `size-${step.id}`,
+            label: step.label,
+            checked: step.checked,
+            onSelect: step.onSelect,
+          }))
+        : [
+            { kind: "action", id: "size-wider", label: t("menu.sizeWider"), onSelect: sizeControls.onWider },
+            { kind: "action", id: "size-narrower", label: t("menu.sizeNarrower"), onSelect: sizeControls.onNarrower },
+            { kind: "action", id: "size-taller", label: t("menu.sizeTaller"), onSelect: sizeControls.onTaller },
+            { kind: "action", id: "size-shorter", label: t("menu.sizeShorter"), onSelect: sizeControls.onShorter },
+          ];
+    entries.push(
+      { kind: "separator" },
+      { kind: "submenu", id: "size", label: t("menu.size"), entries: sizeEntries }
+    );
+  }
+  entries.push(
     { kind: "separator" },
     { kind: "action", id: "move-to-section", label: t("menu.moveToSection"), onSelect: callbacks.onMoveToSection },
     {
@@ -183,8 +231,9 @@ export function buildAppMenuEntries(input: AppMenuInput): readonly DesktopMenuEn
       onSelect: callbacks.onPinToggle,
     },
     { kind: "separator" },
-    { kind: "action", id: "delete", label: t("menu.delete"), onSelect: callbacks.onDelete },
-  ];
+    { kind: "action", id: "delete", label: t("menu.delete"), onSelect: callbacks.onDelete }
+  );
+  return entries;
 }
 
 export interface SectionMenuInput {

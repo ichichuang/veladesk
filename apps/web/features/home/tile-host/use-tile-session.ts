@@ -17,17 +17,18 @@ import type { LayoutItemId } from "@veladesk/desktop-engine";
 import { resolveDragItemIds } from "../../desktop-grid/group-drag";
 import { useCanvasDrag } from "../../canvas/use-canvas-drag";
 import { useCanvasMetrics } from "../../canvas/use-canvas-metrics";
-import { GRID_CELL_MAX_PX } from "../../canvas/square-grid-metrics";
+import { fluidGridCellCap } from "../../canvas/square-grid-metrics";
 import { useSquareGridMetrics } from "../../canvas/use-square-grid-metrics";
 import type { GridItemGeometry } from "../../canvas/canvas-resize";
 import { scopedToLayer } from "../section-layer-query";
 import { normalizeSelection, toggleSelection } from "../selection-state";
 import { normalizeSelectionRect, selectIntersectingItemIds } from "../selection-geometry";
-import { reconcilePageCanvasHistory } from "../../canvas/arrange-history";
+import { seedPageCanvasHistory } from "../../canvas/arrange-history";
 import type { WorkspaceClientRuntime } from "@veladesk/client-runtime";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { TranslateFn } from "../../i18n/use-i18n";
 import { useSnapDropRipples } from "./drop-ripple";
+import { recordDragReleaseBox } from "../dnd-static-drop";
 import { useCanvasCommits } from "./use-canvas-commits";
 
 interface MarqueeState {
@@ -149,7 +150,9 @@ export function useTileSession(input: UseTileSessionInput) {
       applySelection(normalized);
     }
     setArrangeHistories((current) =>
-      reconcilePageCanvasHistory(current, activePage.id, resolvePagePlacement(activePage)),
+      // SEED then reconcile (Helm r3): the baseline is the placement the
+      // user saw when the page activated, so the FIRST edit is undoable.
+      seedPageCanvasHistory(current, activePage.id, resolvePagePlacement(activePage)),
     );
   }, [activePage, setArrangeHistories]);
 
@@ -157,15 +160,22 @@ export function useTileSession(input: UseTileSessionInput) {
   // Freeform measures the canvas box; Grid measures the stage width and
   // derives the square cells. Both hooks run unconditionally; their refs
   // only attach to whichever model the active section renders. The Grid
-  // cell carries the Helm r2 ceiling (96–112 spec band): wide stages cap
-  // at GRID_CELL_MAX_PX and the centered frame carries the breathing room.
+  // cell carries a viewport-FLUID ceiling (Helm r3): the spec floor
+  // (GRID_CELL_MAX_PX, 96–112 band) holds on laptop stages and wide stages
+  // let the cell breathe up to 160px, so a wide screen stops reading as a
+  // tiny tile island. The cap feeds the SAME measuring hook — the stage
+  // width is layout-fixed, so the second pass settles.
   const { canvasRef, metrics: freeformMetrics } = useCanvasMetrics();
   const activeColumns =
     displayPlacement !== null && displayPlacement.mode === "grid" ? displayPlacement.columns : 0;
   const { stageRef: gridStageRef, metrics: gridMetrics } = useSquareGridMetrics(
     activeColumns,
     displayGapPx,
-    GRID_CELL_MAX_PX,
+    // The cap is a FUNCTION of the measured stage width, resolved inside
+    // the measurement itself — the stage width is layout-fixed (the
+    // centered frame never feeds back into it), so this converges in one
+    // pass with no extra state or effect.
+    fluidGridCellCap,
   );
 
   // --- Grid target-slot feedback (task 017-B) ---------------------------------
@@ -183,6 +193,18 @@ export function useTileSession(input: UseTileSessionInput) {
           ...(resizeTargetBox !== null ? [resizeTargetBox] : []),
         ]
       : undefined;
+
+  /** Resolves a tile's element scoped to the ACTIVE page's own layer. */
+  const resolveItemElement = useCallback((itemId: LayoutItemId) => {
+    // Scoped to the ACTIVE page's own layer (021-R1): warm layers render
+    // real items with the same data-item-id attributes, and a hidden
+    // page's element must never win a document-wide lookup.
+    const pageId = pageIdRef.current;
+    const scope = viewportRef.current?.querySelector(
+      scopedToLayer(pageId, `[data-item-id="${CSS.escape(itemId)}"]`) ?? ""
+    );
+    return scope instanceof HTMLElement ? scope : null;
+  }, [pageIdRef, viewportRef]);
 
   const { dragging, handleDragStart, handleDragMove, handleDragEnd } = useCanvasDrag({
     placement: displayPlacement,
@@ -202,16 +224,7 @@ export function useTileSession(input: UseTileSessionInput) {
       (sourceId: LayoutItemId) => resolveDragItemIds(sourceId, selectionRef.current),
       []
     ),
-    resolveItemElement: useCallback((itemId: LayoutItemId) => {
-      // Scoped to the ACTIVE page's own layer (021-R1): warm layers render
-      // real items with the same data-item-id attributes, and a hidden
-      // page's element must never win a document-wide lookup.
-      const pageId = pageIdRef.current;
-      const scope = viewportRef.current?.querySelector(
-        scopedToLayer(pageId, `[data-item-id="${CSS.escape(itemId)}"]`) ?? ""
-      );
-      return scope instanceof HTMLElement ? scope : null;
-    }, [pageIdRef, viewportRef]),
+    resolveItemElement,
   });
   useEffect(() => {
     draggingRef.current = dragging;
@@ -239,9 +252,20 @@ export function useTileSession(input: UseTileSessionInput) {
   const wrappedHandleDragEnd = useCallback(
     (event: Parameters<typeof handleDragEnd>[0]) => {
       lastDragEndedAtRef.current = Date.now();
+      // The release VISUAL box must be captured while the drag state is
+      // still live (fixed source + snap-corrected body) — by the time the
+      // drop settle runs, the post-commit effects may already have cleared
+      // the correction. Consumed by the settle in dnd-static-drop.ts.
+      const sourceId = event.operation.source?.id;
+      if (sourceId !== undefined) {
+        const sourceElement = resolveItemElement(String(sourceId) as LayoutItemId);
+        if (sourceElement !== null) {
+          recordDragReleaseBox(sourceElement);
+        }
+      }
       handleDragEnd(event);
     },
-    [handleDragEnd]
+    [handleDragEnd, resolveItemElement]
   );
 
   const handleItemSelect = useCallback((entityId: EntityId, toggle: boolean) => {

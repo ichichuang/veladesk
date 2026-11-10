@@ -7,6 +7,7 @@ import {
   gridContentHeightPx,
   gridContentRows,
   gridPlacementStyle,
+  fluidGridCellCap,
   gridSpanExtentPx,
   isSubpixelEqual,
   pixelsToCellDelta,
@@ -156,5 +157,34 @@ describe("gridPlacementStyle", () => {
       gridColumn: "3 / span 2",
       gridRow: "4 / span 2",
     });
+  });
+});
+
+describe("fluidGridCellCap (Helm r3)", () => {
+  it("holds the spec floor on laptop stages", () => {
+    expect(fluidGridCellCap(null)).toBe(GRID_CELL_MAX_PX);
+    expect(fluidGridCellCap(0)).toBe(GRID_CELL_MAX_PX);
+    expect(fluidGridCellCap(Number.NaN)).toBe(GRID_CELL_MAX_PX);
+    // ~900px stage: 900/11 ≈ 82 — below the floor.
+    expect(fluidGridCellCap(900)).toBe(GRID_CELL_MAX_PX);
+    // 1232px stage: 112 — exactly the floor.
+    expect(fluidGridCellCap(1232)).toBe(GRID_CELL_MAX_PX);
+  });
+
+  it("lets the cell breathe with the stage up to the 160px ceiling", () => {
+    expect(fluidGridCellCap(1540)).toBe(140);
+    expect(fluidGridCellCap(1760)).toBe(160);
+    // Wide screens saturate — never past the ceiling.
+    expect(fluidGridCellCap(2560)).toBe(160);
+  });
+
+  it("carries the measured stage width through the metrics", () => {
+    const metrics = calculateSquareGridMetrics({
+      availableWidthPx: 877,
+      columns: 5,
+      gapPx: 16,
+      maxCellPx: 112,
+    });
+    expect(metrics?.stageWidthPx).toBe(877);
   });
 });

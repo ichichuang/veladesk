@@ -77,11 +77,16 @@ describe("home-shell.css geometry contract (task 017)", () => {
     expect(workbench).toMatch(/display:\s*flex/);
 
     const viewport = ruleBlock(".vela-section-viewport");
-    // The Helm header band (clock + ⌘K bar, Helm first picture): the
-    // scroller reserves the top band with a viewport-scaled clamp instead
-    // of the old flat 56px.
-    expect(viewport).toMatch(/--vd-section-padding-top:\s*clamp\(150px,\s*23vh,\s*220px\)/);
+    // The Helm header band (clock + ⌘K bar, Helm r3): the scroller reserves
+    // EXACTLY the token-derived band height — header and reserved space
+    // share one source, so they can never disagree at any viewport.
+    expect(viewport).toMatch(/--vd-section-padding-top:\s*calc\(var\(--vd-helm-band\)\)/);
     expect(viewport).toMatch(/--vd-section-padding-bottom:\s*30px/);
+    // The band itself composes from clamp tokens only — no raw pixel
+    // literals that a short viewport could outrun.
+    const desktop = ruleBlock(".vela-desktop");
+    expect(desktop).toMatch(/--vd-helm-clock-size:\s*clamp\(/);
+    expect(desktop).toMatch(/--vd-helm-band:\s*calc\(/);
     // The artificial 186px left padding for the floating rail is gone: the
     // rail is a real flex column now.
     expect(css).not.toMatch(/--vd-grid-padding-left/);

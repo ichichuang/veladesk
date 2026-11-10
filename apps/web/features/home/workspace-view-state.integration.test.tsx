@@ -258,15 +258,15 @@ describe("first meaningful render (023-A §7/§8/§30)", () => {
     // The warm set around the REMEMBERED section — not around the default.
     expect(layerOf("page-b").dataset.warmHidden).toBe("true");
     const activeRow = container.querySelector(
-      '.vela-orbit__item[data-active="true"]',
+      '.vela-rail__item[data-active="true"]',
     ) as HTMLElement;
     expect(activeRow.dataset.pageId).toBe("page-c");
     expect(activeRow.getAttribute("aria-current")).toBe("page");
-    // The orbit's comet rests on the remembered waypoint: a placed
-    // translate, not the unset origin pose.
-    const comet = container.querySelector(".vela-orbit__comet") as HTMLElement | null;
-    expect(comet).not.toBeNull();
-    expect(comet!.style.transform).toMatch(/translate\(/);
+    // The rail's indicator rests on the remembered row: a placed box,
+    // not the unset origin pose.
+    const indicator = container.querySelector(".vela-rail__indicator") as HTMLElement | null;
+    expect(indicator).not.toBeNull();
+    expect(indicator!.style.top).toMatch(/px/);
     expectNoNavigationRan();
   });
 

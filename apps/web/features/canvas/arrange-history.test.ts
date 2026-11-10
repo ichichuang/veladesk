@@ -10,6 +10,7 @@ import {
   historyForPage,
   reconcilePageCanvasHistory,
   redoPageCanvas,
+  seedPageCanvasHistory,
   resetPageCanvasHistory,
   restoreHistories,
   undoPageCanvas,
@@ -194,5 +195,27 @@ describe("arrange canvas history", () => {
     const rolledBack = restoreHistories(before);
     expect(rolledBack).toBe(before);
     expect(rectX(rolledBack, "page-1")).toBe(1000);
+  });
+});
+
+describe("seedPageCanvasHistory (Helm r3 — the first edit is undoable)", () => {
+  it("seeds a baseline for a page with no history, so the FIRST edit has an undo step", () => {
+    const seeded = seedPageCanvasHistory({}, "page-1", canvas(1000));
+    expect(canUndo(seeded, "page-1")).toBe(false); // nothing edited yet
+
+    const edited = commitPageCanvas(seeded, "page-1", canvas(2000));
+    expect(canUndo(edited, "page-1")).toBe(true);
+
+    const undone = undoPageCanvas(edited, "page-1");
+    expect(rectX(undone, "page-1")).toBe(1000);
+  });
+
+  it("leaves an existing branch to the plain reconcile (never re-baselines it)", () => {
+    const seeded = seedPageCanvasHistory({}, "page-1", canvas(1000));
+    const edited = commitPageCanvas(seeded, "page-1", canvas(2000));
+    const reseeded = seedPageCanvasHistory(edited, "page-1", canvas(2000));
+    // The undo step survives — the branch was not re-baselined.
+    expect(canUndo(reseeded, "page-1")).toBe(true);
+    expect(historyForPage(reseeded, "page-1")?.past).toHaveLength(1);
   });
 });

@@ -115,7 +115,10 @@ export function VdAnimatedIndicator({
     }
     const destination = horizontal
       ? { x: target.offsetLeft, opacity: 1 }
-      : { top: target.offsetTop, height: target.offsetHeight, opacity: 1 };
+      : // Vertical also clears any stale horizontal WIDTH/X writes — the
+        // two axes share one element, and a horizontal pill width or
+        // offset must never survive into the vertical rail.
+        { top: target.offsetTop, height: target.offsetHeight, opacity: 1, width: "", x: 0 };
     if (reducedMotion || !placedRef.current || !activationChanged) {
       gsap.set(element, destination);
       placedRef.current = true;
@@ -169,7 +172,13 @@ export function VdAnimatedIndicator({
       if (axis === "horizontal") {
         gsap.set(element, { width: target.offsetWidth, x: target.offsetLeft, opacity: 1 });
       } else {
-        gsap.set(element, { top: target.offsetTop, height: target.offsetHeight, opacity: 1 });
+        gsap.set(element, {
+          top: target.offsetTop,
+          height: target.offsetHeight,
+          opacity: 1,
+          width: "",
+          x: 0,
+        });
       }
     };
     replace();

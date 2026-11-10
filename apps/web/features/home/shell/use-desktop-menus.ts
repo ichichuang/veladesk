@@ -26,6 +26,8 @@ import type { ArrangeCanvasHistories } from "../../canvas/arrange-history";
 import { canRedo, canUndo } from "../../canvas/arrange-history";
 import type { PendingCanvasHandoff } from "../../canvas/canvas-handoff";
 import type { PagePlacementMode } from "@veladesk/canvas-engine";
+import { GRID_SIZE_STEPS } from "../../canvas/canvas-resize";
+import type { ResizeCommitGeometry } from "../../canvas/canvas-resize";
 import { launchApp } from "../launch-app";
 import {
   buildAppMenuEntries,
@@ -71,6 +73,8 @@ export interface UseDesktopMenusInput {
   /** Canvas command layer pieces (placement mode, undo/redo, locks). */
   readonly setPlacementMode: (next: PagePlacementMode) => void;
   readonly applyHistoryStep: (pageId: DesktopPageId, direction: "undo" | "redo") => void;
+  /** Commits a menu-driven resize (the explicit 尺寸 controls, Helm r3). */
+  readonly commitResizedGeometry: (entityId: EntityId, geometry: ResizeCommitGeometry) => void;
   readonly freeformBlockedReason: string | null;
   readonly arrangeHistoriesRef: RefObject<ArrangeCanvasHistories>;
   readonly draggingRef: RefObject<boolean>;
@@ -112,6 +116,7 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
     switchMode,
     setPlacementMode,
     applyHistoryStep,
+    commitResizedGeometry,
     freeformBlockedReason,
     arrangeHistoriesRef,
     draggingRef,
@@ -179,6 +184,72 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
     });
   }
 
+  /**
+   * The explicit 尺寸 controls of a placed APP's context menu (Helm r3):
+   * the four designed Grid size steps (radio on the current one), or the
+   * four freeform grow/shrink directions — deterministic resizing beside
+   * the eight handles, committing through the same geometry path (handoff,
+   * history, persistence) as a handle drag.
+   */
+  function sizeControlsOf(entityId: EntityId) {
+    if (!arrange || activePage === undefined) {
+      return undefined;
+    }
+    const placement = resolvePagePlacement(activePage);
+    if (placement.mode === "grid") {
+      const item = placement.items.find((candidate) => candidate.id === entityId);
+      if (item === undefined) {
+        return undefined;
+      }
+      return {
+        kind: "grid" as const,
+        steps: GRID_SIZE_STEPS.map((step) => {
+          // The width clamps to the page's right edge (rows are unbounded);
+          // the anchor stays at the tile's own top-left cell.
+          const width = Math.min(step.w, Math.max(1, placement.columns - item.column));
+          return {
+            id: `${step.w}x${step.h}`,
+            label: `${step.w}×${step.h}`,
+            checked: item.columnSpan === width && item.rowSpan === step.h,
+            onSelect: () =>
+              commitResizedGeometry(entityId, {
+                kind: "grid",
+                geometry: {
+                  column: item.column,
+                  row: item.row,
+                  columnSpan: width,
+                  rowSpan: step.h,
+                },
+              }),
+          };
+        }),
+      };
+    }
+    const item = placement.items.find((candidate) => candidate.id === entityId);
+    if (item === undefined || !("rect" in item)) {
+      return undefined;
+    }
+    /** One freeform size step, in the canvas's 0–10000 logical units. */
+    const FREEFORM_SIZE_STEP = 625;
+    const move = (axis: "width" | "height", sign: 1 | -1) => {
+      const next = Math.min(
+        Math.max(500, item.rect[axis] + sign * FREEFORM_SIZE_STEP),
+        axis === "width" ? 10000 - item.rect.x : 10000 - item.rect.y,
+      );
+      commitResizedGeometry(entityId, {
+        kind: "freeform",
+        rect: { ...item.rect, [axis]: next },
+      });
+    };
+    return {
+      kind: "freeform" as const,
+      onWider: () => move("width", 1),
+      onNarrower: () => move("width", -1),
+      onTaller: () => move("height", 1),
+      onShorter: () => move("height", -1),
+    };
+  }
+
   function openEntityMenu(entityId: EntityId, x: number, y: number) {
     const entity = snapshot.entities.find((candidate) => candidate.id === entityId);
     if (entity === undefined) {
@@ -193,6 +264,7 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
         entries: buildAppMenuEntries({
           t,
           pinned,
+          sizeControls: sizeControlsOf(entity.id),
           callbacks: {
             onOpen: () => launchApp(entity),
             onEdit: () => openDialog({ kind: "edit-app", entityId: entity.id }),
