@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { gsap } from "@components/vd/gsap";
 import { VD_MOTION_EASE, VD_MOTION_WALLPAPER } from "@components/vd/motion-tokens";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
+import { DEFAULT_WALLPAPER } from "@veladesk/domain";
 import type { EffectiveWallpaper, WallpaperConfig } from "@veladesk/domain";
 
 import { isWallpaperBright } from "./wallpaper-luminance";
@@ -58,7 +59,7 @@ export function wallpaperConfigKey(config: WallpaperConfig): string {
  * (once-per-image) measurement lands; a failure stays `false`.
  */
 function useWallpaperVeil(assetUrl: string | null): boolean {
-  const [bright, setBright] = useState(false);
+  const [measurement, setMeasurement] = useState<{ url: string; bright: boolean } | null>(null);
   useEffect(() => {
     if (assetUrl === null) {
       return;
@@ -66,14 +67,14 @@ function useWallpaperVeil(assetUrl: string | null): boolean {
     let cancelled = false;
     void isWallpaperBright(assetUrl).then((value) => {
       if (!cancelled) {
-        setBright(value);
+        setMeasurement({ url: assetUrl, bright: value });
       }
     });
     return () => {
       cancelled = true;
     };
   }, [assetUrl]);
-  return bright;
+  return measurement?.url === assetUrl && measurement.bright;
 }
 
 export function WallpaperSurface({
@@ -106,6 +107,8 @@ export function WallpaperSurface({
       aria-hidden="true"
     >
       {assetUrl !== null ? (
+        // Local blob URLs must use a native image; Next optimization cannot fetch them.
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={assetUrl}
           alt=""
@@ -206,8 +209,17 @@ export function WorkspaceWallpaperLayers({
   readonly className?: string;
 }) {
   const reducedMotion = useVdReducedMotion();
-  const key = `${wallpaperConfigKey(wallpaper.config)}|${assetUrl ?? ""}`;
-  const [settled, setSettled] = useState<WallpaperSlot>({ key, wallpaper, assetUrl });
+  const initialWallpaper = wallpaper.config.kind === "asset" && assetUrl === null
+    ? { config: DEFAULT_WALLPAPER, provenance: "default" as const } : wallpaper;
+  const [settled, setSettled] = useState<WallpaperSlot>(() => ({
+    key: `${wallpaperConfigKey(initialWallpaper.config)}|${assetUrl ?? ""}`,
+    wallpaper: initialWallpaper, assetUrl,
+  }));
+  // Keep the visible image until local bytes arrive. A failed load is
+  // resolved by the scene's fallback chain, never by a blank crossfade.
+  const target = wallpaper.config.kind === "asset" && assetUrl === null
+    ? settled : { key: `${wallpaperConfigKey(wallpaper.config)}|${assetUrl ?? ""}`, wallpaper, assetUrl };
+  const key = target.key;
   const [previous, setPrevious] = useState<WallpaperSlot | null>(null);
   const [armedKey, setArmedKey] = useState(key);
   const incomingRef = useRef<HTMLDivElement | null>(null);
@@ -222,7 +234,7 @@ export function WorkspaceWallpaperLayers({
     if (!reducedMotion) {
       setPrevious(settled);
     }
-    setSettled({ key, wallpaper, assetUrl });
+    setSettled(target);
   }
   // Reduced motion switched on mid-crossfade: retire the underneath layer in
   // the same render-phase pass (derived state) instead of from the effect.
@@ -240,15 +252,14 @@ export function WorkspaceWallpaperLayers({
     }
     // Hold the incoming layer dark synchronously, then fade ONLY after its
     // image is genuinely decoded — the crossfade never shows a half-decoded
-    // first frame (P1; the settled layer underneath is already decoded).
+    // first frame (P1; both the incoming and underneath images must be decoded).
     gsap.set(element, { opacity: 0 });
     let cancelled = false;
     let tween: gsap.core.Tween | null = null;
-    const incomingImage = element.querySelector("img[data-wallpaper-image]");
-    const decoded =
-      incomingImage instanceof HTMLImageElement
-        ? incomingImage.decode().catch(() => undefined)
-        : Promise.resolve();
+    const images = element.parentElement?.querySelectorAll("img[data-wallpaper-image]") ?? [];
+    const decoded = Promise.all(Array.from(images, (image) =>
+      image instanceof HTMLImageElement ? image.decode() : Promise.resolve(),
+    ));
     void decoded.then(() => {
       if (cancelled) {
         return;
@@ -257,7 +268,7 @@ export function WorkspaceWallpaperLayers({
         opacity: 1, duration: VD_MOTION_WALLPAPER.crossfade, ease: VD_MOTION_EASE,
         onComplete: () => { gsap.set(element, { clearProps: "opacity" }); setPrevious(null); },
       });
-    });
+    }).catch(() => { /* Keep the previous decoded surface visible on failure. */ });
     return () => {
       cancelled = true;
       tween?.kill();
@@ -266,7 +277,7 @@ export function WorkspaceWallpaperLayers({
   }, [key, crossfading]);
 
   return (
-    <div className={className} data-wallpaper-provenance={wallpaper.provenance}>
+    <div className={className} data-wallpaper-provenance={settled.wallpaper.provenance}>
       {previous !== null ? (
         <WallpaperSurface
           wallpaper={previous.wallpaper}
@@ -275,7 +286,7 @@ export function WorkspaceWallpaperLayers({
         />
       ) : null}
       <div ref={incomingRef} className="vela-desktop__wallpaper-incoming">
-        <WallpaperSurface wallpaper={wallpaper} assetUrl={assetUrl} />
+        <WallpaperSurface wallpaper={settled.wallpaper} assetUrl={settled.assetUrl} />
       </div>
     </div>
   );

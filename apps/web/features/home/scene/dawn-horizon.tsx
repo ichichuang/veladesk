@@ -4,10 +4,10 @@ import type { RefObject } from "react";
 
 /**
  * The Dawn horizon (P1, motion-spec-p1 §2 visual layer): the persistent
- * scene identity on PRESET wallpapers — the dawn.1→dawn.3 gradient band at
+ * scene identity over presets and custom wallpapers — the dawn.1→dawn.3 gradient band at
  * the lower third, its hairline waterline and a whisper of chart graticule
- * across the ground. A custom (asset) wallpaper never renders it: the
- * photo IS the scene and the renderer applies no preset tint there.
+ * across the ground. Custom photos keep the static light band; only
+ * preset scenes run the opening animation.
  *
  * Node ownership for the Dawn opening: `bandRef` points at the scalable
  * band wrapper (GSAP raises scaleY 0→1 from the waterline;

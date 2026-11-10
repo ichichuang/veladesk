@@ -87,7 +87,9 @@ export function BackgroundSection({
     {
       effectiveMode: layer === "general" ? "dark" : layer,
       page,
-      modeWallpaperDraft: editingModeLayer ? { mode: layer, config: editedConfig } : undefined,
+      modeWallpaperDraft: editingModeLayer
+        ? { mode: layer, config: editedConfig }
+        : { mode: "dark", config: null },
     },
     {
       page,
@@ -211,7 +213,7 @@ export function BackgroundSection({
       </div>
 
       {/* Section-only: Follow workspace (inheritance), never a copy. */}
-      {!isWorkspaceScope ? (
+      {!isWorkspaceScope && !editingModeLayer ? (
         <SettingsRow title={t("settings.background.sectionMode")} hint={t("settings.background.sectionModeHint")}>
           <ToggleButtonGroup
             selectionMode="single"
@@ -221,7 +223,7 @@ export function BackgroundSection({
               if (value === "follow") {
                 writeLayer(null);
               } else if (editedConfig === null && !editingModeLayer) {
-                pickPreset({ kind: "preset", presetId: draft.appearance.wallpaperPreset });
+                pickPreset({ kind: "preset", presetId: "dawn" });
               }
             }}
             aria-label={t("settings.background.sectionMode")}

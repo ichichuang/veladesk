@@ -183,6 +183,8 @@
    * identical. The easing is one smooth ease-out — no springs, no bounce.
    * Grid/Freeform drag, resize and snap landing never use these.
    */
+  --vd-wallpaper-veil-alpha: 0.06;
+  --vd-motion-spin: 1s;
   --vd-motion-fast: 180ms;
   --vd-motion-control: 220ms;
   --vd-motion-popover: 260ms;

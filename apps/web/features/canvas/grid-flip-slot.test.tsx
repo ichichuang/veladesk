@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
+import { animate } from "motion/react";
 import { render, screen } from "@testing-library/react";
 
 import { GRID_FLIP_TRANSITION, GridFlipSlot } from "./grid-flip-slot";
+
+vi.mock("motion/react", async (importOriginal) => ({
+  ...await importOriginal<typeof import("motion/react")>(),
+  animate: vi.fn(),
+}));
 
 /**
  * The snap-mode FLIP slot's render contract (P1, motion-spec §3): one
@@ -84,12 +90,14 @@ describe("GridFlipSlot (P1)", () => {
         <button type="button">tile</button>
       </GridFlipSlot>,
     );
-    // Instant reposition + 120ms opacity crossfade — but NEVER a remount:
+    // Reduced motion drops in place with no animation or remount:
     // focus and hover state must survive the swap.
     expect(container.querySelector(".vela-item-slot")).toBe(slot);
     expect(container.querySelector("button")).toBe(button);
     expect(slot.style.gridColumn).toBe("5 / span 2");
     expect(slot.style.gridRow).toBe("4 / span 1");
+    expect(animate).not.toHaveBeenCalled();
+    expect(slot.style.opacity).toBe("");
   });
 
   it("builds the flip spring from the shared token — critically damped, no literals", () => {

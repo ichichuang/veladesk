@@ -187,3 +187,16 @@ describe("GRID_SIZE_STEPS — the snap size system (P1)", () => {
     expect(snapSpanToSizeStep({ w: 4, h: 2 }, 1)).toEqual({ w: 1, h: 2 });
   });
 });
+
+
+describe("snap resize boundary closeout", () => {
+  it.each(["e", "se", "w", "nw", "ne", "sw"] as const)("keeps %s step rounding inside the grid", (handle) => {
+    const start = { column: handle.includes("w") ? 0 : 2, row: 0, columnSpan: 1, rowSpan: 1 };
+    const result = gridResizeGeometryAt({ kind: "grid", handle, itemId: "a", startGeometry: start,
+      startPointerX: 0, startPointerY: 0, pitchPx: 100, columns: 3 },
+      handle.includes("w") ? -100 : 100, handle.includes("n") ? -100 : 100);
+    expect(result.column).toBeGreaterThanOrEqual(0);
+    expect(result.row).toBeGreaterThanOrEqual(0);
+    expect(result.column + result.columnSpan).toBeLessThanOrEqual(3);
+  });
+});

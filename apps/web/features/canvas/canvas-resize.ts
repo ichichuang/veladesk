@@ -175,8 +175,13 @@ export function gridResizeGeometryAt(
   }
   const step = snapSpanToSizeStep(
     { w: item.columnSpan, h: item.rowSpan },
-    session.columns,
+    Math.max(1, (session.handle.includes("w")
+      ? session.startGeometry.column + session.startGeometry.columnSpan
+      : session.columns - item.column)),
   );
+  const height = session.handle.includes("n")
+    ? Math.min(step.h, session.startGeometry.row + session.startGeometry.rowSpan)
+    : step.h;
   // Keep the anchored (far) corner fixed: a west/north handle grows
   // rightward/downward from a moved origin, an east/south handle keeps it.
   const growsWest = session.handle === "nw" || session.handle === "w" || session.handle === "sw";
@@ -184,9 +189,9 @@ export function gridResizeGeometryAt(
   const start = session.startGeometry;
   return {
     column: growsWest ? start.column + start.columnSpan - step.w : item.column,
-    row: growsNorth ? start.row + start.rowSpan - step.h : item.row,
+    row: growsNorth ? start.row + start.rowSpan - height : item.row,
     columnSpan: step.w,
-    rowSpan: step.h,
+    rowSpan: height,
   };
 }
 

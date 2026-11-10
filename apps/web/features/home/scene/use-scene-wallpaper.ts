@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { resolveModeAwareWallpaper } from "@veladesk/domain";
 import type {
@@ -36,7 +36,7 @@ export interface UseSceneWallpaperInput {
  * its asset id, and the resolved object URL (including the pending-draft
  * preview URL). Rendering lives in SceneBackdrop; this hook only resolves.
  * Mode-aware (P1): the effective color mode's page override substitutes
- * first, then the ordinary page → workspace → preset chain.
+ * first, then the page general image → Dawn chain.
  */
 export function useSceneWallpaper(input: UseSceneWallpaperInput) {
   const {
@@ -57,6 +57,7 @@ export function useSceneWallpaper(input: UseSceneWallpaperInput) {
    * substitutes only its own mode layer, and only while the desktop
    * actually renders that mode.
    */
+  const [unavailableAssetIds, setUnavailableAssetIds] = useState<ReadonlySet<string>>(new Set());
   const visibleSectionId = visibleActiveIdOf(sectionNavMachine, effectiveActivePageId);
   const effectiveWallpaper = useMemo(() => {
     const page =
@@ -77,7 +78,7 @@ export function useSceneWallpaper(input: UseSceneWallpaperInput) {
       backgroundPreview?.mode === undefined &&
       !backgroundPreview.explicitlyInherits;
     return resolveModeAwareWallpaper(
-      { effectiveMode: effectiveColorMode, page, modeWallpaperDraft: modeDraft },
+      { effectiveMode: effectiveColorMode, page, modeWallpaperDraft: modeDraft, unavailableAssetIds },
       {
         page,
         pageWallpaperDraft: pageDraftActive ? backgroundPreview.config : undefined,
@@ -99,6 +100,7 @@ export function useSceneWallpaper(input: UseSceneWallpaperInput) {
     backgroundPreview,
     resolvedAppearance,
     effectiveColorMode,
+    unavailableAssetIds,
   ]);
 
   /** Resolves asset-backed wallpapers through the existing asset runtime. */
@@ -107,12 +109,22 @@ export function useSceneWallpaper(input: UseSceneWallpaperInput) {
       const runtime = await getBrowserAssetRuntime();
       const result = await runtime.loadAsset(assetId);
       if (result.ok && "blob" in result && result.blob instanceof Blob) {
-        return { ok: true, url: URL.createObjectURL(result.blob) };
+        const url = URL.createObjectURL(result.blob);
+        try {
+          const image = new Image();
+          image.src = url;
+          await image.decode();
+          return { ok: true, url };
+        } catch {
+          URL.revokeObjectURL(url);
+        }
       }
-      return { ok: false, url: null };
     } catch {
-      return { ok: false, url: null };
+      // A missing local blob or an unsupported image falls through the
+      // same mode → general → Dawn chain without changing persisted data.
     }
+    setUnavailableAssetIds((ids) => new Set([...ids, assetId]));
+    return { ok: false, url: null };
   }, []);
   const wallpaperAssetId =
     effectiveWallpaper.config.kind === "asset" ? effectiveWallpaper.config.assetId : null;

@@ -371,3 +371,26 @@ describe("replacePageModeWallpaper (P1)", () => {
     ).toMatchObject({ ok: false, reason: "invalid-wallpaper" });
   });
 });
+
+
+describe("desktop wallpaper fallback closeout", () => {
+  const asset = (assetId: string): WallpaperConfig => ({ kind: "asset", assetId, fit: "cover", position: "center" });
+  it("skips unavailable mode and general images, ending at Dawn instead of workspace", () => {
+    const page = { wallpaper: asset("general"), wallpaperByMode: { dark: asset("dark") } };
+    const base = { page, pageWallpaperDraft: undefined, pageWallpaperExplicitlyInherits: false,
+      workspaceWallpaper: asset("workspace"), workspaceDraft: undefined, legacyWorkspacePreset: "aurora" as const };
+    for (const [missing, expected] of [
+      [[], asset("dark")], [["dark"], asset("general")], [["dark", "general"], DEFAULT_WALLPAPER],
+    ] as const) {
+      expect(resolveModeAwareWallpaper({ effectiveMode: "dark", page, modeWallpaperDraft: undefined,
+        unavailableAssetIds: new Set(missing) }, base).config).toEqual(expected);
+    }
+  });
+  it("a desktop with no overrides and a removed general draft resolve to Dawn", () => {
+    const page = { wallpaper: asset("general") };
+    const base = { page, pageWallpaperDraft: null, pageWallpaperExplicitlyInherits: false,
+      workspaceWallpaper: asset("workspace"), workspaceDraft: undefined, legacyWorkspacePreset: "mist" as const };
+    expect(resolveModeAwareWallpaper({ effectiveMode: "light", page, modeWallpaperDraft: undefined }, base))
+      .toEqual({ config: DEFAULT_WALLPAPER, provenance: "default" });
+  });
+});

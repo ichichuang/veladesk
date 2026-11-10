@@ -103,7 +103,7 @@
 }
 
 .vela-mobile-header__sync[data-state="conflict"] {
-  color: var(--vdu-danger, #e5484d);
+  color: var(--vdu-danger);
 }
 
 .vela-mobile-header__actions {
@@ -398,7 +398,7 @@
   width: var(--vd-slot-icon-size);
   height: var(--vd-slot-icon-size);
   border-radius: calc(var(--vd-slot-icon-size) * 0.26);
-  background: color-mix(in oklab, var(--vd-accent, #7aa2f7) 26%, transparent);
+  background: color-mix(in oklab, var(--vd-accent) 26%, transparent);
   color: var(--vd-text, inherit);
 }
 
@@ -624,7 +624,7 @@
 }
 
 .vela-mobile-search__row[data-active="true"] {
-  background: color-mix(in oklab, var(--vdu-accent, #7aa2f7) 16%, transparent);
+  background: color-mix(in oklab, var(--vdu-accent) 16%, transparent);
 }
 
 .vela-mobile-search__row:focus-visible {
@@ -715,7 +715,7 @@
   display: inline-flex;
   border: none;
   border-radius: 10px;
-  background: color-mix(in oklab, var(--vdu-accent, #7aa2f7) 16%, transparent);
+  background: color-mix(in oklab, var(--vdu-accent) 16%, transparent);
   color: var(--vdu-fg, inherit);
   font-size: 13px;
   min-height: 44px;

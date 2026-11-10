@@ -54,9 +54,8 @@ export function SceneBackdrop({
   useVdAmbientDrift(desktopAmbientRef, { durationSeconds: VD_MOTION_AMBIENT.drift });
 
   // The Dawn opening (P1, motion-spec §2): the horizon band rises over
-  // the PRESET scene while the brightness veil recedes. Custom image
-  // wallpapers render no horizon and never play the opening — a photo is
-  // its own scene. Not gated by helmMotion.
+  // the PRESET scene while the brightness veil recedes. Custom images keep the static Dawn horizon; only preset
+  // scenes play the opening. Not gated by helmMotion.
   const sceneRootRef = useRef<HTMLDivElement | null>(null);
   const horizonBandRef = useRef<HTMLDivElement | null>(null);
   const dawnVeilRef = useRef<HTMLDivElement | null>(null);
@@ -81,7 +80,7 @@ export function SceneBackdrop({
           assetUrl={assetUrl}
           {...(wallpaperClassName === undefined ? {} : { className: wallpaperClassName })}
         />
-        {presetScene ? <DawnHorizon bandRef={horizonBandRef} /> : null}
+        <DawnHorizon bandRef={horizonBandRef} />
         <div className="vela-desktop__ambient" aria-hidden="true" ref={desktopAmbientRef} />
       </div>
       {/* The Dawn opening's brightness veil (spec §2: 整张画面的亮度遮罩):

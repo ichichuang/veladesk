@@ -469,13 +469,10 @@ describe("the browse surface (§14/§24/§75)", () => {
     expect(document.querySelector(".vela-mobile-header__sync")).toBeNull();
   });
 
-  it("an asset-backed section wallpaper flows through the shared renderer (§46/§80)", () => {
+  it("a cold asset-backed section shows Dawn until local bytes resolve (§46/§80)", () => {
     const { container } = render(<MobileHost initialPageId="page-d" />);
-    // The shared WallpaperSurface carries the asset identity (and its fit)
-    // even while the blob URL is still cold — the neutral canvas shows.
-    const imageSurface = container.querySelector('[data-wallpaper-image="asset-wx"]');
-    expect(imageSurface).not.toBeNull();
-    expect(imageSurface!.closest('[data-wallpaper-fit="cover"]')).not.toBeNull();
+    expect(container.querySelector('[data-wallpaper-preset="dawn"]')).not.toBeNull();
+    expect(container.querySelector("img[data-wallpaper-image]")).toBeNull();
   });
 });
 
@@ -517,10 +514,10 @@ describe("material tier and the shared Dawn scene (P1)", () => {
     expect(root.querySelector(".vela-dawn-veil")).not.toBeNull();
   });
 
-  it("renders no Dawn horizon over a custom image wallpaper", () => {
+  it("keeps the static Dawn horizon over a custom image wallpaper", () => {
     render(<MobileHost initialPageId="page-d" />);
     const root = document.querySelector("[data-vd-mobile-shell]")!;
     expect(root.querySelector(".vela-desktop__scene")).not.toBeNull();
-    expect(root.querySelector(".vela-dawn-horizon")).toBeNull();
+    expect(root.querySelector(".vela-dawn-horizon")).not.toBeNull();
   });
 });

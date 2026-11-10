@@ -167,6 +167,8 @@ export interface ModeAwareWallpaperInput {
   readonly effectiveMode: "dark" | "light";
   /** The page whose mode overrides apply (its optional `wallpaperByMode`). */
   readonly page: Pick<DesktopPage, "wallpaper" | "wallpaperByMode"> | undefined;
+  /** Asset ids that local loading or browser decoding could not resolve. */
+  readonly unavailableAssetIds?: ReadonlySet<string>;
   /**
    * The per-mode DRAFT of the visible page's edited mode layer (the
    * Settings background editor): `null` = explicit removal — previews the
@@ -181,8 +183,8 @@ export interface ModeAwareWallpaperInput {
 /**
  * The mode-aware wallpaper resolver (P1): the EFFECTIVE color mode's
  * page-specific override first — drafted, then persisted — then the whole
- * ordinary chain (page general → workspace → legacy preset → default
- * Dawn Chart scene) unchanged. A mode draft that targets the OTHER mode
+ * desktop chain (page general → default Dawn Chart scene). The workspace
+ * editor continues to resolve its separate default through the base resolver. A mode draft that targets the OTHER mode
  * never substitutes this render. Pure — no DOM, no clocks, no storage.
  */
 export function resolveModeAwareWallpaper(
@@ -190,15 +192,25 @@ export function resolveModeAwareWallpaper(
   base: Parameters<typeof resolveEffectiveWallpaper>[0],
 ): EffectiveWallpaper {
   const { effectiveMode, page, modeWallpaperDraft } = input;
+  const available = (config: WallpaperConfig | null | undefined) =>
+    config != null && !(config.kind === "asset" && input.unavailableAssetIds?.has(config.assetId));
 
   const draftTargetsThisMode = modeWallpaperDraft !== undefined && modeWallpaperDraft.mode === effectiveMode;
-  if (draftTargetsThisMode && modeWallpaperDraft.config !== null) {
+  if (draftTargetsThisMode && available(modeWallpaperDraft.config) && modeWallpaperDraft.config !== null) {
     return { config: modeWallpaperDraft.config, provenance: "section" };
   }
   const persisted = page?.wallpaperByMode?.[effectiveMode];
-  if (draftTargetsThisMode !== true && persisted !== undefined) {
+  if (draftTargetsThisMode !== true && persisted !== undefined && available(persisted)) {
     return { config: persisted, provenance: "section" };
   }
 
-  return resolveEffectiveWallpaper(base);
+  // The workspace editor still edits its own default. A desktop's final
+  // fallback is always Dawn, independently of workspace/legacy choices.
+  if (page === undefined && base.page === undefined) return resolveEffectiveWallpaper(base);
+  const general = base.pageWallpaperExplicitlyInherits
+    ? null
+    : base.pageWallpaperDraft !== undefined ? base.pageWallpaperDraft : page?.wallpaper;
+  return available(general) && general != null
+    ? { config: general, provenance: "section" }
+    : { config: DEFAULT_WALLPAPER, provenance: "default" };
 }

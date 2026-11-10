@@ -644,7 +644,6 @@
 .vela-wallpaper-surface--image {
   background: var(--vd-bg);
   /* The veil alpha lives here once — never a literal in a component. */
-  --vd-wallpaper-veil-alpha: 0.06;
 }
 
 .vela-wallpaper-surface--image[data-bright="true"]::after {
@@ -2997,13 +2996,13 @@ header.vela-inspector__subject {
 /* Motion only when allowed; the panel's outer surface keeps its GSAP owner. */
 @media (prefers-reduced-motion: no-preference) {
   .vela-inspector__subject {
-    animation: vela-subject-in 160ms ease-out both;
+    animation: vela-subject-in var(--vd-motion-fast) var(--vd-motion-ease) both;
   }
   .vela-onboarding__spinner {
-    animation: vela-loading-spin 800ms linear infinite;
+    animation: vela-loading-spin var(--vd-motion-spin) linear infinite;
   }
   .vela-onboarding .vela-button {
-    transition: box-shadow 160ms ease, background-color 160ms ease;
+    transition: box-shadow var(--vd-motion-fast) var(--vd-motion-ease), background-color var(--vd-motion-fast) var(--vd-motion-ease);
   }
 }
 
@@ -3022,7 +3021,7 @@ header.vela-inspector__subject {
   padding-right: 340px;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .vela-workbench { transition: padding-right 200ms ease; }
+  .vela-workbench { transition: none; }
 }
 
 /* Workspace menus retain the shared surface and theme tokens. */

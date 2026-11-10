@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { animate, motion } from "motion/react";
+import { useEffect, useState } from "react";
+import { motion } from "motion/react";
 import type { MotionStyle } from "motion/react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import type { GridCanvasItem } from "@veladesk/canvas-engine";
 
 import { gridPlacementStyle } from "./square-grid-metrics";
-import { VD_MOTION_EASES_BEZIER, VD_MOTION_FLIP } from "@components/vd/motion-tokens";
+import { VD_MOTION_FLIP } from "@components/vd/motion-tokens";
 import { vdPrefersReducedMotion } from "@components/vd/reduced-motion";
 
 /**
@@ -25,8 +25,7 @@ import { vdPrefersReducedMotion } from "@components/vd/reduced-motion";
  * the tile back to its pre-drag cell.
  *
  * Reduced motion renders a plain div that REPOSITIONS INSTANTLY, with a
- * 120ms opacity crossfade (flip.reducedCrossfade) on the moved slot so the
- * swap still reads as a transition — the animator's downgrade (§3): no
+ * direct drop in place: no
  * spring, no ripple, no remount (focus and hover state survive the swap).
  *
  * `data-motion-owner="motion"` marks the engine split (motion-spec §0):
@@ -65,7 +64,7 @@ function attachReducedMotionQuery(): void {
 }
 
 function useSharedReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(sharedReducedMotion);
+  const [reduced, setReduced] = useState(vdPrefersReducedMotion);
   useEffect(() => {
     reducedMotionListeners.add(setReduced);
     attachReducedMotionQuery();
@@ -74,19 +73,6 @@ function useSharedReducedMotion(): boolean {
     };
   }, []);
   return reduced;
-}
-
-/** Whether two grid items occupy different cells (either axis or span). */
-function gridItemChanged(
-  a: GridCanvasItem,
-  b: GridCanvasItem,
-): boolean {
-  return (
-    a.column !== b.column ||
-    a.row !== b.row ||
-    a.columnSpan !== b.columnSpan ||
-    a.rowSpan !== b.rowSpan
-  );
 }
 
 export function GridFlipSlot({
@@ -107,34 +93,6 @@ export function GridFlipSlot({
   readonly children: ReactNode;
 }) {
   const reducedMotion = useSharedReducedMotion();
-  // The reduced-motion crossfade runs on the slot's OWN node ref — the
-  // caller's slotRef stays untouched (the resize preview writes to it).
-  const crossfadeRef = useRef<HTMLDivElement | null>(null);
-  const previousItemRef = useRef(item);
-
-  useEffect(() => {
-    const changed = gridItemChanged(previousItemRef.current, item);
-    previousItemRef.current = item;
-    // Only the DOWNGRADE path crossfades: with FLIP active the spring
-    // owns the transition, and a dragged/inert slot never animates.
-    if (!changed || !flip || !reducedMotion || dragging) {
-      return;
-    }
-    const element = crossfadeRef.current;
-    if (element === null) {
-      return;
-    }
-    const controls = animate(
-      element,
-      { opacity: [0, 1] },
-      { duration: VD_MOTION_FLIP.reducedCrossfade, ease: VD_MOTION_EASES_BEZIER.linear },
-    );
-    return () => {
-      controls.stop();
-      element.style.opacity = "";
-    };
-  }, [item, flip, reducedMotion, dragging]);
-
   // Both branches keep the SAME class/DOM shape so a flip toggle (a drag
   // starting mid-session) never remounts the tile. MotionStyle widens
   // CSSProperties; gridColumn/gridRow ride along as plain styles.
@@ -144,7 +102,6 @@ export function GridFlipSlot({
   };
   if (!flip || reducedMotion) {
     const setRefs = (node: HTMLDivElement | null) => {
-      crossfadeRef.current = node;
       slotRef.current = node;
     };
     return (

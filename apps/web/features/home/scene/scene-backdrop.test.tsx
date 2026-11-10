@@ -2,7 +2,7 @@
 /*
  * The scene backdrop's Dawn gate (P1, motion-spec-p1 §2): Dawn is ON BY
  * DEFAULT — no helmMotion switch is consulted — over a PRESET scene; a
- * custom image wallpaper renders no horizon and never plays the opening;
+ * custom image wallpaper keeps the static horizon and never plays the opening;
  * reduced motion renders the static final state.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -63,7 +63,8 @@ describe("SceneBackdrop Dawn gate", () => {
     const { container } = render(
       <SceneBackdrop wallpaper={CUSTOM} assetUrl="blob:fake" />,
     );
-    expect(container.querySelector(".vela-dawn-horizon")).toBeNull();
+    expect(container.querySelector(".vela-dawn-horizon")).not.toBeNull();
+    expect(container.querySelector<HTMLElement>(".vela-dawn-horizon__band")!.style.length).toBe(0);
     const veil = container.querySelector<HTMLElement>(".vela-dawn-veil");
     expect(veil).not.toBeNull();
     expect(veil!.style.length).toBe(0);

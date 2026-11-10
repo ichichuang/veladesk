@@ -28,6 +28,7 @@ import {
   WALLPAPER_MAX_AREA,
   WALLPAPER_MAX_DIMENSION,
 } from "./wallpaper-prep";
+import * as wallpaperLuminance from "./wallpaper-luminance";
 import { gsap } from "@components/vd/gsap";
 import type { PreparedAsset } from "@veladesk/assets/core";
 
@@ -303,6 +304,7 @@ describe("the Settings background editor (023-C.2)", () => {
       draft: WorkspaceSettingsDraft,
       images: readonly unknown[],
     ) => Promise<SettingsSaveResult>;
+    readonly workspace?: WorkspaceSnapshot;
     readonly onPreviewBackground?: (preview: BackgroundPreview | null) => void;
     readonly backgroundEntrySectionId?: string | null;
     readonly activeSectionId?: string | null;
@@ -311,7 +313,7 @@ describe("the Settings background editor (023-C.2)", () => {
       <UiLocaleProvider>
         <SettingsCenter
           open={true}
-          workspace={threePageWorkspace()}
+          workspace={props.workspace ?? threePageWorkspace()}
           onPreviewAppearance={() => {}}
           onSave={props.onSave as never}
           onClose={() => {}}
@@ -323,12 +325,23 @@ describe("the Settings background editor (023-C.2)", () => {
     );
   }
 
+  it("the general-layer editor does not preview a saved dark override", () => {
+    const base = threePageWorkspace();
+    const workspace = { ...base, pages: base.pages.map((page) => ({ ...page,
+      wallpaperByMode: { dark: { kind: "preset" as const, presetId: "midnight" as const } },
+    })) };
+    const view = renderSettings({ workspace, backgroundEntrySectionId: "page-1",
+      onSave: async () => ({ ok: true }) });
+    expect(view.getByText(/此分区使用默认 Dawn 场景。|This section uses the default Dawn scene./)).not.toBeNull();
+    expect(view.getByRole("radio", { name: /默认 Dawn 场景|Default Dawn scene/ }).getAttribute("aria-checked")).toBe("true");
+  });
+
   it("publishes the selected image URL immediately and keeps it through fit changes and Save", async () => {
     const { prepareAssetBlob } = await import("@veladesk/assets/core");
     vi.mocked(prepareAssetBlob).mockResolvedValue({ ok: true, asset: fakeAsset("selected-wallpaper") });
     const urlSpy = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:selected-wallpaper");
     const previews: (BackgroundPreview | null)[] = [];
-    const save = vi.fn(async (_draft: WorkspaceSettingsDraft, _images: readonly unknown[]) => ({ ok: true as const }));
+    const save = vi.fn(async (_draft: WorkspaceSettingsDraft, _images: readonly unknown[]) => { void _draft; void _images; return { ok: true as const }; });
     const view = renderSettings({ onSave: save, onPreviewBackground: (preview) => previews.push(preview) });
     fireEvent.change(view.getByTestId("wallpaper-file-input"), {
       target: { files: [new File(["image"], "wall.png", { type: "image/png" })] },
@@ -445,7 +458,7 @@ describe("the Settings background editor (023-C.2)", () => {
     });
     // Section scope: pick Follow workspace (clears any override) then also
     // draft the workspace layer — both patches ride one save.
-    const follow = view.getByRole("radio", { name: /跟随工作区|Follow workspace/ }).closest("button") ?? view.getByRole("radio", { name: /跟随工作区|Follow workspace/ });
+    const follow = view.getByRole("radio", { name: /默认 Dawn 场景|Default Dawn scene/ }).closest("button") ?? view.getByRole("radio", { name: /默认 Dawn 场景|Default Dawn scene/ });
     await act(async () => {
       fireEvent.click(view.getByTestId("wallpaper-preset-mist"));
     });
@@ -457,4 +470,67 @@ describe("the Settings background editor (023-C.2)", () => {
     await waitFor(() => expect(saved).toHaveLength(1));
     expect(saved[0]!.background.pages["page-1"]).toEqual({ general: { kind: "preset", presetId: "mist" } });
   });
+});
+
+
+describe("wallpaper transition closeout", () => {
+  const wallpaper = (id: string) => ({ config: { kind: "asset" as const, assetId: id,
+    fit: "cover" as const, position: "center" as const }, provenance: "section" as const });
+  it("keeps the visible image while the next asset is cold", () => {
+    const view = render(<WorkspaceWallpaperLayers wallpaper={wallpaper("old")} assetUrl="blob:old" />);
+    view.rerender(<WorkspaceWallpaperLayers wallpaper={wallpaper("cold")} assetUrl={null} />);
+    expect(view.container.querySelector("img")?.getAttribute("src")).toBe("blob:old");
+    expect(view.container.querySelectorAll(".vela-wallpaper-surface")).toHaveLength(1);
+  });
+  it("uses Dawn on a cold first mount", () => {
+    const view = render(<WorkspaceWallpaperLayers wallpaper={wallpaper("cold")} assetUrl={null} />);
+    expect(view.container.querySelector("[data-wallpaper-preset=dawn]")).not.toBeNull();
+  });
+  it("waits for both decodes before the tokenized crossfade", async () => {
+    const releases: (() => void)[] = [];
+    HTMLImageElement.prototype.decode ??= async () => {};
+    const decode = vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(() =>
+      new Promise<void>((resolve) => releases.push(resolve)));
+    try {
+      const view = render(<WorkspaceWallpaperLayers wallpaper={wallpaper("old")} assetUrl="blob:old" />);
+      view.rerender(<WorkspaceWallpaperLayers wallpaper={wallpaper("new")} assetUrl="blob:new" />);
+      const incoming = view.container.querySelector<HTMLElement>(".vela-desktop__wallpaper-incoming")!;
+      expect(releases).toHaveLength(2);
+      await act(async () => { releases[1]!(); });
+      expect(gsap.getTweensOf(incoming)).toHaveLength(0);
+      expect(incoming.style.opacity).toBe("0");
+      await act(async () => { releases[0]!(); });
+      const tween = gsap.getTweensOf(incoming)[0]!;
+      expect(tween.duration()).toBe(0.45);
+      await act(async () => { tween.progress(1); });
+      expect(view.container.querySelectorAll("img")).toHaveLength(1);
+    } finally { decode.mockRestore(); }
+  });
+  it("a rejected decode keeps the old surface without a tween", async () => {
+    HTMLImageElement.prototype.decode ??= async () => {};
+    const decode = vi.spyOn(HTMLImageElement.prototype, "decode").mockRejectedValue(new Error("corrupt"));
+    try {
+      const view = render(<WorkspaceWallpaperLayers wallpaper={wallpaper("old")} assetUrl="blob:old" />);
+      view.rerender(<WorkspaceWallpaperLayers wallpaper={wallpaper("new")} assetUrl="blob:new" />);
+      await act(async () => { await Promise.resolve(); });
+      const incoming = view.container.querySelector<HTMLElement>(".vela-desktop__wallpaper-incoming")!;
+      expect(incoming.style.opacity).toBe("0");
+      expect(gsap.getTweensOf(incoming)).toHaveLength(0);
+      expect(view.container.querySelector(".vela-desktop__wallpaper-settled img")?.getAttribute("src")).toBe("blob:old");
+    } finally { decode.mockRestore(); }
+  });
+});
+
+
+it("does not carry a bright-image scrim measurement to the next URL", async () => {
+  const measure = vi.spyOn(wallpaperLuminance, "isWallpaperBright")
+    .mockResolvedValueOnce(true).mockImplementationOnce(() => new Promise(() => {}));
+  const wallpaper = { config: { kind: "asset" as const, assetId: "veil", fit: "cover" as const,
+    position: "center" as const }, provenance: "section" as const };
+  try {
+    const view = render(<WallpaperSurface wallpaper={wallpaper} assetUrl="blob:bright-closeout" />);
+    await waitFor(() => expect(view.container.querySelector("[data-bright=true]")).not.toBeNull());
+    view.rerender(<WallpaperSurface wallpaper={wallpaper} assetUrl="blob:dark-closeout" />);
+    expect(view.container.querySelector("[data-bright=true]")).toBeNull();
+  } finally { measure.mockRestore(); }
 });
