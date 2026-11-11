@@ -55,20 +55,32 @@ export function useVdSmoothScroll(
     if (!(content instanceof HTMLElement)) {
       return;
     }
+    // The damping contract (t77, tokens in packages/ui tokens.css): one
+    // wheel notch glides over `--vd-scrollbar-settle-ms` (a quart ease-out
+    // — multi-frame ramp, damped stop ≤ 600ms), never a one-frame jump.
+    // The `--vd-scrollbar-lerp` exponential constant is the FALLBACK
+    // model when the settle token is 0 (the two are exclusive in Lenis —
+    // `duration` wins whenever it is set).
+    const styles = getComputedStyle(wrapper);
+    const settleMs = Number.parseFloat(styles.getPropertyValue("--vd-scrollbar-settle-ms")) || 500;
     const options: LenisOptions = {
       wrapper,
       content,
       eventsTarget: wrapper,
       autoRaf: true,
-      lerp: Number.parseFloat(getComputedStyle(wrapper).getPropertyValue("--vd-scrollbar-lerp")) || 0.12,
+      lerp: Number.parseFloat(styles.getPropertyValue("--vd-scrollbar-lerp")) || 0.12,
       orientation: wrapper.dataset.vdScroll === "x" ? "horizontal" : "vertical",
       naiveDimensions: true,
       prevent: (node) => node.matches("input, textarea, select, [contenteditable=true]") || wrapper.dataset.scrollLocked === "true" || document.querySelector("[data-dragging=true]") !== null,
       // Wheel smoothing only: touch keeps the OS gesture (syncTouch off)
       // so pull-to-refresh-ish interactions stay native.
       smoothWheel: true,
-      duration: (Number.parseFloat(getComputedStyle(wrapper).getPropertyValue("--vd-scrollbar-settle-ms")) || 500) / 1000,
-      easing: (t) => t === 1 ? 1 : 1 - Math.pow(1 - t, 4),
+      ...(settleMs > 0
+        ? {
+            duration: settleMs / 1000,
+            easing: (t: number) => (t === 1 ? 1 : 1 - Math.pow(1 - t, 4)),
+          }
+        : {}),
       // Nested scrolling inside these panes (an inner listbox popup) is
       // the browser's own — Lenis must not fight it.
       allowNestedScroll: true,

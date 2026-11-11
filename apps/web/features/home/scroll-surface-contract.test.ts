@@ -138,9 +138,14 @@ describe("scope discipline", () => {
     expect(desktop![1]!).not.toMatch(/overflow(-y)?:\s*scroll/);
   });
 
-  it("leaves the section pill wheel navigation fully intact (019/020, pill t61)", () => {
+  it("leaves the section pill wheel navigation fully intact (019/020, pill t61, t77)", () => {
     const pill = readSource("./section-pill.tsx");
-    expect(pill).toMatch(/addEventListener\(\s*["']wheel["'],\s*onWheel,\s*\{\s*passive:\s*false\s*\}\)/);
+    // t77: the listener rides the pill ROOT in the CAPTURE phase (it must
+    // see vertical wheels before the scroller's Lenis instance) — still
+    // one stable non-passive listener.
+    expect(pill).toMatch(
+      /addEventListener\(\s*["']wheel["'],\s*onWheel,\s*\{\s*capture:\s*true,\s*passive:\s*false\s*\}\)/,
+    );
     expect(pill).toMatch(/event\.preventDefault\(\);/);
     // The inner strip only receives the scroll STYLING attribute — never a
     // wheel scope that would break pill navigation. (The pill's listener

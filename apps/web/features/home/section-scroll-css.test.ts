@@ -170,19 +170,28 @@ describe("home-shell.css right-side scroll ownership (task 017)", () => {
 });
 
 describe("section pill wheel navigation (task 017, rebuilt 018, pill t61)", () => {
-  it("binds one stable non-passive wheel listener to the pill scroller", () => {
+  it("binds one stable non-passive wheel listener to the pill root (capture, t77)", () => {
     const pill = readSource("./section-pill.tsx");
-    expect(pill).toMatch(/addEventListener\(\s*["']wheel["'],\s*onWheel,\s*\{\s*passive:\s*false\s*\}\)/);
+    // t77: the listener rides the pill ROOT in the CAPTURE phase — it must
+    // see vertical hover wheels before the scroller's Lenis instance
+    // (whose "both"-gesture orientation would turn them into pill
+    // horizontal scrolls) — and stays non-passive.
+    expect(pill).toMatch(
+      /addEventListener\(\s*["']wheel["'],\s*onWheel,\s*\{\s*capture:\s*true,\s*passive:\s*false\s*\}\)/,
+    );
     expect(pill).toContain("event.preventDefault();");
     // The intent model is the pure module — no inline delta math, and the
     // 320ms lock-unlock contract is gone with it. 019-E routes the
     // normalization through the event-facing helper (ctrl zoom excluded).
+    // t77 adds the pill's own hover-vertical model alongside it.
     expect(pill).toContain("advanceWheelNav(");
+    expect(pill).toContain("advancePillWheelNav(");
     expect(pill).toContain("normalizeWheelEvent(");
     expect(pill).toContain("stepSectionIndex");
     expect(pill).toContain("resetWheelNav");
+    expect(pill).toContain("resetPillWheelNav");
     expect(pill).not.toContain("unlockWheelNav");
-    // The listener rides the pill's scrolling strip (scrollerRef).
+    // The scrolling strip keeps its ref for scrollbar/smooth-scroll.
     expect(pill).toMatch(/ref=\{scrollerRef\}/);
   });
 

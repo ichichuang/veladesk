@@ -437,6 +437,7 @@ export function useTileSession(input: UseTileSessionInput) {
     freeformMetrics,
     gridMetrics,
     gridFeedbackBoxes,
+    resizeTargetBox,
     setResizeTargetBox,
     resizableIds,
     // The snap-drop ripple session (rendered by the active grid stage).

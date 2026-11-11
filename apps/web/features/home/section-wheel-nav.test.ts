@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  INITIAL_PILL_WHEEL_STATE,
   INITIAL_WHEEL_NAV_STATE,
+  PILL_WHEEL_COOLDOWN_MS,
+  PILL_WHEEL_STEP_PX,
   WHEEL_GESTURE_GAP_MS,
   WHEEL_LINE_PX,
   WHEEL_MIN_STEP_INTERVAL_MS,
   WHEEL_PAGE_PX,
   WHEEL_STEP_PX,
+  advancePillWheelNav,
   advanceWheelNav,
   normalizeWheelDelta,
   normalizeWheelEvent,
   resetWheelNav,
   stepSectionIndex,
 } from "./section-wheel-nav";
+import type { PillWheelNavState } from "./section-wheel-nav";
 
 /**
  * Task 018 wheel-intent contracts. Traces below are recorded event
@@ -358,5 +363,95 @@ describe("019-E §22 reference traces", () => {
   it("one step costs WHEEL_STEP_PX of travel in the reference detent", () => {
     expect(WHEEL_STEP_PX).toBeLessThan(120);
     expect(WHEEL_STEP_PX).toBeGreaterThan(0);
+  });
+});
+
+/* ------------------------------------------------------------------------- */
+/* The pill's HOVER vertical-wheel model (t77)                               */
+/* ------------------------------------------------------------------------- */
+
+describe("advancePillWheelNav — hover vertical wheel (t77)", () => {
+  function run(
+    trace: readonly (readonly [number, number])[],
+    start = INITIAL_PILL_WHEEL_STATE,
+  ): { actions: string[]; state: PillWheelNavState } {
+    let state = start;
+    const actions: string[] = [];
+    for (const [deltaY, timeMs] of trace) {
+      const result = advancePillWheelNav(state, normalizeWheelDelta(deltaY, 0), timeMs);
+      state = result.state;
+      if (result.action !== null) {
+        actions.push(result.action);
+      }
+    }
+    return { actions, state };
+  }
+
+  it("fires one step past the ~50px threshold, direction down = next", () => {
+    const { actions } = run([
+      [20, 1000],
+      [20, 1016],
+      [20, 1032], // 60px accumulated → fires here
+    ]);
+    expect(actions).toEqual(["next"]);
+  });
+
+  it("down = next, up = prev", () => {
+    const { actions } = run([
+      [-30, 1000],
+      [-30, 1016],
+    ]);
+    expect(actions).toEqual(["prev"]);
+  });
+
+  it("ten rapid small deltas fire exactly ONE switch (cooldown swallows the burst)", () => {
+    const trace = Array.from({ length: 10 }, (_, index) => [10, 1000 + index * 20] as const);
+    const { actions } = run(trace);
+    expect(actions).toEqual(["next"]);
+  });
+
+  it("the cooldown hard-swallows the momentum tail; its residue never re-fires", () => {
+    // A flick fires, then a realistically decaying tail streams on
+    // (magnitudes halve every ~3 events, like recorded trackpad traces).
+    const trace: Array<readonly [number, number]> = [
+      [120, 1000], // fires immediately
+      ...Array.from({ length: 40 }, (_, index) => [
+        Math.max(1, Math.round(25 / 2 ** Math.floor(index / 3))),
+        1010 + index * 20,
+      ] as const),
+    ];
+    const { actions } = run(trace);
+    expect(actions).toEqual(["next"]);
+  });
+
+  it("a fresh detent after the cooldown (and a pause) fires again", () => {
+    const { actions } = run([
+      [120, 1000],
+      [120, 1600],
+    ]);
+    expect(actions).toEqual(["next", "next"]);
+  });
+
+  it("a committed reversal discards stale travel and needs fresh threshold travel", () => {
+    const { actions } = run([
+      [40, 1000],
+      [40, 1016], // 80px? no — fires at 50px on the second event
+      [-30, 4000], // fresh gesture upward after the cooldown + pause
+      [-30, 4016],
+    ]);
+    expect(actions).toEqual(["next", "prev"]);
+  });
+
+  it("jitter around zero never fires", () => {
+    const trace = Array.from({ length: 8 }, (_, index) => [(index % 2 === 0 ? 6 : -6), 1000 + index * 16] as const);
+    const { actions } = run(trace);
+    expect(actions).toEqual([]);
+  });
+
+  it("uses the documented constants", () => {
+    expect(PILL_WHEEL_STEP_PX).toBeGreaterThanOrEqual(45);
+    expect(PILL_WHEEL_STEP_PX).toBeLessThanOrEqual(55);
+    expect(PILL_WHEEL_COOLDOWN_MS).toBeGreaterThanOrEqual(300);
+    expect(PILL_WHEEL_COOLDOWN_MS).toBeLessThanOrEqual(400);
   });
 });

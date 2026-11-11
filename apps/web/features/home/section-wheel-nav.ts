@@ -338,6 +338,137 @@ export function resetWheelNav(): WheelNavState {
   return INITIAL_WHEEL_NAV_STATE;
 }
 
+/* ------------------------------------------------------------------------- */
+/* The pill's HOVER wheel model (t77)                                        */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Vertical travel over the section pill that counts as one switch.
+ * (Task t77: ~50px.)
+ */
+export const PILL_WHEEL_STEP_PX = 50;
+
+/**
+ * Silence after a fired switch during which every further event is
+ * swallowed: one wheel gesture = one section, and a trackpad's momentum
+ * tail cannot page through several sections (task t77: ~350ms cooldown).
+ */
+export const PILL_WHEEL_COOLDOWN_MS = 350;
+
+/** An event gap that resets the accumulator (a fresh gesture). */
+export const PILL_WHEEL_GESTURE_GAP_MS = 200;
+
+export interface PillWheelNavState {
+  /** |normalized| vertical travel accumulated toward the next switch. */
+  readonly distance: number;
+  /** Sign of the current accumulation: 1 down/next, -1 up/prev, 0 idle. */
+  readonly direction: -1 | 0 | 1;
+  /** Timestamp (ms) of the last fired switch — NEVER before the first. */
+  readonly lastFireAt: number;
+  /** Timestamp (ms) of the last event seen. */
+  readonly lastEventAt: number;
+  /**
+   * Whether the post-fire cooldown's stale-travel clearance already ran
+   * (it must happen exactly ONCE, when the cooldown expires — not on
+   * every following event, or slow deliberate scrolling could never
+   * re-accumulate the threshold).
+   */
+  readonly cooldownCleared: boolean;
+}
+
+const PILL_NEVER = -1e12;
+
+export const INITIAL_PILL_WHEEL_STATE: PillWheelNavState = {
+  distance: 0,
+  direction: 0,
+  lastFireAt: PILL_NEVER,
+  lastEventAt: 0,
+  cooldownCleared: true,
+};
+
+export function resetPillWheelNav(): PillWheelNavState {
+  return INITIAL_PILL_WHEEL_STATE;
+}
+
+/**
+ * Feed one normalized vertical wheel event into the pill's hover model.
+ *
+ * Deliberately SIMPLER than {@link advanceWheelNav}: the pill switches at
+ * most one section per gesture — accumulate signed travel, fire past
+ * {@link PILL_WHEEL_STEP_PX}, then hard-swallow everything for
+ * {@link PILL_WHEEL_COOLDOWN_MS}. When the cooldown expires mid-stream the
+ * accumulator clears exactly once, so a trackpad's decaying momentum tail
+ * — still streaming small events — must re-build the whole threshold from
+ * post-cooldown residue alone and realistically never does; a deliberate
+ * next detent (a fresh gesture after silence, or continued steady input)
+ * pages normally. Pure.
+ */
+export function advancePillWheelNav(
+  state: PillWheelNavState,
+  deltaY: number,
+  timeMs: number,
+): { readonly state: PillWheelNavState; readonly action: WheelNavAction } {
+  if (deltaY === 0) {
+    return { state, action: null };
+  }
+  const sign: -1 | 1 = deltaY < 0 ? -1 : 1;
+  const gap = state.lastEventAt === 0 ? Number.POSITIVE_INFINITY : timeMs - state.lastEventAt;
+
+  // The cooldown swallows the WHOLE gesture tail: momentum events keep
+  // arriving but neither accumulate nor fire.
+  if (state.lastFireAt !== PILL_NEVER && timeMs - state.lastFireAt < PILL_WHEEL_COOLDOWN_MS) {
+    return {
+      state: { ...state, lastEventAt: timeMs },
+      action: null,
+    };
+  }
+
+  let distance = state.distance;
+  let direction = state.direction;
+  let { cooldownCleared } = state;
+
+  // Gesture boundary — a real pause, or the cooldown just expired on a
+  // stream that never paused: stale travel dies exactly once.
+  if (gap > PILL_WHEEL_GESTURE_GAP_MS || (state.lastFireAt !== PILL_NEVER && !cooldownCleared)) {
+    distance = 0;
+    direction = 0;
+    cooldownCleared = true;
+  }
+
+  if (direction === 0) {
+    direction = sign;
+  } else if (sign !== direction) {
+    // Committed reversal: stale travel dies now, the new direction starts
+    // over from this event.
+    distance = 0;
+    direction = sign;
+  }
+
+  distance += Math.abs(deltaY);
+  if (distance >= PILL_WHEEL_STEP_PX) {
+    return {
+      state: {
+        distance: 0,
+        direction,
+        lastFireAt: timeMs,
+        lastEventAt: timeMs,
+        cooldownCleared: false,
+      },
+      action: direction === 1 ? "next" : "prev",
+    };
+  }
+  return {
+    state: {
+      distance,
+      direction,
+      lastFireAt: state.lastFireAt,
+      lastEventAt: timeMs,
+      cooldownCleared,
+    },
+    action: null,
+  };
+}
+
 /**
  * Clamp a fired action onto the section list: no wrapping, null at the
  * ends. Pure so callers and tests share one boundary contract.

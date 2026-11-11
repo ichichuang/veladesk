@@ -19,12 +19,14 @@ import {
   isContextMenuKeyEvent,
 } from "./context-menu";
 import {
+  advancePillWheelNav,
   advanceWheelNav,
   normalizeWheelEvent,
+  resetPillWheelNav,
   resetWheelNav,
   stepSectionIndex,
 } from "./section-wheel-nav";
-import type { WheelNavState } from "./section-wheel-nav";
+import type { PillWheelNavState, WheelNavState } from "./section-wheel-nav";
 import "./home-shell.css";
 
 /**
@@ -85,6 +87,10 @@ export function SectionPill({
 }: SectionPillProps) {
   const { t } = useI18n();
   const wheelStateRef = useRef<WheelNavState>(resetWheelNav());
+  // The HOVER vertical-wheel model (t77) — separate from the horizontal
+  // swipe intent model above: one gesture, one section, 350ms cooldown.
+  const pillWheelStateRef = useRef<PillWheelNavState>(resetPillWheelNav());
+  const navRef = useRef<HTMLElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   useVdScrollbar(scrollerRef, "x");
   useVdSmoothScroll(scrollerRef, true);
@@ -113,6 +119,7 @@ export function SectionPill({
     lockedRef.current = navigationLocked;
     if (navigationLocked) {
       wheelStateRef.current = resetWheelNav();
+      pillWheelStateRef.current = resetPillWheelNav();
     }
   }, [navigationLocked]);
 
@@ -154,11 +161,15 @@ export function SectionPill({
     }
   }, []);
 
-  // One stable, non-passive wheel listener on the pill: horizontal swipe /
-  // Shift+wheel pages through sections; a scrollable segment list keeps
-  // its native scrolling instead.
+  // One stable, non-passive wheel listener on the pill (CAPTURE — it must
+  // see vertical wheels before the scroller's Lenis instance, whose
+  // "both"-gesture orientation would turn them into horizontal scrolls):
+  //  - HOVER vertical wheel (t77) pages through sections, ONE per gesture
+  //    (50px threshold, 350ms cooldown), and never scrolls the page;
+  //  - horizontal trackpad swipes / Shift+wheel keep the 018 intent model;
+  //    a scrollable segment list keeps its native horizontal scrolling.
   useEffect(() => {
-    const pill = scrollerRef.current;
+    const pill = navRef.current;
     if (pill === null) {
       return;
     }
@@ -167,14 +178,37 @@ export function SectionPill({
         return; // Browser zoom stays native.
       }
       const horizontalSwipe = Math.abs(event.deltaX) > Math.abs(event.deltaY);
-      const along = horizontalSwipe
-        ? event.deltaX
-        : event.shiftKey
-          ? event.deltaY
-          : 0;
-      if (along === 0) {
+      if (!horizontalSwipe && !event.shiftKey) {
+        // Vertical wheel over the capsule: section navigation, and the
+        // page behind the pill must not scroll. Stopping propagation also
+        // keeps Lenis from reading it as a horizontal pill scroll.
+        const normalized = normalizeWheelEvent({
+          deltaY: event.deltaY,
+          deltaMode: event.deltaMode,
+          ctrlKey: false,
+        });
+        if (normalized === 0) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (lockedRef.current) {
+          pillWheelStateRef.current = resetPillWheelNav();
+          return;
+        }
+        const { state, action } = advancePillWheelNav(
+          pillWheelStateRef.current,
+          normalized,
+          event.timeStamp + performance.timeOrigin,
+        );
+        pillWheelStateRef.current = state;
+        if (action === null) {
+          return;
+        }
+        stepSection(action === "next" ? 1 : -1);
         return;
       }
+      const along = horizontalSwipe ? event.deltaX : event.deltaY;
       for (const node of event.composedPath()) {
         if (node instanceof Element && node.hasAttribute("data-vd-wheel-scope")) {
           return;
@@ -205,10 +239,11 @@ export function SectionPill({
       }
       stepSection(action === "next" ? 1 : -1);
     }
-    pill.addEventListener("wheel", onWheel, { passive: false });
+    pill.addEventListener("wheel", onWheel, { capture: true, passive: false });
     return () => {
-      pill.removeEventListener("wheel", onWheel);
+      pill.removeEventListener("wheel", onWheel, { capture: true });
       wheelStateRef.current = resetWheelNav();
+      pillWheelStateRef.current = resetPillWheelNav();
     };
   }, [stepSection]);
 
@@ -347,7 +382,7 @@ export function SectionPill({
   }
 
   return (
-    <nav className="vela-pill" aria-label={t("nav.label")}>
+    <nav className="vela-pill" aria-label={t("nav.label")} ref={navRef}>
       <div
         className="vela-pill__scroller"
         data-vd-scroll="x"

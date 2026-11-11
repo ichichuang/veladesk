@@ -414,7 +414,10 @@ function DesktopEntity({
         <GridFlipSlot
           item={item as GridCanvasItem}
           flip
-          dragging={isDragging}
+          // Inert while a drag OR a live resize owns this tile (t77): a
+          // layout spring would lag the imperatively-written resize preview
+          // behind the pointer — the preview must track cell by cell.
+          dragging={isDragging || resize.resizing}
           slotRef={slotRef}
         >
           {appButton}

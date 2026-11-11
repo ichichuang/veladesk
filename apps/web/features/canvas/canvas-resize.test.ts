@@ -72,18 +72,18 @@ describe("gridResizeGeometryAt — grid", () => {
     };
   }
 
-  it("rounds pointer pixels to whole-cell deltas, then to a size step (P1)", () => {
+  it("rounds pointer pixels to whole-cell deltas (t77 per-cell)", () => {
     // E handle: the span grows by the whole-cell delta. 140px at a 100px
-    // pitch is +1 cell → the 2×1 step.
+    // pitch is +1 cell → 2 wide.
     const geometry = gridResizeGeometryAt(session("e", { column: 0, row: 0, columnSpan: 1, rowSpan: 1 }), 140, 0);
     expect(geometry.columnSpan).toBe(2);
-    // +2 cells desires 3 wide — the size system has no 3-wide step, so the
-    // nearest designed size (2×1) keeps the tile.
-    const two = gridResizeGeometryAt(session("e", { column: 0, row: 0, columnSpan: 1, rowSpan: 1 }), 160, 0);
-    expect(two.columnSpan).toBe(2);
+    // +1.6 cells carries to 3 wide — every integer span is reachable,
+    // never a size-step quantization (the t77 root cause).
+    const three = gridResizeGeometryAt(session("e", { column: 0, row: 0, columnSpan: 1, rowSpan: 1 }), 160, 0);
+    expect(three.columnSpan).toBe(3);
   });
 
-  it("keeps e/w on columns, n/s on rows, corners on both — through the steps", () => {
+  it("keeps e/w on columns, n/s on rows, corners on both", () => {
     const start = { column: 2, row: 2, columnSpan: 2, rowSpan: 2 };
     expect(gridResizeGeometryAt(session("e", start), 200, 200)).toMatchObject({
       column: 2,
@@ -91,17 +91,17 @@ describe("gridResizeGeometryAt — grid", () => {
       columnSpan: 4,
       rowSpan: 2,
     });
-    // A north drag desiring 2×4 snaps back to the 2×2 step (no tall step
-    // exists); the anchored south edge keeps the tile in place.
+    // A north drag grows upward freely (t77): pure vertical growth is no
+    // longer snapped back; the anchored south edge keeps the tile in place.
     expect(gridResizeGeometryAt(session("n", start), 200, -200)).toMatchObject({
-      row: 2,
-      rowSpan: 2,
+      row: 0,
+      rowSpan: 4,
       columnSpan: 2,
     });
-    // South-east desiring 4×4 lands on 4×2 — the tallest wide step.
+    // South-east desires 4×4 and gets 4×4 — per cell.
     expect(gridResizeGeometryAt(session("se", start), 200, 200)).toMatchObject({
       columnSpan: 4,
-      rowSpan: 2,
+      rowSpan: 4,
     });
   });
 
@@ -111,19 +111,18 @@ describe("gridResizeGeometryAt — grid", () => {
       300,
       0,
     );
-    // Desiring 4×1 snaps to 4×2 — the only 4-wide step.
-    expect(geometry).toEqual({ column: 0, row: 0, columnSpan: 4, rowSpan: 2 });
+    // 300px at a 100px pitch is +3 cells → 4 wide, rows untouched.
+    expect(geometry).toEqual({ column: 0, row: 0, columnSpan: 4, rowSpan: 1 });
   });
 
-  it("every handle crosses to the next step at half-pitch and is a no-op below it (017-B + P1 steps)", () => {
+  it("every handle crosses a cell past half-pitch and is a no-op below it (t77)", () => {
     const start = { column: 2, row: 2, columnSpan: 1, rowSpan: 1 };
     const threshold = [
       ["e", 60, 0, { column: 2, row: 2, columnSpan: 2, rowSpan: 1 }],
       ["w", -60, 0, { column: 1, row: 2, columnSpan: 2, rowSpan: 1 }],
-      // There is no 1×2 step: a pure south/north drag from 1×1 desires
-      // 1×2, whose nearest step is 1×1 itself — the geometry holds.
-      ["s", 0, 60, { column: 2, row: 2, columnSpan: 1, rowSpan: 1 }],
-      ["n", 0, -60, { column: 2, row: 2, columnSpan: 1, rowSpan: 1 }],
+      // A pure south/north drag now grows rows — the t77 root cause fixed.
+      ["s", 0, 60, { column: 2, row: 2, columnSpan: 1, rowSpan: 2 }],
+      ["n", 0, -60, { column: 2, row: 1, columnSpan: 1, rowSpan: 2 }],
       ["se", 60, 60, { column: 2, row: 2, columnSpan: 2, rowSpan: 2 }],
       ["nw", -60, -60, { column: 1, row: 1, columnSpan: 2, rowSpan: 2 }],
       ["ne", 60, -60, { column: 2, row: 1, columnSpan: 2, rowSpan: 2 }],
@@ -146,6 +145,31 @@ describe("gridResizeGeometryAt — grid", () => {
     ] as const;
     for (const [handle, dx, dy] of below) {
       expect(gridResizeGeometryAt(session(handle, start, 8, 100), dx, dy), handle).toEqual(start);
+    }
+  });
+
+  it("clamps into the grid: west/north never leave the canvas, east never passes the last column", () => {
+    const start = { column: 0, row: 0, columnSpan: 1, rowSpan: 1 };
+    expect(gridResizeGeometryAt(session("w", start, 6), -500, 0)).toEqual(start);
+    expect(gridResizeGeometryAt(session("n", start, 6), 0, -500)).toEqual(start);
+    expect(
+      gridResizeGeometryAt(session("e", { column: 4, row: 0, columnSpan: 1, rowSpan: 1 }, 6), 500, 0),
+    ).toEqual({ column: 4, row: 0, columnSpan: 2, rowSpan: 1 });
+  });
+
+  it("the preview edge stays within half a pitch of the pointer (t77)", () => {
+    // The handle center sits ON the moving edge, so the preview edge lands
+    // within pitch/2 of the pointer whenever the span is not clamped by
+    // the grid's minimum/maximum.
+    const pitch = 160;
+    const start = { column: 3, row: 2, columnSpan: 1, rowSpan: 1 };
+    for (let d = -76; d <= 320; d += 4) {
+      const geometry = gridResizeGeometryAt(session("se", start, 8, pitch), d, d);
+      // Preview bottom-right edge offset from the pointer.
+      const edgeDelta = (geometry.columnSpan - 1) * pitch - d;
+      expect(Math.abs(edgeDelta)).toBeLessThanOrEqual(pitch / 2);
+      const edgeDeltaY = (geometry.rowSpan - 1) * pitch - d;
+      expect(Math.abs(edgeDeltaY)).toBeLessThanOrEqual(pitch / 2);
     }
   });
 });

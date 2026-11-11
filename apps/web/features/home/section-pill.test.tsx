@@ -120,6 +120,59 @@ describe("SectionPill (t61)", () => {
     expect(onMenu.mock.calls[0]![0]).toBe("p2");
   });
 
+  /** Dispatches a wheel event over the first pill segment. */
+  function wheelOverPill(
+    container: HTMLElement,
+    deltaY: number,
+    overrides: { shiftKey?: boolean; deltaX?: number } = {},
+  ): void {
+    const segment = container.querySelector(".vela-pill__item")!;
+    segment.dispatchEvent(
+      new WheelEvent("wheel", {
+        bubbles: true,
+        cancelable: true,
+        deltaY,
+        ...overrides,
+      }),
+    );
+  }
+
+  it("hover vertical wheel pages ONE section per gesture (t77)", () => {
+    const onSelect = vi.fn();
+    const { container } = mount(onSelect);
+    // Ten rapid small deltas = one 50px+ gesture with a swallowed tail.
+    for (let index = 0; index < 10; index += 1) {
+      wheelOverPill(container, 12);
+    }
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    // Down = next.
+    expect(onSelect).toHaveBeenCalledWith("p2");
+  });
+
+  it("hover vertical wheel blocks page scroll (preventDefault) and respects the lock", () => {
+    const onSelect = vi.fn();
+    const { container } = mount(onSelect, { navigationLocked: true });
+    const segment = container.querySelector(".vela-pill__item")! as HTMLElement;
+    const event = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 120,
+    });
+    segment.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("Shift+wheel keeps the horizontal intent model (018) — no double handling", () => {
+    const onSelect = vi.fn();
+    const { container } = mount(onSelect);
+    // A single 120px Shift+wheel step fires through advanceWheelNav too —
+    // the point here is it reaches onSelect exactly once.
+    wheelOverPill(container, 120, { shiftKey: true });
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith("p2");
+  });
+
   it("renders the compact form on short viewports: current name + steppers", () => {
     const matches = vi.fn((query: string) => query === "(max-height: 559px)");
     vi.stubGlobal(

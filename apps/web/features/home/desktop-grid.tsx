@@ -57,6 +57,8 @@ interface DesktopCanvasViewProps {
   readonly onResizePreview?: ((geometry: GridItemGeometry | null) => void) | undefined;
   /** Grid target-slot feedback boxes (drag targets + resize preview). */
   readonly gridFeedbackBoxes?: readonly GridItemGeometry[] | undefined;
+  /** The live integer resize preview box (the badge's anchor, t77). */
+  readonly resizeTargetBox?: GridItemGeometry | null;
   /** Snap-drop ripple rings (P1, motion-spec §3). */
   readonly snapDropRipples?: readonly DropRipple[] | undefined;
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
@@ -105,6 +107,7 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
   onResizeSessionChange,
   onResizePreview,
   gridFeedbackBoxes,
+  resizeTargetBox,
   snapDropRipples,
   onItemSelect,
   onEntityContextMenu,
@@ -182,6 +185,11 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
               boxes={gridFeedbackBoxes}
               cellPx={gridMetrics.cellPx}
               gapPx={gridMetrics.gapPx}
+              badge={
+                resizeTargetBox != null
+                  ? `${resizeTargetBox.columnSpan}×${resizeTargetBox.rowSpan}`
+                  : null
+              }
             />
           ) : null}
           {gridMetrics !== null && snapDropRipples !== undefined && snapDropRipples.length > 0 ? (

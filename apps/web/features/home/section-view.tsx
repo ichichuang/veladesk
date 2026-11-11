@@ -113,6 +113,8 @@ interface SectionViewProps {
   /** Grid target-slot feedback (active view only). */
   readonly onResizePreview?: ((geometry: GridItemGeometry | null) => void) | undefined;
   readonly gridFeedbackBoxes?: readonly GridItemGeometry[] | undefined;
+  /** The live integer resize preview box (the badge's anchor, t77). */
+  readonly resizeTargetBox?: GridItemGeometry | null;
   /** Snap-drop ripple rings (active grid stage only, P1). */
   readonly snapDropRipples?: readonly DropRipple[] | undefined;
   readonly onItemSelect: (entityId: EntityId, toggle: boolean) => void;
@@ -161,6 +163,7 @@ function SectionViewImpl({
   onResizeSessionChange,
   onResizePreview,
   gridFeedbackBoxes,
+  resizeTargetBox,
   snapDropRipples,
   onItemSelect,
   onEntityContextMenu,
@@ -247,6 +250,7 @@ function SectionViewImpl({
         onResizeSessionChange={onResizeSessionChange}
         onResizePreview={active ? onResizePreview : undefined}
         gridFeedbackBoxes={active ? gridFeedbackBoxes : undefined}
+        resizeTargetBox={active ? (resizeTargetBox ?? null) : null}
         snapDropRipples={active ? snapDropRipples : undefined}
         onItemSelect={onItemSelect}
         onEntityContextMenu={onEntityContextMenu}

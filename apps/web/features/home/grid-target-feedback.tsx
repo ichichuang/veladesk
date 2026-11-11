@@ -23,9 +23,15 @@ export interface GridTargetFeedbackProps {
   readonly boxes: readonly GridItemGeometry[];
   readonly cellPx: number;
   readonly gapPx: number;
+  /**
+   * Live target-size badge text (t77, e.g. "3×2"): rendered on the LAST box
+   * while a resize is live, so the size the release will commit is legible
+   * at every pointer frame. `null` (drag targets, no session) renders none.
+   */
+  readonly badge?: string | null;
 }
 
-export function GridTargetFeedback({ boxes, cellPx, gapPx }: GridTargetFeedbackProps) {
+export function GridTargetFeedback({ boxes, cellPx, gapPx, badge }: GridTargetFeedbackProps) {
   if (boxes.length === 0) {
     return null;
   }
@@ -44,7 +50,13 @@ export function GridTargetFeedback({ boxes, cellPx, gapPx }: GridTargetFeedbackP
               height: `${gridSpanExtentPx(box.rowSpan, cellPx, gapPx)}px`,
             } as CSSProperties
           }
-        />
+        >
+          {badge !== null && badge !== undefined && index === boxes.length - 1 ? (
+            <span className="vela-grid-target__badge" data-resize-badge={badge}>
+              {badge}
+            </span>
+          ) : null}
+        </span>
       ))}
     </div>
   );

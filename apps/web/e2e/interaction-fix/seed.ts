@@ -71,6 +71,25 @@ const RICH_EXTRA_APPS: readonly SeedApp[] = [
   { id: "app-eslint", name: "ESLint", url: "https://eslint.org" },
 ];
 
+/**
+ * The t77 resize scene: a SPARSE frontend grid so the resize handles have
+ * free room to grow west/north/east/south — MDN sits alone at column 3
+ * row 1 with empty cells on every side, GitHub far away at the bottom
+ * left and every other app parked along row 4. Ids/names/sections stay
+ * identical to the base fixture.
+ */
+const T77_FRONTEND_TILES: readonly (readonly [string, RichTile])[] = [
+  ["app-mdn", { column: 3, row: 1, columnSpan: 1, rowSpan: 1 }],
+  ["app-github", { column: 0, row: 3, columnSpan: 2, rowSpan: 1 }],
+  ["app-stack", { column: 0, row: 4, columnSpan: 1, rowSpan: 1 }],
+  ["app-css", { column: 1, row: 4, columnSpan: 1, rowSpan: 1 }],
+  ["app-react", { column: 2, row: 4, columnSpan: 1, rowSpan: 1 }],
+  ["app-vue", { column: 3, row: 4, columnSpan: 1, rowSpan: 1 }],
+  ["app-ts", { column: 4, row: 4, columnSpan: 1, rowSpan: 1 }],
+  ["app-vite", { column: 5, row: 4, columnSpan: 1, rowSpan: 1 }],
+  ["app-npm", { column: 6, row: 4, columnSpan: 1, rowSpan: 1 }],
+];
+
 /** favicon glyph per app id (generated monogram stays the default). */
 const RICH_FAVICONS: Readonly<Record<string, string>> = {
   "app-github": "simple-icons:github",
@@ -158,7 +177,11 @@ let seedSequence = 0;
  */
 export async function seedInteractionWorkspace(
   request: APIRequestContext,
-  options: { readonly manySections?: boolean; readonly richScene?: boolean } = {},
+  options: {
+    readonly manySections?: boolean;
+    readonly richScene?: boolean;
+    readonly t77Scene?: boolean;
+  } = {},
 ): Promise<string> {
   seedSequence += 1;
   // The NAME carries the sequence: every boot picks ITS OWN workspace from
@@ -193,7 +216,11 @@ export async function seedInteractionWorkspace(
         "前端开发",
         FRONTEND_APPS,
         8,
-        options.richScene === true ? RICH_FRONTEND_TILES : undefined,
+        options.t77Scene === true
+          ? T77_FRONTEND_TILES
+          : options.richScene === true
+            ? RICH_FRONTEND_TILES
+            : undefined,
       ),
       gridPage("sec-ai", "AI 工具", AI_APPS, 8),
       gridPage("sec-design", "设计灵感", DESIGN_APPS, 8),
@@ -250,7 +277,11 @@ let fixtureName = "Interaction Fix";
 export async function bootSeededDesktop(
   page: Page,
   request: APIRequestContext,
-  options: { readonly manySections?: boolean; readonly richScene?: boolean } = {},
+  options: {
+    readonly manySections?: boolean;
+    readonly richScene?: boolean;
+    readonly t77Scene?: boolean;
+  } = {},
 ): Promise<void> {
   await seedInteractionWorkspace(request, options);
   await page.addInitScript(() => {

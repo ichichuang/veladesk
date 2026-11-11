@@ -2053,6 +2053,28 @@
   transition: none;
 }
 
+/*
+ * Live resize badge (t77): the span the release will commit ("3×2"),
+ * floating just above the preview's top edge. Updates per resolved cell
+ * (no transitions — the Grid snaps cell-by-cell, so does its badge).
+ */
+.vela-grid-target__badge {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--vd-color-bg-deep) 72%, transparent);
+  border: 1px solid var(--vd-accent);
+  color: var(--vd-color-fg-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* --- Freeform content ------------------------------------------------------- */
 
 /*

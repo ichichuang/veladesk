@@ -119,6 +119,9 @@
   --vd-scrollbar-radius: 999px;
   --vd-scrollbar-lerp: 0.12;
   --vd-scrollbar-settle-ms: 500;
+  /* Motion feel (t77): --vd-scrollbar-settle-ms is the wheel glide time
+     (quart ease-out — damped stop ≤ 600ms); --vd-scrollbar-lerp is the
+     exponential fallback used only when the settle token is 0. */
   --vd-scrollbar-idle-ms: 1000;
   --vd-scrollbar-fade-ms: 220ms;
   --vd-scrollbar-reveal-offset: 2px;

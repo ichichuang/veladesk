@@ -44,6 +44,8 @@ interface TileHostLayerProps {
   readonly resizableIds: ReadonlySet<EntityId>;
   readonly resizeActiveId: EntityId | null;
   readonly gridFeedbackBoxes: readonly GridItemGeometry[] | undefined;
+  /** The live integer resize preview box (the badge's anchor, t77). */
+  readonly resizeTargetBox: GridItemGeometry | null;
   /** Snap-drop ripple rings (active grid stage only, P1). */
   readonly snapDropRipples: readonly DropRipple[] | undefined;
   readonly initialScrollTop: number | undefined;
@@ -91,6 +93,7 @@ export const TileHostLayer = memo(function TileHostLayer({
   resizableIds,
   resizeActiveId,
   gridFeedbackBoxes,
+  resizeTargetBox,
   snapDropRipples,
   initialScrollTop,
   onResizeCommit,
@@ -135,6 +138,7 @@ export const TileHostLayer = memo(function TileHostLayer({
         onResizeSessionChange={onResizeSessionChange}
         onResizePreview={interactive ? onResizePreview : undefined}
         gridFeedbackBoxes={interactive ? gridFeedbackBoxes : undefined}
+        resizeTargetBox={interactive ? resizeTargetBox : null}
         snapDropRipples={interactive ? snapDropRipples : undefined}
         onItemSelect={onItemSelect}
         onEntityContextMenu={onEntityContextMenu}

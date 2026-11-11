@@ -144,6 +144,7 @@ export function ShellWorkspace({
             resizableIds={tiles.resizableIds}
             resizeActiveId={tiles.commits.resizeActiveId}
             gridFeedbackBoxes={tiles.gridFeedbackBoxes}
+            resizeTargetBox={tiles.resizeTargetBox}
             snapDropRipples={tiles.snapDropRipples}
             initialScrollTop={scene.sectionScrollMemory().recall(page.id)}
             onResizeCommit={tiles.commits.commitResizedGeometry}

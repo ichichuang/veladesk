@@ -139,16 +139,17 @@ export function canvasResizeRectAt(
 }
 
 /**
- * Live GRID geometry for the current pointer position.
+ * Live GRID geometry for the current pointer position (t77).
  *
- * Pointer pixels become whole-cell deltas through the pitch; the engine's
- * span semantics (min 1×1, edges never crossing, column bounds, unbounded
- * rows) do the rest, and the resulting span SNAPS to the size-step system
- * (1×1 / 2×1 / 2×2 / 4×2, clamped into the columns) so Grid tiles always
- * land on a designed size — never an arbitrary span. The origin follows
- * the dragged edge so the far corner stays anchored. Shift is deliberately
- * ignored: aspect locking is a freeform behavior only, never ambiguous
- * Grid spans.
+ * Pointer pixels become whole-cell deltas through the pitch — PAST HALF A
+ * CELL the geometry carries (过半格即进位) — and the engine's span
+ * semantics (min 1×1, edges never crossing, column bounds, unbounded rows)
+ * do the rest: EVERY integer span is reachable, never a size-step
+ * quantization. The handle center sits ON the moving edge (18px handles
+ * straddle it), so the raw pointer delta IS the edge delta and the preview
+ * edge tracks the pointer within half a pitch on every axis. Shift is
+ * deliberately ignored: aspect locking is a freeform behavior only, never
+ * ambiguous Grid spans.
  */
 export function gridResizeGeometryAt(
   session: GridResizeSession,
@@ -156,7 +157,7 @@ export function gridResizeGeometryAt(
   pointerY: number,
 ): GridItemGeometry {
   // A gesture that never moved (a handle click) keeps the start geometry —
-  // the step snap below must never commit a change the user did not make.
+  // the cell rounding must never commit a change the user did not make.
   if (pointerX === session.startPointerX && pointerY === session.startPointerY) {
     return session.startGeometry;
   }
@@ -177,25 +178,14 @@ export function gridResizeGeometryAt(
   if (item === undefined) {
     return session.startGeometry;
   }
-  const step = snapSpanToSizeStep(
-    { w: item.columnSpan, h: item.rowSpan },
-    Math.max(1, (session.handle.includes("w")
-      ? session.startGeometry.column + session.startGeometry.columnSpan
-      : session.columns - item.column)),
-  );
-  const height = session.handle.includes("n")
-    ? Math.min(step.h, session.startGeometry.row + session.startGeometry.rowSpan)
-    : step.h;
-  // Keep the anchored (far) corner fixed: a west/north handle grows
-  // rightward/downward from a moved origin, an east/south handle keeps it.
-  const growsWest = session.handle === "nw" || session.handle === "w" || session.handle === "sw";
-  const growsNorth = session.handle === "nw" || session.handle === "n" || session.handle === "ne";
-  const start = session.startGeometry;
+  // The engine already moves the origin WITH the dragged edge for w/n
+  // handles and keeps the far corner anchored for e/s — the per-cell
+  // result IS the preview, no post-hoc origin math.
   return {
-    column: growsWest ? start.column + start.columnSpan - step.w : item.column,
-    row: growsNorth ? start.row + start.rowSpan - height : item.row,
-    columnSpan: step.w,
-    rowSpan: height,
+    column: item.column,
+    row: item.row,
+    columnSpan: item.columnSpan,
+    rowSpan: item.rowSpan,
   };
 }
 
