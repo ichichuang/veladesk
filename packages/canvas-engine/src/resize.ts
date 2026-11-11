@@ -51,10 +51,15 @@ function fitAspectRatio(
   handle: CanvasResizeHandle,
   start: CanvasRect,
   aspect: number,
+  unboundedBelow: boolean,
 ): Edges {
   const anchor = anchorOf(edges, handle);
   const availableX = movesLeft(handle) ? anchor.x : CANVAS_UNITS - anchor.x;
-  const availableY = movesTop(handle) ? anchor.y : CANVAS_UNITS - anchor.y;
+  const availableY = movesTop(handle)
+    ? anchor.y
+    : unboundedBelow
+      ? Number.POSITIVE_INFINITY
+      : CANVAS_UNITS - anchor.y;
 
   const draggedWidth = edges.right - edges.left;
   const draggedHeight = edges.bottom - edges.top;
@@ -85,7 +90,11 @@ function fitAspectRatio(
   return { left, top, right: left + width, bottom: top + height };
 }
 
-function toCanvasRect(edges: Edges, handle: CanvasResizeHandle): CanvasRect {
+function toCanvasRect(
+  edges: Edges,
+  handle: CanvasResizeHandle,
+  unboundedBelow: boolean,
+): CanvasRect {
   let left = Math.round(edges.left);
   let top = Math.round(edges.top);
   let right = Math.round(edges.right);
@@ -107,10 +116,11 @@ function toCanvasRect(edges: Edges, handle: CanvasResizeHandle): CanvasRect {
     }
   }
 
+  const maxBottom = unboundedBelow ? Number.POSITIVE_INFINITY : CANVAS_UNITS;
   left = clampNumber(left, 0, CANVAS_UNITS - MIN_CANVAS_SIZE);
-  top = clampNumber(top, 0, CANVAS_UNITS - MIN_CANVAS_SIZE);
+  top = clampNumber(top, 0, maxBottom - MIN_CANVAS_SIZE);
   right = clampNumber(right, left + MIN_CANVAS_SIZE, CANVAS_UNITS);
-  bottom = clampNumber(bottom, top + MIN_CANVAS_SIZE, CANVAS_UNITS);
+  bottom = clampNumber(bottom, top + MIN_CANVAS_SIZE, maxBottom);
 
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
@@ -126,11 +136,13 @@ function toCanvasRect(edges: Edges, handle: CanvasResizeHandle): CanvasRect {
  * (Shift), which only corner handles honour.
  */
 export function resizeCanvasRect(args: CanvasResizeArgs): CanvasRect {
-  const { start, handle, deltaX, deltaY, constrainAspect } = args;
+  const { start, handle, deltaX, deltaY, constrainAspect, unboundedBelow } = args;
 
   if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) {
     return start;
   }
+
+  const maxBottom = unboundedBelow ? Number.POSITIVE_INFINITY : CANVAS_UNITS;
 
   let left = start.x;
   let top = start.y;
@@ -147,14 +159,14 @@ export function resizeCanvasRect(args: CanvasResizeArgs): CanvasRect {
     top = clampNumber(top + deltaY, 0, bottom - MIN_CANVAS_SIZE);
   }
   if (movesBottom(handle)) {
-    bottom = clampNumber(bottom + deltaY, top + MIN_CANVAS_SIZE, CANVAS_UNITS);
+    bottom = clampNumber(bottom + deltaY, top + MIN_CANVAS_SIZE, maxBottom);
   }
 
   let edges: Edges = { left, top, right, bottom };
 
   if (constrainAspect && isCornerHandle(handle)) {
-    edges = fitAspectRatio(edges, handle, start, start.width / start.height);
+    edges = fitAspectRatio(edges, handle, start, start.width / start.height, unboundedBelow === true);
   }
 
-  return toCanvasRect(edges, handle);
+  return toCanvasRect(edges, handle, unboundedBelow === true);
 }

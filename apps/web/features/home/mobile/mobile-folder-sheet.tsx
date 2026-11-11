@@ -1,5 +1,7 @@
 "use client";
 
+import { VdScrollArea } from "@components/vd/scroll-area";
+
 import type { AppShortcut, EntityId, WorkspaceSnapshot } from "@veladesk/domain";
 
 import { AppIconTile } from "../app-icon-renderer";
@@ -52,7 +54,7 @@ export function MobileFolderSheet({
       <div className="vela-mobile-sheet__head">
         <h2 className="vela-mobile-sheet__title">{folder.name}</h2>
       </div>
-      <div className="vela-mobile-sheet__body">
+      <VdScrollArea axis="y" className="vela-mobile-sheet__body">
         <ul className="vela-mobile-grid" aria-label={folder.name}>
           {apps.map(({ app }) => (
             <li key={app.id} className="vela-mobile-tile">
@@ -63,7 +65,7 @@ export function MobileFolderSheet({
             </li>
           ))}
         </ul>
-      </div>
+      </VdScrollArea>
     </MobileSheet>
   );
 }

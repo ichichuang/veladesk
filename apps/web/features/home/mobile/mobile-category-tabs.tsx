@@ -1,5 +1,8 @@
 "use client";
 
+import { useVdSmoothScroll } from "@components/vd/smooth-scroll";
+import { useVdScrollbar } from "@components/vd/use-vd-scrollbar";
+
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { DesktopPage, DesktopPageId } from "@veladesk/domain";
 
@@ -39,6 +42,8 @@ export function MobileCategoryTabs({
    */
   const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  useVdScrollbar(listRef, "x");
+  useVdSmoothScroll(listRef, true);
   const setList = useCallback((node: HTMLDivElement | null) => {
     listRef.current = node;
     setListElement(node);
@@ -75,7 +80,7 @@ export function MobileCategoryTabs({
 
   return (
     <nav className="vela-mobile-tabs" aria-label={t("mobile.tabs.label")}>
-      <div className="vela-mobile-tabs__list" role="tablist" aria-label={t("mobile.tabs.label")} ref={setList}>
+      <div data-vd-scroll="x" className="vela-mobile-tabs__list" role="tablist" aria-label={t("mobile.tabs.label")} ref={setList}>
         <VdAnimatedIndicator
           container={listElement}
           activeKey={activePageId}

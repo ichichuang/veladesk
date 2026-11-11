@@ -46,6 +46,43 @@ describe("clampCanvasTranslation", () => {
   });
 });
 
+describe("clampCanvasTranslation (t63 unbounded-below freeform)", () => {
+  const v2: FreeformCanvasLayoutV2 = {
+    version: 2,
+    mode: "freeform",
+    items: [item("a", 0, 0), item("b", 2000, 2000)],
+  };
+  const v2Floor: FreeformCanvasLayoutV2 = {
+    version: 2,
+    mode: "freeform",
+    items: [item("a", 9000, 9000)],
+  };
+
+  it("lets a v2 freeform drag move any distance below the first viewport", () => {
+    expect(clampCanvasTranslation(v2, ["a", "b"], 0, 50_000)).toEqual({ x: 0, y: 50_000 });
+  });
+
+  it("still clamps a v2 freeform drag at the top and horizontal edges", () => {
+    expect(clampCanvasTranslation(v2, ["a"], 0, -100)).toEqual({ x: 0, y: 0 });
+    expect(clampCanvasTranslation(v2, ["a"], 9000, 0)).toEqual({ x: 9000, y: 0 });
+    expect(clampCanvasTranslation(v2Floor, ["a"], -9000, 0)).toEqual({ x: -9000, y: 0 });
+  });
+
+  it("keeps the v1 one-viewport bounds on both axes", () => {
+    expect(clampCanvasTranslation(pair, ["a", "b"], 0, 9000)).toEqual({ x: 0, y: 7000 });
+  });
+
+  it("moves a v2 item below the canvas without dragging it back", () => {
+    const below: FreeformCanvasLayoutV2 = {
+      version: 2,
+      mode: "freeform",
+      items: [item("a", 500, 12_000)],
+    };
+    expect(clampCanvasTranslation(below, ["a"], 0, 3000)).toEqual({ x: 0, y: 3000 });
+    expect(clampCanvasTranslation(below, ["a"], 0, -30_000)).toEqual({ x: 0, y: -12_000 });
+  });
+});
+
 describe("translateCanvasItems", () => {
   it("moves a single item by the rounded delta", () => {
     const next = translateCanvasItems(middle, ["a"], 500, 250);

@@ -1,5 +1,7 @@
 "use client";
 
+import { VdScrollArea } from "@components/vd/scroll-area";
+
 import { useMemo } from "react";
 import { Folder } from "lucide-react";
 import type {
@@ -37,7 +39,7 @@ export function MobileDock({
   }
   return (
     <nav className="vela-mobile-dock" aria-label={t("mobile.dock.label")}>
-      <div className="vela-mobile-dock__track">
+      <VdScrollArea axis="x" className="vela-mobile-dock__track">
         {entities.map((entity) =>
           entity.kind === "app" ? (
             <button
@@ -63,7 +65,7 @@ export function MobileDock({
             </button>
           ),
         )}
-      </div>
+      </VdScrollArea>
     </nav>
   );
 }

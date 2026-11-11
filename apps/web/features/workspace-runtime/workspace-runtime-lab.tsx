@@ -1,5 +1,8 @@
 "use client";
 
+import { useVdScrollbar } from "@components/vd/use-vd-scrollbar";
+import { useVdSmoothScroll } from "@components/vd/smooth-scroll";
+
 import { useRef, useState } from "react";
 import { createEmptyWorkspace } from "@veladesk/domain";
 
@@ -46,6 +49,9 @@ export function WorkspaceRuntimeLab() {
 }
 
 function LabBody() {
+  const scrollRef = useRef<HTMLElement | null>(null);
+  useVdScrollbar(scrollRef, "y");
+  useVdSmoothScroll(scrollRef, true);
   const runtime = useWorkspaceRuntimeInstance();
   const state = useWorkspaceRuntimeState();
   const renameCounter = useRef(1);
@@ -63,7 +69,7 @@ function LabBody() {
   }
 
   return (
-    <main className="workspace-runtime-lab">
+    <main ref={scrollRef} data-vd-ui="" data-vd-color-mode="light" data-vd-scroll="y" className="workspace-runtime-lab">
       <h1 className="workspace-runtime-lab__title">Workspace runtime lab</h1>
       <p className="workspace-runtime-lab__db">
         IndexedDB: <code>{LAB_DATABASE_NAME}</code> (isolated lab database)

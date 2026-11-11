@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useVdSmoothScroll } from "@components/vd/smooth-scroll";
+import { useVdScrollbar } from "@components/vd/use-vd-scrollbar";
+
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   VdHeroOverlayScope,
@@ -70,6 +73,9 @@ export function MobileShell({
 }) {
   const snapshot = workspace.snapshot;
   const reducedMotion = useVdReducedMotion();
+  const scrollRef = useRef<HTMLElement | null>(null);
+  useVdScrollbar(scrollRef, "y");
+  useVdSmoothScroll(scrollRef, true);
   const { locale } = useI18n();
 
   // --- Theme (shared resolver, no mobile preview state — §49) --------------
@@ -182,7 +188,7 @@ export function MobileShell({
         activePageId={activePageId}
         onSelect={activeSection.requestActiveSection}
       />
-      <main className="vela-mobile-shell__content" id={MOBILE_SECTION_PANEL_ID} role="tabpanel">
+      <main ref={scrollRef} data-vd-scroll="y" className="vela-mobile-shell__content" id={MOBILE_SECTION_PANEL_ID} role="tabpanel">
         <SectionSwipeStrip
           pages={snapshot.pages}
           activePageId={activePageId}

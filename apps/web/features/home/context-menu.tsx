@@ -1,5 +1,8 @@
 "use client";
 
+import { useVdSmoothScroll } from "@components/vd/smooth-scroll";
+import { useVdScrollbar } from "@components/vd/use-vd-scrollbar";
+
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { MotionMenuEntries, WorkspaceMenuRow } from "./workspace-menu-row";
@@ -65,6 +68,8 @@ function MenuPanel({ entries, x, y, anchor, inline = false, focusOnOpen = true, 
   readonly onReleased?: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
+  useVdScrollbar(menuRef, "y");
+  useVdSmoothScroll(menuRef, true);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const [child, setChild] = useState<{ id: string; anchor: HTMLButtonElement; keyboard: boolean; open: boolean } | null>(null);

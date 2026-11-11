@@ -1,5 +1,7 @@
 "use client";
 
+import { VdScrollArea } from "@components/vd/scroll-area";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Folder, LayoutGrid } from "lucide-react";
 import type {
@@ -168,7 +170,7 @@ export function MobileSearch({
           onKeyDown={onKeyDown}
         />
       </div>
-      <div className="vela-mobile-sheet__body">
+      <VdScrollArea axis="y" className="vela-mobile-sheet__body">
         {results.length === 0 ? (
           <p className="vela-mobile-search__empty">{t("mobile.search.empty")}</p>
         ) : (
@@ -223,7 +225,7 @@ export function MobileSearch({
             })}
           </div>
         )}
-      </div>
+      </VdScrollArea>
     </MobileSheet>
   );
 }

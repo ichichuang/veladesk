@@ -63,6 +63,20 @@ describe("validateCanvasRect", () => {
     ]);
   });
 
+  it("accepts any depth below the canvas when unboundedBelow is set (t63)", () => {
+    expect(validateCanvasRect(rect(0, 9000, 100, 500_000), { unboundedBelow: true })).toEqual([]);
+    expect(validateCanvasRect(rect(0, 9000, 100, 500_000))).toEqual(["exceeds-canvas"]);
+  });
+
+  it("still bounds the horizontal axis when unboundedBelow is set", () => {
+    expect(validateCanvasRect(rect(CANVAS_UNITS, 0, 1, 10), { unboundedBelow: true })).toEqual([
+      "exceeds-canvas",
+    ]);
+    expect(validateCanvasRect(rect(-5, 0, 10, 10), { unboundedBelow: true })).toEqual([
+      "negative-origin",
+    ]);
+  });
+
   it("reports several problems in a stable order", () => {
     expect(validateCanvasRect(rect(-5, 0, 0, CANVAS_UNITS + 10))).toEqual([
       "negative-origin",

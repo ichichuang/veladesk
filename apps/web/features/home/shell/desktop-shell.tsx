@@ -356,10 +356,13 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   }
 
   // --- Context menu surface ----------------------------------------------------
-  // While anything modal/drag-ish is up, the active section scroller must
-  // not scroll (native CSS lock — no wheel parsing on the content path).
+  // While anything modal is up, the active section scroller must not scroll
+  // (native CSS lock — no wheel parsing on the content path). A tile DRAG is
+  // deliberately NOT in this set anymore (t63): the drag must be able to
+  // push content below the fold, so dnd-kit's auto-scroll needs the scroller
+  // live — the drag session compensates every canvas-space delta for the
+  // scroller's travel instead of freezing it.
   const scrollLocked =
-    tiles.dragging ||
     tiles.commits.handoffLock ||
     tiles.commits.resizeLock ||
     settingsOpen ||
@@ -369,7 +372,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     overlayFolderId !== null;
 
   /** Wheel navigation over the section pill stands down while anything owns the desktop. */
-  const railNavigationLocked = scrollLocked;
+  const railNavigationLocked = scrollLocked || tiles.dragging;
 
   // The before-workspace-change guard (use-before-change-guard.ts): a
   // workspace switch waits out drags, resizes, open surfaces, the layout

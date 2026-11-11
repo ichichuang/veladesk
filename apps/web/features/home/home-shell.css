@@ -1939,9 +1939,11 @@
   background: transparent;
 }
 
-/* Freezing while a modal or drag is up must not change scrollTop. */
+/* Freezing while a modal is up must not change scrollTop. !important:
+   OverlayScrollbars owns the host's overflow inline once initialized — the
+   CSS lock has to win. */
 .vela-section-scroller[data-scroll-locked="true"] {
-  overflow-y: hidden;
+  overflow-y: hidden !important;
 }
 
 /* --- Grid content (task 017) ------------------------------------------------ */
@@ -2071,6 +2073,26 @@
 /* Grid items are grid-area children, NOT absolutely positioned rects. */
 .vela-grid-host .vela-item {
   position: relative;
+}
+
+/*
+ * The drag runway (t63): an invisible, one-pixel-wide extent the drag session
+ * sizes via `--vd-canvas-runway` (set on the section scroller, inherited
+ * here) while a drag pushes toward or past the bottom edge. Anchored at the
+ * stage's content ORIGIN with an explicit total height, so the scroller's
+ * scrollable area always reaches the drag's implied bottom edge + margin
+ * without any feedback loop against scrollHeight. Absolutely positioned and
+ * one pixel wide so it contributes overflow without disturbing the grid frame's flex centering or the
+ * freeform stage's one-viewport height, and it collapses (0px) the moment
+ * the gesture ends.
+ */
+.vela-canvas-runway {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: var(--vd-canvas-runway, 0px);
+  pointer-events: none;
 }
 
 /*

@@ -1,5 +1,8 @@
 "use client";
 
+import { useVdSmoothScroll } from "@components/vd/smooth-scroll";
+import { useVdScrollbar } from "@components/vd/use-vd-scrollbar";
+
 import { useEffect, useMemo, useRef } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
@@ -236,6 +239,8 @@ function DockEntityButton({
 export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopContextMenu }: DockProps) {
   const { t } = useI18n();
   const dockRef = useRef<HTMLElement | null>(null);
+  useVdScrollbar(dockRef, "x");
+  useVdSmoothScroll(dockRef, true);
   useDockMagnetism(dockRef);
 
   const dockEntities = useMemo(() => resolveDockEntities(workspace), [workspace]);

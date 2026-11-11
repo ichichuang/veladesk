@@ -206,10 +206,24 @@ export function useTileSession(input: UseTileSessionInput) {
     return scope instanceof HTMLElement ? scope : null;
   }, [pageIdRef, viewportRef]);
 
+  /**
+   * The ACTIVE section's scroller (t63): the drag session tracks its
+   * scrollTop and grows its runway so a drag can push content below the
+   * first viewport and dnd-kit's auto-scroll always has room.
+   */
+  const resolveScroller = useCallback(() => {
+    const pageId = pageIdRef.current;
+    const scroller = viewportRef.current?.querySelector(
+      scopedToLayer(pageId, ".vela-section-scroller") ?? ""
+    );
+    return scroller instanceof HTMLElement ? scroller : null;
+  }, [pageIdRef, viewportRef]);
+
   const { dragging, handleDragStart, handleDragMove, handleDragEnd } = useCanvasDrag({
     placement: displayPlacement,
     metrics: freeformMetrics,
     pitchPx: gridMetrics?.pitchPx ?? null,
+    resolveScroller,
     onCommit: useCallback(
       (moved: PagePlacement, placementAtStart: PagePlacement) => {
         commitDraggedCanvas(moved, placementAtStart);

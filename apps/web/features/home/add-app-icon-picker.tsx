@@ -1,5 +1,7 @@
 "use client";
 
+import { VdScrollArea } from "@components/vd/scroll-area";
+
 import { useState } from "react";
 import type {
   ChangeEvent,
@@ -157,7 +159,7 @@ export function AddAppIconPickerDialog({
               />
             </div>
           ) : tab === "upload" ? (
-            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-5 py-4">
+            <VdScrollArea axis="y" className="flex min-h-0 flex-1 flex-col gap-3 overscroll-contain px-5 py-4">
               <div
                 className="vela-upload-dropzone"
                 data-busy={uploadBusy ? "true" : undefined}
@@ -206,9 +208,9 @@ export function AddAppIconPickerDialog({
               <p className="text-xs leading-relaxed text-vdu-fg-muted">
                 {t("visualEditor.upload.hint")}
               </p>
-            </div>
+            </VdScrollArea>
           ) : (
-            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-5 py-4">
+            <VdScrollArea axis="y" className="flex min-h-0 flex-1 flex-col gap-3 overscroll-contain px-5 py-4">
               <TextField>
                 <Label className="text-sm font-medium text-vdu-fg">
                   {t("visualEditor.textModeLabel")}
@@ -265,7 +267,7 @@ export function AddAppIconPickerDialog({
                   {t("visualEditor.textAutoHint", { text: generatedIconText(name) })}
                 </p>
               )}
-            </div>
+            </VdScrollArea>
           )}
         </div>
       </DialogContent>

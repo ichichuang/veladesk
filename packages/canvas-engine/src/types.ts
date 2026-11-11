@@ -148,6 +148,12 @@ export interface CanvasResizeArgs {
    * single axis either way.
    */
   readonly constrainAspect: boolean;
+  /**
+   * True for the v2 Freeform document model (t63): the bottom edge may grow
+   * any distance below the first viewport and an item already below it keeps
+   * its position. v1 callers omit it and keep the canvas bounds.
+   */
+  readonly unboundedBelow?: boolean;
 }
 
 /** A translation in logical units. */

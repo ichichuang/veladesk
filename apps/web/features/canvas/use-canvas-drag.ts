@@ -13,6 +13,17 @@ import type { GridItemGeometry } from "./canvas-resize";
 /** Custom property the item body moves with during a drag preview. */
 export const CANVAS_DRAG_PREVIEW_VAR = "--vd-canvas-drag-preview";
 
+/**
+ * Custom property that grows the active section's scrollable content while a
+ * drag pushes toward (or past) the bottom edge (t63 "air wall" fix): the
+ * runway element inside the stage reads it. Set on the section scroller, in
+ * CSS pixels; absent/0 when no drag needs it.
+ */
+export const CANVAS_RUNWAY_VAR = "--vd-canvas-runway";
+
+/** Extra scrollable room kept below the drag's implied bottom edge, px. */
+const RUNWAY_MARGIN_PX = 160;
+
 interface ActiveCanvasDragSession {
   readonly sourceItemId: LayoutItemId;
   readonly itemIds: readonly LayoutItemId[];
@@ -21,6 +32,12 @@ interface ActiveCanvasDragSession {
   readonly metricsAtStart: CanvasPixelMetrics | null;
   /** Grid: the cell pitch at start. Freeform: null. */
   readonly pitchAtStart: number | null;
+  /** The section scroller this drag can scroll (t63), or null. */
+  readonly scroller: HTMLElement | null;
+  /** scroller.scrollTop when the session started. */
+  readonly scrollTopAtStart: number;
+  /** The source's bottom edge in scroller CONTENT coordinates at start. */
+  readonly sourceBottomInContentAtStart: number;
 }
 
 export interface CanvasDragOptions {
@@ -52,6 +69,13 @@ export interface CanvasDragOptions {
   readonly onGridTargetChange?:
     | ((boxes: readonly GridItemGeometry[] | null) => void)
     | undefined;
+  /**
+   * Resolves the ACTIVE section's scroller (t63): the scroll container a
+   * drag can push content through — the drag session tracks its scrollTop
+   * (dnd-kit's auto-scroll moves it while the pointer rides the bottom
+   * edge) and grows the scroll runway so the edge is always reachable.
+   */
+  readonly resolveScroller?: (() => HTMLElement | null) | undefined;
 }
 
 /**
@@ -67,7 +91,10 @@ export interface CanvasDragOptions {
  * the resolved grid target cells for the drop placeholder — driven by
  * NATIVE pointermove positions, because the 0.5 DragMoveEvent payload
  * lags the real pointer by one event — and commits each drag exactly once
- * at drop time (grid: whole cells; freeform: continuous, clamped).
+ * at drop time (grid: whole cells; freeform: continuous, clamped at the
+ * canvas origin and — since t63 — unbounded below the first viewport, with
+ * the scroller's own travel added to the pointer delta so a drop below the
+ * fold lands exactly where the user aimed).
  *
  * The resolved (snapped/clamped) translation is therefore PREVIEW-FREE:
  * the drop placeholder carries it during the drag and the commit owns it
@@ -86,6 +113,7 @@ export function useCanvasDrag({
   getDragItemIds,
   resolveItemElement,
   onGridTargetChange,
+  resolveScroller,
 }: CanvasDragOptions): {
   dragging: boolean;
   handleDragStart: (event: DragStartEvent) => void;
@@ -102,6 +130,7 @@ export function useCanvasDrag({
   const getDragItemIdsRef = useRef(getDragItemIds);
   const resolveItemElementRef = useRef(resolveItemElement);
   const onGridTargetChangeRef = useRef(onGridTargetChange);
+  const resolveScrollerRef = useRef(resolveScroller);
   const lastTargetKeyRef = useRef<string | null>(null);
   /** dnd-kit's delta origin, captured from the first DragMoveEvent. */
   const dragInitialRef = useRef<{ x: number; y: number } | null>(null);
@@ -110,6 +139,22 @@ export function useCanvasDrag({
   /** Whether this session ever saw a native pointer move. */
   const sawNativePointerRef = useRef(false);
   const nativeMoveHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
+  /** The runway height currently written to the scroller, px (t63). */
+  const runwayPxRef = useRef(0);
+  /** The scroller whose runway var awaits the post-commit clear (t63). */
+  const runwayScrollerRef = useRef<HTMLElement | null>(null);
+  const scrollHandlerRef = useRef<(() => void) | null>(null);
+  const edgeFrameRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (edgeFrameRef.current !== null) cancelAnimationFrame(edgeFrameRef.current);
+    if (nativeMoveHandlerRef.current !== null) window.removeEventListener("pointermove", nativeMoveHandlerRef.current, { capture: true });
+    const session = sessionRef.current;
+    if (session?.scroller && scrollHandlerRef.current) session.scroller.removeEventListener("scroll", scrollHandlerRef.current);
+    session?.scroller?.style.removeProperty(CANVAS_RUNWAY_VAR);
+    runwayScrollerRef.current?.style.removeProperty(CANVAS_RUNWAY_VAR);
+    sessionRef.current = null;
+  }, []);
 
   useEffect(() => {
     placementRef.current = placement;
@@ -130,13 +175,18 @@ export function useCanvasDrag({
     resolveItemElementRef.current = resolveItemElement;
   });
   useEffect(() => {
+    resolveScrollerRef.current = resolveScroller;
+  });
+  useEffect(() => {
     onGridTargetChangeRef.current = onGridTargetChange;
   });
 
   // Zero-bounce handoff: the drop render (with the consumer's optimistic
   // placement) commits first, then the transient preview is dropped — both
   // land in the same paint, so the tiles never flash back to the old
-  // geometry.
+  // geometry. The drag runway (t63) clears in the same breath: by now the
+  // committed placement's own box carries the scroll extent, so removing
+  // the runway can never clamp scrollTop back above the drop.
   useLayoutEffect(() => {
     if (dragging) {
       return;
@@ -146,6 +196,14 @@ export function useCanvasDrag({
       pendingPeerClearRef.current = null;
       clearPreview(session);
       reportTargets(null);
+    }
+    const runwayScroller = runwayScrollerRef.current;
+    if (runwayScroller !== null) {
+      runwayScrollerRef.current = null;
+      if (runwayPxRef.current !== 0) {
+        runwayScroller.style.removeProperty(CANVAS_RUNWAY_VAR);
+        runwayPxRef.current = 0;
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- clearPreview only reads refs and the DOM
   }, [dragging]);
@@ -177,6 +235,58 @@ export function useCanvasDrag({
     for (const id of session.itemIds) {
       writePreview(id, null);
     }
+  }
+
+  /**
+   * How far the section scroller moved since the session started (t63).
+   * dnd-kit's auto-scroll (and a mid-drag wheel) advance scrollTop while the
+   * pointer stays in client space, so every canvas-space delta — the peer
+   * preview, the grid target cells, the commit — must add this on top of the
+   * raw pointer delta or the drop would land short of where the user aimed.
+   */
+  function scrollDeltaOf(session: ActiveCanvasDragSession): number {
+    return session.scroller === null
+      ? 0
+      : session.scroller.scrollTop - session.scrollTopAtStart;
+  }
+
+  /**
+   * Grows (and shrinks) the drag runway (t63): an invisible extent anchored
+   * at the stage's content origin whose TOTAL height reaches the drag's
+   * implied bottom edge + margin, so dnd-kit's auto-scroll never runs out
+   * of room and the pointer can push content below the first viewport. The
+   * total-height form is deliberate — it never reads scrollHeight, so there
+   * is no feedback loop with the extent it creates. Idempotent per frame.
+   */
+  function updateRunway(session: ActiveCanvasDragSession, effectiveDeltaY: number): void {
+    const scroller = session.scroller;
+    if (scroller === null) {
+      return;
+    }
+    const needed = Math.ceil(
+      session.sourceBottomInContentAtStart + effectiveDeltaY + RUNWAY_MARGIN_PX,
+    );
+    if (needed === runwayPxRef.current) {
+      return;
+    }
+    runwayPxRef.current = needed;
+    scroller.style.setProperty(CANVAS_RUNWAY_VAR, `${needed}px`);
+  }
+
+  /**
+   * Detaches the scroll listener at gesture end (t63). The runway VAR is
+   * cleared later — in the post-commit layout effect — because removing it
+   * before the committed placement renders would briefly shrink the scroll
+   * extent and the browser would clamp scrollTop down past the drop.
+   */
+  function tearDownScrollTracking(session: ActiveCanvasDragSession): void {
+    if (edgeFrameRef.current !== null) cancelAnimationFrame(edgeFrameRef.current);
+    edgeFrameRef.current = null;
+    if (scrollHandlerRef.current !== null) {
+      session.scroller?.removeEventListener("scroll", scrollHandlerRef.current);
+      scrollHandlerRef.current = null;
+    }
+    runwayScrollerRef.current = session.scroller;
   }
 
   /**
@@ -244,16 +354,42 @@ export function useCanvasDrag({
       return;
     }
 
+    // t63: the section scroller this drag may push content through. Its
+    // scrollTop at start plus the source's content-space bottom edge feed
+    // the scroll compensation and the drag runway. The runway's coordinate
+    // origin is the STAGE (the scroller's content child) — its padding-top
+    // band would otherwise offset every runway height by the Helm header.
+    const scroller = resolveScrollerRef.current?.() ?? null;
+    let scrollTopAtStart = 0;
+    let sourceBottomInContentAtStart = Number.POSITIVE_INFINITY;
+    if (scroller !== null) {
+      scrollTopAtStart = scroller.scrollTop;
+      const stage = scroller.firstElementChild;
+      const sourceElement = resolveItemElementRef.current?.(sourceId);
+      if (
+        stage instanceof HTMLElement &&
+        sourceElement !== null &&
+        sourceElement !== undefined
+      ) {
+        sourceBottomInContentAtStart =
+          (sourceElement as HTMLElement).getBoundingClientRect().bottom -
+          stage.getBoundingClientRect().top;
+      }
+    }
+
     sessionRef.current = {
       sourceItemId: sourceId,
       itemIds: requested,
       placementAtStart: currentPlacement,
       metricsAtStart: currentMetrics,
       pitchAtStart: currentPitch,
+      scroller,
+      scrollTopAtStart,
+      sourceBottomInContentAtStart,
     };
     dragInitialRef.current = null;
     sawNativePointerRef.current = false;
-    attachNativePointerTracking();
+    attachNativePointerTracking(sessionRef.current);
     setDragging(true);
   };
 
@@ -265,13 +401,20 @@ export function useCanvasDrag({
    * pointer — the t61 "doesn't follow my hand" artifact (at its worst for
    * large tiles and clamped directions, where the resolved cell never
    * changes and the correction cancels the whole drag).
+   *
+   * t63: the delta handed to the CANVAS-space consumers (peers, grid
+   * targets, runway) is the raw pointer delta PLUS the scroller's travel —
+   * peers are content-positioned, so while auto-scroll moves the scroller
+   * under the fixed source they must ride the extra distance to stay a
+   * rigid group with the pointer.
    */
   function runPreview(session: ActiveCanvasDragSession, deltaX: number, deltaY: number): void {
+    const effectiveDeltaY = deltaY + scrollDeltaOf(session);
     for (const id of session.itemIds) {
       if (id === session.sourceItemId) {
         continue;
       }
-      writePreview(id, `translate3d(${deltaX}px, ${deltaY}px, 0)`);
+      writePreview(id, `translate3d(${deltaX}px, ${effectiveDeltaY}px, 0)`);
     }
     if (session.placementAtStart.mode === "grid") {
       // The resolved whole-cell delta drives ONLY the drop placeholder
@@ -280,12 +423,13 @@ export function useCanvasDrag({
         placement: session.placementAtStart,
         itemIds: session.itemIds,
         deltaX,
-        deltaY,
+        deltaY: effectiveDeltaY,
         metrics: session.metricsAtStart ?? { width: 1, height: 1 },
         pitchPx: session.pitchAtStart ?? 1,
       });
       reportGridTargets(session, columnDelta, rowDelta);
     }
+    updateRunway(session, effectiveDeltaY);
   }
 
   /**
@@ -299,10 +443,10 @@ export function useCanvasDrag({
    * captured once on the first move event (native moves that arrive
    * earlier are replayed against it).
    */
-  function attachNativePointerTracking(): void {
+  function attachNativePointerTracking(session: ActiveCanvasDragSession): void {
     const handler = (event: PointerEvent) => {
-      const session = sessionRef.current;
-      if (session === null) {
+      const live = sessionRef.current;
+      if (live === null) {
         return;
       }
       sawNativePointerRef.current = true;
@@ -311,13 +455,55 @@ export function useCanvasDrag({
       if (initial === null) {
         return;
       }
-      runPreview(session, event.clientX - initial.x, event.clientY - initial.y);
+      runPreview(live, event.clientX - initial.x, event.clientY - initial.y);
     };
     nativeMoveHandlerRef.current = handler;
     window.addEventListener("pointermove", handler, { capture: true });
+
+    // t63: while dnd-kit's auto-scroll (or a wheel) advances the scroller
+    // under a still pointer, the preview and the runway must track the new
+    // content offset every frame — the pointermove stream alone would never
+    // fire.
+    if (session.scroller !== null) {
+      const onScroll = () => {
+        const live = sessionRef.current;
+        const initial = dragInitialRef.current;
+        const pointer = livePointerRef.current;
+        if (live === null || initial === null || pointer === null) {
+          return;
+        }
+        runPreview(live, pointer.x - initial.x, pointer.y - initial.y);
+      };
+      scrollHandlerRef.current = onScroll;
+      session.scroller.addEventListener("scroll", onScroll, { passive: true });
+      // dnd-kit may retain only the ancestors present before the runway
+      // overflows. Drive the active canvas edge explicitly, in client space.
+      let previousTime = performance.now();
+      const tick = (time: number) => {
+        const live = sessionRef.current;
+        const pointer = livePointerRef.current;
+        const initial = dragInitialRef.current;
+        if (live === null || live.scroller === null) return;
+        if (pointer !== null && initial !== null) {
+          const bounds = live.scroller.getBoundingClientRect();
+          const band = 96;
+          const down = Math.max(0, Math.min(1, (pointer.y - (bounds.bottom - band)) / band));
+          const up = Math.max(0, Math.min(1, (bounds.top + band - pointer.y) / band));
+          if (pointer.x >= bounds.left && pointer.x <= bounds.right) {
+            updateRunway(live, pointer.y - initial.y + scrollDeltaOf(live));
+            live.scroller.scrollTop += (down * down - up * up) * 900 * Math.min(32, time - previousTime) / 1000;
+          }
+        }
+        previousTime = time;
+        edgeFrameRef.current = requestAnimationFrame(tick);
+      };
+      edgeFrameRef.current = requestAnimationFrame(tick);
+    }
   }
 
   function detachNativePointerTracking(): void {
+    if (edgeFrameRef.current !== null) cancelAnimationFrame(edgeFrameRef.current);
+    edgeFrameRef.current = null;
     if (nativeMoveHandlerRef.current !== null) {
       window.removeEventListener("pointermove", nativeMoveHandlerRef.current, { capture: true });
       nativeMoveHandlerRef.current = null;
@@ -375,11 +561,12 @@ export function useCanvasDrag({
     sawNativePointerRef.current = false;
 
     if (event.canceled || session === null) {
-      setDragging(false);
       if (session !== null) {
+        tearDownScrollTracking(session);
         clearPreview(session);
         reportTargets(null);
       }
+      setDragging(false);
       return;
     }
 
@@ -388,6 +575,7 @@ export function useCanvasDrag({
     const isGrid = session.placementAtStart.mode === "grid";
     if (isGrid) {
       if (pitchRef.current === null || pitchRef.current !== session.pitchAtStart) {
+        tearDownScrollTracking(session);
         setDragging(false);
         clearPreview(session);
         reportTargets(null);
@@ -399,6 +587,7 @@ export function useCanvasDrag({
       metricsRef.current.width !== session.metricsAtStart.width ||
       metricsRef.current.height !== session.metricsAtStart.height
     ) {
+      tearDownScrollTracking(session);
       setDragging(false);
       clearPreview(session);
       reportTargets(null);
@@ -414,6 +603,7 @@ export function useCanvasDrag({
       currentPlacement === null ||
       !areCanvasLayoutsEqual(currentPlacement, session.placementAtStart)
     ) {
+      tearDownScrollTracking(session);
       setDragging(false);
       clearPreview(session);
       reportTargets(null);
@@ -430,15 +620,19 @@ export function useCanvasDrag({
       releaseFromLive !== null
         ? releaseFromLive.y
         : event.operation.position.current.y - event.operation.position.initial.y;
+    // t63: the pointer stayed in client space while the scroller traveled —
+    // the canvas-space drop is where the pointer aimed PLUS that travel.
+    const scrollDelta = scrollDeltaOf(session);
     const moved = commitCanvasDrag({
       placement: session.placementAtStart,
       itemIds: session.itemIds,
       deltaX,
-      deltaY,
+      deltaY: deltaY + scrollDelta,
       metrics: session.metricsAtStart ?? { width: 1, height: 1 },
       pitchPx: session.pitchAtStart ?? 1,
     });
 
+    tearDownScrollTracking(session);
     setDragging(false);
     if (moved === null) {
       // Effective no-op drop (dragged back onto its own spot): no handoff,

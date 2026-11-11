@@ -27,7 +27,20 @@ export function isSafeInteger(value: number): boolean {
  * `not-safe-integer` → `negative-origin` → `size-below-minimum` →
  * `exceeds-canvas`. An empty result means the rect is legal.
  */
-export function validateCanvasRect(rect: CanvasRect): readonly CanvasRectProblem[] {
+export interface ValidateCanvasRectOptions {
+  /**
+   * True for the v2 Freeform document model (t63): the canvas extends
+   * downward without bound, so a rect may lie any distance below the first
+   * viewport (`y + height > CANVAS_UNITS` is legal). The horizontal axis
+   * stays bounded and `y >= 0` still holds.
+   */
+  readonly unboundedBelow?: boolean;
+}
+
+export function validateCanvasRect(
+  rect: CanvasRect,
+  options?: ValidateCanvasRectOptions,
+): readonly CanvasRectProblem[] {
   if (
     !isSafeInteger(rect.x) ||
     !isSafeInteger(rect.y) ||
@@ -47,7 +60,9 @@ export function validateCanvasRect(rect: CanvasRect): readonly CanvasRectProblem
     problems.push("size-below-minimum");
   }
 
-  if (rect.x + rect.width > CANVAS_UNITS || rect.y + rect.height > CANVAS_UNITS) {
+  const exceedsHorizontally = rect.x + rect.width > CANVAS_UNITS;
+  const exceedsVertically = !options?.unboundedBelow && rect.y + rect.height > CANVAS_UNITS;
+  if (exceedsHorizontally || exceedsVertically) {
     problems.push("exceeds-canvas");
   }
 

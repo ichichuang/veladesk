@@ -16,6 +16,8 @@ import type { ResizeCommitGeometry, GridItemGeometry } from "../canvas/canvas-re
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
 import type { SquareGridMetrics } from "../canvas/square-grid-metrics";
 import type { DropRipple } from "./tile-host/drop-ripple";
+import { useVdScrollbar } from "@components/vd/use-vd-scrollbar";
+import { useVdSmoothScroll } from "@components/vd/smooth-scroll";
 import "./home-shell.css";
 
 interface SectionLayerProps {
@@ -169,6 +171,15 @@ function SectionViewImpl({
 }: SectionViewProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
+  // The system scrollbar (t63) on the section scroller, plus Lenis inertia
+  // for the ACTIVE section only. Both keep the HOST as the real scroll
+  // element (host-as-viewport), so the restore logic below, the drag
+  // session's scroll compensation and dnd-kit's auto-scroll all keep
+  // reading and writing this very element's scrollTop. (While a modal locks
+  // the scroller the limit collapses to 0 and Lenis is inert.)
+  useVdScrollbar(scrollerRef, "y");
+  useVdSmoothScroll(scrollerRef, active);
+
   // Restore the remembered scroll position ONCE PER MOUNT, clamped into
   // the current scroll range (the content may have shrunk while away).
   // Runs for hidden warm mounts too — the scroll is simply already right
@@ -213,6 +224,8 @@ function SectionViewImpl({
   return (
     <div
       className="vela-section-scroller"
+      tabIndex={0}
+      data-vd-scroll="y"
       data-vd-wheel-scope="section"
       data-scroll-locked={scrollLocked ? "true" : undefined}
       ref={scrollerRef}

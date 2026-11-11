@@ -222,6 +222,10 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
             ))}
           </div>
         </div>
+        {/* The drag runway (t63): invisible scroll extent the drag session
+            grows while the pointer pushes toward/past the bottom edge, so
+            dnd-kit's auto-scroll never runs out of room. */}
+        <div className="vela-canvas-runway" aria-hidden="true" />
       </div>
     );
   }
@@ -259,6 +263,8 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
           />
         ))}
       </div>
+      {/* The drag runway (t63) — same contract as the grid stage's. */}
+      <div className="vela-canvas-runway" aria-hidden="true" />
     </div>
   );
 });

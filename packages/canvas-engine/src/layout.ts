@@ -23,6 +23,10 @@ function validateRectItems(
 ): readonly CanvasValidationIssue[] {
   const issues: CanvasValidationIssue[] = [];
   const seen = new Set<string>();
+  // v2 Freeform is a downward-unbounded document (t63): rects may lie below
+  // the first viewport. v1 (snap AND freeform) keeps the historical
+  // one-viewport bounds.
+  const unboundedBelow = layout.version === 2;
 
   for (const item of layout.items) {
     if (seen.has(item.id)) {
@@ -31,7 +35,7 @@ function validateRectItems(
       seen.add(item.id);
     }
 
-    const problems = validateCanvasRect(item.rect);
+    const problems = validateCanvasRect(item.rect, { unboundedBelow });
     if (problems.length > 0) {
       issues.push({ type: "invalid-rect", itemId: item.id, problems });
     }

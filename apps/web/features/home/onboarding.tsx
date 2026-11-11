@@ -1,5 +1,8 @@
 "use client";
 
+import { useVdSmoothScroll } from "@components/vd/smooth-scroll";
+import { useVdScrollbar } from "@components/vd/use-vd-scrollbar";
+
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { createEmptyWorkspace } from "@veladesk/domain";
 import type { WorkspaceSnapshot } from "@veladesk/domain";
@@ -33,6 +36,9 @@ interface OnboardingScreenProps {
  * existing workspaces are never renamed.
  */
 export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }: OnboardingScreenProps) {
+  const scrollRef = useRef<HTMLElement | null>(null);
+  useVdScrollbar(scrollRef, "y");
+  useVdSmoothScroll(scrollRef, true);
   const runtime = useWorkspaceRuntimeInstance();
   const { t, locale } = useI18n();
   // null = untouched: the input shows the locale's default name, and the
@@ -133,7 +139,7 @@ export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }:
   }
 
   return (
-    <main className="vela-screen vela-onboarding">
+    <main ref={scrollRef} data-vd-scroll="y" className="vela-screen vela-onboarding">
       <div className="vela-screen__ambient" aria-hidden="true" />
       <section ref={panelRef} className="vela-screen__panel vela-onboarding__panel" aria-labelledby="vela-onboarding-title">
         <h1 id="vela-onboarding-title" className="vela-wordmark">VelaDesk</h1>

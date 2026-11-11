@@ -33,6 +33,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
     viewport: { width: 1280, height: 720 },
     actionTimeout: 15_000,
+    launchOptions: process.env.VD_PLAYWRIGHT_EXECUTABLE ? { executablePath: process.env.VD_PLAYWRIGHT_EXECUTABLE } : {},
   },
   projects: [
     {

@@ -131,6 +131,10 @@ export function canvasResizeRectAt(
     deltaX: pixelsToUnits(pointerX - session.startPointerX, session.metrics.width),
     deltaY: pixelsToUnits(pointerY - session.startPointerY, session.metrics.height),
     constrainAspect,
+    // Freeform is a downward-unbounded document (t63): the `s`/`se`/`sw`
+    // handles may grow a tile past the first viewport's bottom edge, and an
+    // item already below it is never dragged back up by the clamp.
+    unboundedBelow: true,
   });
 }
 

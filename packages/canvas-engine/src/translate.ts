@@ -50,6 +50,12 @@ function boundsOf(
  *
  * The clamp is computed from the group's bounding box, so every item moves by
  * the same delta and the group can never scatter against the canvas edge.
+ *
+ * t63 "air wall": a v2 Freeform layout is a downward-unbounded document —
+ * `y` clamps only at the canvas origin (the group can never cross above the
+ * top), never at the first viewport's bottom edge, so a drag can push
+ * content any distance below the visible area and the scroller follows. v1
+ * keeps the historical one-viewport bounds on both axes.
  */
 export function clampCanvasTranslation(
   layout: RectItemsLayout,
@@ -67,9 +73,12 @@ export function clampCanvasTranslation(
     return { x: 0, y: 0 };
   }
 
+  const maxY =
+    layout.version === 2 ? Number.POSITIVE_INFINITY : CANVAS_UNITS - bounds.maxBottom;
+
   return {
     x: clampNumber(Math.round(deltaX), -bounds.minX, CANVAS_UNITS - bounds.maxRight),
-    y: clampNumber(Math.round(deltaY), -bounds.minY, CANVAS_UNITS - bounds.maxBottom),
+    y: clampNumber(Math.round(deltaY), -bounds.minY, maxY),
   };
 }
 

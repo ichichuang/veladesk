@@ -34,7 +34,30 @@ describe("validateCanvasLayout", () => {
 
   it("accepts a freeform layout with unaligned rects", () => {
     expect(validateCanvasLayout(layout([item("a", 137, 991)], "freeform"))).toEqual([]);
+});
+
+describe("validateCanvasLayout (t63 unbounded-below freeform)", () => {
+  const v2 = (items: readonly CanvasLayoutItem[]) =>
+    ({ version: 2, mode: "freeform", items }) as const;
+
+  it("accepts v2 freeform rects any distance below the canvas", () => {
+    expect(validateCanvasLayout(v2([item("a", 0, 9000, 1000, 120_000)]))).toEqual([]);
   });
+
+  it("keeps rejecting horizontal overflow and negative origins in v2 freeform", () => {
+    const issues = validateCanvasLayout(v2([item("a", 9500, 0, 1000, 1000)]));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ type: "invalid-rect", itemId: "a" });
+
+    const negative = validateCanvasLayout(v2([item("a", 0, -10, 1000, 1000)]));
+    expect(negative[0]).toMatchObject({ type: "invalid-rect", itemId: "a" });
+  });
+
+  it("keeps the one-viewport bounds for v1 freeform", () => {
+    const issues = validateCanvasLayout(layout([item("a", 0, 9000, 1000, 120_000)], "freeform"));
+    expect(issues[0]).toMatchObject({ type: "invalid-rect", itemId: "a" });
+  });
+});
 
   it("does not treat overlapping rects as a problem", () => {
     const overlapping = layout([item("a", 0, 0, 5000, 5000), item("b", 100, 100, 5000, 5000)]);

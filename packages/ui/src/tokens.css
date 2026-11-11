@@ -101,6 +101,28 @@
   --vd-color-danger-hover: oklch(0.73 0.19 25);
   --vd-color-danger-fg: oklch(0.99 0.005 25);
 
+  /*
+   * The system scrollbar (t63): thin, translucent, accent-colored. Every
+   * scroll container renders the OverlayScrollbars overlay styled from
+   * THESE tokens (`.os-theme-vd` below), so the scrollbar follows the
+   * workspace accent hue and the dark/light mode automatically. The thumb
+   * widens and gains opacity on hover/drag (`*-hover` / `*-active`).
+   */
+  --vd-scrollbar-thumb: color-mix(in oklab, var(--vd-color-accent) 55%, transparent);
+  --vd-scrollbar-thumb-hover: color-mix(in oklab, var(--vd-color-accent) 78%, transparent);
+  --vd-scrollbar-thumb-active: color-mix(in oklab, var(--vd-color-accent) 92%, transparent);
+  --vd-scrollbar-track: transparent;
+  --vd-scrollbar-track-hover: color-mix(in oklab, var(--vd-color-accent) 10%, transparent);
+  --vd-scrollbar-thumb-width: 4px;
+  --vd-scrollbar-thumb-width-hover: 7px;
+  --vd-scrollbar-thumb-width-active: 8px;
+  --vd-scrollbar-radius: 999px;
+  --vd-scrollbar-lerp: 0.12;
+  --vd-scrollbar-settle-ms: 500;
+  --vd-scrollbar-idle-ms: 1000;
+  --vd-scrollbar-fade-ms: 220ms;
+  --vd-scrollbar-reveal-offset: 2px;
+
   /* --- Semantic geometry, material, elevation, typography ---------------- */
 
   /* Radius: sm hairline details / md controls / lg tiles / xl panels. */
@@ -576,6 +598,62 @@
 }
 
 /*
+ * The OverlayScrollbars theme (t63) — the REAL scrollbar of every managed
+ * surface (`useVdScrollbar`, host-as-viewport). Sized and colored purely
+ * from the `--vd-scrollbar-*` tokens: thin translucent accent thumb on a
+ * transparent track, widening and strengthening on hover/active (the
+ * OverlayScrollbars base CSS transitions width/opacity on the handle and
+ * opacity on the bar). The track stays clickable and the handle draggable
+ * (`--os-handle-interactive-area-offset` widens the grab zone beyond the
+ * painted 4px). The rules above (native pseudo-elements) remain only as
+ * the pre-init / no-JS fallback — OverlayScrollbars suppresses the native
+ * scrollbar with `scrollbar-width: none` once it owns the host.
+ */
+[data-vd-ui] .os-theme-vd {
+  box-sizing: border-box;
+  --os-size: 12px;
+  --os-padding-perpendicular: 3px;
+  --os-padding-axis: 3px;
+  --os-handle-border-radius: var(--vd-scrollbar-radius);
+  --os-handle-interactive-area-offset: 4px;
+  --os-handle-bg: var(--vd-scrollbar-thumb);
+  --os-handle-bg-hover: var(--vd-scrollbar-thumb-hover);
+  --os-handle-bg-active: var(--vd-scrollbar-thumb-active);
+  --os-track-bg: var(--vd-scrollbar-track);
+  --os-track-bg-hover: var(--vd-scrollbar-track-hover);
+  --os-handle-perpendicular-size: var(--vd-scrollbar-thumb-width);
+  --os-handle-perpendicular-size-hover: var(--vd-scrollbar-thumb-width-hover);
+  --os-handle-perpendicular-size-active: var(--vd-scrollbar-thumb-width-active);
+}
+
+/* A slightly softer fade than the stock 150ms — the bar breathes in/out. */
+[data-vd-ui] .os-theme-vd,
+[data-vd-ui] .os-theme-vd .os-scrollbar-handle {
+  transition-duration: var(--vd-scrollbar-fade-ms);
+}
+
+[data-vd-ui] .os-theme-vd {
+  transition-property: opacity, visibility, translate;
+  translate: 0 0;
+}
+[data-vd-ui] .os-theme-vd.os-scrollbar-vertical.os-scrollbar-auto-hide-hidden {
+  translate: var(--vd-scrollbar-reveal-offset) 0;
+}
+[data-vd-ui] .os-theme-vd.os-scrollbar-horizontal.os-scrollbar-auto-hide-hidden {
+  translate: 0 var(--vd-scrollbar-reveal-offset);
+}
+
+/* Reduced motion (t63): opacity-only, instant state switches. */
+@media (prefers-reduced-motion: reduce) {
+  [data-vd-ui] .os-theme-vd,
+  [data-vd-ui] .os-theme-vd .os-scrollbar-track,
+  [data-vd-ui] .os-theme-vd .os-scrollbar-handle {
+    transition: opacity 120ms !important;
+    translate: none !important;
+  }
+}
+
+/*
  * VdTooltip (task 021-C, GSAP entrance 022): the portalled content settles
  * in with opacity and a 4px rise on the tooltip token — owned by the GSAP
  * VdPopupSurface. The CSS vd-tooltip-in keyframes are gone; Radix drives
@@ -597,3 +675,6 @@
 [data-vd-ui] .switch[data-vd-switch-gsap] .switch__control {
   transition: none;
 }
+
+/* Managed surfaces never reserve a native scrollbar gutter. */
+[data-vd-ui] [data-overlayscrollbars-viewport] { scrollbar-width: none !important; scrollbar-gutter: auto; }

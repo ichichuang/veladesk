@@ -1,5 +1,8 @@
 "use client";
 
+import { useVdSmoothScroll } from "@components/vd/smooth-scroll";
+import { useVdScrollbar } from "@components/vd/use-vd-scrollbar";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
@@ -83,6 +86,8 @@ export function SectionPill({
   const { t } = useI18n();
   const wheelStateRef = useRef<WheelNavState>(resetWheelNav());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  useVdScrollbar(scrollerRef, "x");
+  useVdSmoothScroll(scrollerRef, true);
   /** Long-press timer + origin, cancelled by slop travel or release. */
   const longPressRef = useRef<{
     readonly pageId: DesktopPageId;

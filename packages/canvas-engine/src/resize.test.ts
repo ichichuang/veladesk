@@ -19,8 +19,9 @@ function resize(
   deltaX: number,
   deltaY: number,
   constrainAspect = false,
+  unboundedBelow = false,
 ): CanvasRect {
-  return resizeCanvasRect({ start, handle, deltaX, deltaY, constrainAspect });
+  return resizeCanvasRect({ start, handle, deltaX, deltaY, constrainAspect, unboundedBelow });
 }
 
 describe("isCornerHandle", () => {
@@ -115,6 +116,22 @@ describe("resizeCanvasRect — bounds", () => {
   it("collapses to the minimum size instead of inverting", () => {
     expect(resize(square, "e", -5000, 0)).toEqual(rect(1000, 1000, 1, 1000));
     expect(resize(square, "n", 0, 5000)).toEqual(rect(1000, 1999, 1000, 1));
+  });
+
+  it("grows the bottom edge past the canvas when unboundedBelow is set (t63)", () => {
+    expect(resize(rect(0, 0, 1000, 1000), "s", 0, 50_000, false, true)).toEqual(
+      rect(0, 0, 1000, 51_000),
+    );
+    // An item already below the first viewport keeps its position: the
+    // vertical clamp never drags it back up.
+    const below = rect(1000, 12_000, 1000, 1000);
+    expect(resize(below, "e", 500, 0, false, true)).toEqual(rect(1000, 12_000, 1500, 1000));
+    expect(resize(below, "nw", -500, -500, false, true)).toEqual(rect(500, 11_500, 1500, 1500));
+  });
+
+  it("still clamps the top/left edges at the canvas origin when unboundedBelow is set", () => {
+    expect(resize(rect(0, 0, 1000, 1000), "n", 0, -500, false, true)).toEqual(rect(0, 0, 1000, 1000));
+    expect(resize(rect(0, 0, 1000, 1000), "w", -500, 0, false, true)).toEqual(rect(0, 0, 1000, 1000));
   });
 
   it("keeps every handle inside the canvas with a legal size", () => {
