@@ -14,7 +14,7 @@ import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
 import { canRedo, canUndo } from "../../canvas/arrange-history";
 import { ArrangeToolbar } from "../arrange-toolbar";
-import { SectionSyncStatus } from "../section-sync-status";
+import { SectionSyncStatus, useOnlineSyncRetry } from "../section-sync-status";
 import { SceneViewport } from "../scene/scene-viewport";
 import type { DesktopScene } from "../scene/use-desktop-scene";
 import { TileHostLayer } from "../tile-host/tile-host-layer";
@@ -70,6 +70,10 @@ export function ShellWorkspace({
   onEntityContextMenu,
   onOpenFolder,
 }: ShellWorkspaceProps) {
+  // UX-11: recovering the network retries the sync once, so the offline
+  // badge clears itself when the connection is really back.
+  useOnlineSyncRetry(workspace, lastRemoteResult);
+
   // Arrange-toolbar availability (imperative history map, freshest value).
   const toolbarHistoryUsable =
     effectiveActivePageId !== null && !tiles.draggingRef.current && tiles.commits.pendingHandoffRef.current === null;

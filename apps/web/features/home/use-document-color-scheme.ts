@@ -13,13 +13,19 @@ import type { EffectiveColorMode } from "./appearance-theme";
  * mode, so a manual light/dark choice never tracks the OS, and "system"
  * tracks it live. Restored on unmount (a shell switch or the boot screen).
  */
-export function useDocumentColorScheme(mode: EffectiveColorMode): void {
+export function useDocumentColorScheme(
+  mode: EffectiveColorMode,
+  enabled = true,
+): void {
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     const root = document.documentElement;
     const previous = root.style.colorScheme;
     root.style.colorScheme = mode;
     return () => {
       root.style.colorScheme = previous;
     };
-  }, [mode]);
+  }, [mode, enabled]);
 }

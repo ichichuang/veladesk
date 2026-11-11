@@ -9,8 +9,9 @@ import {
   VdHeroOverlayScope,
   VdPortalContainerProvider,
 } from "@components/ui/overlay-scope";
-import { resolveGridGapPx, findDesktopPage } from "@veladesk/domain";
+import { resolveGridGapPx, findDesktopPage, restoreDeletedApp } from "@veladesk/domain";
 import type {
+  DeletedAppRestoreEntry,
   DesktopPageId,
   WorkspaceAppearancePreferences,
 } from "@veladesk/domain";
@@ -33,7 +34,6 @@ import type { AppAppearanceSession } from "../app-appearance-session";
 import { useI18n } from "../../i18n/use-i18n";
 import { useWorkspaceManager } from "../workspace-manager";
 import type { ContextMenuState } from "../context-menu";
-import type { BackgroundPreview } from "../desktop-wallpaper";
 import { SceneBackdrop } from "../scene/scene-backdrop";
 import { WakeTrail } from "../scene/wake-trail";
 import { useDesktopScene } from "../scene/use-desktop-scene";
@@ -55,6 +55,8 @@ import type {
 import { ShellSurfaces } from "./shell-surfaces";
 import { StaticDropFeedback } from "./static-drop-feedback";
 import { LaunchFeedbackSurface } from "../launch-feedback";
+import { MotionToast, MotionToastStack } from "../motion-toast";
+import { stageWorkspaceAndTrySync } from "../workspace-commit";
 import "../home-shell.css";
 
 interface DesktopShellProps {
@@ -99,15 +101,21 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     snapshot.preferences.layoutLocked ? "view" : "arrange"
   );
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [appearancePreview, setAppearancePreview] = useState<WorkspaceAppearancePreferences | null>(null);
   /**
-   * Live background draft preview (023-C): ONE scope-keyed layer fed by the
-   * Settings background editor — the workspace layer or the ACTIVE
-   * section's layer, exactly what the resolver substitutes. Cleared on
-   * Cancel/close and after a successful Save (the snapshot then carries the
-   * same config, so there is no flash-back).
+   * The pending delete-undo (UX-09): the captured restore entry of the
+   * most recent successful app delete, shown as a toast with an 撤销
+   * action for ~6 seconds. A new delete replaces it (occurrence keys a
+   * fresh toast instance).
    */
-  const [backgroundPreview, setBackgroundPreview] = useState<BackgroundPreview | null>(null);
+  const [deleteUndo, setDeleteUndo] = useState<{ readonly entry: DeletedAppRestoreEntry; readonly occurrence: number } | null>(null);
+  /**
+   * The Settings appearance draft (UX-07): previewed on the shared overlay
+   * portal root ONLY — the Settings window itself shows the draft live
+   * while the DESKTOP keeps the persisted theme until Save. Cleared on
+   * Cancel/close and after a successful Save (the snapshot then carries
+   * the same values, so there is no flash-back).
+   */
+  const [appearancePreview, setAppearancePreview] = useState<WorkspaceAppearancePreferences | null>(null);
   /** The section whose context menu opened Settings (its scope preselected). */
   const [settingsBackgroundSection, setSettingsBackgroundSection] = useState<DesktopPageId | null>(null);
   const [launcherOpen, setLauncherOpen] = useState(false);
@@ -216,6 +224,9 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     effectiveActivePageId,
     workspaceRef,
     pendingRevealRef,
+    onAppDeleted: (entry) => {
+      setDeleteUndo((current) => ({ entry, occurrence: (current?.occurrence ?? 0) + 1 }));
+    },
   });
   const {
     dialog,
@@ -234,11 +245,22 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     snapshot,
   });
 
-  // The rendered theme (preview ?? persisted) and the EFFECTIVE color mode
-  // — one derivation, in use-shell-theme.ts.
-  const { resolvedAppearance, theme, effectiveColorMode } = useShellTheme({
+  // The DESKTOP's rendered theme (UX-07: always the PERSISTED appearance —
+  // Settings never touches the desktop before Save) and the EFFECTIVE color
+  // mode, which also owns the document-level color-scheme. One derivation,
+  // in use-shell-theme.ts.
+  const {
+    resolvedAppearance,
+    theme,
+    effectiveColorMode,
+  } = useShellTheme({ appearancePreview: null, preferences: snapshot.preferences });
+  // The overlay portal root's theme: the Settings draft while a preview is
+  // live, otherwise the same persisted theme — so the Settings window (and
+  // only portalled surfaces) previews the draft in place.
+  const portalTheme = useShellTheme({
     appearancePreview,
     preferences: snapshot.preferences,
+    applyDocumentScheme: false,
   });
 
   /** The persisted gap, resolved for legacy snapshots. */
@@ -273,7 +295,6 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   const scene = useDesktopScene({
     renderedSnapshot,
     workspacePages: snapshot.pages,
-    backgroundPreview,
     resolvedAppearance,
     effectiveColorMode,
     activeSection,
@@ -305,7 +326,6 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     layoutQueueRef: tiles.commits.layoutQueueRef,
     setContextMenu,
     setAppearancePreview,
-    setBackgroundPreview,
     setSettingsBackgroundSection,
     setSettingsOpen,
     setPendingGapPx,
@@ -340,6 +360,29 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     openSectionBackgroundSettings: settings.openSectionBackgroundSettings,
     pendingRevealRef,
   });
+
+  /**
+   * Delete-undo commit (UX-09): restores the captured entry against the
+   * CURRENT snapshot through the same serialized layout queue the canvas
+   * commits use — never racing an in-flight geometry handoff. The tile
+   * returns to its exact cell (flip.reorder closes/opens the gap; under
+   * reduced motion the slots reposition instantly by design).
+   */
+  function undoDeleteApp(entry: DeletedAppRestoreEntry) {
+    setDeleteUndo(null);
+    const run = async () => {
+      const restored = restoreDeletedApp(workspaceRef.current.snapshot, entry);
+      if (!restored.ok) {
+        console.error(`VelaDesk: delete-undo was refused (${restored.reason})`);
+        return;
+      }
+      const staged = await stageWorkspaceAndTrySync(runtime, restored.workspace);
+      if (!staged.ok) {
+        console.error(`VelaDesk: delete-undo was not staged (${staged.reason})`);
+      }
+    };
+    tiles.commits.enqueueLayoutCommit(run);
+  }
 
   function switchMode(next: DesktopMode) {
     // A pending handoff means the display canvas outruns the durable
@@ -598,10 +641,27 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         closeSettings={settings.closeSettings}
         settingsBackgroundSection={settingsBackgroundSection}
         setAppearancePreview={setAppearancePreview}
-        setBackgroundPreview={setBackgroundPreview}
         openContextMenu={menus.openContextMenu}
         t={t}
       />
+
+      {/*
+        The delete-undo toast (UX-09): 「已删除「{name}」」+ 撤销 for ~6s.
+        Reduced motion settles it instantly (MotionToast's own contract).
+      */}
+      <MotionToastStack>
+        {deleteUndo !== null ? (
+          <MotionToast
+            key={deleteUndo.occurrence}
+            lifetime={6000}
+            slot="workspace"
+            onDismiss={() => setDeleteUndo(null)}
+            action={{ label: t("common.undo"), onAction: () => undoDeleteApp(deleteUndo.entry) }}
+          >
+            {t("toast.appDeleted", { name: deleteUndo.entry.app.name })}
+          </MotionToast>
+        ) : null}
+      </MotionToastStack>
       </div>
     {/*
       The shared overlay portal root (018, 021-R1): a themed sibling of the
@@ -615,9 +675,9 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       ref={setPortalRoot}
       data-vd-ui=""
       data-vd-portal-root=""
-      data-vd-color-mode={effectiveColorMode}
-      data-vd-material={theme.materialTier}
-      style={theme.style as CSSProperties}
+      data-vd-color-mode={portalTheme.effectiveColorMode}
+      data-vd-material={portalTheme.theme.materialTier}
+      style={portalTheme.theme.style as CSSProperties}
     />
     </ShellContextProvider>
     </VdHeroOverlayScope>

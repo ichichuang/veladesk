@@ -20,7 +20,7 @@ describe("scene asset fallback", () => {
     const asset = (assetId: string) => ({ kind: "asset" as const, assetId, fit: "cover" as const, position: "center" as const });
     const page = { ...workspace.pages[0]!, wallpaper: asset(`generic-${failure}`), wallpaperByMode: { dark: asset(`dark-${failure}`) } };
     const { result } = renderHook(() => useSceneWallpaper({ sectionNavMachine: { kind: "idle" },
-      effectiveActivePageId: "p", renderedPages: [page], backgroundPreview: null,
+      effectiveActivePageId: "p", renderedPages: [page],
       resolvedAppearance: DEFAULT_WORKSPACE_APPEARANCE, effectiveColorMode: "dark" }));
     await waitFor(() => expect(result.current.effectiveWallpaper.config).toEqual({ kind: "preset", presetId: "chart" }));
     expect(loadAsset.mock.calls).toHaveLength(2);

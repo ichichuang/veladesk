@@ -3,9 +3,10 @@
 import { memo } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type { CanvasLayoutItem } from "@veladesk/canvas-engine";
-import type { PagePlacement, WorkspaceSnapshot, EntityId } from "@veladesk/domain";
+import type { DesktopPageId, PagePlacement, WorkspaceSnapshot, EntityId } from "@veladesk/domain";
 
 import { DesktopItem } from "./desktop-item";
+import { EmptySectionHint } from "./empty-section-hint";
 import { GridSlotOverlay } from "./grid-slot-overlay";
 import { GridTargetFeedback } from "./grid-target-feedback";
 import { SnapDropRipples } from "./tile-host/drop-ripple";
@@ -19,6 +20,10 @@ import "./home-shell.css";
 
 interface DesktopCanvasViewProps {
   readonly placement: PagePlacement;
+  /** The section this canvas renders — the empty-state guidance targets it. */
+  readonly pageId: DesktopPageId;
+  /** Only the SETTLED active section shows the empty-state guidance (UX-08). */
+  readonly settledActive: boolean;
   readonly workspace: WorkspaceSnapshot;
   /** The app the appearance inspector edits — quiet affordance (019-C). */
   readonly appearanceEditingId?: EntityId | null;
@@ -92,6 +97,8 @@ interface DesktopCanvasViewProps {
  */
 export const DesktopCanvasView = memo(function DesktopCanvasView({
   placement,
+  pageId,
+  settledActive,
   workspace,
   appearanceEditingId,
   arrange,
@@ -205,6 +212,9 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
               gridTemplateColumns: `repeat(${placement.columns}, var(--vd-grid-cell-size))`,
             }}
           >
+            {placement.items.length === 0 && settledActive ? (
+              <EmptySectionHint pageId={pageId} variant="grid" />
+            ) : null}
             {placement.items.map((item) => (
               <DesktopItem
                 key={item.id}
@@ -248,6 +258,9 @@ export const DesktopCanvasView = memo(function DesktopCanvasView({
         onPointerMove={onCanvasPointerMove}
         onPointerUp={onCanvasPointerUp}
       >
+        {placement.items.length === 0 && settledActive ? (
+          <EmptySectionHint pageId={pageId} variant="freeform" />
+        ) : null}
         {placement.items.map((item) => (
           <DesktopItem
             key={item.id}

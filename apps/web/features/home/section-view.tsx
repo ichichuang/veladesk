@@ -87,6 +87,10 @@ export function SectionLayer({ page, phase, children, onLayerElement }: SectionL
 
 interface SectionViewProps {
   readonly placement: PagePlacement;
+  /** The section this view renders — the empty-state guidance targets it. */
+  readonly pageId: DesktopPageId;
+  /** Only the SETTLED active section shows the empty-state guidance (UX-08). */
+  readonly settledActive: boolean;
   readonly workspace: WorkspaceSnapshot;
   /** True only for the interactive (visible) section. */
   readonly active: boolean;
@@ -145,6 +149,8 @@ interface SectionViewProps {
  */
 function SectionViewImpl({
   placement,
+  pageId,
+  settledActive,
   workspace,
   active,
   appearanceEditingId,
@@ -235,6 +241,8 @@ function SectionViewImpl({
     >
       <DesktopCanvasView
         placement={placement}
+        pageId={pageId}
+        settledActive={settledActive}
         workspace={workspace}
         appearanceEditingId={active ? (appearanceEditingId ?? null) : null}
         arrange={arrange && active}

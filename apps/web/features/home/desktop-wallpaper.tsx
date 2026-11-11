@@ -23,27 +23,22 @@ import "./home-shell.css";
  * measures TOO BRIGHT gets the ~6% bg.deep readability veil (P1).
  */
 
+/** The release delay — one crossfade plus settle margin (see below). */
+export const WALLPAPER_PREVIEW_RELEASE_DELAY_MS =
+  VD_MOTION_WALLPAPER.crossfade * 1000 + 250;
+
 /**
- * What the Settings background editor streams to the shell for a live
- * desktop preview (023-C.2). Scope-keyed so the desktop's resolver can
- * substitute exactly one layer; `null` config = explicit removal, and
- * `explicitlyInherits` marks a section's Follow-workspace choice.
+ * Delays the release of a never-saved wallpaper preview URL (UX-07,
+ * building on UX-02's ordering rule): a Cancel/close must never yank a
+ * blob URL out from under a surface that may still be painting it — the
+ * settings panel's own thumbnail or an in-flight decode. The delay covers
+ * the wallpaper crossfade token plus margin; the URL is session-scoped
+ * either way.
  */
-export interface BackgroundPreview {
-  readonly scope: "workspace" | string;
-  readonly config: import("@veladesk/domain").WallpaperConfig | null;
-  readonly explicitlyInherits: boolean;
-  /**
-   * The color mode the draft edits (P1): defined when the editor targets a
-   * per-mode layer (`wallpaperByMode.light|dark`) — the desktop substitutes
-   * the preview only while it renders in that mode. Undefined = the
-   * mode-agnostic layer.
-   */
-  readonly mode?: "light" | "dark" | undefined;
-  /** The not-yet-staged image's content id, when the draft previews one. */
-  readonly pendingAssetId?: string | undefined;
-  /** Its object URL (owned by the settings session). */
-  readonly previewUrl?: string | undefined;
+export function releaseWallpaperPreviewUrl(url: string): void {
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, WALLPAPER_PREVIEW_RELEASE_DELAY_MS);
 }
 
 /** Serializes a config to its stable identity (crossfade / same-node key). */

@@ -9,7 +9,7 @@ import type {
 } from "@veladesk/domain";
 
 import { getBrowserAssetRuntime } from "../../assets/browser-assets";
-import { useWallpaperAssetUrl, type BackgroundPreview } from "../desktop-wallpaper";
+import { useWallpaperAssetUrl } from "../desktop-wallpaper";
 import type { SectionNavMachine } from "../section-transition-machine";
 import { visibleActiveIdOf } from "../section-transition-machine";
 
@@ -19,9 +19,7 @@ export interface UseSceneWallpaperInput {
   readonly effectiveActivePageId: DesktopPageId | null;
   /** The RENDERED workspace's pages (appearance projection). */
   readonly renderedPages: readonly import("@veladesk/domain").DesktopPage[];
-  /** Live Settings background draft (scope-keyed), or null. */
-  readonly backgroundPreview: BackgroundPreview | null;
-  /** The resolved appearance (preview ?? persisted). */
+  /** The resolved PERSISTED appearance (the desktop never renders a draft — UX-07). */
   readonly resolvedAppearance: WorkspaceAppearancePreferences;
   /**
    * The EFFECTIVE color mode ("dark"/"light", already resolved from
@@ -33,29 +31,32 @@ export interface UseSceneWallpaperInput {
 /**
  * The scene's wallpaper resolution (P1-ENG-1), extracted verbatim from the
  * former desktop-shell.tsx: the effective wallpaper of the VISIBLE section,
- * its asset id, and the resolved object URL (including the pending-draft
- * preview URL). Rendering lives in SceneBackdrop; this hook only resolves.
- * Mode-aware (P1): the effective color mode's page override substitutes
- * first, then the page general image → Dawn chain.
+ * its asset id, and the resolved object URL. Rendering lives in
+ * SceneBackdrop; this hook only resolves. Mode-aware (P1): the effective
+ * color mode's page override substitutes first, then the page general
+ * image → Dawn chain.
+ *
+ * UX-07: there is no Settings draft substitution anymore — every settings
+ * item is draft-only and the desktop resolves the PERSISTED snapshot,
+ * changing on Save (a staged upload's preview URL arrives through the
+ * shared asset cache the save transaction retains it in).
  */
 export function useSceneWallpaper(input: UseSceneWallpaperInput) {
   const {
     sectionNavMachine,
     effectiveActivePageId,
     renderedPages,
-    backgroundPreview,
     resolvedAppearance,
     effectiveColorMode,
   } = input;
 
   /**
    * The effective wallpaper of the VISIBLE section (023-C.4): resolved
-   * through the ONE canonical resolver with the Settings draft layers
-   * substituted per scope (a workspace draft never masks a saved section
-   * override). Bound to the machine-visible destination — never an early
-   * requested id that has not become a visible page. A per-MODE draft (P1)
-   * substitutes only its own mode layer, and only while the desktop
-   * actually renders that mode.
+   * through the ONE canonical resolver against the persisted layers —
+   * the effective mode's page override first, then the page general
+   * image → workspace image → Dawn chain. Bound to the machine-visible
+   * destination, never an early requested id that has not become a
+   * visible page.
    */
   const [unavailableAssetIds, setUnavailableAssetIds] = useState<ReadonlySet<string>>(new Set());
   const visibleSectionId = visibleActiveIdOf(sectionNavMachine, effectiveActivePageId);
@@ -64,44 +65,18 @@ export function useSceneWallpaper(input: UseSceneWallpaperInput) {
       visibleSectionId === null
         ? undefined
         : renderedPages.find((candidate) => candidate.id === visibleSectionId);
-    const previewTargetsVisibleSection =
-      backgroundPreview !== null && backgroundPreview.scope === visibleSectionId;
-    const modeDraft =
-      previewTargetsVisibleSection && backgroundPreview?.mode !== undefined
-        ? {
-            mode: backgroundPreview.mode,
-            config: backgroundPreview.explicitlyInherits ? null : backgroundPreview.config,
-          }
-        : undefined;
-    const pageDraftActive =
-      previewTargetsVisibleSection &&
-      backgroundPreview?.mode === undefined &&
-      !backgroundPreview.explicitlyInherits;
     return resolveModeAwareWallpaper(
-      { effectiveMode: effectiveColorMode, page, modeWallpaperDraft: modeDraft, unavailableAssetIds },
+      { effectiveMode: effectiveColorMode, page, modeWallpaperDraft: undefined, unavailableAssetIds },
       {
         page,
-        pageWallpaperDraft: pageDraftActive ? backgroundPreview.config : undefined,
-        pageWallpaperExplicitlyInherits:
-          previewTargetsVisibleSection &&
-          backgroundPreview?.mode === undefined &&
-          backgroundPreview.explicitlyInherits,
+        pageWallpaperDraft: undefined,
+        pageWallpaperExplicitlyInherits: false,
         workspaceWallpaper: resolvedAppearance.wallpaper,
-        workspaceDraft:
-          backgroundPreview !== null && backgroundPreview.scope === "workspace"
-            ? { config: backgroundPreview.config }
-            : undefined,
+        workspaceDraft: undefined,
         legacyWorkspacePreset: resolvedAppearance.wallpaperPreset,
       },
     );
-  }, [
-    renderedPages,
-    visibleSectionId,
-    backgroundPreview,
-    resolvedAppearance,
-    effectiveColorMode,
-    unavailableAssetIds,
-  ]);
+  }, [renderedPages, visibleSectionId, resolvedAppearance, effectiveColorMode, unavailableAssetIds]);
 
   /** Resolves asset-backed wallpapers through the existing asset runtime. */
   const loadWallpaperAsset = useCallback(async (assetId: string) => {
@@ -128,19 +103,7 @@ export function useSceneWallpaper(input: UseSceneWallpaperInput) {
   }, []);
   const wallpaperAssetId =
     effectiveWallpaper.config.kind === "asset" ? effectiveWallpaper.config.assetId : null;
-  // Pending bytes are not staged yet. Resolve them only after Save drops
-  // the preview, so an early miss cannot leave the saved image unresolved.
-  const resolvedWallpaperUrl = useWallpaperAssetUrl(
-    backgroundPreview?.pendingAssetId === wallpaperAssetId ? null : wallpaperAssetId,
-    loadWallpaperAsset,
-  );
-  // A pending (not-yet-staged) image previews through its own object URL.
-  const wallpaperAssetUrl =
-    backgroundPreview?.pendingAssetId !== undefined &&
-    backgroundPreview.pendingAssetId === wallpaperAssetId &&
-    backgroundPreview.previewUrl !== undefined
-      ? backgroundPreview.previewUrl
-      : resolvedWallpaperUrl;
+  const wallpaperAssetUrl = useWallpaperAssetUrl(wallpaperAssetId, loadWallpaperAsset);
 
   return { effectiveWallpaper, wallpaperAssetUrl };
 }

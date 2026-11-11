@@ -583,6 +583,15 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
       ? resolveDisplayPlacement(pendingCanvasHandoff, activePage.id, resolvePagePlacement(activePage))
       : null;
 
+  /**
+   * Rides the serialized layout queue with an arbitrary async commit (the
+   * delete-undo restore, UX-09): never races an in-flight geometry handoff
+   * or another queued commit.
+   */
+  const enqueueLayoutCommit = useCallback((run: () => Promise<void>) => {
+    layoutQueueRef.current = layoutQueueRef.current.then(run, run);
+  }, []);
+
   return {
     // Geometry + history commands (consumed by the shell's menus, toolbar
     // and keyboard shortcuts, and by the tile session's drag wiring).
@@ -603,6 +612,7 @@ export function useCanvasCommits(input: UseCanvasCommitsInput) {
     resizeLockRef,
     arrangeHistoriesRef,
     layoutQueueRef,
+    enqueueLayoutCommit,
     setArrangeHistories,
   };
 }

@@ -5,11 +5,13 @@ import { useCallback, useState } from "react";
 
 import type { WorkspaceClientRuntime } from "@veladesk/client-runtime";
 import {
+  captureDeletedAppEntry,
   deleteApp,
   deleteEmptyPage,
   dissolveFolderToPage,
 } from "@veladesk/domain";
 import type {
+  DeletedAppRestoreEntry,
   DesktopPageId,
   EntityId,
   Folder,
@@ -34,6 +36,11 @@ export interface UseShellDialogsInput {
   readonly workspaceRef: RefObject<LocalWorkspaceRecord>;
   /** Structural-reveal channel (create/reorder/delete-active). */
   readonly pendingRevealRef: RefObject<DesktopPageId | null>;
+  /**
+   * Delete-undo channel (UX-09): invoked with the captured restore entry
+   * after a successful app delete — the shell shows the toast + undo.
+   */
+  readonly onAppDeleted?: ((entry: DeletedAppRestoreEntry) => void) | undefined;
 }
 
 /**
@@ -43,7 +50,7 @@ export interface UseShellDialogsInput {
  * exit-animation mirror, and the delete/dissolve submission handlers.
  */
 export function useShellDialogs(input: UseShellDialogsInput) {
-  const { runtime, t, pageIds, snapshot, effectiveActivePageId, workspaceRef, pendingRevealRef } =
+  const { runtime, t, pageIds, snapshot, effectiveActivePageId, workspaceRef, pendingRevealRef, onAppDeleted } =
     input;
 
   const [dialog, setDialog] = useState<HomeDialog | null>(null);
@@ -118,6 +125,10 @@ export function useShellDialogs(input: UseShellDialogsInput) {
   }
 
   async function handleDeleteApp(appId: EntityId) {
+    // Capture the undo entry BEFORE the immutable delete (UX-09): the
+    // entry carries the entity, its exact placement, folder membership
+    // and dock pin so an undo restores the tile in place.
+    const entry = captureDeletedAppEntry(snapshot, appId);
     const result = deleteApp(snapshot, appId);
     if (!result.ok) {
       setDialogError(t("dialog.deleteApp.error.appGone"));
@@ -129,6 +140,9 @@ export function useShellDialogs(input: UseShellDialogsInput) {
       return;
     }
     closeDialog();
+    if (entry !== null) {
+      onAppDeleted?.(entry);
+    }
   }
 
   async function handleDissolveFolder(folderId: EntityId) {

@@ -1,5 +1,5 @@
 import { findCanvasItem } from "@veladesk/canvas-engine";
-import type { CanvasRect } from "@veladesk/canvas-engine";
+import type { CanvasLayoutItem, CanvasRect, GridCanvasItem } from "@veladesk/canvas-engine";
 
 import { findDesktopPage } from "../lookup";
 import {
@@ -9,8 +9,10 @@ import {
   resolvePagePlacement,
   spanFromFreeformRect,
 } from "../canvas";
+import type { LayoutItem } from "@veladesk/desktop-engine";
 import type {
   AppShortcut,
+  DesktopPage,
   DesktopPageId,
   EntityId,
   Folder,
@@ -501,3 +503,180 @@ export function relocateAppToPage(
   });
   return { ok: true, workspace: withPage(stripped, targetPageId, placed) };
 }
+
+/**
+ * Everything a delete-undo (UX-09) needs to put a deleted app back EXACTLY
+ * where it was: the entity verbatim, its container (page item with the
+ * captured geometry, or folder child slot), and its dock pin slot. The
+ * entry is captured from the snapshot BEFORE `deleteApp` runs; both sides
+ * of the pair are pure, so the capture and the restore never need to talk
+ * to storage or the network.
+ */
+export interface DeletedAppRestoreEntry {
+  readonly app: AppShortcut;
+  /** The page the app was placed on; null when it lived inside a folder. */
+  readonly pageId: DesktopPageId | null;
+  /**
+   * The captured canvas item (Grid v2 cell or freeform rect) with its exact
+   * geometry and array slot, when the page had a canvas.
+   */
+  readonly canvasItem: CanvasLayoutItem | GridCanvasItem | null;
+  readonly canvasIndex: number;
+  /** The captured legacy layout item, when the page had no canvas yet. */
+  readonly legacyItem: LayoutItem | null;
+  /** The folder the app lived in; null when it was placed on a page. */
+  readonly folderId: EntityId | null;
+  readonly folderIndex: number;
+  /** The dock slot the pin occupied; null when the app was not pinned. */
+  readonly dockIndex: number | null;
+}
+
+/**
+ * Captures the delete-undo entry for `appId` from `workspace` — call this
+ * BEFORE `deleteApp`. Returns null when the app does not exist (nothing to
+ * capture, nothing to restore).
+ */
+export function captureDeletedAppEntry(
+  workspace: WorkspaceSnapshot,
+  appId: EntityId,
+): DeletedAppRestoreEntry | null {
+  const app = findApp(workspace, appId);
+  if (app === undefined) {
+    return null;
+  }
+  let pageId: DesktopPageId | null = null;
+  let canvasItem: CanvasLayoutItem | GridCanvasItem | null = null;
+  let canvasIndex = 0;
+  let legacyItem: LayoutItem | null = null;
+  for (const page of workspace.pages) {
+    if (!pageItemIds(page).includes(appId)) {
+      continue;
+    }
+    pageId = page.id;
+    if (page.canvas !== undefined) {
+      const index = page.canvas.items.findIndex((item) => item.id === appId);
+      if (index >= 0) {
+        canvasItem = page.canvas.items[index]!;
+        canvasIndex = index;
+      }
+    }
+    const legacy = page.layout.items.find((item) => item.id === appId);
+    if (legacy !== undefined) {
+      legacyItem = legacy;
+    }
+    break;
+  }
+  let folderId: EntityId | null = null;
+  let folderIndex = 0;
+  const folder = workspace.entities.find(
+    (entity): entity is Folder =>
+      entity.kind === "folder" && entity.children.includes(appId),
+  );
+  if (folder !== undefined) {
+    folderId = folder.id;
+    folderIndex = folder.children.indexOf(appId);
+  }
+  return {
+    app,
+    pageId,
+    canvasItem,
+    canvasIndex,
+    legacyItem,
+    folderId,
+    folderIndex,
+    dockIndex: workspace.dock.items.includes(appId)
+      ? workspace.dock.items.indexOf(appId)
+      : null,
+  };
+}
+
+/**
+ * Restores a captured delete-undo entry onto `workspace`, immutably — the
+ * exact inverse of the `deleteApp` that produced the entry: the entity
+ * verbatim, the canvas/legacy item back at its array slot (so position,
+ * size and order survive), the folder child back at its index and the dock
+ * pin back at its slot.
+ *
+ * Fallbacks keep the restore total rather than precious: a captured
+ * geometry whose canvas SHAPE no longer matches (the page switched
+ * Grid↔Freeform after the delete) re-places through `placePageItem` the
+ * same way a cross-mode move does — never loses the app. A FOLDER that
+ * dissolved meanwhile keeps the restore total (the entity survives;
+ * only the folder membership is unrecoverable in V1), while a PAGE that
+ * disappeared refuses honestly (`page-not-found`). Overlap is legal, so
+ * nothing can fail for space. Only a live duplicate id refuses.
+ */
+export function restoreDeletedApp(
+  workspace: WorkspaceSnapshot,
+  entry: DeletedAppRestoreEntry,
+): WorkspaceEditResult {
+  if (workspace.entities.some((entity) => entity.id === entry.app.id)) {
+    return { ok: false, reason: "duplicate-entity-id" };
+  }
+  let next = withEntities(workspace, [...workspace.entities, entry.app]);
+
+  if (entry.folderId !== null) {
+    const folder = findFolder(next, entry.folderId);
+    if (folder !== undefined) {
+      const index = Math.min(entry.folderIndex, folder.children.length);
+      const children = [...folder.children];
+      children.splice(index, 0, entry.app.id);
+      next = withFolder(next, folder, { ...folder, children });
+    }
+    // A dissolved folder cannot be resurrected here (V1 has no folder
+    // restore); the app stays as an unplaced entity only if it also had no
+    // page — the callers' capture always comes from a live container, so
+    // this is the degenerate hand-written-entry case.
+  } else if (entry.pageId !== null) {
+    const page = findDesktopPage(next, entry.pageId);
+    if (page === undefined) {
+      return { ok: false, reason: "page-not-found" };
+    }
+    next = withPage(next, entry.pageId, restorePageItem(page, entry));
+  }
+
+  if (entry.dockIndex !== null && !next.dock.items.includes(entry.app.id)) {
+    const items = [...next.dock.items];
+    items.splice(Math.min(entry.dockIndex, items.length), 0, entry.app.id);
+    next = withDock(next, { items });
+  }
+  return { ok: true, workspace: next };
+}
+
+/** Puts the entry's item back onto one page — exact geometry when the
+ *  canvas shape still matches, the default placement otherwise. */
+function restorePageItem(
+  page: DesktopPage,
+  entry: DeletedAppRestoreEntry,
+): DesktopPage {
+  const item = entry.canvasItem;
+  if (page.canvas !== undefined && item !== null) {
+    if (page.canvas.mode === "grid" && "column" in item) {
+      const items = [...page.canvas.items] as GridCanvasItem[];
+      items.splice(Math.min(entry.canvasIndex, items.length), 0, item);
+      return { ...page, canvas: { ...page.canvas, items } };
+    }
+    if (page.canvas.mode !== "grid" && "rect" in item) {
+      const items = [...page.canvas.items] as CanvasLayoutItem[];
+      items.splice(Math.min(entry.canvasIndex, items.length), 0, item);
+      return { ...page, canvas: { ...page.canvas, items } };
+    }
+  }
+  const legacy = entry.legacyItem;
+  if (page.canvas === undefined && legacy !== null && page.layout.items.every((existing) => existing.id !== entry.app.id)) {
+    const items = [...page.layout.items];
+    const index = items.findIndex((existing) => {
+      const captured = legacy.position;
+      return (
+        existing.position.row > captured.row ||
+        (existing.position.row === captured.row && existing.position.column > captured.column)
+      );
+    });
+    items.splice(index < 0 ? items.length : index, 0, legacy);
+    return { ...page, layout: { ...page.layout, items } };
+  }
+  // Geometry fallback (container reshaped or nothing captured): the same
+  // placement path an ordinary add takes — never loses the app.
+  return placePageItem(page, entry.app.id, { index: pageItemIds(page).length });
+}
+

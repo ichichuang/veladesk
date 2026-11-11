@@ -56,12 +56,20 @@ const zhCNCatalog = {
   "common.cancel": "取消",
   "common.save": "保存",
   "common.close": "关闭",
+  "common.undo": "撤销",
   "toast.appUnlaunchable": "「{name}」的网址无法打开，请编辑后重试。",
+  "toast.appDeleted": "已删除「{name}」",
   "common.working": "处理中…",
   "common.retry": "重新加载",
 
   // --- Boot / startup -----------------------------------------------------
   "startup.status": "正在打开工作区…",
+  "startup.offlineLocalData": "当前离线，正在使用本地数据。",
+  "connection.lead": "无法连接服务器。请检查网络后重试；已保存的数据仍在本地，恢复连接后即可同步。",
+
+  // --- Empty-section guidance (UX-08) --------------------------------------
+  "emptySection.text": "这个分区还没有应用",
+  "emptySection.addApp": "添加应用",
 
   // --- Onboarding ---------------------------------------------------------
   "onboarding.lead": "让常用网站，成为顺手的桌面。",
@@ -137,6 +145,8 @@ const zhCNCatalog = {
   "sync.conflictTitle": "冲突——解决功能将在后续版本提供",
   "sync.syncNowTitle": "立即同步",
   "sync.refreshTitle": "从服务器刷新",
+  "sync.offlineDetailed": "离线 · 本地数据可用",
+  "sync.offlineTitle": "当前离线，正在使用本地数据。点击立即同步。",
 
   // --- Dock ---------------------------------------------------------------
   "dock.label": "程序坞",
@@ -715,11 +725,18 @@ export const enUS: MessageCatalog = {
   "common.cancel": "Cancel",
   "common.save": "Save",
   "common.close": "Close",
+  "common.undo": "Undo",
   "toast.appUnlaunchable": "“{name}” can't be opened — its URL doesn't parse. Edit the app and retry.",
+  "toast.appDeleted": "Deleted “{name}”",
   "common.working": "Working…",
   "common.retry": "Reload",
 
   "startup.status": "Opening your workspace…",
+  "startup.offlineLocalData": "You're offline — working from local data.",
+  "connection.lead": "Can't reach the server. Check your network and retry; saved data stays local and syncs once the connection returns.",
+
+  "emptySection.text": "This section has no apps yet",
+  "emptySection.addApp": "Add app",
 
   "onboarding.lead": "Your favorite sites, a desk that feels like home.",
   "onboarding.workspaceNameLabel": "Workspace name",
@@ -789,6 +806,8 @@ export const enUS: MessageCatalog = {
   "sync.syncing": "Syncing…",
   "sync.conflictTitle": "Conflict — resolution comes in a later update",
   "sync.syncNowTitle": "Sync now",
+  "sync.offlineDetailed": "Offline · local data in use",
+  "sync.offlineTitle": "You're offline — working from local data. Click to sync now.",
   "sync.refreshTitle": "Refresh from server",
 
   "dock.label": "Dock",

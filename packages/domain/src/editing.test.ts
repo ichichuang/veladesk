@@ -1508,3 +1508,120 @@ describe("switchPagePlacementMode (P1 retained datasets)", () => {
     }
   });
 });
+
+describe("deleteApp undo (capture + restore, UX-09)", () => {
+  it("round-trips a pinned grid app with custom geometry back to the identical snapshot", () => {
+    const withApps = [app("app-a"), app("app-b")].reduce(
+      (current, next) => {
+        const step = addAppToPage(current, "page-1", next);
+        if (!step.ok) throw new Error("fixture failed");
+        return step.workspace;
+      },
+      baseWorkspace(),
+    );
+    const resized = replacePageCanvas(withApps, "page-1", {
+      version: 2,
+      mode: "grid",
+      columns: 3,
+      items: [
+        { id: "app-a", column: 1, row: 1, columnSpan: 2, rowSpan: 2 },
+        { id: "app-b", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
+      ],
+    });
+    if (!resized.ok) throw new Error("fixture failed");
+    const pinned = pinEntityToDock(resized.workspace, "app-a");
+    if (!pinned.ok) throw new Error("fixture failed");
+    const before = pinned.workspace;
+
+    const entry = captureDeletedAppEntry(before, "app-a");
+    expect(entry).not.toBeNull();
+    expect(entry?.dockIndex).toBe(0);
+    const deleted = deleteApp(before, "app-a");
+    if (!deleted.ok) throw new Error("fixture failed");
+    expect(deleted.workspace.entities).toHaveLength(1);
+
+    const restored = restoreDeletedApp(deleted.workspace, entry!);
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    // Entities are re-APPENDED (array order differs); everything the user
+    // sees — placement geometry, item order, dock order, entity set — is
+    // exactly the pre-delete state.
+    expect(restored.workspace.pages).toEqual(before.pages);
+    expect(restored.workspace.dock).toEqual(before.dock);
+    expect([...restored.workspace.entities].sort((a, b) => a.id.localeCompare(b.id)))
+      .toEqual([...before.entities].sort((a, b) => a.id.localeCompare(b.id)));
+    expectValid(restored.workspace);
+  });
+
+  it("round-trips a folder child at its original slot", () => {
+    const folderCreated = addFolderToPage(baseWorkspace(), "page-1", folder("folder-1", "Docs"));
+    if (!folderCreated.ok) throw new Error("fixture failed");
+    const first = addAppToFolder(folderCreated.workspace, "folder-1", app("app-a"));
+    if (!first.ok) throw new Error("fixture failed");
+    const second = addAppToFolder(first.workspace, "folder-1", app("app-b"));
+    if (!second.ok) throw new Error("fixture failed");
+
+    const entry = captureDeletedAppEntry(second.workspace, "app-a");
+    const deleted = deleteApp(second.workspace, "app-a");
+    if (!deleted.ok) throw new Error("fixture failed");
+
+    const restored = restoreDeletedApp(deleted.workspace, entry!);
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    const folderEntity = restored.workspace.entities.find((candidate) => candidate.id === "folder-1");
+    expect(folderEntity !== undefined && folderEntity.kind === "folder" && folderEntity.children)
+      .toEqual(["app-a", "app-b"]);
+    expectValid(restored.workspace);
+  });
+
+  it("re-inserts into a dock that changed meanwhile without duplicating", () => {
+    const placed = addAppToPage(baseWorkspace(), "page-1", app("app-a"));
+    if (!placed.ok) throw new Error("fixture failed");
+    const pinned = pinEntityToDock(placed.workspace, "app-a");
+    if (!pinned.ok) throw new Error("fixture failed");
+    const entry = captureDeletedAppEntry(pinned.workspace, "app-a");
+    const deleted = deleteApp(pinned.workspace, "app-a");
+    if (!deleted.ok) throw new Error("fixture failed");
+    // Meanwhile the user pinned the folder… there is none, so pin nothing:
+    // re-adding a DIFFERENT app to the dock shifts the captured slot.
+    const other = addAppToPage(deleted.workspace, "page-1", app("app-c"));
+    if (!other.ok) throw new Error("fixture failed");
+    const otherPinned = pinEntityToDock(other.workspace, "app-c");
+    if (!otherPinned.ok) throw new Error("fixture failed");
+
+    const restored = restoreDeletedApp(otherPinned.workspace, entry!);
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    expect(restored.workspace.dock.items).toEqual(["app-a", "app-c"]);
+    expectValid(restored.workspace);
+  });
+
+  it("refuses a live duplicate id and captures nothing for a missing app", () => {
+    expect(captureDeletedAppEntry(baseWorkspace(), "app-x")).toBeNull();
+    const placed = addAppToPage(baseWorkspace(), "page-1", app("app-a"));
+    if (!placed.ok) throw new Error("fixture failed");
+    const entry = captureDeletedAppEntry(placed.workspace, "app-a");
+    expect(restoreDeletedApp(placed.workspace, entry!)).toEqual({
+      ok: false,
+      reason: "duplicate-entity-id",
+    });
+  });
+
+  it("falls back to a default placement when the captured page is gone", () => {
+    const secondPage = addPage(baseWorkspace(), emptyPage("page-2", "Two"));
+    if (!secondPage.ok) throw new Error("fixture failed");
+    const placed = addAppToPage(secondPage.workspace, "page-2", app("app-a"));
+    if (!placed.ok) throw new Error("fixture failed");
+    const entry = captureDeletedAppEntry(placed.workspace, "app-a");
+    const deleted = deleteApp(placed.workspace, "app-a");
+    if (!deleted.ok) throw new Error("fixture failed");
+    // The captured page is gone too (deleted meanwhile) — an honest refusal.
+    const pageGone = deleteEmptyPage(deleted.workspace, "page-2");
+    if (!pageGone.ok) throw new Error("fixture failed");
+    expect(restoreDeletedApp(pageGone.workspace, entry!)).toEqual({
+      ok: false,
+      reason: "page-not-found",
+    });
+  });
+});
+import { captureDeletedAppEntry, restoreDeletedApp } from "./editing";

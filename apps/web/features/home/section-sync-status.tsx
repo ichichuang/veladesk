@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
@@ -19,8 +19,16 @@ interface SectionSyncStatusProps {
  *
  * A clean workspace renders NOTHING — sync state is not a permanent
  * fixture. dirty → 待同步 (click syncs), dirty + network/server failure →
- * 离线 (click retries), conflict → 冲突 (display only; conflicts are never
- * re-sent or auto-resolved in this stage). Deliberately visually quiet.
+ * the OFFLINE badge (UX-11: prominent, readable, actionable — an
+ * accent-wash pill whose click retries the sync immediately, with the
+ * explanation in its accessible name), conflict → 冲突 (display only;
+ * conflicts are never re-sent or auto-resolved in this stage).
+ *
+ * Recovering the connection hides the badge by itself (UX-11): the
+ * browser's `online` event triggers ONE reconciliation attempt, and a
+ * successful sync leaves the workspace clean — the badge simply never
+ * renders again. An `online` that cannot actually reach the server keeps
+ * the badge; honest state over optimistic hiding.
  */
 export function SectionSyncStatus({ workspace, lastRemoteResult }: SectionSyncStatusProps) {
   const runtime = useWorkspaceRuntimeInstance();
@@ -55,13 +63,13 @@ export function SectionSyncStatus({ workspace, lastRemoteResult }: SectionSyncSt
       : busy
         ? t("sync.syncing")
         : offline
-          ? t("sync.offline")
+          ? t("sync.offlineDetailed")
           : t("sync.pending");
 
   if (syncState === "conflict") {
     return (
       <span className="vela-sync-status" data-state="conflict" title={t("sync.conflictTitle")}>
-        <span className="vela-sync-status-dot" aria-hidden="true" />
+        <span className="vela-sync-status__dot" aria-hidden="true" />
         {label}
       </span>
     );
@@ -73,11 +81,40 @@ export function SectionSyncStatus({ workspace, lastRemoteResult }: SectionSyncSt
       className="vela-sync-status"
       data-state={offline ? "offline" : "dirty"}
       disabled={busy}
-      title={t("sync.syncNowTitle")}
+      title={offline ? t("sync.offlineTitle") : t("sync.syncNowTitle")}
+      aria-label={offline ? t("sync.offlineTitle") : t("sync.syncNowTitle")}
       onClick={handleActivate}
     >
-      <span className="vela-sync-status-dot" aria-hidden="true" />
+      <span className="vela-sync-status__dot" aria-hidden="true" />
       {label}
     </button>
   );
+}
+
+/**
+ * Auto-retry on reconnect (UX-11): mounted while the desktop is up; the
+ * browser regaining the network triggers ONE sync attempt for a dirty
+ * workspace so the offline badge clears itself when the connection really
+ * is back (a still-dead route keeps it, and the badge stays honest).
+ */
+export function useOnlineSyncRetry(
+  workspace: LocalWorkspaceRecord,
+  lastRemoteResult: WorkspaceRuntimeRemoteResult | undefined,
+): void {
+  const runtime = useWorkspaceRuntimeInstance();
+  useEffect(() => {
+    const offline =
+      workspace.syncState === "dirty" &&
+      (lastRemoteResult?.status === "network-error" || lastRemoteResult?.status === "server-error");
+    if (!offline) {
+      return;
+    }
+    const onOnline = () => {
+      void runtime.syncCurrent().catch(() => {});
+    };
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+    };
+  }, [runtime, workspace.syncState, lastRemoteResult]);
 }

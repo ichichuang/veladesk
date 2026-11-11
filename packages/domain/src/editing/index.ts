@@ -18,6 +18,8 @@ export type {
   WorkspaceEditResult,
 } from "./shared";
 
+export type { DeletedAppRestoreEntry } from "./entities";
+
 export {
   addAppToPage,
   addAppToFolder,
@@ -27,6 +29,8 @@ export {
   moveAppToFolder,
   moveAppToPage,
   deleteApp,
+  captureDeletedAppEntry,
+  restoreDeletedApp,
   pinEntityToDock,
   unpinEntityFromDock,
   dissolveFolderToPage,

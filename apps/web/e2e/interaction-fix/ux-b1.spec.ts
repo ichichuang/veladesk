@@ -211,6 +211,15 @@ async function wallpaperImageState(page: Page): Promise<WallpaperImageState> {
   });
 }
 
+/** The pending upload's object URL as shown by the settings panel thumbnail. */
+async function pendingThumbnailUrl(page: Page): Promise<string> {
+  const thumbnail = page.locator(
+    '[data-settings-surface] img[alt="背景图片预览"], [data-settings-surface] img[alt="Background image preview"]',
+  );
+  await expect(thumbnail.first()).toBeVisible();
+  return thumbnail.first().evaluate((img: HTMLImageElement) => img.src);
+}
+
 for (const reducedMotion of [false, true] as const) {
   test(`UX-02: uploaded wallpaper renders after save and survives reload (reducedMotion=${reducedMotion})`, async ({
     page,
@@ -236,23 +245,26 @@ for (const reducedMotion of [false, true] as const) {
 
     await openWorkspaceBackgroundEditor(page);
     await uploadWallpaperPng(page);
-    // The live preview already paints the uploaded image.
+    // UX-07 (draft-only settings): the DESKTOP stays on the preset until
+    // Save — the pending image lives in the panel's own thumbnail.
     await expect
-      .poll(async () => (await wallpaperImageState(page)).naturalWidth)
-      .toBeGreaterThan(0);
-    await shot(page, reducedMotion ? "ux02-preview-reduced" : "ux02-preview");
+      .poll(() => page.locator(".vela-desktop__wallpaper img[data-wallpaper-image]").count())
+      .toBe(0);
+    const preview = await pendingThumbnailUrl(page);
+    expect(preview).toMatch(/^blob:/);
+    await shot(page, reducedMotion ? "ux02-pending-reduced" : "ux02-pending");
 
-    const preview = await wallpaperImageState(page);
     await page.getByRole("button", { name: /^保存$|^Save$/ }).click();
     await expect(page.locator("[data-settings-surface]")).toBeHidden();
 
-    // After save: SAME object URL still rendering (the URL was retained,
-    // not revoked-and-refetched through a dead blob), decodable, painted.
+    // After save: the RETAINED preview object URL is what renders (the URL
+    // was kept alive, not revoked-and-refetched through a dead blob),
+    // decodable, painted.
     await expect
       .poll(async () => (await wallpaperImageState(page)).naturalWidth)
       .toBeGreaterThan(0);
     const saved = await wallpaperImageState(page);
-    expect(saved.src).toBe(preview.src);
+    expect(saved.src).toBe(preview);
     expect(saved.sampleLuma).toBeGreaterThan(60);
     await shot(page, reducedMotion ? "ux02-saved-reduced" : "ux02-saved");
 
@@ -337,15 +349,16 @@ test("UX-02: the same save path holds in LIGHT color mode", async ({ page, reque
 
   await openWorkspaceBackgroundEditor(page);
   await uploadWallpaperPng(page);
+  // Draft-only (UX-07): nothing on the desktop until Save.
   await expect
-    .poll(async () => (await wallpaperImageState(page)).naturalWidth)
-    .toBeGreaterThan(0);
-  const preview = await wallpaperImageState(page);
+    .poll(() => page.locator(".vela-desktop__wallpaper img[data-wallpaper-image]").count())
+    .toBe(0);
+  const preview = await pendingThumbnailUrl(page);
   await page.getByRole("button", { name: /^保存$|^Save$/ }).click();
   await expect(page.locator("[data-settings-surface]")).toBeHidden();
 
   const saved = await wallpaperImageState(page);
-  expect(saved.src).toBe(preview.src);
+  expect(saved.src).toBe(preview);
   expect(saved.naturalWidth).toBeGreaterThan(0);
   expect(saved.sampleLuma).toBeGreaterThan(60);
   await shot(page, "ux02-light-saved");

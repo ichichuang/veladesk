@@ -29,7 +29,6 @@ import { SettingsCenter } from "../settings-center";
 import type { SettingsSaveResult } from "../settings-center";
 import type { WorkspaceSettingsDraft } from "../settings-draft";
 import type { PreparedWallpaperImage } from "../wallpaper-prep";
-import type { BackgroundPreview } from "../desktop-wallpaper";
 import { findDesktopPage } from "@veladesk/domain";
 import { useI18n } from "../../i18n/use-i18n";
 import { useWorkspaceManager } from "../workspace-manager";
@@ -104,7 +103,6 @@ export interface ShellSurfacesProps {
   readonly closeSettings: () => void;
   readonly settingsBackgroundSection: DesktopPageId | null;
   readonly setAppearancePreview: (next: WorkspaceAppearancePreferences | null) => void;
-  readonly setBackgroundPreview: (next: BackgroundPreview | null) => void;
   readonly openContextMenu: (target: ContextMenuTarget) => void;
   readonly t: TranslateFn;
 }
@@ -140,7 +138,6 @@ export function ShellSurfaces(props: ShellSurfacesProps) {
     closeSettings,
     settingsBackgroundSection,
     setAppearancePreview,
-    setBackgroundPreview,
     openContextMenu,
     t,
   } = props;
@@ -308,7 +305,6 @@ export function ShellSurfaces(props: ShellSurfacesProps) {
         onClose={closeSettings}
         backgroundEntrySectionId={settingsBackgroundSection}
         activeSectionId={effectiveActivePageId}
-        onPreviewBackground={setBackgroundPreview}
       />
     </>
   );

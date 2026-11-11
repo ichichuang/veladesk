@@ -13,12 +13,10 @@ import type {
 } from "@veladesk/domain";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 
-import type { BackgroundPreview } from "../desktop-wallpaper";
 import { useSceneWallpaper } from "./use-scene-wallpaper";
 import { useSectionScrollMemory } from "./use-section-scroll-memory";
 import { usePairCoordinator } from "./use-pair-coordinator";
-import type { SectionPairSettledListener } from "../section-pair-animator";
-import {
+import type { SectionPairSettledListener } from "../section-pair-animator";import {
   IDLE_SECTION_NAV,
   pruneMissingSections,
   reportLayerSettled,
@@ -46,16 +44,14 @@ import type { WorkspaceViewStateV1 } from "../workspace-view-state";
  * the desktop, and nothing outside the scene may touch the layer
  * transforms. The hook never imports the tile host; the shell feeds it the
  * shared refs (viewport element, active page id, workspace record) and the
- * shell-owned wallpaper preview state.
+ * resolved PERSISTED appearance (UX-07: the desktop renders no draft).
  */
 export interface UseDesktopSceneInput {
   /** The RENDERED workspace (appearance projection) — wallpaper resolution. */
   readonly renderedSnapshot: WorkspaceSnapshot;
   /** The raw pages of the authoritative snapshot, in workspace order. */
   readonly workspacePages: readonly DesktopPage[];
-  /** Live Settings background draft (scope-keyed), or null. */
-  readonly backgroundPreview: BackgroundPreview | null;
-  /** The resolved appearance (preview ?? persisted). */
+  /** The resolved PERSISTED appearance (the desktop renders no draft, UX-07). */
   readonly resolvedAppearance: WorkspaceAppearancePreferences;
   /**
    * The EFFECTIVE color mode ("dark"/"light", resolved from `system`) —
@@ -105,7 +101,6 @@ export function useDesktopScene(input: UseDesktopSceneInput): DesktopScene {
   const {
     renderedSnapshot,
     workspacePages,
-    backgroundPreview,
     resolvedAppearance,
     effectiveColorMode,
     activeSection,
@@ -147,7 +142,6 @@ export function useDesktopScene(input: UseDesktopSceneInput): DesktopScene {
     sectionNavMachine,
     effectiveActivePageId,
     renderedPages: renderedSnapshot.pages,
-    backgroundPreview,
     resolvedAppearance,
     effectiveColorMode,
   });

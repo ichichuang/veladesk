@@ -120,6 +120,8 @@ export const TileHostLayer = memo(function TileHostLayer({
     >
       <SectionView
         placement={placement}
+        pageId={page.id}
+        settledActive={phase === "active"}
         workspace={renderedWorkspace}
         active={interactive}
         appearanceEditingId={interactive ? appearanceEditingId : null}

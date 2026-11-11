@@ -119,6 +119,7 @@ export {
   addAppToFolder,
   addFolderToPage,
   addPage,
+  captureDeletedAppEntry,
   deleteApp,
   deleteEmptyPage,
   dissolveFolderToPage,
@@ -133,11 +134,16 @@ export {
   replacePageCanvas,
   replacePageModeWallpaper,
   replaceWorkspacePreferences,
+  restoreDeletedApp,
   setDefaultPage,
   switchPagePlacementMode,
   unpinEntityFromDock,
 } from "./editing";
-export type { WorkspaceEditFailureReason, WorkspaceEditResult } from "./editing";
+export type {
+  DeletedAppRestoreEntry,
+  WorkspaceEditFailureReason,
+  WorkspaceEditResult,
+} from "./editing";
 
 export type {
   AppDecorationStyle,

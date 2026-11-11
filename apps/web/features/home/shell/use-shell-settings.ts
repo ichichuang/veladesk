@@ -22,7 +22,7 @@ import type { PageBackgroundPatch } from "../settings-draft";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 
 import { getBrowserAssetRuntime } from "../../assets/browser-assets";
-import { retainWallpaperAssetUrl, type BackgroundPreview } from "../desktop-wallpaper";
+import { retainWallpaperAssetUrl } from "../desktop-wallpaper";
 import type { PreparedWallpaperImage } from "../wallpaper-prep";
 import { preferencesFromSettingsDraft } from "../settings-draft";
 import type { WorkspaceSettingsDraft } from "../settings-draft";
@@ -40,7 +40,6 @@ export interface UseShellSettingsInput {
   readonly layoutQueueRef: RefObject<Promise<void>>;
   readonly setContextMenu: (next: ContextMenuState | null) => void;
   readonly setAppearancePreview: (next: WorkspaceAppearancePreferences | null) => void;
-  readonly setBackgroundPreview: (next: BackgroundPreview | null) => void;
   readonly setSettingsBackgroundSection: (next: DesktopPageId | null) => void;
   readonly setSettingsOpen: (open: boolean | ((current: boolean) => boolean)) => void;
   readonly setPendingGapPx: (gapPx: number | null) => void;
@@ -60,7 +59,6 @@ export function useShellSettings(input: UseShellSettingsInput) {
     layoutQueueRef,
     setContextMenu,
     setAppearancePreview,
-    setBackgroundPreview,
     setSettingsBackgroundSection,
     setSettingsOpen,
     setPendingGapPx,
@@ -93,7 +91,6 @@ export function useShellSettings(input: UseShellSettingsInput) {
   /** Cancel/close: the preview dies with the surface, nothing was staged. */
   function closeSettings() {
     setAppearancePreview(null);
-    setBackgroundPreview(null);
     setSettingsBackgroundSection(null);
     setSettingsOpen(false);
   }
@@ -204,23 +201,24 @@ export function useShellSettings(input: UseShellSettingsInput) {
                   : t("settings.error.invalidAppearance"),
       };
     }
+    // Retain each staged image's preview URL in the wallpaper asset cache
+    // (UX-02) BEFORE the workspace stage lands: the store write inside the
+    // stage re-renders the desktop, and that render must already find the
+    // URL in the cache — otherwise it kicks off a fresh asset load and the
+    // config/URL identity breaks (a crossfade through a second URL for the
+    // same bytes). Content-addressed ids make the preview bytes the staged
+    // bytes, so the retained URL is a faithful stand-in.
+    for (const image of images) {
+      retainWallpaperAssetUrl(image.asset.id, image.previewUrl);
+    }
     const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
     if (!staged.ok) {
       console.error(`VelaDesk: settings were not staged (${staged.reason})`);
       return { ok: false, message: t("settings.error.saveFailed") };
     }
-    // Success: both previews clear; the snapshot now carries the same
-    // configs the preview showed, so nothing flashes back. Each staged
-    // image's preview URL is retained in the wallpaper asset cache (UX-02):
-    // the desktop keeps rendering the exact URL it already shows — the
-    // config/URL identity is unchanged, so no crossfade (and no dead blob)
-    // ever intervenes. Content-addressed ids make the preview bytes the
-    // staged bytes.
-    for (const image of images) {
-      retainWallpaperAssetUrl(image.asset.id, image.previewUrl);
-    }
+    // Success: the preview clears; the snapshot now carries the same
+    // configs, so nothing flashes back and no dead blob ever intervenes.
     setAppearancePreview(null);
-    setBackgroundPreview(null);
     setSettingsBackgroundSection(null);
     setSettingsOpen(false);
     return { ok: true };

@@ -6,15 +6,18 @@ import { useVdReducedMotion } from "@components/vd/reduced-motion";
 import { useI18n } from "../i18n/use-i18n";
 import { clearMotion } from "./workspace-motion";
 
-export function MotionToast({ children, onDismiss, error = false, lifetime = 7000, slot = "sample" }: {
+export function MotionToast({ children, onDismiss, error = false, lifetime = 7000, slot = "sample", action }: {
   readonly children: ReactNode; readonly onDismiss: () => void; readonly error?: boolean; readonly lifetime?: number; readonly slot?: "sample" | "workspace";
+  /** Optional one-shot action (UX-09 delete-undo): a labeled button next to the close affordance. */
+  readonly action?: { readonly label: string; readonly onAction: () => void };
 }) {
   const { t } = useI18n();
   const [exiting, setExiting] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const dismiss = useRef(onDismiss);
+  const act = useRef(action);
   const reduced = useVdReducedMotion();
-  useLayoutEffect(() => { dismiss.current = onDismiss; });
+  useLayoutEffect(() => { dismiss.current = onDismiss; act.current = action; });
   useEffect(() => { const timer = setTimeout(() => setExiting(true), lifetime); return () => clearTimeout(timer); }, [lifetime]);
   useLayoutEffect(() => {
     const element = root.current;
@@ -26,7 +29,14 @@ export function MotionToast({ children, onDismiss, error = false, lifetime = 700
     return () => { tween.kill(); clearMotion(element); };
   }, [exiting, reduced]);
   return <div ref={root} className="vela-onboarding-success" role={error ? "alert" : "status"} aria-live={error ? "assertive" : "polite"} data-toast-slot={slot} data-exiting={exiting}>
-    <span>{children}</span><button type="button" className="vela-button" aria-label={t("common.close")} onClick={() => setExiting(true)}>×</button>
+    <span>{children}</span>
+    {action !== undefined ? (
+      <button type="button" className="vela-button vela-button--primary vela-toast-action"
+        onClick={() => { act.current?.onAction(); setExiting(true); }}>
+        {action.label}
+      </button>
+    ) : null}
+    <button type="button" className="vela-button" aria-label={t("common.close")} onClick={() => setExiting(true)}>×</button>
   </div>;
 }
 

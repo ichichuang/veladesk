@@ -21,7 +21,6 @@ import {
   WorkspaceWallpaperLayers,
   WallpaperSurface,
   useWallpaperAssetUrl,
-  type BackgroundPreview,
 } from "./desktop-wallpaper";
 import {
   prepareWallpaperImage,
@@ -298,14 +297,13 @@ describe("the shared background surface (023-C.2/§C.4)", () => {
   });
 });
 
-describe("the Settings background editor (023-C.2)", () => {
+describe("the Settings background editor (023-C.2, UX-07 draft-only)", () => {
   function renderSettings(props: {
     readonly onSave: (
       draft: WorkspaceSettingsDraft,
       images: readonly unknown[],
     ) => Promise<SettingsSaveResult>;
     readonly workspace?: WorkspaceSnapshot;
-    readonly onPreviewBackground?: (preview: BackgroundPreview | null) => void;
     readonly backgroundEntrySectionId?: string | null;
     readonly activeSectionId?: string | null;
   }) {
@@ -317,7 +315,6 @@ describe("the Settings background editor (023-C.2)", () => {
           onPreviewAppearance={() => {}}
           onSave={props.onSave as never}
           onClose={() => {}}
-          onPreviewBackground={props.onPreviewBackground}
           backgroundEntrySectionId={props.backgroundEntrySectionId ?? null}
           activeSectionId={props.activeSectionId ?? "page-1"}
         />
@@ -325,7 +322,7 @@ describe("the Settings background editor (023-C.2)", () => {
     );
   }
 
-  it("the general-layer editor does not preview a saved dark override", () => {
+  it("the general-layer editor does not surface a saved dark override as the general choice", () => {
     const base = threePageWorkspace();
     const workspace = { ...base, pages: base.pages.map((page) => ({ ...page,
       wallpaperByMode: { dark: { kind: "preset" as const, presetId: "midnight" as const } },
@@ -336,49 +333,36 @@ describe("the Settings background editor (023-C.2)", () => {
     expect(view.getByRole("radio", { name: /默认 Dawn 场景|Default Dawn scene/ }).getAttribute("aria-checked")).toBe("true");
   });
 
-  it("publishes the selected image URL immediately and keeps it through fit changes and Save", async () => {
+  it("stages the selected image and keeps it through fit changes until Save", async () => {
     const { prepareAssetBlob } = await import("@veladesk/assets/core");
     vi.mocked(prepareAssetBlob).mockResolvedValue({ ok: true, asset: fakeAsset("selected-wallpaper") });
     const urlSpy = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:selected-wallpaper");
-    const previews: (BackgroundPreview | null)[] = [];
     const save = vi.fn(async (_draft: WorkspaceSettingsDraft, _images: readonly unknown[]) => { void _draft; void _images; return { ok: true as const }; });
-    const view = renderSettings({ onSave: save, onPreviewBackground: (preview) => previews.push(preview) });
+    const view = renderSettings({ onSave: save });
     fireEvent.change(view.getByTestId("wallpaper-file-input"), {
       target: { files: [new File(["image"], "wall.png", { type: "image/png" })] },
     });
-    await waitFor(() => expect(previews.at(-1)).toMatchObject({
-      scope: "workspace",
-      config: { kind: "asset", assetId: "selected-wallpaper", fit: "cover" },
-      pendingAssetId: "selected-wallpaper",
-      previewUrl: "blob:selected-wallpaper",
-    }));
+    // The fit control appears once the candidate image has landed in the draft.
+    await waitFor(() =>
+      expect(view.getByRole("radio", { name: /显示完整图片|Show entire image/ })).toBeTruthy());
     fireEvent.click(view.getByRole("radio", { name: /显示完整图片|Show entire image/ }));
-    await waitFor(() => expect(previews.at(-1)).toMatchObject({
-      config: { fit: "contain" }, pendingAssetId: "selected-wallpaper", previewUrl: "blob:selected-wallpaper",
-    }));
     fireEvent.click(view.getByRole("button", { name: /保存|Save/ }));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
     expect(save.mock.calls[0]?.[0]).toMatchObject({ background: { workspace: { assetId: "selected-wallpaper", fit: "contain" } } });
     urlSpy.mockRestore();
   });
 
-  it("a workspace preset pick previews the workspace layer and saves it as one patch", async () => {
-    const previews: (BackgroundPreview | null)[] = [];
+  it("a workspace preset pick saves the workspace layer as one patch", async () => {
     const saved: WorkspaceSettingsDraft[] = [];
     const view = renderSettings({
       onSave: async (draft) => {
         saved.push(draft);
         return { ok: true };
       },
-      onPreviewBackground: (preview) => previews.push(preview),
     });
     const mist = view.getByTestId("wallpaper-preset-mist");
     await act(async () => {
       fireEvent.click(mist);
-    });
-    expect(previews.at(-1)).toMatchObject({
-      scope: "workspace",
-      config: { kind: "preset", presetId: "mist" },
     });
     await act(async () => {
       fireEvent.click(view.getByRole("button", { name: /保存|Save/ }));
@@ -387,15 +371,13 @@ describe("the Settings background editor (023-C.2)", () => {
     expect(saved[0]!.background.workspace).toEqual({ kind: "preset", presetId: "mist" });
   });
 
-  it("a per-mode layer edit streams a mode-tagged preview and saves the mode patch (P1)", async () => {
-    const previews: (BackgroundPreview | null)[] = [];
+  it("a per-mode layer edit saves the mode patch (P1)", async () => {
     const saved: WorkspaceSettingsDraft[] = [];
     const view = renderSettings({
       onSave: async (draft) => {
         saved.push(draft);
         return { ok: true };
       },
-      onPreviewBackground: (preview) => previews.push(preview),
       backgroundEntrySectionId: "page-1",
       activeSectionId: "page-1",
     });
@@ -406,11 +388,6 @@ describe("the Settings background editor (023-C.2)", () => {
     await act(async () => {
       fireEvent.click(view.getByTestId("wallpaper-preset-midnight"));
     });
-    expect(previews.at(-1)).toMatchObject({
-      scope: "page-1",
-      mode: "dark",
-      config: { kind: "preset", presetId: "midnight" },
-    });
     await act(async () => {
       fireEvent.click(view.getByRole("button", { name: /保存|Save/ }));
     });
@@ -420,23 +397,19 @@ describe("the Settings background editor (023-C.2)", () => {
     });
   });
 
-  it("a NON-active section scope edits by thumbnail only — no live desktop preview is published", async () => {
-    const previews: (BackgroundPreview | null)[] = [];
+  it("a NON-active section scope edits by thumbnail only and rides one save", async () => {
     const saved: WorkspaceSettingsDraft[] = [];
     const view = renderSettings({
       onSave: async (draft) => {
         saved.push(draft);
         return { ok: true };
       },
-      onPreviewBackground: (preview) => previews.push(preview),
       backgroundEntrySectionId: "page-2",
       activeSectionId: "page-1",
     });
     await act(async () => {
       fireEvent.click(view.getByTestId("wallpaper-preset-dawn"));
     });
-    // The ACTIVE section (page-1) has no draft: nothing previews live.
-    expect(previews.at(-1)).toBeNull();
     await act(async () => {
       fireEvent.click(view.getByRole("button", { name: /保存|Save/ }));
     });
@@ -444,26 +417,19 @@ describe("the Settings background editor (023-C.2)", () => {
     expect(saved[0]!.background.pages["page-2"]).toEqual({ general: { kind: "preset", presetId: "dawn" } });
   });
 
-  it("Follow workspace previews inheritance (null patch), and scope switches keep both dirty drafts", async () => {
-    const previews: (BackgroundPreview | null)[] = [];
+  it("section-scope drafts save as scoped patches", async () => {
     const saved: WorkspaceSettingsDraft[] = [];
     const view = renderSettings({
       onSave: async (draft) => {
         saved.push(draft);
         return { ok: true };
       },
-      onPreviewBackground: (preview) => previews.push(preview),
       backgroundEntrySectionId: "page-1",
       activeSectionId: "page-1",
     });
-    // Section scope: pick Follow workspace (clears any override) then also
-    // draft the workspace layer — both patches ride one save.
-    const follow = view.getByRole("radio", { name: /默认 Dawn 场景|Default Dawn scene/ }).closest("button") ?? view.getByRole("radio", { name: /默认 Dawn 场景|Default Dawn scene/ });
     await act(async () => {
       fireEvent.click(view.getByTestId("wallpaper-preset-mist"));
     });
-    expect(previews.at(-1)).toMatchObject({ scope: "page-1", config: { kind: "preset", presetId: "mist" } });
-    void follow;
     await act(async () => {
       fireEvent.click(view.getByRole("button", { name: /保存|Save/ }));
     });

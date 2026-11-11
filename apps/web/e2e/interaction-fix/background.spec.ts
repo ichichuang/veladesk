@@ -6,10 +6,10 @@ import { ensureArtifactRoot } from "./helpers";
 
 /**
  * t61 issue 4: built-in backgrounds must actually PAINT. For every preset:
- * picking it in Settings changes the desktop wallpaper layer's computed
- * background immediately (live preview with the dialog open), Save
- * persists (survives a reload), Cancel restores. The scope dropdown
- * (workspace default vs a section) is exercised for one preset.
+ * picking it in Settings stages a DRAFT (UX-07: the desktop keeps the
+ * saved wallpaper while the dialog is open), Save paints it and persists
+ * (survives a reload), Cancel discards it. The scope dropdown (workspace
+ * default vs a section) is exercised for one preset.
  */
 test.afterEach(async ({ request }) => {
   await deleteSeededWorkspaces(request);
@@ -52,20 +52,19 @@ test.describe("backgrounds (t61)", () => {
   });
 
   for (const preset of PRESETS) {
-    test(`preset ${preset}: live preview, save persists over reload`, async ({ page }) => {
+    test(`preset ${preset}: draft until Save, then persists over reload`, async ({ page }) => {
       await openAppearanceSettings(page);
       const card = page.locator(`[data-testid="wallpaper-preset-${preset}"]`);
       await expect(card).toBeVisible();
       await card.click();
 
-      // The live preview paints IMMEDIATELY (the dialog is still open).
+      // Draft-only (UX-07): while the dialog is open the desktop keeps the
+      // SAVED wallpaper — nothing changes before Save.
       await expect
-        .poll(async () => (await wallpaperState(page))?.preset, { timeout: 5_000 })
-        .toBe(preset);
-      const painted = await wallpaperState(page);
-      expect(painted!.backgroundImage.length).toBeGreaterThan(10);
+        .poll(async () => (await wallpaperState(page))?.preset, { timeout: 2_000 })
+        .toBe("chart");
 
-      // Save: the surface keeps the preset and survives a reload.
+      // Save: the preset paints and survives a reload.
       await page.getByRole("button", { name: "保存" }).click();
       await expect(page.locator("[data-settings-surface]")).toBeHidden({ timeout: 10_000 });
       await expect
@@ -77,17 +76,19 @@ test.describe("backgrounds (t61)", () => {
         .poll(async () => (await wallpaperState(page))?.preset, { timeout: 10_000 })
         .toBe(preset);
       const persisted = await wallpaperState(page);
-      expect(persisted!.backgroundImage).toBe(painted!.backgroundImage);
+      expect(persisted!.backgroundImage.length).toBeGreaterThan(10);
     });
   }
 
   test("every preset paints a visibly different background (pairwise distinct)", async ({
     page,
   }) => {
-    await openAppearanceSettings(page);
     const seen = new Map<string, string>();
     for (const preset of PRESETS) {
+      await openAppearanceSettings(page);
       await page.locator(`[data-testid="wallpaper-preset-${preset}"]`).click();
+      await page.getByRole("button", { name: "保存" }).click();
+      await expect(page.locator("[data-settings-surface]")).toBeHidden({ timeout: 10_000 });
       await expect
         .poll(async () => (await wallpaperState(page))?.preset, { timeout: 5_000 })
         .toBe(preset);
@@ -108,9 +109,11 @@ test.describe("backgrounds (t61)", () => {
 
     await openAppearanceSettings(page);
     await page.locator('[data-testid="wallpaper-preset-midnight"]').click();
+    // Draft-only (UX-07): the draft never reaches the desktop before Save,
+    // so Cancel has nothing to roll back — the saved scene simply stays.
     await expect
-      .poll(async () => (await wallpaperState(page))?.preset, { timeout: 5_000 })
-      .toBe("midnight");
+      .poll(async () => (await wallpaperState(page))?.preset, { timeout: 2_000 })
+      .toBe("chart");
 
     await page.getByRole("button", { name: "取消" }).click();
     await expect(page.locator("[data-settings-surface]")).toBeHidden({ timeout: 10_000 });

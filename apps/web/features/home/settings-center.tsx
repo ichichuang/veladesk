@@ -17,7 +17,7 @@ import {
 } from "./settings-draft";
 import type { WorkspaceSettingsDraft } from "./settings-draft";
 import { Dialog, DialogContent, DialogTitle } from "@components/ui/dialog";
-import type { BackgroundPreview } from "./desktop-wallpaper";
+import { releaseWallpaperPreviewUrl } from "./desktop-wallpaper";
 import {
   prepareWallpaperImage,
   type PreparedWallpaperImage,
@@ -41,7 +41,12 @@ interface SettingsCenterProps {
 
   readonly workspace: import("@veladesk/domain").WorkspaceSnapshot;
 
-  /** Fires on every appearance control change — live preview, never staged. */
+  /**
+   * Fires on every appearance control change — the LIVE DRAFT, previewed by
+   * the shell on the overlay portal root ONLY (the Settings window itself
+   * previews the draft; UX-07 keeps the desktop on the persisted theme
+   * until Save).
+   */
   readonly onPreviewAppearance: (appearance: import("@veladesk/domain").WorkspaceAppearancePreferences) => void;
 
   /**
@@ -63,11 +68,8 @@ interface SettingsCenterProps {
    */
   readonly backgroundEntrySectionId?: DesktopPageId | null | undefined;
 
-  /** The section currently on screen — only its scope previews live. */
+  /** The section currently on screen — scopes the editor's layer hints. */
   readonly activeSectionId?: DesktopPageId | null | undefined;
-
-  /** Streams the background draft to the desktop as a live preview. */
-  readonly onPreviewBackground?: ((preview: BackgroundPreview | null) => void) | undefined;
 }
 
 type SettingsSection = "appearance" | "layout" | "general";
@@ -103,11 +105,13 @@ const SECTION_LABEL_KEY: Readonly<Record<SettingsSection, TranslationKey>> = {
  * The section panels (appearance/layout/general, the background editor
  * and the shared row/options) live in settings-sections.tsx,
  * settings-background.tsx and settings-shared.tsx since P1; this module
- * owns the window frame, the draft session, the background image picker
- * and the live preview stream only. Controls are canonical HeroUI
+ * owns the window frame, the draft session and the background image
+ * picker only. Controls are canonical HeroUI
  * components themed through the --vdu-* token bridge. Save is the only
- * staging path; Cancel/Escape drop the preview, and the interface
- * language stays an immediate browser-local preference outside the draft.
+ * staging path (UX-07: every control edits the draft — the desktop itself
+ * changes only on Save; Cancel/Escape drop the draft and its preview),
+ * and the interface language stays an immediate browser-local preference
+ * outside the draft.
  */
 export function SettingsCenter({
   open,
@@ -117,7 +121,6 @@ export function SettingsCenter({
   onClose,
   backgroundEntrySectionId = null,
   activeSectionId = null,
-  onPreviewBackground,
 }: SettingsCenterProps) {
   const { locale, setLocale, t } = useI18n();
   const [draft, setDraft] = useState<WorkspaceSettingsDraft>(() =>
@@ -150,9 +153,11 @@ export function SettingsCenter({
   }, [open]);
 
   // Object-URL ownership (UX-02): while the image is only a DRAFT, this
-  // session owns its preview URL and revokes it on replace/close. Once a
+  // session owns its preview URL and releases it on replace/close. Once a
   // Save SUCCEEDS the URL transfers to the shell's asset cache (the desktop
   // keeps rendering it) — revoking it here would black out the wallpaper.
+  // The cancel path releases DELAYED (UX-07): the panel's own thumbnail and
+  // any in-flight decode/crossfade finish against a live URL first.
   const transferredUrlsRef = useRef<ReadonlySet<string>>(new Set());
   useEffect(() => {
     return () => {
@@ -160,7 +165,7 @@ export function SettingsCenter({
         backgroundImage !== null &&
         !transferredUrlsRef.current.has(backgroundImage.previewUrl)
       ) {
-        URL.revokeObjectURL(backgroundImage.previewUrl);
+        releaseWallpaperPreviewUrl(backgroundImage.previewUrl);
       }
     };
   }, [backgroundImage]);
@@ -191,7 +196,6 @@ export function SettingsCenter({
       setBackgroundBusy(false);
       setBackgroundScope(backgroundEntrySectionId ?? "workspace");
       setBackgroundLayer("general");
-      onPreviewBackground?.(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open-transition lifecycle only
   }, [open, workspace]);
@@ -232,62 +236,12 @@ export function SettingsCenter({
   }
 
   /**
-   * Streams the scoped background draft to the desktop (023-C.2): only
-   * the ACTIVE section's scope previews live — a non-active section keeps
-   * its renderer-based thumbnail instead of navigating the desktop. The
-   * workspace layer previews whenever it is the edited scope; a section
-   * override on the active section deliberately masks it (the resolver
-   * explains provenance, the preview does not erase the override). A
-   * per-MODE layer (P1) streams with its mode tag, so the desktop
-   * substitutes it only while rendering that mode.
+   * (UX-07) The background draft NO LONGER streams to the desktop — every
+   * settings item is draft-only now; the desktop changes on Save. The
+   * editor's own renderer-based thumbnails (workspace layer, per-section
+   * layer, per-mode layer) preview the draft INSIDE the panel, and Save
+   * applies the whole draft atomically through the shell's transaction.
    */
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const next = draft;
-    if (onPreviewBackground === undefined) {
-      return;
-    }
-    const active = activeSectionId;
-    const activePatch = active !== null ? next.background.pages[active] : undefined;
-    if (active !== null && activePatch !== undefined) {
-      const layer: BackgroundLayer =
-        backgroundScope === active ? backgroundLayer : "general";
-      const config =
-        layer === "general"
-          ? (activePatch.general !== undefined
-              ? activePatch.general
-              : (workspace.pages.find((page) => page.id === active)?.wallpaper ?? null))
-          : (activePatch[layer] !== undefined
-              ? activePatch[layer]
-              : (workspace.pages.find((page) => page.id === active)?.wallpaperByMode?.[layer] ?? null));
-      const pendingMatches =
-        backgroundImage !== null && config?.kind === "asset" && config.assetId === backgroundImage.asset.id;
-      onPreviewBackground({
-        scope: active,
-        config,
-        explicitlyInherits: config === null,
-        ...(layer !== "general" ? { mode: layer } : {}),
-        ...(pendingMatches
-          ? { pendingAssetId: backgroundImage.asset.id, previewUrl: backgroundImage.previewUrl }
-          : {}),
-      });
-      return;
-    }
-    if (next.background.workspace !== undefined) {
-      onPreviewBackground({
-        scope: "workspace",
-        config: next.background.workspace,
-        explicitlyInherits: false,
-        ...(backgroundImage !== null && next.background.workspace?.kind === "asset" && next.background.workspace.assetId === backgroundImage.asset.id
-          ? { pendingAssetId: backgroundImage.asset.id, previewUrl: backgroundImage.previewUrl }
-          : {}),
-      });
-      return;
-    }
-    onPreviewBackground(null);
-  }, [open, draft, backgroundImage, activeSectionId, onPreviewBackground, backgroundScope, backgroundLayer, workspace.pages]);
 
   function updateBackground(patch: Partial<WorkspaceSettingsDraft["background"]>) {
     setDraft((current) => ({
