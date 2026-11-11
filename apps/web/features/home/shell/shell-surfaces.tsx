@@ -31,7 +31,6 @@ import type { WorkspaceSettingsDraft } from "../settings-draft";
 import type { PreparedWallpaperImage } from "../wallpaper-prep";
 import type { BackgroundPreview } from "../desktop-wallpaper";
 import { findDesktopPage } from "@veladesk/domain";
-import { launchApp } from "../launch-app";
 import { useI18n } from "../../i18n/use-i18n";
 import { useWorkspaceManager } from "../workspace-manager";
 import type { ContextMenuTarget } from "./shell-context";
@@ -179,7 +178,6 @@ export function ShellSurfaces(props: ShellSurfacesProps) {
           workspace={renderedSnapshot}
           error={folderActionError ?? undefined}
           onClose={closeFolderOverlay}
-          onLaunchApp={launchApp}
           onChildContextMenu={(entityId, x, y) =>
             openContextMenu({ kind: "entity", entityId, source: "folder", x, y })
           }

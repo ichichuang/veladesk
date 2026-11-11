@@ -11,7 +11,6 @@ import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-
 import { useI18n } from "../i18n/use-i18n";
 import type { TranslateFn } from "../i18n/use-i18n";
 import { getBrowserAssetRuntime } from "../assets/browser-assets";
-import { normalizeAppRecognitionUrl } from "../app-recognition/normalize-url";
 import type { AppRecognitionClientErrorCode } from "../app-recognition/recognition-client";
 import {
   initialSmartAddState,
@@ -22,6 +21,8 @@ import {
 import type { AddAppIconDraft, SmartAddState } from "../app-recognition/smart-add-state";
 import type { RecognitionIcon } from "../app-recognition/contract";
 import { useAppRecognition } from "../app-recognition/use-app-recognition";
+import { validateAppUrlInput } from "./app-url-validation";
+import { AppNameField, AppUrlField } from "./app-form-fields";
 import { validateIconText } from "./app-visual-draft";
 import { prepareUploadedImage } from "./asset-upload";
 import type { UploadValidationIssue } from "./asset-upload";
@@ -34,7 +35,6 @@ import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import { AddAppIconPickerDialog } from "./add-app-icon-picker";
 import { VdFormDialog } from "@components/vd/form-dialog";
 import { Button } from "@components/ui/button";
-import { Input } from "@components/ui/input";
 import { useVdPresence } from "@components/vd/presence";
 import { VdAnimatedSurface } from "@components/vd/animated-surface";
 import { VdLoadingIndicator } from "@components/vd/loading-indicator";
@@ -52,8 +52,9 @@ interface AddAppDialogProps {
 }
 
 /**
- * Smart Add App (task 020-A): URL-first, with deterministic server-side
- * recognition suggesting name + icon after a short debounce.
+ * Smart Add App (task 020-A): name + URL fields (UX-06 order), with
+ * deterministic server-side recognition suggesting name + icon after a
+ * short debounce on the URL input.
  *
  * The recognition state lives in `smartAddReducer` (ephemeral form state,
  * never workspace state); user-owned fields are never overwritten by a
@@ -62,9 +63,10 @@ interface AddAppDialogProps {
  * path as before. A detected remote icon becomes a real local asset ONLY
  * on Add: the embedded bytes are validated by the existing upload gate and
  * staged through the existing asset runtime, so the app persists a local
- * asset reference — never a remote URL. Custom-protocol URLs (obsidian://,
- * steam://, …) stay valid exactly as before; they simply never trigger
- * recognition, and are stored verbatim.
+ * asset reference — never a remote URL. Persisted URLs go through the
+ * shared UX-04 gate (app-url-validation): web-looking input is
+ * auto-completed to https://, custom protocols stay verbatim, anything
+ * else is refused inline. Custom protocols never trigger recognition.
  */
 export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
@@ -74,6 +76,8 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [urlError, setUrlError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Object-URL hygiene: a pending manual upload's preview is revoked when
@@ -93,23 +97,29 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
     if (busy) {
       return;
     }
+    setNameError(null);
+    setUrlError(null);
     const name = state.name.value;
     if (name.trim().length === 0) {
-      setError(t("dialog.addApp.error.enterName"));
+      setNameError(t("dialog.addApp.error.enterName"));
       return;
     }
-    if (state.urlInput.trim().length === 0) {
-      setError(t("dialog.addApp.error.enterUrl"));
+    // UX-04: only web-looking input is persisted (dotted hosts, localhost,
+    // IPs — ports/paths allowed — auto-completed to https://); anything
+    // else is refused with an inline error under the field.
+    const validated = validateAppUrlInput(state.urlInput);
+    if (!validated.ok) {
+      setUrlError(
+        validated.reason === "empty"
+          ? t("dialog.addApp.error.enterUrl")
+          : t("dialog.addApp.error.invalidUrl"),
+      );
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      // Recognizable input persists in its normalized https/http form
-      // ("github.com" → "https://github.com/"); custom protocols stay
-      // verbatim, preserving VelaDesk's launch behavior for them.
-      const normalized = normalizeAppRecognitionUrl(state.urlInput);
-      const url = normalized.ok ? normalized.normalizedUrl : state.urlInput;
+      const url = validated.url;
 
       const icon = await buildPersistedIcon(iconValue, name, t, setError);
       if (icon === undefined) {
@@ -161,55 +171,34 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
       onCancel={onClose}
       onSubmit={handleSubmit}
     >
-      {/* URL is the primary input (020-A §3). */}
-      <div className="flex flex-col gap-1.5">
-        <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-add-app-url">
-          {t("dialog.addApp.addressLabel")}
-        </label>
-        <Input
-          id="vela-add-app-url"
-          type="text"
-          inputMode="url"
-          value={state.urlInput}
-          maxLength={2048}
-          autoFocus
-          autoComplete="off"
-          spellCheck={false}
-          placeholder={t("dialog.addApp.addressPlaceholder")}
-          onChange={(event) => dispatch({ type: "url-changed", url: event.target.value })}
-          aria-describedby={error !== null ? "vela-add-app-error" : undefined}
-        />
-      </div>
+      {/* UX-06: the shared field pair — 名称 above, 网址 below, identical to
+          the Edit dialog (one component, one label/placeholder contract). */}
+      <AppNameField
+        id="vela-add-app-name"
+        value={state.name.value}
+        autoFocus
+        error={nameError}
+        labelExtra={useDetectedNameAvailable(state) ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-auto px-2 py-1 text-xs"
+            onClick={() => dispatch({ type: "use-detected-name" })}
+          >
+            {t("recognition.useDetectedName")}
+          </Button>
+        ) : null}
+        onChange={(event) => dispatch({ type: "edit-name", value: event.target.value })}
+      />
+
+      <AppUrlField
+        id="vela-add-app-url"
+        value={state.urlInput}
+        error={urlError}
+        onChange={(event) => dispatch({ type: "url-changed", url: event.target.value })}
+      />
 
       <RecognitionPanel state={state} onRecognizeAgain={recognizeAgain} />
-
-      {/* Name: auto-suggested, always editable, never focus-stolen. */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-add-app-name">
-            {t("dialog.nameLabel")}
-          </label>
-          {useDetectedNameAvailable(state) ? (
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-auto px-2 py-1 text-xs"
-              onClick={() => dispatch({ type: "use-detected-name" })}
-            >
-              {t("recognition.useDetectedName")}
-            </Button>
-          ) : null}
-        </div>
-        <Input
-          id="vela-add-app-name"
-          type="text"
-          value={state.name.value}
-          maxLength={80}
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => dispatch({ type: "edit-name", value: event.target.value })}
-        />
-      </div>
 
       {/* Icon: one row that opens the focused picker (019-D §9 pattern). */}
       <div className="flex flex-col gap-1.5">

@@ -22,7 +22,7 @@ import type { PageBackgroundPatch } from "../settings-draft";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 
 import { getBrowserAssetRuntime } from "../../assets/browser-assets";
-import type { BackgroundPreview } from "../desktop-wallpaper";
+import { retainWallpaperAssetUrl, type BackgroundPreview } from "../desktop-wallpaper";
 import type { PreparedWallpaperImage } from "../wallpaper-prep";
 import { preferencesFromSettingsDraft } from "../settings-draft";
 import type { WorkspaceSettingsDraft } from "../settings-draft";
@@ -210,9 +210,15 @@ export function useShellSettings(input: UseShellSettingsInput) {
       return { ok: false, message: t("settings.error.saveFailed") };
     }
     // Success: both previews clear; the snapshot now carries the same
-    // configs the preview showed, so nothing flashes back. The pending
-    // preview URL stays valid for the rendered draft until React drops it
-    // (the persisted asset resolves to the same content id).
+    // configs the preview showed, so nothing flashes back. Each staged
+    // image's preview URL is retained in the wallpaper asset cache (UX-02):
+    // the desktop keeps rendering the exact URL it already shows — the
+    // config/URL identity is unchanged, so no crossfade (and no dead blob)
+    // ever intervenes. Content-addressed ids make the preview bytes the
+    // staged bytes.
+    for (const image of images) {
+      retainWallpaperAssetUrl(image.asset.id, image.previewUrl);
+    }
     setAppearancePreview(null);
     setBackgroundPreview(null);
     setSettingsBackgroundSection(null);

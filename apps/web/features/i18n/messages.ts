@@ -56,6 +56,7 @@ const zhCNCatalog = {
   "common.cancel": "取消",
   "common.save": "保存",
   "common.close": "关闭",
+  "toast.appUnlaunchable": "「{name}」的网址无法打开，请编辑后重试。",
   "common.working": "处理中…",
   "common.retry": "重新加载",
 
@@ -259,6 +260,7 @@ const zhCNCatalog = {
   // --- Dialog shared ------------------------------------------------------
   "dialog.nameLabel": "名称",
   "dialog.urlLabel": "网址",
+  "dialog.urlPlaceholder": "https://… 或 obsidian://…",
 
   // --- Add App ------------------------------------------------------------
   "dialog.addApp.title": "添加应用",
@@ -266,6 +268,7 @@ const zhCNCatalog = {
   "dialog.addApp.adding": "添加中…",
   "dialog.addApp.error.enterName": "请输入名称。",
   "dialog.addApp.error.enterUrl": "请输入网址。",
+  "dialog.addApp.error.invalidUrl": "请输入有效的网址，例如 example.com。",
   "dialog.addApp.error.pageGone": "目标页面已不存在。",
   "dialog.addApp.error.folderGone": "该文件夹已不存在。",
   "dialog.addApp.error.duplicate": "此应用已存在于工作区。",
@@ -274,8 +277,6 @@ const zhCNCatalog = {
   "dialog.addApp.error.exception": "添加应用失败。",
 
   // --- Smart recognition (Add App, 020-A) ---------------------------------
-  "dialog.addApp.addressLabel": "网站地址",
-  "dialog.addApp.addressPlaceholder": "https://…",
   "dialog.addApp.iconLabel": "图标",
   "recognition.status.recognizing": "识别中…",
   "recognition.status.recognized": "已识别",
@@ -714,6 +715,7 @@ export const enUS: MessageCatalog = {
   "common.cancel": "Cancel",
   "common.save": "Save",
   "common.close": "Close",
+  "toast.appUnlaunchable": "“{name}” can't be opened — its URL doesn't parse. Edit the app and retry.",
   "common.working": "Working…",
   "common.retry": "Reload",
 
@@ -907,12 +909,14 @@ export const enUS: MessageCatalog = {
 
   "dialog.nameLabel": "Name",
   "dialog.urlLabel": "URL",
+  "dialog.urlPlaceholder": "https://… or obsidian://…",
 
   "dialog.addApp.title": "Add app",
   "dialog.addApp.add": "Add app",
   "dialog.addApp.adding": "Adding…",
   "dialog.addApp.error.enterName": "Enter a name.",
   "dialog.addApp.error.enterUrl": "Enter a URL.",
+  "dialog.addApp.error.invalidUrl": "Enter a valid web address, e.g. example.com.",
   "dialog.addApp.error.pageGone": "The target page no longer exists.",
   "dialog.addApp.error.folderGone": "This folder no longer exists.",
   "dialog.addApp.error.duplicate": "This app already exists in the workspace.",
@@ -921,8 +925,6 @@ export const enUS: MessageCatalog = {
   "dialog.addApp.error.exception": "Adding the app failed.",
 
   // --- Smart recognition (Add App, 020-A) ---------------------------------
-  "dialog.addApp.addressLabel": "Website address",
-  "dialog.addApp.addressPlaceholder": "https://…",
   "dialog.addApp.iconLabel": "Icon",
   "recognition.status.recognizing": "Recognizing…",
   "recognition.status.recognized": "Recognized",

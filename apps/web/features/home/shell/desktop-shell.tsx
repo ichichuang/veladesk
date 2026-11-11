@@ -54,6 +54,7 @@ import type {
 } from "./shell-context";
 import { ShellSurfaces } from "./shell-surfaces";
 import { StaticDropFeedback } from "./static-drop-feedback";
+import { LaunchFeedbackSurface } from "../launch-feedback";
 import "../home-shell.css";
 
 interface DesktopShellProps {
@@ -472,6 +473,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   const pages = snapshot.pages;
 
   return (
+    <LaunchFeedbackSurface>
     <VdPortalContainerProvider value={portalRoot}>
     <VdHeroOverlayScope>
     <ShellContextProvider value={shellContextValue}>
@@ -620,5 +622,6 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     </ShellContextProvider>
     </VdHeroOverlayScope>
     </VdPortalContainerProvider>
+    </LaunchFeedbackSurface>
   );
 }

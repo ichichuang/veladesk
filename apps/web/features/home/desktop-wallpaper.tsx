@@ -139,6 +139,33 @@ export function WallpaperSurface({
  */
 const assetUrlCache = new Map<string, string>();
 
+/**
+ * Transfers a staged upload's preview object URL into the shared asset
+ * cache (UX-02): after a successful Save the desktop keeps rendering the
+ * EXACT URL it already shows — no revoke-under-a-live-surface, no
+ * crossfade through a dead blob — and a cold boot (or another surface)
+ * resolves the same asset id to the cached URL instead of re-fetching.
+ * Content-addressed asset ids make the preview URL a faithful stand-in for
+ * the staged bytes.
+ */
+export function retainWallpaperAssetUrl(assetId: string, url: string): void {
+  if (!assetUrlCache.has(assetId)) {
+    assetUrlCache.set(assetId, url);
+  }
+}
+
+/**
+ * Revokes a retired layer URL — but NEVER one the shared cache still hands
+ * out (staged-asset URLs live for the tab session; only preview URLs the
+ * settings session retired are the layer's to release, and only once the
+ * crossfade has fully covered them).
+ */
+function releaseRetiredLayerUrl(url: string | null): void {
+  if (url !== null && !Array.from(assetUrlCache.values()).includes(url)) {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export function useWallpaperAssetUrl(
   assetId: string | null,
   loadAsset: ((id: string) => Promise<{ ok: boolean; url: string | null }>) | null,
@@ -250,13 +277,15 @@ export function WorkspaceWallpaperLayers({
       gsap.set(element, { clearProps: "opacity" });
       return;
     }
-    // Hold the incoming layer dark synchronously, then fade ONLY after its
-    // image is genuinely decoded — the crossfade never shows a half-decoded
-    // first frame (P1; both the incoming and underneath images must be decoded).
+    // Hold the incoming layer dark synchronously, then fade ONLY after the
+    // INCOMING image is genuinely decoded (UX-02 ordering rule: the
+    // underneath layer is already on screen; gating on its decode too left
+    // the incoming layer stuck at opacity 0 forever whenever the previous
+    // URL had been revoked — the black-screen defect).
     gsap.set(element, { opacity: 0 });
     let cancelled = false;
     let tween: gsap.core.Tween | null = null;
-    const images = element.parentElement?.querySelectorAll("img[data-wallpaper-image]") ?? [];
+    const images = element.querySelectorAll("img[data-wallpaper-image]");
     const decoded = Promise.all(Array.from(images, (image) =>
       image instanceof HTMLImageElement ? image.decode() : Promise.resolve(),
     ));
@@ -266,7 +295,16 @@ export function WorkspaceWallpaperLayers({
       }
       tween = gsap.fromTo(element, { opacity: 0 }, {
         opacity: 1, duration: VD_MOTION_WALLPAPER.crossfade, ease: VD_MOTION_EASE,
-        onComplete: () => { gsap.set(element, { clearProps: "opacity" }); setPrevious(null); },
+        onComplete: () => {
+          gsap.set(element, { clearProps: "opacity" });
+          setPrevious(null);
+          // The underneath slot left the screen with this completion — its
+          // preview URL (if the layer owns it) is released only NOW, never
+          // earlier (UX-02: an early revoke shows a broken/black layer).
+          if (previous !== null) {
+            releaseRetiredLayerUrl(previous.assetUrl);
+          }
+        },
       });
     }).catch(() => { /* Keep the previous decoded surface visible on failure. */ });
     return () => {
@@ -274,6 +312,8 @@ export function WorkspaceWallpaperLayers({
       tween?.kill();
       gsap.set(element, { clearProps: "opacity" });
     };
+    // `previous` is read inside onComplete through this closure only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, crossfading]);
 
   return (

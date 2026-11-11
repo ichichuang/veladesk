@@ -149,9 +149,19 @@ export function SettingsCenter({
     return () => { backgroundRequestRef.current += 1; };
   }, [open]);
 
+  // Object-URL ownership (UX-02): while the image is only a DRAFT, this
+  // session owns its preview URL and revokes it on replace/close. Once a
+  // Save SUCCEEDS the URL transfers to the shell's asset cache (the desktop
+  // keeps rendering it) — revoking it here would black out the wallpaper.
+  const transferredUrlsRef = useRef<ReadonlySet<string>>(new Set());
   useEffect(() => {
     return () => {
-      if (backgroundImage !== null) URL.revokeObjectURL(backgroundImage.previewUrl);
+      if (
+        backgroundImage !== null &&
+        !transferredUrlsRef.current.has(backgroundImage.previewUrl)
+      ) {
+        URL.revokeObjectURL(backgroundImage.previewUrl);
+      }
     };
   }, [backgroundImage]);
 
@@ -313,8 +323,12 @@ export function SettingsCenter({
         return;
       }
       // Success: the shell closes this surface and clears the preview. The
-      // pending preview URL stays until then — the desktop may still be
-      // displaying it.
+      // staged image's preview URL is TRANSFERRED to the shell's wallpaper
+      // asset cache (the desktop keeps rendering it verbatim) — mark it so
+      // this session's cleanup never revokes a URL a live surface shows.
+      if (result.ok && backgroundImage !== null) {
+        transferredUrlsRef.current = new Set([...transferredUrlsRef.current, backgroundImage.previewUrl]);
+      }
     } finally {
       setBusy(false);
     }

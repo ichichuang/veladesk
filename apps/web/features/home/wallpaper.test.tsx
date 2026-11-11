@@ -486,7 +486,7 @@ describe("wallpaper transition closeout", () => {
     const view = render(<WorkspaceWallpaperLayers wallpaper={wallpaper("cold")} assetUrl={null} />);
     expect(view.container.querySelector("[data-wallpaper-preset=chart]")).not.toBeNull();
   });
-  it("waits for both decodes before the tokenized crossfade", async () => {
+  it("waits for the INCOMING decode before the tokenized crossfade (UX-02)", async () => {
     const releases: (() => void)[] = [];
     HTMLImageElement.prototype.decode ??= async () => {};
     const decode = vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(() =>
@@ -495,8 +495,10 @@ describe("wallpaper transition closeout", () => {
       const view = render(<WorkspaceWallpaperLayers wallpaper={wallpaper("old")} assetUrl="blob:old" />);
       view.rerender(<WorkspaceWallpaperLayers wallpaper={wallpaper("new")} assetUrl="blob:new" />);
       const incoming = view.container.querySelector<HTMLElement>(".vela-desktop__wallpaper-incoming")!;
-      expect(releases).toHaveLength(2);
-      await act(async () => { releases[1]!(); });
+      // Only the incoming layer's image gates the fade (UX-02): the settled
+      // one is already on screen — gating on it too left the incoming layer
+      // stuck at opacity 0 whenever the previous URL had been revoked.
+      expect(releases).toHaveLength(1);
       expect(gsap.getTweensOf(incoming)).toHaveLength(0);
       expect(incoming.style.opacity).toBe("0");
       await act(async () => { releases[0]!(); });

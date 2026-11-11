@@ -9,6 +9,8 @@ import type {
 import type { AppShortcut, EntityId, Folder, WorkspaceSnapshot } from "@veladesk/domain";
 
 import { useI18n } from "../i18n/use-i18n";
+import { launchApp } from "./launch-app";
+import { useLaunchFeedback } from "./launch-feedback";
 import { VdScrollArea } from "@components/vd/scroll-area";
 import { useVdPresence } from "@components/vd/presence";
 import { VdAnimatedSurface } from "@components/vd/animated-surface";
@@ -32,7 +34,6 @@ interface FolderOverlayProps {
   /** Presentation-only action error (e.g. no-space on dissolve). */
   readonly error?: string | undefined;
   readonly onClose: () => void;
-  readonly onLaunchApp: (app: AppShortcut) => void;
   readonly onChildContextMenu: (entityId: EntityId, x: number, y: number) => void;
 }
 
@@ -50,10 +51,10 @@ export function FolderOverlay({
   workspace,
   error,
   onClose,
-  onLaunchApp,
   onChildContextMenu,
 }: FolderOverlayProps) {
   const { t } = useI18n();
+  const notifyLaunch = useLaunchFeedback();
   // Presence (022): a close intent plays the exit while the semantics
   // stand down; only the exit completion releases the subtree.
   const presence = useVdPresence(open);
@@ -75,6 +76,14 @@ export function FolderOverlay({
     event.preventDefault();
     event.stopPropagation();
     onChildContextMenu(entityId, event.clientX, event.clientY);
+  }
+
+  function launchChild(app: AppShortcut) {
+    // UX-04: a legacy unparseable URL toasts instead of opening an error
+    // page (same channel as the desktop tiles).
+    if (!launchApp(app)) {
+      notifyLaunch(t("toast.appUnlaunchable", { name: app.name }));
+    }
   }
 
   function childKeyDown(event: ReactKeyboardEvent<HTMLElement>, entityId: EntityId) {
@@ -169,7 +178,7 @@ export function FolderOverlay({
                 // the accessible name survives a hidden visible label.
                 aria-label={entity.name}
                 title={entity.name}
-                onClick={() => onLaunchApp(entity)}
+                onClick={() => launchChild(entity)}
                 onContextMenu={(event) => childContextMenu(event, childId)}
                 onKeyDown={(event) => childKeyDown(event, childId)}
               >

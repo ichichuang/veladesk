@@ -35,6 +35,7 @@ import { GridFlipSlot } from "../canvas/grid-flip-slot";
 import type { CanvasPixelMetrics } from "../canvas/canvas-metrics";
 import { useItemResize, ITEM_RESIZE_HANDLES } from "./use-item-resize";
 import { launchApp } from "./launch-app";
+import { useLaunchFeedback } from "./launch-feedback";
 import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
 
@@ -168,12 +169,21 @@ function DesktopEntity({
   onOpenFolder,
 }: DesktopEntityProps) {
   const { t } = useI18n();
+  const notifyLaunch = useLaunchFeedback();
   const gesturesReady =
     geometry === "grid" ? gridPitchPx !== null && gridColumns !== null : metrics !== null;
   const { ref, isDragging } = useDraggable({
     id: item.id,
     disabled: !arrange || !dragEnabled || !gesturesReady,
   });
+  /*
+   * UX-05: in VIEW mode the element never registers as a draggable. The
+   * dnd activator would otherwise carry `aria-disabled="true"` (and the
+   * "draggable" roledescription) on a button that is genuinely operable —
+   * clicks launch, Enter/Space activate. Arrange mode attaches the ref as
+   * before, so keyboard drag semantics there are untouched.
+   */
+  const dndRef = arrange ? ref : undefined;
   const itemRef = useRef<HTMLElement | null>(null);
   // Decorative View-mode hover lift (task 022): GSAP owns the tween on the
   // INNER .vela-item__body node; the dnd-kit transform on the item root is
@@ -278,6 +288,7 @@ function DesktopEntity({
   const draggingProps = { "data-dragging": isDragging ? "true" : undefined } as const;
   const selectionProps = { "data-selected": selected ? "true" : undefined } as const;
 
+
   function handleContextMenu(event: ReactMouseEvent) {
     event.preventDefault();
     event.stopPropagation();
@@ -298,7 +309,11 @@ function DesktopEntity({
     if (!arrange) {
       // View mode: apps launch, folders open. Widgets have no activation.
       if (entity.kind === "app") {
-        launchApp(entity);
+        // UX-04: legacy free-text URLs (stored before validation) parse to
+        // nothing — toast instead of a dead click or a browser error page.
+        if (!launchApp(entity)) {
+          notifyLaunch(t("toast.appUnlaunchable", { name: entity.name }));
+        }
       } else if (entity.kind === "folder") {
         onOpenFolder(entity.id);
       }
@@ -360,7 +375,7 @@ function DesktopEntity({
     const appButton = (
       <button
         type="button"
-        ref={mergeRefs(ref, itemRef)}
+        ref={mergeItemRefs(dndRef, itemRef)}
         data-item-id={item.id}
         className="vela-item"
         data-kind="app"
@@ -431,7 +446,7 @@ function DesktopEntity({
     const folderButton = (
       <button
         type="button"
-        ref={mergeRefs(ref, itemRef)}
+        ref={mergeItemRefs(dndRef, itemRef)}
         data-item-id={item.id}
         className="vela-item"
         data-kind="folder"
@@ -469,7 +484,7 @@ function DesktopEntity({
 
   const widgetNode = (
     <div
-      ref={mergeRefs(ref, itemRef)}
+      ref={mergeItemRefs(dndRef, itemRef)}
       data-item-id={item.id}
       className="vela-item vela-item--widget"
       data-kind="widget"
@@ -498,20 +513,6 @@ function DesktopEntity({
     );
   }
   return widgetNode;
-}
-
-/**
- * dnd-kit and the resize preview both need the item element — one ref
- * callback feeds both without either owning the other.
- */
-function mergeRefs<T>(
-  first: (node: T | null) => void,
-  second: RefObject<T | null>,
-): (node: T | null) => void {
-  return (node) => {
-    first(node);
-    second.current = node;
-  };
 }
 
 /**
@@ -548,6 +549,23 @@ function useElementBox(
     // (drop handoff eviction, section switch) re-run this hook fresh.
   }, [ref]);
   return box;
+}
+
+/**
+ * dnd-kit and the resize preview both need the item element — one ref
+ * callback feeds both without either owning the other. The dnd half is
+ * ABSENT in view mode (UX-05, see dndRef in the component).
+ */
+function mergeItemRefs(
+  dndRef: ((node: Element | null) => void) | undefined,
+  itemRef: RefObject<HTMLElement | null>,
+): (node: HTMLElement | null) => void {
+  return (node) => {
+    if (dndRef !== undefined) {
+      dndRef(node);
+    }
+    itemRef.current = node;
+  };
 }
 
 function FolderGlyph() {

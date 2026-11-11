@@ -12,8 +12,9 @@ import type { TranslateFn } from "../i18n/use-i18n";
 import { generatedIconFollowsName } from "./app-icon";
 import { generatedIconText } from "./generated-icon";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
+import { validateAppUrlInput } from "./app-url-validation";
+import { AppNameField, AppUrlField } from "./app-form-fields";
 import { VdFormDialog } from "@components/vd/form-dialog";
-import { Input } from "@components/ui/input";
 import {
   Select,
   SelectContent,
@@ -34,10 +35,11 @@ interface EditAppDialogProps {
 /**
  * Edit App dialog (018 designed shell): name, URL and open mode.
  *
- * Values are stored verbatim (custom protocols stay valid). Identity,
- * description, category, tags and container/dock placement are preserved;
- * only a generated icon is recalculated from the new name — every other
- * icon kind is kept as-is.
+ * URLs go through the shared UX-04 gate (web-looking input auto-completes
+ * to https://, free text is refused inline). Identity, description,
+ * category, tags and container/dock placement are preserved; only a
+ * generated icon is recalculated from the new name — every other icon kind
+ * is kept as-is.
  */
 export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
@@ -50,6 +52,8 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
   const [openMode, setOpenMode] = useState<AppOpenMode>(existing?.openMode ?? "new-tab");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   if (existing === undefined) {
     return null;
@@ -60,12 +64,21 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
     if (busy || existing === undefined) {
       return;
     }
+    setNameError(null);
+    setUrlError(null);
     if (name.trim().length === 0) {
-      setError(t("dialog.addApp.error.enterName"));
+      setNameError(t("dialog.addApp.error.enterName"));
       return;
     }
-    if (url.trim().length === 0) {
-      setError(t("dialog.addApp.error.enterUrl"));
+    // UX-04: the SAME gate as the Add dialog — web-looking input is
+    // auto-completed to https://, everything else is refused inline.
+    const validated = validateAppUrlInput(url);
+    if (!validated.ok) {
+      setUrlError(
+        validated.reason === "empty"
+          ? t("dialog.addApp.error.enterUrl")
+          : t("dialog.addApp.error.invalidUrl"),
+      );
       return;
     }
     setBusy(true);
@@ -73,9 +86,8 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
     try {
       const nextApp: AppShortcut = {
         ...existing,
-        // Verbatim user input: no trimming, no protocol rewriting.
         name,
-        url,
+        url: validated.url,
         openMode,
         // Only AUTO generated icons follow renames — custom text and every
         // other icon kind are user-owned and stay untouched.
@@ -127,38 +139,21 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
       onCancel={onClose}
       onSubmit={handleSubmit}
     >
-      <div className="flex flex-col gap-1.5">
-        <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-edit-app-name">
-          {t("dialog.nameLabel")}
-        </label>
-        <Input
-          id="vela-edit-app-name"
-          type="text"
-          value={name}
-          maxLength={80}
-          autoFocus
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-edit-app-url">
-          {t("dialog.urlLabel")}
-        </label>
-        <Input
-          id="vela-edit-app-url"
-          type="text"
-          inputMode="url"
-          value={url}
-          maxLength={2048}
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="https://… or obsidian://…"
-          onChange={(event) => setUrl(event.target.value)}
-          aria-describedby={error !== null ? "vela-edit-app-error" : undefined}
-        />
-      </div>
+      {/* UX-06: the shared field pair — identical order, labels and
+          placeholder to the Add dialog (app-form-fields.tsx). */}
+      <AppNameField
+        id="vela-edit-app-name"
+        value={name}
+        autoFocus
+        error={nameError}
+        onChange={(event) => setName(event.target.value)}
+      />
+      <AppUrlField
+        id="vela-edit-app-url"
+        value={url}
+        error={urlError}
+        onChange={(event) => setUrl(event.target.value)}
+      />
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-medium text-vdu-fg" htmlFor="vela-edit-app-mode">
           {t("dialog.editApp.openMode")}
