@@ -327,13 +327,18 @@ describe("persistence on navigation and exit (023-A §11/§13/§31/§33/§34)", 
     };
     // t61: the pair slide is 300ms — inside one act() the jsdom gsap
     // ticker can genuinely run it to completion, which would settle the
-    // machine and adopt the parked destination mid-test. PAUSING THE TICKER
-    // before the first click is the deterministic freeze (the per-click
-    // animation pause below stays as the belt-and-suspenders).
+    // machine mid-test. PAUSING THE TICKER before the first click is the
+    // deterministic freeze (the per-click animation pause below stays as
+    // the belt-and-suspenders).
     gsap.ticker.sleep();
     await navigateTo("Beta");
     freezeTimelines();
     await navigateTo("Gamma");
+    // t81: Gamma PREPARES during motion (no more parking) — await the arm
+    // frame deterministically so C is genuinely entered when Delta lands.
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
     freezeTimelines();
     await navigateTo("Delta");
     freezeTimelines();
@@ -342,8 +347,12 @@ describe("persistence on navigation and exit (023-A §11/§13/§31/§33/§34)", 
     const stored = storedViewState("ws-1");
     expect(stored?.activeSectionId).toBe("page-d");
     // Exactly the sections that were visibly LEFT (each at scrollTop 0) —
-    // the parked destinations were never left, so they carry no entry.
-    expect(stored?.scrollTopBySectionId).toEqual({ "page-a": 0, "page-b": 0 });
+    // D was entered but never left, so it carries no entry.
+    expect(stored?.scrollTopBySectionId).toEqual({
+      "page-a": 0,
+      "page-b": 0,
+      "page-c": 0,
+    });
   });
 
   it("pagehide flushes the latest state and the active section's live scrollTop synchronously", async () => {

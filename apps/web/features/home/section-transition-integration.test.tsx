@@ -365,7 +365,7 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
     expect(yOf(layerB)).toBe(0);
   });
 
-  it("a parked third destination is adopted at settle and never resurrects the first source", async () => {
+  it("a cold third destination PREPARES during motion and arms with the inherited exit train (t81)", async () => {
     render(<ShellHost />);
     stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
 
@@ -374,28 +374,95 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
     await act(async () => {
       livePairTimeline().progress(0.5);
     });
-    await navigateTo("Gamma"); // third destination during motion — parked
+    const midA = yOf(layerA); // A ~halfway out
+
+    // Freeze the arm frame so the PREPARATION state is observed
+    // deterministically (jsdom's rAF is a 16ms wall-clock timer — on a
+    // slow runner it can slip inside the navigateTo act and arm early).
+    const armFrames: FrameRequestCallback[] = [];
+    const realRaf = window.requestAnimationFrame;
+    window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      armFrames.push(callback);
+      return armFrames.length;
+    }) as typeof window.requestAnimationFrame;
+    try {
+      await navigateTo("Gamma"); // cold third destination during motion
+
+      // Preparation state: Gamma is mounted HIDDEN (its layer exists,
+      // warm), Beta stays the visible/active page, and A — an inherited
+      // exit — is STILL visibly mid-flight (never popped off for the
+      // preparation frame). The running A→B pair keeps its poses.
+      const layerC = layerOf("page-c");
+      expect(layerC.dataset.phase).toBe("warm");
+      expect(layerC.dataset.warmHidden).toBe("true");
+      expect(layerOf("page-b").dataset.phase).toBe("active");
+      expect(layerA.dataset.phase).toBe("exit");
+      // The pair keeps GLIDING through the preparation (never frozen,
+      // never popped): A is at least as far out as when the request
+      // landed — further if the ticker ran, which is exactly the point.
+      expect(yOf(layerA)).toBeLessThanOrEqual(midA + 1);
+    } finally {
+      window.requestAnimationFrame = realRaf;
+    }
+
+    // The arm frame (one rAF after the hidden mount): Gamma enters from
+    // the full offset while Beta AND A ride the same timeline out.
+    const layerC = layerOf("page-c");
+    await act(async () => {
+      for (const callback of armFrames.splice(0)) {
+        callback(0);
+      }
+    });
+    expect(layerC.dataset.phase).toBe("entering");
+    expect(yOf(layerC)).toBe(W); // fresh entry from the full offset
+    expect(layerOf("page-b").dataset.phase).toBe("exit");
+    expect(layerA.dataset.phase).toBe("exit");
 
     await act(async () => {
       livePairTimeline().progress(1);
-      // The A→B pair completed: A must still hold its exit pose here (the
-      // parked adoption and warm rotation commit only after this scope).
-      expect(yOf(layerA)).toBe(-W);
-      expect(layerA.dataset.phase).toBe("exit");
     });
-
-    // The parked destination was adopted at the settle: its request already
-    // owns the logical active id, so the settle rotates the warm set around
-    // it and it renders at rest — the bounded latest-target policy, with no
-    // second animation and no resurrection of A.
-    const layerC = layerOf("page-c");
+    // The train settles together: Gamma rests active, the machine idles,
+    // the rotation around Gamma keeps Beta warm and evicts A.
     expect(layerC.dataset.phase).toBe("active");
     expect(yOf(layerC)).toBe(0);
     expect(viewportElement().dataset.sectionTransitioning).toBeUndefined();
-    // The rotation around C evicted A entirely — never shown at the origin.
-    expect(layerA.isConnected).toBe(false);
-    expect(yOf(layerOf("page-b"))).toBe(0);
     expect(layerOf("page-b").dataset.warmHidden).toBe("true");
+    expect(yOf(layerOf("page-b"))).toBe(0);
+    expect(layerA.isConnected).toBe(false);
+  });
+
+  it("three rapid chained destinations keep engaging at the input rhythm (t81 wheel chain)", async () => {
+    render(<ShellHost />);
+    stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
+
+    await navigateTo("Beta"); // A→B starts
+    await act(async () => {
+      livePairTimeline().progress(0.3);
+    });
+    await navigateTo("Gamma"); // cold → prepares immediately
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      livePairTimeline().progress(0.4); // C partway in, B/A on the exit train
+    });
+    await navigateTo("Delta"); // cold again → prepares while C enters
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
+    // Delta is entering; the ENTIRE chain (C, B, A) rides the exit train —
+    // no destination was swallowed and none hard-cut.
+    const layerD = layerOf("page-d");
+    expect(layerD.dataset.phase).toBe("entering");
+    expect(yOf(layerD)).toBe(W);
+    expect(layerOf("page-c").dataset.phase).toBe("exit");
+    expect(layerOf("page-b").dataset.phase).toBe("exit");
+    expect(layerOf("page-a").dataset.phase).toBe("exit");
+
+    await act(async () => {
+      livePairTimeline().progress(1);
+    });
+    expect(layerD.dataset.phase).toBe("active");
+    expect(yOf(layerD)).toBe(0);
+    expect(viewportElement().dataset.sectionTransitioning).toBeUndefined();
   });
 
   it("an unrelated rerender carrying the same generation never restarts the live playhead", async () => {

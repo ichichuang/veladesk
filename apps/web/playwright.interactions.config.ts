@@ -31,14 +31,27 @@ export default defineConfig({
     trace: "retain-on-failure",
     video: "off",
     screenshot: "only-on-failure",
-    viewport: { width: 1280, height: 720 },
+    // VD_E2E_VIEWPORT_WIDTH/HEIGHT override the default viewport (t81): the
+    // regression matrix runs the whole suite at several sizes, e.g.
+    //   VD_E2E_VIEWPORT_WIDTH=1440 VD_E2E_VIEWPORT_HEIGHT=900
+    viewport: {
+      width: Number.parseInt(process.env.VD_E2E_VIEWPORT_WIDTH ?? "1280", 10),
+      height: Number.parseInt(process.env.VD_E2E_VIEWPORT_HEIGHT ?? "720", 10),
+    },
     actionTimeout: 15_000,
     launchOptions: process.env.VD_PLAYWRIGHT_EXECUTABLE ? { executablePath: process.env.VD_PLAYWRIGHT_EXECUTABLE } : {},
   },
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 720 } },
+      use: {
+        ...devices["Desktop Chrome"],
+        // Same env override as the top level (project `use` would win).
+        viewport: {
+          width: Number.parseInt(process.env.VD_E2E_VIEWPORT_WIDTH ?? "1280", 10),
+          height: Number.parseInt(process.env.VD_E2E_VIEWPORT_HEIGHT ?? "720", 10),
+        },
+      },
     },
   ],
   webServer: {

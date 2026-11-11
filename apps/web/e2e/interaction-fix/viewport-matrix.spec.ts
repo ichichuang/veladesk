@@ -79,7 +79,7 @@ test.describe("viewport matrix", () => {
   for (const size of MATRIX) {
     test(`layout holds at ${size.name}`, async ({ page, request }) => {
       await page.setViewportSize({ width: size.width, height: size.height });
-      await bootSeededDesktop(page, request, { richScene: true });
+      await bootSeededDesktop(page, request, { richScene: true, allowMobileShell: true });
       await page.waitForTimeout(600);
       const artifactRoot = ensureArtifactRoot();
       await page.screenshot({ path: `${artifactRoot}/viewport-${size.name}.png` });

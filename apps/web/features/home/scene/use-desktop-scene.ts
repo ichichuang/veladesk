@@ -239,10 +239,13 @@ export function useDesktopScene(input: UseDesktopSceneInput): DesktopScene {
 
   /**
    * The page pair settled (task 022): the coordinator reports ONE
-   * generation-guarded completion per transition. The shell evaluates it
-   * against the CURRENT machine (a stale generation or an unknown layer is
-   * a no-op there), idles the machine, rotates the warm set, and starts a
-   * parked third-target request immediately — no added settle delay.
+   * generation-guarded completion per transition — one report per exit on
+   * a t81 train, the last of which empties the exit set. The shell
+   * evaluates each report against the CURRENT machine (a stale generation
+   * or an unknown layer is a no-op there), idles the machine and rotates
+   * the warm set at the boundary. A newer request never waits for the
+   * settle (t81: it interrupted or prepared already), so nothing is
+   * consumed here.
    *
    * 022-R2: the completion fires inside the GSAP tick, BEFORE React commits
    * the machine→idle update — the exited page's DOM still carries its
@@ -256,9 +259,6 @@ export function useDesktopScene(input: UseDesktopSceneInput): DesktopScene {
   const handlePairSettled = useCallback<SectionPairSettledListener>(
     (pageId) => {
       const machine = navMachineRef.current;
-      // A parked third destination is read BEFORE the settle report: the
-      // report itself retires the transition state that carries it.
-      const pendingId = machine.kind === "transition" ? machine.pendingId : null;
       // The report is evaluated against the CURRENT machine: a superseded
       // generation or an unknown layer is a no-op there.
       const next = reportLayerSettled(
@@ -277,11 +277,6 @@ export function useDesktopScene(input: UseDesktopSceneInput): DesktopScene {
         // drops with that commit and the glass blur policy restores.
         restLayersOnIdleRef.current = true;
         rotateWarmSet(pageIdRef.current);
-        if (pendingId !== null && pendingId !== pageIdRef.current) {
-          // Bounded latest-target continuation: the newest third
-          // destination starts right now, from the settled boundary.
-          switchSectionRef.current(pendingId);
-        }
       }
     },
     [applySectionNav, rotateWarmSet, pageIdRef]
@@ -443,9 +438,9 @@ export function useDesktopScene(input: UseDesktopSceneInput): DesktopScene {
       return;
     }
     const wasIdle = navMachineRef.current.kind === "idle";
-    // The machine may keep the RUNNING generation (a parked third target
-    // only updates pendingId) — the ref follows the machine, never the
-    // request counter.
+    // The ref follows the machine's generation, never the request
+    // counter — a superseded preparation keeps the RUNNING pair's
+    // generation when the machine restores it.
     const outcomeGeneration =
       outcome.machine.kind === "prepared" || outcome.machine.kind === "transition"
         ? outcome.machine.generation
@@ -509,21 +504,21 @@ export function useDesktopScene(input: UseDesktopSceneInput): DesktopScene {
     const machine = navMachineRef.current;
     if (machine.kind === "transition" && !reducedMotion) {
       restLayersOnIdleRef.current = false;
-      const outgoingId = machine.exitingIds[machine.exitingIds.length - 1];
-      if (outgoingId === undefined) {
+      const outgoingIds = machine.exitingIds;
+      if (outgoingIds.length === 0) {
         return;
       }
       const coordinator = pairCoordinator();
       const incoming = coordinator.layerElement(machine.toId);
-      const outgoing = coordinator.layerElement(outgoingId);
-      if (incoming === null || outgoing === null) {
+      const outgoing = outgoingIds.map((id) => coordinator.layerElement(id));
+      if (incoming === null || outgoing.some((element) => element === null)) {
         return; // the pair commits with the next render's layers
       }
       coordinator.apply(
         {
           generation: machine.generation,
           incomingId: machine.toId,
-          outgoingId,
+          outgoingIds,
           direction: machine.intent.direction,
           enterFromOffset: machine.enterFromOffset,
           viewportWidth: viewportRef.current?.clientWidth ?? 960,

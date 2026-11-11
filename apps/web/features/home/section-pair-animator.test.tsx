@@ -53,7 +53,7 @@ function nextCommand(generation = GEN) {
   return {
     generation,
     incomingId: "b",
-    outgoingId: "a",
+    outgoingIds: ["a"],
     direction: "next" as const,
     enterFromOffset: true,
     viewportWidth: W,
@@ -153,7 +153,7 @@ describe("idempotence and interruption (022)", () => {
       {
         generation: GEN + 1,
         incomingId: "a",
-        outgoingId: "b",
+        outgoingIds: ["b"],
         direction: "prev",
         enterFromOffset: false,
         viewportWidth: W,
@@ -186,6 +186,43 @@ describe("idempotence and interruption (022)", () => {
     coordinator.currentTimeline()!.progress(1);
     expect(current).toHaveBeenCalledTimes(1);
     expect(current).toHaveBeenCalledWith("a", GEN + 1);
+    expect(coordinator.isTransitioning()).toBe(false);
+  });
+
+  it("an exit train settles every outgoing page on the one shared playhead (t81)", () => {
+    // A→B superseded mid-flight by a warm third destination: BOTH the old
+    // exit (A) and the just-interrupted entering page (B) ride the new
+    // timeline as outgoing pages, continuing from their current poses.
+    const third = makeLayer("c");
+    coordinator.registerLayer("c", third);
+    coordinator.apply(nextCommand(), vi.fn());
+    coordinator.currentTimeline()!.progress(0.5);
+    const midA = xOf(outgoing);
+    const midB = xOf(incoming);
+    const onSettled = vi.fn();
+    coordinator.apply(
+      {
+        generation: GEN + 1,
+        incomingId: "c",
+        outgoingIds: ["b", "a"],
+        direction: "next",
+        enterFromOffset: true,
+        viewportWidth: W,
+      },
+      onSettled,
+    );
+    // Killing the old timeline preserved the interrupted poses; the new
+    // tweens continue FROM them — never a snap back to the entry pose.
+    expect(xOf(outgoing)).toBeCloseTo(midA, 3);
+    expect(xOf(incoming)).toBeCloseTo(midB, 3);
+    coordinator.currentTimeline()!.progress(1);
+    expect(xOf(third)).toBe(0);
+    expect(xOf(incoming)).toBe(-W);
+    expect(xOf(outgoing)).toBe(-W);
+    // One completion report PER outgoing page, same generation.
+    expect(onSettled).toHaveBeenCalledTimes(2);
+    expect(onSettled).toHaveBeenNthCalledWith(1, "b", GEN + 1);
+    expect(onSettled).toHaveBeenNthCalledWith(2, "a", GEN + 1);
     expect(coordinator.isTransitioning()).toBe(false);
   });
 

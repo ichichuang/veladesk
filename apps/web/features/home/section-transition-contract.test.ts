@@ -105,6 +105,20 @@ describe("section viewport geometry stays stable (020-A1 §25)", () => {
     expect(css).not.toMatch(/\.vela-section-layer[^{]*\{[^}]*display:\s*none/);
   });
 
+  it("the leaving section's scrollbar dies with the switch's first frame (t81)", () => {
+    // The exit slide must never carry a visible scrollbar (Chris's
+    // screenshots), and a WARM-hidden layer's bar must not escape the
+    // layer's visibility:hidden via `.os-scrollbar-visible`'s own explicit
+    // `visibility: visible`. One grouped rule kills both — immediate hide,
+    // no fade riding the transition, no grabbing on the way out.
+    const exitBar = ruleBlock('.vela-section-layer[data-warm-hidden="true"] .os-scrollbar');
+    expect(exitBar).toMatch(/opacity:\s*0\s*!important/);
+    expect(exitBar).toMatch(/visibility:\s*hidden\s*!important/);
+    expect(exitBar).toMatch(/pointer-events:\s*none\s*!important/);
+    expect(exitBar).toMatch(/transition:\s*none\s*!important/);
+    expect(css).toMatch(/\.vela-section-layer\[data-phase="exit"\] \.os-scrollbar,/);
+  });
+
   it("glass tiles drop their live backdrop blur only while transitioning", () => {
     const suspension = ruleBlock(
       '.vela-section-viewport[data-section-transitioning="true"] .vela-app-icon[data-decoration="glass"]'

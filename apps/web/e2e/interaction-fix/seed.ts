@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page } from "@playwright/test";
-import { expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 /**
  * Deterministic fixture of the interaction-fix suite: one workspace, three
@@ -273,7 +273,16 @@ export async function resetLocalWorkspaceStorage(page: Page): Promise<void> {
 /** The name of the most recently seeded fixture (the picker target). */
 let fixtureName = "Interaction Fix";
 
-/** Seeds and boots; options pass through to the seed. */
+/**
+ * Seeds and boots; options pass through to the seed. Unless
+ * `allowMobileShell`, a boot that lands on the MOBILE shell (viewports at
+ * or below 767px — the canonical shell-mode resolver hands the whole
+ * presentation to the mobile surface there) SKIPs the calling test: every
+ * spec in this suite drives desktop-only surfaces (the pill, the section
+ * scrollers, arrange mode) that do not exist in the mobile shell. The
+ * suite's own viewport coverage of the mobile shell lives in
+ * viewport-matrix.spec.ts, which passes the flag.
+ */
 export async function bootSeededDesktop(
   page: Page,
   request: APIRequestContext,
@@ -281,6 +290,7 @@ export async function bootSeededDesktop(
     readonly manySections?: boolean;
     readonly richScene?: boolean;
     readonly t77Scene?: boolean;
+    readonly allowMobileShell?: boolean;
   } = {},
 ): Promise<void> {
   await seedInteractionWorkspace(request, options);
@@ -301,6 +311,12 @@ export async function bootSeededDesktop(
     await pickerItem.last().click();
   }
   await expect(desktop).toBeVisible({ timeout: 30_000 });
+  if (options.allowMobileShell !== true) {
+    test.skip(
+      await page.locator(".vela-mobile-shell").isVisible(),
+      "the mobile shell owns viewports ≤767px — the desktop-only surfaces under test do not exist there (see viewport-matrix.spec.ts for the mobile-shell pass)",
+    );
+  }
 }
 
 /**

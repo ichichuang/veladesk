@@ -146,9 +146,12 @@ describe("home-shell.css right-side scroll ownership (task 017)", () => {
   it("hands the section page transition to the GSAP pair coordinator, viewport-sized (018/020-A2, 022, t61 horizontal)", () => {
     // The CSS phase keyframes are gone — GSAP owns the page transition.
     expect(css).not.toMatch(/vela-section-enter-next/);
-    // data-phase stays a debug attribute — the ONLY stylesheet use is the
-    // reduced-motion fade (t61: no slide, a plain fade instead).
-    expect(css.match(/data-phase/g) ?? []).toHaveLength(1);
+    // data-phase stays a debug attribute with exactly TWO stylesheet uses:
+    // the reduced-motion fade (t61) and the exit scrollbar kill (t81 —
+    // the leaving page's bar dies with the switch's first frame; hiding it
+    // in the GSAP layer would fight OverlayScrollbars' own state machine).
+    expect(css.match(/data-phase/g) ?? []).toHaveLength(2);
+    expect(css).toMatch(/data-phase="exit"\] \.os-scrollbar/);
     expect(css).toMatch(/prefers-reduced-motion: reduce[\s\S]*vela-section-reduced-fade/);
     // The moving node stays the warm section LAYER; .vela-item transforms
     // are untouched (dnd-kit hard-snap contract).
@@ -162,7 +165,8 @@ describe("home-shell.css right-side scroll ownership (task 017)", () => {
     expect(shell).toMatch(/createSectionPairCoordinator/);
     // One shared playhead: both layers are tweens of ONE pair timeline.
     expect(coordinator).toMatch(/gsap\.timeline\(/);
-    expect(coordinator).toMatch(/pair\.to\(outgoing/);
+    // t81: every outgoing page of the exit train rides the same playhead.
+    expect(coordinator).toMatch(/pair\.to\(element/);
     // Reduced motion settles instantly via the shared bridge: instant
     // swaps, no transform animation.
     expect(shell).toMatch(/useVdReducedMotion/);

@@ -1883,6 +1883,30 @@
 }
 
 /*
+ * t81: the LEAVING section's scrollbar dies with the switch's first
+ * committed frame. OverlayScrollbars keeps the host's bar mounted through
+ * the exit slide, so a previously scrolled page carried a fully visible
+ * accent scrollbar across the whole transition (Chris's screenshots: the
+ * bar rides the outgoing page's edge until the pair settles). The rule
+ * overrides the auto-hide fade with an immediate, transition-less hide and
+ * kills pointer grabbing on the way out.
+ *
+ * The WARM-hidden variant closes the second leak of the same family:
+ * `.os-scrollbar-visible` sets `visibility: visible` EXPLICITLY, which
+ * escapes the layer's own `visibility: hidden` — a just-left section's
+ * bar stayed painted over the new section until its 1s idle fade caught
+ * up. Reduced motion never runs an exit phase (the machine swaps
+ * instantly); both rules are state-scoped, so they hold there trivially.
+ */
+.vela-section-layer[data-phase="exit"] .os-scrollbar,
+.vela-section-layer[data-warm-hidden="true"] .os-scrollbar {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transition: none !important;
+}
+
+/*
  * Only the two visible transition partners are promoted while the motion
  * runs — the machine drives the attribute for exactly the transition
  * window (entering + exiting layers, cleared when the last exit settles).

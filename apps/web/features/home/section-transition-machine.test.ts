@@ -35,9 +35,10 @@ function idleWith(order: readonly string[], active: string): {
 
 /**
  * Mirrors the shell's request path: the NEXT accepted request carries
- * machine.generation + 1. A parked third target does NOT bump the
- * counter (the shell follows the machine's generation, never the request
- * counter), so the counter below is advanced from the machine itself.
+ * machine.generation + 1 — the counter always follows the machine's own
+ * generation, never the raw request count (a CANCELLED preparation t81
+ * restores the still-running pair's generation, so the counter can even
+ * step back).
  */
 function makeRequester() {
   let generation = 0;
@@ -79,7 +80,6 @@ describe("requestSection — warm adjacent switch (020-A2 §29)", () => {
       exitingIds: ["b"],
       enterFromOffset: true,
       intent: INTENT,
-      pendingId: null,
     });
     expect(outcome!.mountedIds).toBe(mountedIds);
   });
@@ -128,18 +128,52 @@ describe("requestSection — warm adjacent switch (020-A2 §29)", () => {
       exitingIds: ["c"],
       enterFromOffset: false,
       intent: PREV_INTENT,
-      pendingId: null,
     });
     expect(second.mountedIds).toBe(mountedIds);
   });
 
-  it("parks a third destination as the latest pending target (022 bounded latest-target)", () => {
-    // B→C is in flight; A lies outside the visible pair. A third page
-    // never joins mid-motion (two painters, never three): the request is
-    // PARKED as the latest pending destination while the pair runs to its
-    // coherent boundary. The running generation is intentionally NOT
-    // superseded — its completion must still settle the pair so the
-    // pending request can start.
+  it("a WARM third destination interrupts: the entering page joins the exit train (t81)", () => {
+    // B→C is in flight; A is warm-mounted but outside the visible pair.
+    // Rapid paging (the pill's wheel, one detent = one step) must engage
+    // each step the moment it is requested: the pair retargets NOW — C
+    // (still entering) and B (still exiting) continue OUT on the new
+    // shared timeline as an exit train, and A enters from the offset.
+    const { machine, mountedIds } = idleWith(PAGES, "b");
+    const first = requester({
+      machine,
+      mountedIds,
+      pageOrder: PAGES,
+      currentActiveId: "b",
+      targetId: "c",
+      intent: INTENT,
+    })!;
+    const second = requester({
+      machine: first.machine,
+      mountedIds: first.mountedIds, // warm(b) = [a, b, c] — A is mounted
+      pageOrder: PAGES,
+      currentActiveId: "c",
+      targetId: "a",
+      intent: INTENT, // same direction: the older exits join the train
+    })!;
+    expect(second.machine).toEqual({
+      kind: "transition",
+      generation: 2,
+      toId: "a",
+      exitingIds: ["c", "b"],
+      enterFromOffset: true,
+      intent: INTENT,
+    });
+    expect(second.mountedIds).toBe(first.mountedIds);
+    // The train's pages all paint until the new pair settles (bounded by
+    // the mounted warm set — three here).
+    expect([...paintableSectionIds(second.machine, "c")]).toEqual(["a", "c", "b"]);
+  });
+
+  it("a direction-flipping warm third destination collapses the older exits (t81)", () => {
+    // Same shape, but the request reverses the travel direction: the
+    // older exits would sweep back ACROSS the incoming page, so the
+    // reversal collapse applies — only the entering page becomes the
+    // outgoing one.
     const { machine, mountedIds } = idleWith(PAGES, "b");
     const first = requester({
       machine,
@@ -157,18 +191,22 @@ describe("requestSection — warm adjacent switch (020-A2 §29)", () => {
       targetId: "a",
       intent: PREV_INTENT,
     })!;
-    expect(
-      second.machine.kind === "transition" && second.machine.pendingId
-    ).toBe("a");
-    expect(
-      second.machine.kind === "transition" && second.machine.generation
-    ).toBe(first.machine.kind === "transition" ? first.machine.generation : -1);
-    // Exactly the visible pair still paints: C (entering) + B (exiting) —
-    // never A yet.
-    expect([...paintableSectionIds(second.machine, "c")]).toEqual(["c", "b"]);
+    expect(second.machine).toEqual({
+      kind: "transition",
+      generation: 2,
+      toId: "a",
+      exitingIds: ["c"],
+      enterFromOffset: true,
+      intent: PREV_INTENT,
+    });
   });
 
-  it("a newer pending destination replaces an older one, and requesting the entered page drops the pending target", () => {
+  it("prepares a COLD third destination immediately, inheriting the running pair (t81)", () => {
+    // B→C is in flight; E is outside the visible pair AND cold. Rapid
+    // paging must engage at the input rhythm, so the target mounts HIDDEN
+    // right away (one preparation frame) while the pair keeps gliding —
+    // the armed transition then continues the pair's exits from their
+    // live poses. The running pair is snapshotted as `inherited`.
     const { machine, mountedIds } = idleWith(PAGES, "b");
     const first = requester({
       machine,
@@ -178,43 +216,89 @@ describe("requestSection — warm adjacent switch (020-A2 §29)", () => {
       targetId: "c",
       intent: INTENT,
     })!;
-    const parkedA = requester({
+    const second = requester({
       machine: first.machine,
-      mountedIds: first.mountedIds,
-      pageOrder: PAGES,
-      currentActiveId: "c",
-      targetId: "a",
-      intent: PREV_INTENT,
-    })!;
-    const parkedE = requester({
-      machine: parkedA.machine,
-      mountedIds: parkedA.mountedIds,
+      mountedIds: first.mountedIds, // warm(b) = [a, b, c] — E is cold
       pageOrder: PAGES,
       currentActiveId: "c",
       targetId: "e",
       intent: INTENT,
     })!;
-    // Only the LATEST pending destination is kept (bounded, not a queue).
-    expect(parkedE.machine.kind === "transition" && parkedE.machine.pendingId).toBe("e");
-    // Returning to the page already being entered drops the pending target
-    // while the pair keeps its running generation.
+    expect(second.machine).toEqual({
+      kind: "prepared",
+      generation: 2,
+      toId: "e",
+      visibleActiveId: "c",
+      intent: INTENT,
+      inherited: { toId: "c", exitingIds: ["b"], intent: INTENT, generation: 1 },
+    });
+    expect([...second.mountedIds]).toEqual(["a", "b", "c", "e"]);
+    // The pair keeps painting exactly as before (C visible/active, B still
+    // exiting mid-flight); the hidden target only measures.
+    expect(deriveLayerPhase(second.machine, "c", "c")).toBe("active");
+    expect(deriveLayerPhase(second.machine, "b", "c")).toBe("exit");
+    expect(deriveLayerPhase(second.machine, "e", "c")).toBe("warm");
+    expect([...paintableSectionIds(second.machine, "c")]).toEqual(["c", "b"]);
+  });
+
+  it("a newer cold destination supersedes the preparation, and requesting the entered page CANCELS it back to the running pair (t81)", () => {
+    const { machine, mountedIds } = idleWith(PAGES, "b");
+    const first = requester({
+      machine,
+      mountedIds,
+      pageOrder: PAGES,
+      currentActiveId: "b",
+      targetId: "c",
+      intent: INTENT,
+    })!;
+    const prepareD = requester({
+      machine: first.machine,
+      mountedIds: first.mountedIds,
+      pageOrder: PAGES,
+      currentActiveId: "c",
+      targetId: "d", // cold → prepares, inheriting the running pair
+      intent: INTENT,
+    })!;
+    const prepareE = requester({
+      machine: prepareD.machine,
+      mountedIds: prepareD.mountedIds,
+      pageOrder: PAGES,
+      currentActiveId: "c",
+      targetId: "e", // colder → supersedes the preparation, SAME inherited pair
+      intent: INTENT,
+    })!;
+    expect(prepareE.machine).toEqual({
+      kind: "prepared",
+      generation: 3,
+      toId: "e",
+      visibleActiveId: "c",
+      intent: INTENT,
+      inherited: { toId: "c", exitingIds: ["b"], intent: INTENT, generation: 1 },
+    });
+    // D (the replaced preparation's target) stays mounted as plain warm
+    // cache until the next rotation prunes it.
+    expect([...prepareE.mountedIds]).toEqual(["a", "b", "c", "d", "e"]);
+    // Returning to the page already being entered CANCELS the preparation:
+    // the machine restores the still-running pair exactly — same target,
+    // same exits, and the PAIR'S OWN generation so its in-flight
+    // completion still settles it.
     const backToC = requester({
-      machine: parkedE.machine,
-      mountedIds: parkedE.mountedIds,
+      machine: prepareE.machine,
+      mountedIds: prepareE.mountedIds,
       pageOrder: PAGES,
       currentActiveId: "c",
       targetId: "c",
       intent: INTENT,
     })!;
-    expect(
-      backToC.machine.kind === "transition" && backToC.machine.pendingId
-    ).toBeNull();
-    expect(
-      backToC.machine.kind === "transition" && backToC.machine.generation
-    ).toBe(parkedE.machine.kind === "transition" ? parkedE.machine.generation : -1);
+    // enterFromOffset is the only difference from `first`: false — the
+    // restored pair must never re-apply an entry offset (and the
+    // coordinator skips the same-generation command, so the live playhead
+    // survives untouched).
+    expect(backToC.machine).toEqual({ ...(first.machine as object), enterFromOffset: false });
+    expect(backToC.mountedIds).toBe(prepareE.mountedIds);
   });
 
-  it("a reversal inside the visible pair wins over an older pending destination (022)", () => {
+  it("a reversal inside the visible pair retargets from current progress (022)", () => {
     const { machine, mountedIds } = idleWith(PAGES, "b");
     const first = requester({
       machine,
@@ -235,9 +319,8 @@ describe("requestSection — warm adjacent switch (020-A2 §29)", () => {
       intent: PREV_INTENT,
     });
     // Now reverse to the OUTGOING page (B): the pair retargets from its
-    // current visual progress and the parked pending target dies with it.
-    // The shell assigns the machine's generation + 1 (parking never bumped
-    // it), so the reversal carries the next generation.
+    // current visual progress. The shell assigns the machine's generation
+    // + 1, so the reversal carries the next generation.
     const reversal = requestSection({
       machine: first.machine,
       mountedIds: first.mountedIds,
@@ -254,7 +337,6 @@ describe("requestSection — warm adjacent switch (020-A2 §29)", () => {
       exitingIds: ["c"],
       enterFromOffset: false,
       intent: PREV_INTENT,
-      pendingId: null,
     });
   });
 
@@ -317,6 +399,7 @@ describe("requestSection — cold direct jump (020-A2 §16)", () => {
       toId: "f",
       visibleActiveId: "b",
       intent: INTENT,
+      inherited: null,
     });
     expect([...outcome.mountedIds]).toEqual(["a", "b", "c", "f"]);
     // Preparation paints exactly the still-visible section; the hidden
@@ -340,7 +423,6 @@ describe("requestSection — cold direct jump (020-A2 §16)", () => {
       exitingIds: ["b"],
       enterFromOffset: true,
       intent: INTENT,
-      pendingId: null,
     });
   });
 
@@ -384,12 +466,12 @@ describe("requestSection — cold direct jump (020-A2 §16)", () => {
   });
 });
 
-describe("rapid B→C→D with a cold D (020-A2 §15 + 022 pending policy)", () => {
+describe("rapid B→C→D with a cold D (020-A2 §15 + t81 prepare-in-place)", () => {
   let requester: ReturnType<typeof makeRequester>;
   beforeEach(() => {
     requester = makeRequester();
   });
-  function parkColdDuringMotion() {
+  function prepareColdDuringMotion() {
     const { machine, mountedIds } = idleWith(PAGES, "b");
     const first = requester({
       machine,
@@ -399,7 +481,7 @@ describe("rapid B→C→D with a cold D (020-A2 §15 + 022 pending policy)", () 
       targetId: "c",
       intent: INTENT,
     })!;
-    return { first, parked: requester({
+    return { first, prepared: requester({
       machine: first.machine,
       mountedIds: first.mountedIds,
       pageOrder: PAGES,
@@ -409,70 +491,82 @@ describe("rapid B→C→D with a cold D (020-A2 §15 + 022 pending policy)", () 
     })! };
   }
 
-  it("parks D while the B→C pair keeps running (no third painter, no queue)", () => {
-    const { first, parked } = parkColdDuringMotion();
-    expect(parked.machine).toEqual({
-      kind: "transition",
-      generation: 1,
-      toId: "c",
-      exitingIds: ["b"],
-      enterFromOffset: true,
-      intent: INTENT,
-      pendingId: "d",
-    });
-    // The mounted set is unchanged by a parked request: D mounts only when
-    // the pending request actually starts at the settled boundary.
-    expect(parked.mountedIds).toBe(first.mountedIds);
-    expect(deriveLayerPhase(parked.machine, "c", "c")).toBe("entering");
-    expect(deriveLayerPhase(parked.machine, "b", "c")).toBe("exit");
-    expect(deriveLayerPhase(parked.machine, "d", "c")).toBe("warm");
-    // At most two painters during motion: C + B.
-    expect([...paintableSectionIds(parked.machine, "c")]).toEqual(["c", "b"]);
-  });
-
-  it("at settle the parked request starts: D mounts hidden, then arms with the immediate outgoing page", () => {
-    const { parked } = parkColdDuringMotion();
-    // The pair settles → idle; the shell consumes the pending target.
-    const settled = reportLayerSettled(parked.machine, "b", 1);
-    expect(settled).toBe(IDLE_SECTION_NAV);
-
-    const cold = requester({
-      machine: settled,
-      // The warm set around C (D is NOT mounted — the parked request never
-      // mounted it).
-      mountedIds: ["b", "c"],
-      pageOrder: PAGES,
-      currentActiveId: "c",
-      targetId: "d",
-      intent: INTENT,
-    })!;
-    expect(cold.machine).toMatchObject({
+  it("prepares D while the B→C pair keeps running (the pair paints on)", () => {
+    const { prepared } = prepareColdDuringMotion();
+    expect(prepared.machine).toEqual({
       kind: "prepared",
+      generation: 2,
       toId: "d",
       visibleActiveId: "c",
+      intent: INTENT,
+      inherited: { toId: "c", exitingIds: ["b"], intent: INTENT, generation: 1 },
     });
-    expect([...cold.mountedIds]).toEqual(["b", "c", "d"]);
+    // The mounted set grows by the hidden target; the visible pair's pages
+    // keep their phases (C entering is now the VISIBLE page, B still exit).
+    expect([...prepared.mountedIds]).toEqual(["a", "b", "c", "d"]);
+    expect(deriveLayerPhase(prepared.machine, "c", "c")).toBe("active");
+    expect(deriveLayerPhase(prepared.machine, "b", "c")).toBe("exit");
+    expect(deriveLayerPhase(prepared.machine, "d", "c")).toBe("warm");
+    // Exactly the visible pair paints: C + B.
+    expect([...paintableSectionIds(prepared.machine, "c")]).toEqual(["c", "b"]);
+  });
 
-    const armed = startPreparedTransition(cold.machine);
+  it("the armed transition adopts the inherited pair as its exit train", () => {
+    const { prepared } = prepareColdDuringMotion();
+    const armed = startPreparedTransition(prepared.machine);
     expect(armed).toEqual({
       kind: "transition",
       generation: 2,
       toId: "d",
-      exitingIds: ["c"],
+      exitingIds: ["c", "b"],
       enterFromOffset: true,
       intent: INTENT,
-      pendingId: null,
     });
-    // At most two painters in the armed motion: D (entering) + C (outgoing).
-    expect(armed.kind === "transition" && [...armed.exitingIds]).toEqual(["c"]);
-    expect(reportLayerSettled(armed, "c", 2)).toBe(IDLE_SECTION_NAV);
+    // The train settles one exit per report; the LAST one idles.
+    const afterB = reportLayerSettled(armed, "b", 2);
+    expect(afterB).toEqual({ ...(armed as object), exitingIds: ["c"] });
+    expect(reportLayerSettled(afterB, "c", 2)).toBe(IDLE_SECTION_NAV);
   });
 
-  it("never settles from the entering layer's own completion", () => {
-    const { parked } = parkColdDuringMotion();
-    expect(parked.machine.kind === "transition" && reportLayerSettled(parked.machine, "c", 1)).toBe(
-      parked.machine,
+  it("a direction-flipping preparation collapses the inherited exits at arm", () => {
+    const { machine, mountedIds } = idleWith(PAGES, "b");
+    const first = requester({
+      machine,
+      mountedIds,
+      pageOrder: PAGES,
+      currentActiveId: "b",
+      targetId: "c",
+      intent: INTENT,
+    })!;
+    const prepared = requester({
+      machine: first.machine,
+      mountedIds: first.mountedIds,
+      pageOrder: PAGES,
+      currentActiveId: "c",
+      targetId: "e",
+      intent: PREV_INTENT, // opposite travel direction
+    })!;
+    const armed = startPreparedTransition(prepared.machine);
+    expect(armed).toEqual({
+      kind: "transition",
+      generation: 2,
+      toId: "e",
+      exitingIds: ["c"],
+      enterFromOffset: true,
+      intent: PREV_INTENT,
+    });
+  });
+
+  it("never settles from the running pair once a preparation owns the machine (its completion is inert)", () => {
+    const { first, prepared } = prepareColdDuringMotion();
+    // The old pair's completion reports against the PREPARED machine: not a
+    // transition → a no-op, the machine stays prepared for its arm frame.
+    expect(reportLayerSettled(prepared.machine, "b", first.machine.kind === "transition" ? first.machine.generation : 1)).toBe(
+      prepared.machine,
     );
+    // And a stale-generation report against the ARMED machine is ignored.
+    const armed = startPreparedTransition(prepared.machine);
+    expect(reportLayerSettled(armed, "c", 1)).toBe(armed);
   });
 
   it("ignores a completion report from a SUPERSEDED generation (021-R1)", () => {
@@ -557,9 +651,9 @@ describe("pruneMissingSections — structural reconciliation", () => {
   beforeEach(() => {
     requester = makeRequester();
   });
-  function zigzag() {
+  function runningTransition() {
     const { machine, mountedIds } = idleWith(PAGES, "b");
-    const first = requester({
+    return requester({
       machine,
       mountedIds,
       pageOrder: PAGES,
@@ -567,44 +661,51 @@ describe("pruneMissingSections — structural reconciliation", () => {
       targetId: "c",
       intent: INTENT,
     })!;
+  }
+  function prepareColdDuringMotion() {
+    const first = runningTransition();
     return requester({
       machine: first.machine,
       mountedIds: first.mountedIds,
       pageOrder: PAGES,
       currentActiveId: "c",
-      targetId: "a",
-      intent: PREV_INTENT,
+      targetId: "e", // cold third destination → prepares (warm ones interrupt)
+      intent: INTENT,
     })!;
   }
 
   it("deleting the outgoing page settles the machine (it can never report)", () => {
-    const zz = zigzag();
-    // C (the single outgoing page) is deleted: no exit report can ever
+    const first = runningTransition();
+    // B (the single outgoing page) is deleted: no exit report can ever
     // arrive, so the machine collapses straight to idle instead of
     // stalling mid-transition.
-    const pruned = pruneMissingSections(zz.machine, ["a", "b", "d", "e", "f"]);
+    const pruned = pruneMissingSections(first.machine, ["a", "c", "d", "e", "f"]);
     expect(pruned).toBe(IDLE_SECTION_NAV);
   });
 
   it("keeps the transition when an unrelated page is deleted", () => {
-    const zz = zigzag();
-    const pruned = pruneMissingSections(zz.machine, ["a", "b", "c", "e", "f"]);
-    expect(pruned).toBe(zz.machine);
+    const first = runningTransition();
+    const pruned = pruneMissingSections(first.machine, ["b", "c", "d", "e", "f"]);
+    expect(pruned).toBe(first.machine);
   });
 
-  it("drops a vanished pending target and keeps the running transition", () => {
-    const zz = zigzag(); // transition C←B with pendingId "a"
-    // The PENDING page is deleted: the pending target drops (it must never
-    // start later), while the running pair survives untouched.
-    const pruned = pruneMissingSections(zz.machine, ["b", "c", "d", "e", "f"]);
-    expect(pruned.kind === "transition" && pruned.pendingId).toBeNull();
-    expect(pruned.kind === "transition" && pruned.toId).toBe("c");
-    expect(pruned.kind === "transition" && [...pruned.exitingIds]).toEqual(["b"]);
+  it("drops vanished pages from a preparation's inherited train (t81)", () => {
+    const prepared = prepareColdDuringMotion(); // prepared{e}, inherited B→C pair
+    // B (an inherited exit) is deleted: its exit report can never arrive,
+    // so it leaves the inherited train — the preparation itself survives
+    // and arms with the visible page.
+    const pruned = pruneMissingSections(prepared.machine, ["a", "c", "d", "e", "f"]);
+    expect(pruned).toEqual({
+      ...(prepared.machine as object),
+      inherited: { toId: "c", exitingIds: [], intent: INTENT, generation: 1 },
+    });
+    const armed = startPreparedTransition(pruned);
+    expect(armed.kind === "transition" && [...armed.exitingIds]).toEqual(["c"]);
   });
 
   it("collapses to idle when the transition target is deleted", () => {
-    const zz = zigzag();
-    expect(pruneMissingSections(zz.machine, ["a", "b", "d", "e", "f"])).toBe(
+    const first = runningTransition();
+    expect(pruneMissingSections(first.machine, ["a", "b", "d", "e", "f"])).toBe(
       IDLE_SECTION_NAV
     );
   });
@@ -621,9 +722,10 @@ describe("pruneMissingSections — structural reconciliation", () => {
     expect(pruneMissingSections(prepared.machine, ["a", "b", "c"])).toBe(IDLE_SECTION_NAV);
   });
 
-  it("idles when the exiting page of a parked-pending transition is deleted (it can never report)", () => {
-    // B→C parks D; then B is deleted. B's exit report can never arrive, so
-    // the machine collapses to idle instead of stalling.
+  it("idles a preparation whose VISIBLE page is deleted (the armed pair could never form)", () => {
+    // B→C prepares D; then C (the visible page) is deleted. The armed
+    // transition would have no exit anchor, so the machine collapses to
+    // idle instead of stalling.
     const { machine, mountedIds } = idleWith(PAGES, "b");
     const first = requester({
       machine,
@@ -633,7 +735,7 @@ describe("pruneMissingSections — structural reconciliation", () => {
       targetId: "c",
       intent: INTENT,
     })!;
-    const parked = requester({
+    const prepared = requester({
       machine: first.machine,
       mountedIds: first.mountedIds,
       pageOrder: PAGES,
@@ -641,7 +743,7 @@ describe("pruneMissingSections — structural reconciliation", () => {
       targetId: "d",
       intent: INTENT,
     })!;
-    const pruned = pruneMissingSections(parked.machine, ["a", "c", "d", "e", "f"]);
+    const pruned = pruneMissingSections(prepared.machine, ["a", "b", "d", "e", "f"]);
     expect(pruned).toBe(IDLE_SECTION_NAV);
   });
 });

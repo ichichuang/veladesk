@@ -36,15 +36,34 @@ export interface SectionNavIntent {
 }
 
 /**
+ * The snapshot of the pair the coordinator was animating when a request
+ * superseded it into a preparation (t81). The pair's own timeline keeps
+ * running untouched while the cold target mounts hidden — its pages are
+ * still visibly mid-flight, so their phases must stay `exit`/visible and
+ * the armed transition must adopt them as its exit train. `generation` is
+ * the pair's own: restoring the pair (a cancelled preparation) must keep
+ * it, so its in-flight completion still settles it.
+ */
+export interface SupersededPair {
+  readonly toId: DesktopPageId;
+  readonly exitingIds: readonly DesktopPageId[];
+  readonly intent: SectionNavIntent;
+  readonly generation: number;
+}
+
+/**
  * A cold destination (outside the warm set) is mounted HIDDEN first — one
  * real layout frame in which its ResizeObservers and adaptive layout
  * settle (§16) — and armed into the visible transition afterwards.
- * (022: a third destination during motion parks as `pendingId` on the
- * running transition instead of preparing, so a preparation is only ever
- * requested from idle or from another preparation — it never carries a
- * superseded exit.) The caller assigns the monotonically increasing
- * `generation` so completion reports from a superseded gesture can never
- * settle the newer one.
+ *
+ * t81: a request for a cold destination DURING motion prepares it right
+ * away instead of parking it — rapid paging (the pill's wheel, one detent
+ * = one step) must engage each step at the input rhythm, never wait out
+ * the running pair. The superseded pair rides along as `inherited` so the
+ * armed transition continues its exit train (and a cancelled preparation
+ * restores the still-running pair exactly). The caller assigns the
+ * monotonically increasing `generation` so completion reports from a
+ * superseded gesture can never settle the newer one.
  */
 export interface SectionPrepareState {
   readonly kind: "prepared";
@@ -52,24 +71,25 @@ export interface SectionPrepareState {
   readonly toId: DesktopPageId;
   readonly visibleActiveId: DesktopPageId;
   readonly intent: SectionNavIntent;
+  /** The pair still animating when this preparation began (t81), or null. */
+  readonly inherited: SupersededPair | null;
 }
 
 /**
- * The visible transition: `toId` animates in while the ONE page in
- * `exitingIds` animates out (021-R1: interruptions collapse older exits —
- * during motion exactly two pages may paint: the incoming participant and
- * its immediate outgoing partner). `enterFromOffset` marks a FRESH entry —
- * the layer was hidden (warm or newly mounted), so its enter animation
- * must supply the entry offset as an explicit first keyframe. A RE-ENTRY
- * (a mid-flight exit retargeted back to active) animates from its current
- * visual position instead — keyframes would snap it.
+ * The visible transition: `toId` animates in while the pages in
+ * `exitingIds` animate out on one shared timeline. `enterFromOffset`
+ * marks a FRESH entry — the layer was hidden (warm or newly mounted), so
+ * its enter animation must supply the entry offset as an explicit first
+ * keyframe. A RE-ENTRY (a mid-flight exit retargeted back to active)
+ * animates from its current visual position instead — keyframes would
+ * snap it.
  *
- * `pendingId` is the bounded latest-third-target policy (022): a request
- * for a page OUTSIDE the visible pair during motion is parked here — the
- * pair keeps running to its coherent boundary, only the LATEST pending
- * destination is kept, and the shell starts it immediately at settle. A
- * reversal inside the visible pair takes precedence: it clears any older
- * pending target.
+ * 021-R1 interruptions collapse older exits — during motion the incoming
+ * participant and its outgoing partner(s) paint. t81 widens the exit set
+ * to a TRAIN: a superseded transition's still-gliding pages join the new
+ * timeline (same direction only — a flip collapses them, they would
+ * otherwise sweep back across the incoming page), bounded by the mounted
+ * warm set.
  */
 export interface SectionTransitionState {
   readonly kind: "transition";
@@ -78,7 +98,6 @@ export interface SectionTransitionState {
   readonly exitingIds: readonly DesktopPageId[];
   readonly enterFromOffset: boolean;
   readonly intent: SectionNavIntent;
-  readonly pendingId: DesktopPageId | null;
 }
 
 export type SectionNavMachine =
@@ -132,6 +151,13 @@ export function deriveLayerPhase(
       // The cold target is mounted hidden — never visible until armed.
       return "warm";
     }
+    // The superseded pair's exits are STILL visibly mid-flight (t81): they
+    // keep painting (and their poses) until the armed transition adopts
+    // them — hiding them here would pop pages off the screen for the
+    // preparation frame.
+    if (machine.inherited !== null && machine.inherited.exitingIds.includes(pageId)) {
+      return "exit";
+    }
   }
   return pageId === interactiveActiveIdOf(machine, activePageId) ? "active" : "warm";
 }
@@ -164,10 +190,18 @@ export interface SectionRequestOutcome {
  * (`prepared`) — the visible transition comes one layout frame later (§16,
  * scheduled by the shell AFTER the mount frame).
  *
- * 021-R1 exit collapse: a superseded transition's older exit flags die
- * here. During motion exactly one outgoing page may paint (the immediate
- * predecessor); a hidden cached page must never join a new transition
- * merely because it still carried an old exit flag.
+ * The LATEST target always engages immediately (t81): during motion a warm
+ * third destination interrupts the running pair (its still-gliding pages
+ * join the exit train), and a cold one prepares right away, inheriting the
+ * running pair so the armed transition continues its exits. A reversal
+ * inside the visible pair still wins over everything.
+ *
+ * 021-R1 exit collapse otherwise: a superseded pair's older exit flags die
+ * here — a hidden cached page must never join a new transition merely
+ * because it still carried an old exit flag. (The t81 train is the
+ * deliberate exception: those pages are still visibly mid-flight. It stays
+ * bounded — reversal and direction-flip requests collapse it, and it can
+ * never exceed the mounted warm set.)
  */
 export function requestSection(input: SectionRequestInput): SectionRequestOutcome | null {
   const { machine, mountedIds, pageOrder, currentActiveId, targetId, intent, generation } = input;
@@ -176,30 +210,89 @@ export function requestSection(input: SectionRequestInput): SectionRequestOutcom
     return null;
   }
 
-  if (machine.kind === "transition") {
-    if (targetId === machine.toId) {
-      // Back to the page already being entered: drop any stale pending
-      // target; the running pair is exactly right already.
-      if (machine.pendingId === null) {
-        return null;
+  // The pair the coordinator is animating RIGHT NOW (t81): a transition is
+  // its own pair; a preparation inherited the pair it superseded.
+  const pair: SupersededPair | null =
+    machine.kind === "transition"
+      ? {
+          toId: machine.toId,
+          exitingIds: machine.exitingIds,
+          intent: machine.intent,
+          generation: machine.generation,
+        }
+      : machine.kind === "prepared" && machine.inherited !== null
+        ? machine.inherited
+        : null;
+
+  if (pair !== null) {
+    if (targetId === pair.toId) {
+      // Back to the page already being entered: the running pair is
+      // exactly right already. For a preparation this CANCELS it — the
+      // machine returns to the still-running pair (its own generation, so
+      // its in-flight completion still settles it) and the hidden target
+      // stays mounted as plain warm cache until the next rotation.
+      if (machine.kind === "prepared") {
+        return {
+          machine: {
+            kind: "transition",
+            generation: pair.generation,
+            toId: pair.toId,
+            exitingIds: pair.exitingIds,
+            enterFromOffset: false,
+            intent: pair.intent,
+          },
+          mountedIds,
+        };
       }
-      return { machine: { ...machine, pendingId: null }, mountedIds };
+      return null;
     }
-    if (!machine.exitingIds.includes(targetId)) {
-      // THIRD DESTINATION during motion: keep the visible pair running to
-      // its coherent boundary; park the request as the latest pending
-      // target (a newer pending replaces an older one). The running
-      // generation is intentionally NOT superseded — its completion must
-      // still settle the pair so the pending request can start.
-      if (machine.pendingId === targetId) {
-        return null;
+    if (!pair.exitingIds.includes(targetId)) {
+      if (mountedIds.includes(targetId)) {
+        // WARM third destination (t81): INTERRUPT now. Rapid paging (the
+        // pill's wheel, one detent = one step) must engage each step the
+        // moment it is requested — waiting out the running pair would land
+        // steps ~300ms apart and swallow the intermediate destinations. The
+        // entering page joins the EXIT TRAIN: same-direction exits keep
+        // gliding out on the new shared timeline (a conveyor), while a
+        // direction flip collapses the older exits (the reversal policy —
+        // they would otherwise sweep back across the incoming page).
+        const train: DesktopPageId[] =
+          intent.direction === pair.intent.direction
+            ? [pair.toId, ...pair.exitingIds]
+            : [pair.toId];
+        return {
+          machine: {
+            kind: "transition",
+            generation,
+            toId: targetId,
+            exitingIds: train,
+            enterFromOffset: true,
+            intent,
+          },
+          mountedIds,
+        };
       }
-      return { machine: { ...machine, pendingId: targetId }, mountedIds };
+      // COLD third destination (t81): PREPARE now — mount it hidden while
+      // the running pair keeps gliding, inheriting the pair so the armed
+      // transition continues its exits from their live poses. (022's
+      // parking policy is gone: it traded ~300ms of latency per chained
+      // step for at most one saved mount, and the settle-time adoption
+      // skipped every intermediate destination.)
+      return {
+        machine: {
+          kind: "prepared",
+          generation,
+          toId: targetId,
+          visibleActiveId: visibleActive ?? pair.toId,
+          intent,
+          inherited: pair,
+        },
+        mountedIds: [...mountedIds, targetId],
+      };
     }
     // REVERSAL inside the visible pair (target is the outgoing page): the
-    // pair retargets from current visual progress and any older pending
-    // destination dies with it — a reversal always wins. Falls through to
-    // the warm-switch path below.
+    // pair retargets from current visual progress — a reversal always
+    // wins. Falls through to the warm-switch path below.
   } else if (targetId === visibleActive) {
     return null;
   }
@@ -213,8 +306,7 @@ export function requestSection(input: SectionRequestInput): SectionRequestOutcom
       exitingIds.push(visibleActive);
     }
     const enterFromOffset =
-      machine.kind !== "transition" ||
-      (machine.toId !== targetId && !machine.exitingIds.includes(targetId));
+      pair === null || (pair.toId !== targetId && !pair.exitingIds.includes(targetId));
     return {
       machine: {
         kind: "transition",
@@ -223,7 +315,6 @@ export function requestSection(input: SectionRequestInput): SectionRequestOutcom
         exitingIds,
         enterFromOffset,
         intent,
-        pendingId: null,
       },
       mountedIds,
     };
@@ -237,6 +328,7 @@ export function requestSection(input: SectionRequestInput): SectionRequestOutcom
       toId: targetId,
       visibleActiveId: visibleActive ?? targetId,
       intent,
+      inherited: null,
     },
     mountedIds: [...mountedIds, targetId],
   };
@@ -246,31 +338,36 @@ export function requestSection(input: SectionRequestInput): SectionRequestOutcom
  * The prepared cold target's hidden layout frame has elapsed (its observers
  * and adaptive layout had their preparation frame — the shell schedules the
  * arm for the frame after the mount commit) — start the visible transition.
- * The exit set is the immediate outgoing page only (021-R1 collapse).
+ * The exit set is the immediate outgoing page plus, when this preparation
+ * superseded a same-direction pair, its still-gliding exits (the t81 train;
+ * a direction flip collapses them).
  */
 export function startPreparedTransition(machine: SectionNavMachine): SectionNavMachine {
   if (machine.kind !== "prepared") {
     return machine;
   }
-  const exitingIds: DesktopPageId[] = [machine.visibleActiveId];
+  const inherited = machine.inherited;
+  const train: DesktopPageId[] =
+    inherited !== null && inherited.intent.direction === machine.intent.direction
+      ? [machine.visibleActiveId, ...inherited.exitingIds]
+      : [machine.visibleActiveId];
   return {
     kind: "transition",
     generation: machine.generation,
     toId: machine.toId,
-    exitingIds,
+    exitingIds: [...new Set(train)],
     enterFromOffset: true,
     intent: machine.intent,
-    pendingId: null,
   };
 }
 
 /**
- * The pair finished its visible animation (022: ONE coordinator completion
- * per transition). Only completions of the CURRENT generation drive the
- * machine. A report from a superseded generation (an old animation's late
- * callback) or an unknown layer is ignored — it can never settle or cancel
- * the newer request. Empty exit set → idle; the shell then rotates the
- * warm set (§13) and consumes any parked pending destination.
+ * The pair finished its visible animation (022: ONE shared playhead per
+ * transition — t81 trains report every exit through the same completion).
+ * Only completions of the CURRENT generation drive the machine. A report
+ * from a superseded generation (an old animation's late callback) or an
+ * unknown layer is ignored — it can never settle or cancel the newer
+ * request. Empty exit set → idle; the shell then rotates the warm set (§13).
  */
 export function reportLayerSettled(
   machine: SectionNavMachine,
@@ -296,10 +393,14 @@ export function reportLayerSettled(
  * invariants, derived — never independent booleans):
  *
  *  - idle:        exactly the settled destination;
- *  - transition:  exactly the incoming participant and its (single)
- *                 outgoing partner;
- *  - prepared:    the still-visible section only (022: the hidden target
- *                 measures; no exit can be parked on a preparation).
+ *  - transition:  the incoming participant and its outgoing partner(s) —
+ *                 after a t81 interruption, a TRAIN of exits (each
+ *                 still-gliding page from the superseded transitions),
+ *                 bounded by the mounted warm set;
+ *  - prepared:    the still-visible section plus, when the preparation
+ *                 superseded a running pair (t81), that pair's exits —
+ *                 they are visibly mid-flight until the armed transition
+ *                 adopts them. The hidden target itself never paints.
  *
  * Every page NOT in this set is warm-hidden (nonpainted, inert). The
  * invariant tests assert the set's size, not per-layer booleans.
@@ -313,7 +414,8 @@ export function paintableSectionIds(
     return [...new Set([machine.toId, ...machine.exitingIds])];
   }
   if (machine.kind === "prepared") {
-    return interactive === null ? [] : [interactive];
+    const inheritedExits = machine.inherited?.exitingIds ?? [];
+    return [...new Set([...(interactive === null ? [] : [interactive]), ...inheritedExits])];
   }
   return interactive === null ? [] : [interactive];
 }
@@ -337,24 +439,30 @@ export function pruneMissingSections(
     if (!exists(machine.toId) || !exists(machine.visibleActiveId)) {
       return IDLE_SECTION_NAV;
     }
-    return machine;
+    const inherited =
+      machine.inherited === null
+        ? null
+        : {
+            ...machine.inherited,
+            exitingIds: machine.inherited.exitingIds.filter(exists),
+          };
+    if (
+      machine.inherited !== null &&
+      inherited !== null &&
+      inherited.exitingIds.length === machine.inherited.exitingIds.length
+    ) {
+      return machine;
+    }
+    return { ...machine, inherited };
   }
   if (!exists(machine.toId)) {
     return IDLE_SECTION_NAV;
   }
-  let changed = false;
-  let pendingId = machine.pendingId;
-  if (pendingId !== null && !exists(pendingId)) {
-    pendingId = null;
-    changed = true;
-  }
   const exitingIds = machine.exitingIds.filter(exists);
-  if (exitingIds.length === machine.exitingIds.length && !changed) {
+  if (exitingIds.length === machine.exitingIds.length) {
     return machine;
   }
-  return exitingIds.length === 0
-    ? IDLE_SECTION_NAV
-    : { ...machine, exitingIds, pendingId };
+  return exitingIds.length === 0 ? IDLE_SECTION_NAV : { ...machine, exitingIds };
 }
 
 /**

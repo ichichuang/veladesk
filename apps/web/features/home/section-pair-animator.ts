@@ -34,10 +34,14 @@ import type { SectionNavDirection } from "./section-transition-machine";
  *    reset, and the entry offset is only ever applied on a FRESH entry
  *    (enterFromOffset=true, via fromTo with immediateRender — the entry
  *    pose is committed inside the layout phase, before the next paint).
- *  - A third destination never reaches this coordinator mid-motion: the
- *    machine parks it as `pendingId` while the visible pair runs to its
- *    coherent boundary; the shell starts the pending request right at
- *    settle (no added delay).
+ *  - A third destination mid-motion (t81) never waits out the running
+ *    pair: a WARM one interrupts here and now — the command flips to the
+ *    new incoming page while the old pair's still-gliding pages join the
+ *    outgoing train (killing the timeline preserves their interrupted
+ *    poses, so their exit tweens continue from current x). A COLD one
+ *    prepares first (mounted hidden one layout frame, the machine
+ *    inheriting the running pair); the ARMED transition then reaches this
+ *    coordinator with the inherited pair's pages in its exit train.
  *  - Identical commands (an unrelated React rerender carrying the same
  *    generation) are skipped — the live playhead survives.
  *  - Every completion is generation-guarded; dispose/instant-settle paths
@@ -54,7 +58,12 @@ export interface SectionPairCommand {
   /** The navigation generation this command belongs to. */
   readonly generation: number;
   readonly incomingId: DesktopPageId;
-  readonly outgoingId: DesktopPageId;
+  /**
+   * The outgoing pages (t81: a warm interruption builds an exit TRAIN —
+   * the still-gliding exits of the superseded transitions ride the new
+   * timeline and settle with it). A plain switch carries exactly one.
+   */
+  readonly outgoingIds: readonly DesktopPageId[];
   readonly direction: SectionNavDirection;
   /**
    * Fresh entry: the incoming layer was hidden — start it from the full
@@ -143,8 +152,8 @@ export function createSectionPairCoordinator(): SectionPairCoordinator {
       }
 
       const incoming = layers.get(command.incomingId);
-      const outgoing = layers.get(command.outgoingId);
-      if (incoming === undefined || outgoing === undefined) {
+      const outgoing = command.outgoingIds.map((id) => layers.get(id));
+      if (incoming === undefined || outgoing.some((element) => element === undefined)) {
         // The pair is not (fully) mounted: nothing to animate; the shell's
         // render already shows the right phases for this generation.
         return;
@@ -155,7 +164,7 @@ export function createSectionPairCoordinator(): SectionPairCoordinator {
       // pose (the old superseded exit snaps to rest hidden — the same
       // collapse policy the navigation machine has always applied).
       for (const [pageId, element] of layers) {
-        if (pageId !== command.incomingId && pageId !== command.outgoingId) {
+        if (pageId !== command.incomingId && !command.outgoingIds.includes(pageId)) {
           restLayer(element);
         }
       }
@@ -171,8 +180,12 @@ export function createSectionPairCoordinator(): SectionPairCoordinator {
       const pair = gsap.timeline({
         onComplete: () => {
           timeline = null;          // Final poses are the tweens' end values; the shell settles the
-          // machine (and rests the layers) from here.
-          onSettled(command.outgoingId, command.generation);
+          // machine (and rests the layers) from here. One completion report
+          // PER outgoing page (t81 trains included): the machine drops the
+          // exits one by one and idles on the last.
+          for (const outgoingId of command.outgoingIds) {
+            onSettled(outgoingId, command.generation);
+          }
         },
       });
       if (command.enterFromOffset) {
@@ -182,7 +195,9 @@ export function createSectionPairCoordinator(): SectionPairCoordinator {
       } else {
         pair.to(incoming, { x: 0, duration, ease }, 0);
       }
-      pair.to(outgoing, { x: exitX, duration, ease }, 0);
+      for (const element of outgoing) {
+        pair.to(element as HTMLElement, { x: exitX, duration, ease }, 0);
+      }
       timeline = pair;
     },
 

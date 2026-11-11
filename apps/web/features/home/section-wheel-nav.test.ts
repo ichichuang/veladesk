@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   INITIAL_PILL_WHEEL_STATE,
   INITIAL_WHEEL_NAV_STATE,
-  PILL_WHEEL_COOLDOWN_MS,
+  PILL_WHEEL_DETENT_PX,
+  PILL_WHEEL_GESTURE_GAP_MS,
   PILL_WHEEL_STEP_PX,
   WHEEL_GESTURE_GAP_MS,
   WHEEL_LINE_PX,
@@ -448,10 +449,46 @@ describe("advancePillWheelNav — hover vertical wheel (t77)", () => {
     expect(actions).toEqual([]);
   });
 
+  it("THREE discrete detents at a ~120ms rhythm each fire — no cooldown throttling (t81)", () => {
+    // THE t81 contract: a mouse notch is one section, and consecutive
+    // notches page at the user's rhythm — the t77 350ms clock cooldown is
+    // gone; only the continuous gesture keeps its swallow.
+    const { actions } = run([
+      [120, 1000],
+      [120, 1120],
+      [120, 1240],
+    ]);
+    expect(actions).toEqual(["next", "next", "next"]);
+  });
+
+  it("sub-detent notches accumulate across gaps instead of dead-ending (t81)", () => {
+    // Pixel-mode mice reporting ~30px per notch must still page — the
+    // unfired travel survives the gesture gap, so notch 2 reaches the
+    // threshold and fires (notch 3 starts the next accumulation).
+    const { actions } = run([
+      [30, 1000],
+      [30, 1120],
+      [30, 1240],
+    ]);
+    expect(actions).toEqual(["next"]);
+  });
+
+  it("a slow continuous trackpad push fires exactly once, however long", () => {
+    // 30 events × 12px at a 16ms frame cadence = 360px of one sustained
+    // gesture: ONE switch (t81 keeps the t77 one-gesture-one-switch rule).
+    const trace = Array.from({ length: 30 }, (_, index) => [12, 1000 + index * 16] as const);
+    const { actions } = run(trace);
+    expect(actions).toEqual(["next"]);
+  });
+
   it("uses the documented constants", () => {
     expect(PILL_WHEEL_STEP_PX).toBeGreaterThanOrEqual(45);
     expect(PILL_WHEEL_STEP_PX).toBeLessThanOrEqual(55);
-    expect(PILL_WHEEL_COOLDOWN_MS).toBeGreaterThanOrEqual(300);
-    expect(PILL_WHEEL_COOLDOWN_MS).toBeLessThanOrEqual(400);
+    expect(PILL_WHEEL_DETENT_PX).toBeGreaterThanOrEqual(35);
+    expect(PILL_WHEEL_DETENT_PX).toBeLessThanOrEqual(50);
+    // The gesture gap sits between trackpad frame cadence (≤ ~30ms) and
+    // mouse detent cadence (≥ ~60ms).
+    expect(PILL_WHEEL_GESTURE_GAP_MS).toBeGreaterThanOrEqual(40);
+    expect(PILL_WHEEL_GESTURE_GAP_MS).toBeLessThanOrEqual(60);
   });
 });

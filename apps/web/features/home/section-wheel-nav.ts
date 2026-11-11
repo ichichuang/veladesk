@@ -339,7 +339,7 @@ export function resetWheelNav(): WheelNavState {
 }
 
 /* ------------------------------------------------------------------------- */
-/* The pill's HOVER wheel model (t77)                                        */
+/* The pill's HOVER wheel model (t77, rebuilt t81)                           */
 /* ------------------------------------------------------------------------- */
 
 /**
@@ -349,41 +349,51 @@ export function resetWheelNav(): WheelNavState {
 export const PILL_WHEEL_STEP_PX = 50;
 
 /**
- * Silence after a fired switch during which every further event is
- * swallowed: one wheel gesture = one section, and a trackpad's momentum
- * tail cannot page through several sections (task t77: ~350ms cooldown).
+ * A LONE event at ≥ this magnitude is a discrete mouse detent — it fires
+ * one switch on arrival, the t81 "每一格切一步" contract. A trackpad's
+ * first event is always ramping (well under this), so pixel-mode trackpad
+ * flicks still accumulate through the threshold instead. Mice reporting
+ * smaller per-notch deltas (Safari/macOS pixel-mode ~40px) still fire:
+ * the detent boundary sits just below one such notch.
  */
-export const PILL_WHEEL_COOLDOWN_MS = 350;
+export const PILL_WHEEL_DETENT_PX = 40;
 
-/** An event gap that resets the accumulator (a fresh gesture). */
-export const PILL_WHEEL_GESTURE_GAP_MS = 200;
+/**
+ * Event gap that separates two gestures. Mouse detents land ≥ ~60ms apart
+ * even at a fast spin; a trackpad streams events every animation frame
+ * (~8–30ms). Above this gap the next event is a FRESH gesture — a new
+ * detent may fire immediately. Below it the events belong to ONE
+ * continuous gesture, which switches exactly once (t81: the t77 350ms
+ * time cooldown is replaced by this gesture-scoped swallow — the cooldown
+ * survives only as "the rest of the continuous stream is swallowed", so
+ * deliberate detents at a 100–150ms rhythm are never throttled).
+ */
+export const PILL_WHEEL_GESTURE_GAP_MS = 50;
 
 export interface PillWheelNavState {
-  /** |normalized| vertical travel accumulated toward the next switch. */
+  /**
+   * |normalized| vertical travel accumulated toward the next switch. It
+   * SURVIVES a gesture gap (a pixel-mode mouse whose notches are below
+   * both thresholds still pages on the second notch, never dead-ends).
+   */
   readonly distance: number;
   /** Sign of the current accumulation: 1 down/next, -1 up/prev, 0 idle. */
   readonly direction: -1 | 0 | 1;
-  /** Timestamp (ms) of the last fired switch — NEVER before the first. */
-  readonly lastFireAt: number;
   /** Timestamp (ms) of the last event seen. */
   readonly lastEventAt: number;
   /**
-   * Whether the post-fire cooldown's stale-travel clearance already ran
-   * (it must happen exactly ONCE, when the cooldown expires — not on
-   * every following event, or slow deliberate scrolling could never
-   * re-accumulate the threshold).
+   * True once the CURRENT gesture already fired its one switch — every
+   * further event of the same continuous stream is swallowed (the t77
+   * cooldown, now scoped to the gesture instead of the clock).
    */
-  readonly cooldownCleared: boolean;
+  readonly fired: boolean;
 }
-
-const PILL_NEVER = -1e12;
 
 export const INITIAL_PILL_WHEEL_STATE: PillWheelNavState = {
   distance: 0,
   direction: 0,
-  lastFireAt: PILL_NEVER,
   lastEventAt: 0,
-  cooldownCleared: true,
+  fired: false,
 };
 
 export function resetPillWheelNav(): PillWheelNavState {
@@ -393,15 +403,19 @@ export function resetPillWheelNav(): PillWheelNavState {
 /**
  * Feed one normalized vertical wheel event into the pill's hover model.
  *
- * Deliberately SIMPLER than {@link advanceWheelNav}: the pill switches at
- * most one section per gesture — accumulate signed travel, fire past
- * {@link PILL_WHEEL_STEP_PX}, then hard-swallow everything for
- * {@link PILL_WHEEL_COOLDOWN_MS}. When the cooldown expires mid-stream the
- * accumulator clears exactly once, so a trackpad's decaying momentum tail
- * — still streaming small events — must re-build the whole threshold from
- * post-cooldown residue alone and realistically never does; a deliberate
- * next detent (a fresh gesture after silence, or continued steady input)
- * pages normally. Pure.
+ * The t81 contract, deliberately SIMPLER than {@link advanceWheelNav}:
+ *
+ *  - a DISCRETE detent (a lone event opening a fresh gesture at ≥
+ *    {@link PILL_WHEEL_DETENT_PX}) fires immediately — each mouse notch
+ *    is one section, so scrolling at a 100–150ms rhythm pages at exactly
+ *    that rhythm;
+ *  - a CONTINUOUS gesture (events streaming faster than
+ *    {@link PILL_WHEEL_GESTURE_GAP_MS} apart) accumulates and fires at
+ *    most ONCE — a trackpad flick or push can never cascade through
+ *    several sections, momentum tail included;
+ *  - a committed reversal restarts accumulation in the new direction.
+ *
+ * Pure: no DOM, no timers.
  */
 export function advancePillWheelNav(
   state: PillWheelNavState,
@@ -413,26 +427,20 @@ export function advancePillWheelNav(
   }
   const sign: -1 | 1 = deltaY < 0 ? -1 : 1;
   const gap = state.lastEventAt === 0 ? Number.POSITIVE_INFINITY : timeMs - state.lastEventAt;
+  const fresh = gap > PILL_WHEEL_GESTURE_GAP_MS;
 
-  // The cooldown swallows the WHOLE gesture tail: momentum events keep
-  // arriving but neither accumulate nor fire.
-  if (state.lastFireAt !== PILL_NEVER && timeMs - state.lastFireAt < PILL_WHEEL_COOLDOWN_MS) {
-    return {
-      state: { ...state, lastEventAt: timeMs },
-      action: null,
-    };
+  // A fresh gesture re-arms the one-switch latch; unfired travel carries
+  // over (see {@link PillWheelNavState.distance}).
+  let { distance, fired } = state;
+  let direction = fresh ? 0 : state.direction;
+  if (fresh) {
+    fired = false;
   }
 
-  let distance = state.distance;
-  let direction = state.direction;
-  let { cooldownCleared } = state;
-
-  // Gesture boundary — a real pause, or the cooldown just expired on a
-  // stream that never paused: stale travel dies exactly once.
-  if (gap > PILL_WHEEL_GESTURE_GAP_MS || (state.lastFireAt !== PILL_NEVER && !cooldownCleared)) {
-    distance = 0;
-    direction = 0;
-    cooldownCleared = true;
+  // One gesture, one switch: everything after the fire — the deliberate
+  // rest of a long push AND the momentum tail alike — is swallowed.
+  if (fired) {
+    return { state: { distance, direction, lastEventAt: timeMs, fired }, action: null };
   }
 
   if (direction === 0) {
@@ -444,27 +452,23 @@ export function advancePillWheelNav(
     direction = sign;
   }
 
+  // A lone full detent opening a fresh gesture is a discrete mouse step.
+  if (fresh && Math.abs(deltaY) >= PILL_WHEEL_DETENT_PX) {
+    return {
+      state: { distance: 0, direction, lastEventAt: timeMs, fired: true },
+      action: direction === 1 ? "next" : "prev",
+    };
+  }
+
   distance += Math.abs(deltaY);
   if (distance >= PILL_WHEEL_STEP_PX) {
     return {
-      state: {
-        distance: 0,
-        direction,
-        lastFireAt: timeMs,
-        lastEventAt: timeMs,
-        cooldownCleared: false,
-      },
+      state: { distance: 0, direction, lastEventAt: timeMs, fired: true },
       action: direction === 1 ? "next" : "prev",
     };
   }
   return {
-    state: {
-      distance,
-      direction,
-      lastFireAt: state.lastFireAt,
-      lastEventAt: timeMs,
-      cooldownCleared,
-    },
+    state: { distance, direction, lastEventAt: timeMs, fired },
     action: null,
   };
 }
