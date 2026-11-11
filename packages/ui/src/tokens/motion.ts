@@ -34,8 +34,13 @@ export const VD_MOTION = {
   dialog: 0.34,
   /** Right-side inspector panel entrance. */
   inspector: 0.38,
-  /** Section category page slide. */
+  /** Section category page slide (mobile swipe keeps its legacy pace). */
   sectionPage: 0.5,
+  /**
+   * The DESKTOP section pair slide (t61): horizontal, 300ms — inside the
+   * 200–320ms t61 band. The mobile swipe keeps `sectionPage` above.
+   */
+  sectionPageDesktop: 0.3,
 } as const;
 
 export type VdMotionPreset = keyof typeof VD_MOTION;

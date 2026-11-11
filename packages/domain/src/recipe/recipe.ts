@@ -33,6 +33,7 @@ import {
  * new preset fails to compile here until the recipe accepts it too.
  */
 const PRESET_WHITELIST: Readonly<Record<WorkspaceWallpaperPreset, true>> = {
+  chart: true,
   aurora: true,
   midnight: true,
   dawn: true,

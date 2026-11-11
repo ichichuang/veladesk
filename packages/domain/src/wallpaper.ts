@@ -32,13 +32,14 @@ export type WallpaperConfig =
     };
 
 /**
- * The application default (P1): the Dawn Chart scene — the adopted visual
- * direction A's main scene (visual-directions-p1.md §A) and the last stop
- * of every wallpaper fallback chain.
+ * The application default (t61): the Dawn Chart scene — the adopted visual
+ * direction A's main scene (visual-directions-p1.md §A), its own preset
+ * since t61 (the four color presets are plain backgrounds), and the last
+ * stop of every wallpaper fallback chain.
  */
-export const DEFAULT_WALLPAPER: WallpaperConfig = { kind: "preset", presetId: "dawn" };
+export const DEFAULT_WALLPAPER: WallpaperConfig = { kind: "preset", presetId: "chart" };
 
-const WALLPAPER_PRESETS: readonly string[] = ["aurora", "midnight", "dawn", "mist"];
+const WALLPAPER_PRESETS: readonly string[] = ["chart", "aurora", "midnight", "dawn", "mist"];
 const WALLPAPER_FITS: readonly string[] = ["cover", "contain"];
 
 /**
@@ -181,10 +182,11 @@ export interface ModeAwareWallpaperInput {
 }
 
 /**
- * The mode-aware wallpaper resolver (P1): the EFFECTIVE color mode's
- * page-specific override first — drafted, then persisted — then the whole
- * desktop chain (page general → default Dawn Chart scene). The workspace
- * editor continues to resolve its separate default through the base resolver. A mode draft that targets the OTHER mode
+ * The mode-aware wallpaper resolver (P1, fallback fixed t61): the
+ * EFFECTIVE color mode's page-specific override first — drafted, then
+ * persisted — then the page general layer, then the ordinary workspace
+ * chain (workspace wallpaper → legacy preset → Dawn Chart default)
+ * through the base resolver. A mode draft that targets the OTHER mode
  * never substitutes this render. Pure — no DOM, no clocks, no storage.
  */
 export function resolveModeAwareWallpaper(
@@ -204,13 +206,23 @@ export function resolveModeAwareWallpaper(
     return { config: persisted, provenance: "section" };
   }
 
-  // The workspace editor still edits its own default. A desktop's final
-  // fallback is always Dawn, independently of workspace/legacy choices.
+  // The page general layer, then the ORDINARY chain (workspace layer →
+  // legacy preset → application default). t61 fix: this fallback used to
+  // hardcode the Dawn preset whenever a page was on screen, so a workspace
+  // default picked in Settings never reached the visible desktop — the
+  // "built-in backgrounds do nothing" report. The workspace inputs are
+  // real participants again, through the one canonical base resolver.
   if (page === undefined && base.page === undefined) return resolveEffectiveWallpaper(base);
   const general = base.pageWallpaperExplicitlyInherits
     ? null
     : base.pageWallpaperDraft !== undefined ? base.pageWallpaperDraft : page?.wallpaper;
-  return available(general) && general != null
-    ? { config: general, provenance: "section" }
-    : { config: DEFAULT_WALLPAPER, provenance: "default" };
+  if (available(general) && general != null) {
+    return { config: general, provenance: "section" };
+  }
+  return resolveEffectiveWallpaper({
+    ...base,
+    page: undefined,
+    pageWallpaperDraft: undefined,
+    pageWallpaperExplicitlyInherits: false,
+  });
 }

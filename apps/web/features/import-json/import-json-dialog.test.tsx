@@ -613,7 +613,7 @@ describe("ImportJsonDialog: recipe embedded wallpapers (D1)", () => {
     const staged = stageWorkspaceUpdate.mock.calls[0]?.[0] as WorkspaceSnapshot;
     expect(staged.pages.find((page) => page.name === "Shots")?.wallpaperByMode).toEqual({
       light: { kind: "preset", presetId: "aurora" },
-      dark: { kind: "preset", presetId: "dawn" },
+      dark: { kind: "preset", presetId: "chart" },
     });
     expect(view.getByText("1 wallpapers could not be fetched and fell back to the preset.")).toBeDefined();
     expect(view.getByText("Shots · Dark")).toBeDefined();

@@ -69,11 +69,39 @@ export function buildGridSnapshot(
   };
 }
 
+/**
+ * Best-effort server hygiene for the long shared run: the server caps at
+ * 10 workspaces and refuses deleting the LAST one, so specs that seed
+ * without cleanup would starve later files. Prunes every workspace except
+ * the first (the undeletable survivor rotates by list order).
+ */
+export async function pruneServerWorkspaces(request: APIRequestContext): Promise<void> {
+  const list = await request.get("/api/v1/workspaces");
+  if (!list.ok()) {
+    return;
+  }
+  const payload = (await list.json()) as {
+    workspaces?: { id: string; revision: number }[];
+  };
+  const existing = payload.workspaces ?? [];
+  if (existing.length < 2) {
+    return;
+  }
+  for (const workspace of existing.slice(1)) {
+    await request.delete(`/api/v1/workspaces/${workspace.id}`, {
+      data: { expectedRevision: workspace.revision },
+    });
+  }
+}
+
 /** Seeds one workspace and returns its id. */
 export async function seedWorkspace(
   request: APIRequestContext,
   snapshot: Record<string, unknown>,
 ): Promise<string> {
+  // Order independence: prune first so the 10-workspace admission limit
+  // can never starve this seed (best effort; the last one may survive).
+  await pruneServerWorkspaces(request);
   const response = await request.post("/api/v1/workspaces", { data: { snapshot } });
   if (response.status() !== 201) {
     throw new Error(`seed failed (${response.status()}): ${await response.text()}`);

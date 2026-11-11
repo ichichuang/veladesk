@@ -108,7 +108,7 @@ describe("workspace transition ownership", () => {
     const view = render(
       <WorkspaceTransition identity="a" ready>
         <div className="vela-desktop">
-          <SceneBackdrop wallpaper={{ config: { kind: "preset", presetId: "dawn" }, provenance: "default" }} assetUrl={null} />
+          <SceneBackdrop wallpaper={{ config: { kind: "preset", presetId: "chart" }, provenance: "default" }} assetUrl={null} />
           <span className="vela-item__body">Icon</span>
         </div>
       </WorkspaceTransition>,
@@ -123,7 +123,7 @@ describe("workspace transition ownership", () => {
   });
 
   describe("the cold-open stage entrance vs the Dawn opening", () => {
-    const PRESET = { config: { kind: "preset" as const, presetId: "dawn" as const }, provenance: "default" as const };
+    const PRESET = { config: { kind: "preset" as const, presetId: "chart" as const }, provenance: "default" as const };
     const CUSTOM = {
       config: { kind: "asset" as const, assetId: "asset-1", fit: "cover" as const, position: "center" as const },
       provenance: "workspace" as const,

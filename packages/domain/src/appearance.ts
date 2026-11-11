@@ -22,7 +22,7 @@ import type {
 export const DEFAULT_WORKSPACE_APPEARANCE: WorkspaceAppearancePreferences = {
   colorMode: "dark",
   accentHue: 60,
-  wallpaperPreset: "dawn",
+  wallpaperPreset: "chart",
   surfaceOpacity: 0.55,
   blurPx: 18,
   radiusPx: 14,

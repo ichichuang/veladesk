@@ -482,9 +482,9 @@ describe("wallpaper transition closeout", () => {
     expect(view.container.querySelector("img")?.getAttribute("src")).toBe("blob:old");
     expect(view.container.querySelectorAll(".vela-wallpaper-surface")).toHaveLength(1);
   });
-  it("uses Dawn on a cold first mount", () => {
+  it("uses the Dawn Chart scene on a cold first mount (t61 default)", () => {
     const view = render(<WorkspaceWallpaperLayers wallpaper={wallpaper("cold")} assetUrl={null} />);
-    expect(view.container.querySelector("[data-wallpaper-preset=dawn]")).not.toBeNull();
+    expect(view.container.querySelector("[data-wallpaper-preset=chart]")).not.toBeNull();
   });
   it("waits for both decodes before the tokenized crossfade", async () => {
     const releases: (() => void)[] = [];

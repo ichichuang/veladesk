@@ -48,7 +48,7 @@ export interface CanvasDragPreview {
   readonly rowDelta: number;
 }
 
-function gridTranslationOf(args: CanvasDragArgs): {
+export function gridTranslationOf(args: CanvasDragArgs): {
   readonly columnDelta: number;
   readonly rowDelta: number;
 } {

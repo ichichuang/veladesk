@@ -263,7 +263,7 @@ export interface Dock {
 export type WorkspaceColorMode = "system" | "dark" | "light";
 
 /** Built-in CSS-gradient wallpaper. No images in v1. */
-export type WorkspaceWallpaperPreset = "aurora" | "midnight" | "dawn" | "mist";
+export type WorkspaceWallpaperPreset = "chart" | "aurora" | "midnight" | "dawn" | "mist";
 
 /** Desktop icon scale. Grid cells and drag metrics are never affected. */
 export type WorkspaceIconSize = "small" | "medium" | "large";

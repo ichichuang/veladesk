@@ -327,6 +327,42 @@ describe("resolveModeAwareWallpaper precedence (P1)", () => {
       ),
     ).toEqual({ config: generalConfig, provenance: "section" });
   });
+
+  it("a page WITHOUT overrides falls through to the workspace layer (t61 fix)", () => {
+    // The desktop ALWAYS renders a page — before t61 this path hardcoded
+    // the application default, so a workspace wallpaper picked in Settings
+    // (persisted OR drafted) never reached the visible desktop.
+    const page: Parameters<typeof resolveModeAwareWallpaper>[0]["page"] = {};
+    expect(
+      resolveModeAwareWallpaper(
+        { effectiveMode: "dark", page, modeWallpaperDraft: undefined },
+        {
+          ...baseInput(),
+          page,
+          workspaceWallpaper: { kind: "preset", presetId: "aurora" },
+        },
+      ),
+    ).toEqual({ config: { kind: "preset", presetId: "aurora" }, provenance: "workspace" });
+    // The workspace DRAFT previews the same way while Settings is open.
+    expect(
+      resolveModeAwareWallpaper(
+        { effectiveMode: "dark", page, modeWallpaperDraft: undefined },
+        {
+          ...baseInput(),
+          page,
+          workspaceWallpaper: undefined,
+          workspaceDraft: { config: { kind: "preset", presetId: "mist" } },
+        },
+      ),
+    ).toEqual({ config: { kind: "preset", presetId: "mist" }, provenance: "workspace" });
+    // Nothing anywhere → the Dawn Chart scene default.
+    expect(
+      resolveModeAwareWallpaper(
+        { effectiveMode: "dark", page, modeWallpaperDraft: undefined },
+        { ...baseInput(), page, workspaceWallpaper: undefined, legacyWorkspacePreset: "bogus" as never },
+      ),
+    ).toEqual({ config: DEFAULT_WALLPAPER, provenance: "default" });
+  });
 });
 
 describe("replacePageModeWallpaper (P1)", () => {
@@ -375,22 +411,25 @@ describe("replacePageModeWallpaper (P1)", () => {
 
 describe("desktop wallpaper fallback closeout", () => {
   const asset = (assetId: string): WallpaperConfig => ({ kind: "asset", assetId, fit: "cover", position: "center" });
-  it("skips unavailable mode and general images, ending at Dawn instead of workspace", () => {
+  it("skips unavailable mode and general images, then serves the workspace layer (t61)", () => {
     const page = { wallpaper: asset("general"), wallpaperByMode: { dark: asset("dark") } };
     const base = { page, pageWallpaperDraft: undefined, pageWallpaperExplicitlyInherits: false,
       workspaceWallpaper: asset("workspace"), workspaceDraft: undefined, legacyWorkspacePreset: "aurora" as const };
     for (const [missing, expected] of [
-      [[], asset("dark")], [["dark"], asset("general")], [["dark", "general"], DEFAULT_WALLPAPER],
+      [[], asset("dark")], [["dark"], asset("general")],
+      // Both page layers unavailable → the WORKSPACE default serves the
+      // desktop (the t61 fix: it is the configured default, not Dawn).
+      [["dark", "general"], asset("workspace")],
     ] as const) {
       expect(resolveModeAwareWallpaper({ effectiveMode: "dark", page, modeWallpaperDraft: undefined,
         unavailableAssetIds: new Set(missing) }, base).config).toEqual(expected);
     }
   });
-  it("a desktop with no overrides and a removed general draft resolve to Dawn", () => {
+  it("a removed general draft previews following the workspace default (t61)", () => {
     const page = { wallpaper: asset("general") };
     const base = { page, pageWallpaperDraft: null, pageWallpaperExplicitlyInherits: false,
       workspaceWallpaper: asset("workspace"), workspaceDraft: undefined, legacyWorkspacePreset: "mist" as const };
     expect(resolveModeAwareWallpaper({ effectiveMode: "light", page, modeWallpaperDraft: undefined }, base))
-      .toEqual({ config: DEFAULT_WALLPAPER, provenance: "default" });
+      .toEqual({ config: asset("workspace"), provenance: "workspace" });
   });
 });

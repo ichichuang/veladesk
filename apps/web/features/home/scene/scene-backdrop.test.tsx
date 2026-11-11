@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 /*
- * The scene backdrop's Dawn gate (P1, motion-spec-p1 §2): Dawn is ON BY
- * DEFAULT — no helmMotion switch is consulted — over a PRESET scene; a
- * custom image wallpaper keeps the static horizon and never plays the opening;
- * reduced motion renders the static final state.
+ * The scene backdrop's Dawn gate (P1, motion-spec-p1 §2; tiers t61): Dawn
+ * is ON BY DEFAULT — no helmMotion switch is consulted — over the CHART
+ * scene; the plain tiers (color presets, custom images) render no horizon
+ * at all (the t61 scene tiering), so nothing ever plays there; reduced
+ * motion renders the static final state.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
@@ -14,7 +15,7 @@ import { SceneBackdrop } from "./scene-backdrop";
 import { resetDawnOpeningSessionForTests } from "./use-dawn-intro";
 
 const PRESET: EffectiveWallpaper = {
-  config: { kind: "preset", presetId: "dawn" },
+  config: { kind: "preset", presetId: "chart" },
   provenance: "default",
 };
 
@@ -63,8 +64,9 @@ describe("SceneBackdrop Dawn gate", () => {
     const { container } = render(
       <SceneBackdrop wallpaper={CUSTOM} assetUrl="blob:fake" />,
     );
-    expect(container.querySelector(".vela-dawn-horizon")).not.toBeNull();
-    expect(container.querySelector<HTMLElement>(".vela-dawn-horizon__band")!.style.length).toBe(0);
+    // t61 plain tier: the chart decoration set is not even mounted —
+    // there is no horizon to animate, and the veil rests unpainted.
+    expect(container.querySelector(".vela-dawn-horizon")).toBeNull();
     const veil = container.querySelector<HTMLElement>(".vela-dawn-veil");
     expect(veil).not.toBeNull();
     expect(veil!.style.length).toBe(0);

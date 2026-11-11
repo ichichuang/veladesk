@@ -16,19 +16,20 @@ import type { SectionNavDirection } from "./section-transition-machine";
  * layer callbacks CANNOT finalize navigation while the other page still
  * moves: there is exactly one completion, for the pair.
  *
- * The choreography is a REAL vertical page slide over the measured section
- * viewport height H (never content height): on a fresh next-page command
- * the outgoing layer travels y 0 → −H while the incoming travels y +H → 0
- * (signs reverse for previous). Page-wrapper opacity stays at 1 throughout
- * — the viewport clips each page's own viewport-sized content, so the two
- * visible regions meet at a moving boundary instead of one page showing
- * through the other. This deliberately replaces the pre-022 short-distance
- * crossfade.
+ * The choreography (t61) is a REAL HORIZONTAL page slide over the measured
+ * section viewport width W (never content width): on a fresh next-page
+ * command the outgoing layer travels x 0 → −W while the incoming travels
+ * x +W → 0 (signs reverse for previous) — the grid slides in FROM the
+ * direction the user travelled, matching the pill's highlight and the
+ * arrow keys. Page-wrapper opacity stays at 1 throughout — the viewport
+ * clips each page's own viewport-sized content, so the two visible
+ * regions meet at a moving boundary instead of one page showing through
+ * the other.
  *
  * Interruption policy (bounded latest-target, machine-driven):
  *  - A REVERSAL inside the visible pair (the machine flips toId/exitingIds
  *    with enterFromOffset=false) kills the old timeline and retargets both
- *    layers FROM THEIR CURRENT y — gsap.kill() keeps the interrupted pose,
+ *    layers FROM THEIR CURRENT x — gsap.kill() keeps the interrupted pose,
  *    and the new tweens read it as their origin. The entry pose is never
  *    reset, and the entry offset is only ever applied on a FRESH entry
  *    (enterFromOffset=true, via fromTo with immediateRender — the entry
@@ -60,8 +61,8 @@ export interface SectionPairCommand {
    * entry offset. False means a reversal: continue from current poses.
    */
   readonly enterFromOffset: boolean;
-  /** The MEASURED section viewport height in px (at command time). */
-  readonly viewportHeight: number;
+  /** The MEASURED section viewport width in px (at command time). */
+  readonly viewportWidth: number;
 }
 
 /** Reports the pair's settle to the shell (current generation only). */
@@ -100,7 +101,7 @@ export interface SectionPairCoordinator {
 function restLayer(element: HTMLElement): void {
   // Same GSAP owner writes the resting pose (its transform cache stays
   // consistent for the next transition's origins).
-  gsap.set(element, { y: 0, opacity: 1 });
+  gsap.set(element, { x: 0, opacity: 1 });
 }
 
 export function createSectionPairCoordinator(): SectionPairCoordinator {
@@ -160,10 +161,12 @@ export function createSectionPairCoordinator(): SectionPairCoordinator {
       }
 
       runningGeneration = command.generation;
-      const duration = vdMotionDuration("sectionPage");
+      // t61: the desktop pair slide is horizontal on its own 300ms token
+      // (the mobile swipe keeps the legacy sectionPage pace).
+      const duration = vdMotionDuration("sectionPageDesktop");
       const ease = VD_MOTION_EASE;
-      const entryY = command.direction === "next" ? command.viewportHeight : -command.viewportHeight;
-      const exitY = command.direction === "next" ? -command.viewportHeight : command.viewportHeight;
+      const entryX = command.direction === "next" ? command.viewportWidth : -command.viewportWidth;
+      const exitX = command.direction === "next" ? -command.viewportWidth : command.viewportWidth;
 
       const pair = gsap.timeline({
         onComplete: () => {
@@ -175,11 +178,11 @@ export function createSectionPairCoordinator(): SectionPairCoordinator {
       if (command.enterFromOffset) {
         // Fresh entry: explicit first keyframe, rendered synchronously at
         // construction (inside the caller's layout phase — pre-paint).
-        pair.fromTo(incoming, { y: entryY }, { y: 0, duration, ease }, 0);
+        pair.fromTo(incoming, { x: entryX }, { x: 0, duration, ease }, 0);
       } else {
-        pair.to(incoming, { y: 0, duration, ease }, 0);
+        pair.to(incoming, { x: 0, duration, ease }, 0);
       }
-      pair.to(outgoing, { y: exitY, duration, ease }, 0);
+      pair.to(outgoing, { x: exitX, duration, ease }, 0);
       timeline = pair;
     },
 

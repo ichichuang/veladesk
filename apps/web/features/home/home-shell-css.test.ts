@@ -71,8 +71,8 @@ describe("home-shell.css transform ownership", () => {
   });
 });
 
-describe("home-shell.css geometry contract (task 017)", () => {
-  it("composes the desktop as rail + workspace columns, never viewport paddings", () => {
+describe("home-shell.css geometry contract (task 017; whole-width t61)", () => {
+  it("composes the desktop as one whole-width workspace, never viewport paddings", () => {
     const workbench = ruleBlock(".vela-workbench");
     expect(workbench).toMatch(/display:\s*flex/);
 
@@ -81,15 +81,21 @@ describe("home-shell.css geometry contract (task 017)", () => {
     // EXACTLY the token-derived band height — header and reserved space
     // share one source, so they can never disagree at any viewport.
     expect(viewport).toMatch(/--vd-section-padding-top:\s*calc\(var\(--vd-helm-band\)\)/);
-    expect(viewport).toMatch(/--vd-section-padding-bottom:\s*30px/);
+    // The bottom reserve clears the section pill (t61), composed from the
+    // pill clearance token.
+    expect(viewport).toMatch(
+      /--vd-section-padding-bottom:\s*calc\(18px \+ var\(--vd-pill-clearance\)\)/,
+    );
     // The band itself composes from clamp tokens only — no raw pixel
     // literals that a short viewport could outrun.
     const desktop = ruleBlock(".vela-desktop");
     expect(desktop).toMatch(/--vd-helm-clock-size:\s*clamp\(/);
     expect(desktop).toMatch(/--vd-helm-band:\s*calc\(/);
-    // The artificial 186px left padding for the floating rail is gone: the
-    // rail is a real flex column now.
+    // The artificial 186px left padding for the floating rail is gone, and
+    // so is the rail itself (t61): no rail class or token survives.
     expect(css).not.toMatch(/--vd-grid-padding-left/);
+    expect(css).not.toMatch(/vela-rail/);
+    expect(css).not.toMatch(/--vd-rail/);
   });
 
   it("places .vela-canvas on exactly the freeform stage box", () => {
@@ -100,7 +106,9 @@ describe("home-shell.css geometry contract (task 017)", () => {
 
   it("reserves extra bottom space only when a dock actually exists", () => {
     const docked = ruleBlock('.vela-desktop[data-has-dock="true"] .vela-section-viewport');
-    expect(docked).toMatch(/--vd-section-padding-bottom:\s*108px/);
+    // t61: the docked reserve composes the dock band AND the pill above it.
+    expect(docked).toMatch(/--vd-section-padding-bottom:\s*calc\(/);
+    expect(docked).toMatch(/var\(--vd-pill-height\)/);
   });
 
   it("scopes percent-space absolute items to the freeform canvas only", () => {

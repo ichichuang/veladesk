@@ -25,6 +25,7 @@ const MATRIX: readonly { readonly name: string; readonly width: number; readonly
     { name: "768x1024", width: 768, height: 1024 },
     { name: "1024x610", width: 1024, height: 610 },
     { name: "1280x720", width: 1280, height: 720 },
+    { name: "1440x900", width: 1440, height: 900 },
     { name: "1600x1000", width: 1600, height: 1000 },
     { name: "1920x1080", width: 1920, height: 1080 },
     { name: "2560x1440", width: 2560, height: 1440 },
@@ -158,8 +159,8 @@ test.describe("viewport matrix", () => {
       // --- Layout-fill: a SPARSE section centers by its real extent ------
       // AI 工具 stores 8 columns but occupies 3: its content must center
       // by those 3 columns, not hug the left of a full-width frame.
-      await page.locator(".vela-rail__item", { hasText: "AI 工具" }).first().click();
-      await expect(page.locator('.vela-rail__item[data-active="true"]')).toHaveText(/AI 工具/);
+      await page.locator(".vela-pill__item", { hasText: "AI 工具" }).first().click();
+      await expect(page.locator('.vela-pill__item[data-active="true"]')).toHaveText(/AI 工具/);
       await page.waitForTimeout(700);
       const sparse = await readGridGeometry(page);
       expect(sparse.content).not.toBeNull();

@@ -9,7 +9,7 @@ vi.mock("../../assets/browser-assets", () => ({ getBrowserAssetRuntime: vi.fn() 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("scene asset fallback", () => {
-  it.each(["missing", "corrupt"])("falls through %s mode and generic images to Dawn", async (failure) => {
+  it.each(["missing", "corrupt"])("falls through %s mode and generic images to the workspace layer (t61)", async (failure) => {
     const loadAsset = vi.fn(async () => failure === "missing"
       ? { ok: false } : { ok: true, blob: new Blob(["image"]) });
     vi.mocked(getBrowserAssetRuntime).mockResolvedValue({ loadAsset } as never);
@@ -22,7 +22,7 @@ describe("scene asset fallback", () => {
     const { result } = renderHook(() => useSceneWallpaper({ sectionNavMachine: { kind: "idle" },
       effectiveActivePageId: "p", renderedPages: [page], backgroundPreview: null,
       resolvedAppearance: DEFAULT_WORKSPACE_APPEARANCE, effectiveColorMode: "dark" }));
-    await waitFor(() => expect(result.current.effectiveWallpaper.config).toEqual({ kind: "preset", presetId: "dawn" }));
+    await waitFor(() => expect(result.current.effectiveWallpaper.config).toEqual({ kind: "preset", presetId: "chart" }));
     expect(loadAsset.mock.calls).toHaveLength(2);
     expect(page.wallpaperByMode.dark.assetId).toBe(`dark-${failure}`);
     if (failure === "corrupt") expect(revoke).toHaveBeenCalledTimes(2);

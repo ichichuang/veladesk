@@ -37,8 +37,17 @@ async function desktopMenuAction(
   page: import("@playwright/test").Page,
   name: RegExp,
 ): Promise<void> {
-  await page.mouse.click(700, 450, { button: "right" });
+  await page.mouse.click(20, 500, { button: "right" });
   await page.getByRole("menuitem", { name }).first().click();
+}
+
+/** Enters arrange mode through the desktop menu (idempotent — the fixture
+ *  may already boot arranged when layoutLocked is false). */
+async function enterArrangeMode(page: import("@playwright/test").Page): Promise<void> {
+  if ((await page.locator(".vela-desktop").getAttribute("data-arrange")) !== "true") {
+    await desktopMenuAction(page, /整理桌面|Arrange/);
+  }
+  await expect(page.locator(".vela-desktop")).toHaveAttribute("data-arrange", "true");
 }
 
 test("arrange drag + hover cannot latch scroll on the desktop stage", async ({ page, request }) => {
@@ -50,7 +59,7 @@ test("arrange drag + hover cannot latch scroll on the desktop stage", async ({ p
   await seedWorkspace(request, snapshot);
   await bootIntoWorkspace(page, "Desk 019 Regression");
 
-  await desktopMenuAction(page, /整理桌面|Arrange/);
+  await enterArrangeMode(page);
   await expect(page.getByRole("toolbar")).toBeVisible();
 
   // Largest gap step — the proven failing configuration.
@@ -89,10 +98,10 @@ test("overlay cycles cannot displace the desktop stage", async ({ page, request 
   // is a real-user scroll-into-view source.
   for (let round = 1; round <= 3; round += 1) {
     await desktopMenuAction(page, /设置…|Settings/);
-    const dialog = page.getByRole("dialog");
+    const dialog = page.locator("[data-settings-dialog]");
     await dialog.waitFor({ state: "visible", timeout: 10_000 });
     for (const tab of [/布局|Layout/, /通用|General/, /外观|Appearance/]) {
-      await dialog.getByRole("button", { name: tab }).click();
+      await dialog.getByRole("tab", { name: tab }).click();
       await page.waitForTimeout(200);
     }
     await page.keyboard.press("Escape");

@@ -711,6 +711,7 @@ export function ImportJsonDialog({ workspace, onClose }: ImportJsonDialogProps) 
 
 /** The wallpaper preset's localized display name (total over the whitelist). */
 const PRESET_NAME_KEY: Readonly<Record<WorkspaceWallpaperPreset, TranslationKey>> = {
+  chart: "settings.wallpaper.chart",
   aurora: "settings.wallpaper.aurora",
   midnight: "settings.wallpaper.midnight",
   dawn: "settings.wallpaper.dawn",

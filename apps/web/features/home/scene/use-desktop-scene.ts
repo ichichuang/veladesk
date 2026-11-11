@@ -526,7 +526,7 @@ export function useDesktopScene(input: UseDesktopSceneInput): DesktopScene {
           outgoingId,
           direction: machine.intent.direction,
           enterFromOffset: machine.enterFromOffset,
-          viewportHeight: viewportRef.current?.clientHeight ?? 480,
+          viewportWidth: viewportRef.current?.clientWidth ?? 960,
         },
         handlePairSettled,
       );

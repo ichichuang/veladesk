@@ -2,12 +2,12 @@
 /*
  * Task 022 — the GSAP page-pair coordinator. The suite advances the REAL
  * pair timeline (the coordinator's documented playhead seam) through
- * start/middle/end and asserts: the full-height vertical slide, the shared
+ * start/middle/end and asserts: the full-width horizontal slide, the shared
  * playhead (complementary positions meeting at a viewport boundary),
  * opacity staying untouched (no crossfade), same-generation idempotence,
  * current-progress reversal retargeting, generation-guarded single
  * completion, non-participant rest, and teardown. DOM geometry is jsdom —
- * viewportHeight is an explicit mocked input, never a browser measurement.
+ * viewportWidth is an explicit mocked input, never a browser measurement.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +18,7 @@ import {
   type SectionPairCoordinator,
 } from "./section-pair-animator";
 
-const H = 480; // explicit test viewport metrics — NOT a browser measurement
+const W = 960; // explicit test viewport metrics — NOT a browser measurement
 const GEN = 7;
 
 function makeLayer(id: string): HTMLElement {
@@ -28,8 +28,8 @@ function makeLayer(id: string): HTMLElement {
   return element;
 }
 
-function yOf(element: HTMLElement): number {
-  return Number(gsap.getProperty(element, "y"));
+function xOf(element: HTMLElement): number {
+  return Number(gsap.getProperty(element, "x"));
 }
 
 let coordinator: SectionPairCoordinator;
@@ -56,21 +56,21 @@ function nextCommand(generation = GEN) {
     outgoingId: "a",
     direction: "next" as const,
     enterFromOffset: true,
-    viewportHeight: H,
+    viewportWidth: W,
   };
 }
 
 describe("fresh pair transition (022)", () => {
-  it("commits the entry pose synchronously and slides the full viewport height", () => {
+  it("commits the entry pose synchronously and slides the full viewport width", () => {
     coordinator.apply(nextCommand(), vi.fn());
     // Pre-paint contract: the incoming page's FIRST committed frame is the
     // entry pose (fromTo immediateRender inside the caller's layout phase).
-    expect(yOf(incoming)).toBe(H);
-    expect(yOf(outgoing)).toBe(0);
+    expect(xOf(incoming)).toBe(W);
+    expect(xOf(outgoing)).toBe(0);
 
     coordinator.currentTimeline()!.progress(1);
-    expect(yOf(incoming)).toBe(0);
-    expect(yOf(outgoing)).toBe(-H);
+    expect(xOf(incoming)).toBe(0);
+    expect(xOf(outgoing)).toBe(-W);
   });
 
   it("shares ONE playhead: the pair always meets at a moving viewport boundary", () => {
@@ -78,12 +78,12 @@ describe("fresh pair transition (022)", () => {
     const timeline = coordinator.currentTimeline()!;
     for (const progress of [0.25, 0.5, 0.75]) {
       timeline.progress(progress);
-      // Complementary positions: incomingY − outgoingY === H at every
+      // Complementary positions: incomingX − outgoingX === W at every
       // instant — their visible regions meet at the moving boundary.
-      expect(yOf(incoming) - yOf(outgoing)).toBeCloseTo(H, 4);
+      expect(xOf(incoming) - xOf(outgoing)).toBeCloseTo(W, 4);
     }
     timeline.progress(1);
-    expect(yOf(incoming) - yOf(outgoing)).toBeCloseTo(H, 4);
+    expect(xOf(incoming) - xOf(outgoing)).toBeCloseTo(W, 4);
   });
 
   it("animates transform ONLY — opacity is never written (no crossfade)", () => {
@@ -95,10 +95,10 @@ describe("fresh pair transition (022)", () => {
     expect(outgoing.style.opacity).toBe("");
   });
 
-  it("runs on the canonical sectionPage preset (0.5s, power2.out)", () => {
+  it("runs on the canonical sectionPageDesktop preset (0.3s, power2.out)", () => {
     coordinator.apply(nextCommand(), vi.fn());
     const timeline = coordinator.currentTimeline()!;
-    expect(timeline.duration()).toBeCloseTo(0.5, 5);
+    expect(timeline.duration()).toBeCloseTo(0.3, 5);
     const tweens = timeline.getChildren(false, true, true);
     expect(tweens).toHaveLength(2);
     for (const tween of tweens) {
@@ -108,10 +108,10 @@ describe("fresh pair transition (022)", () => {
 
   it("mirrors the signs for previous-page navigation", () => {
     coordinator.apply({ ...nextCommand(), direction: "prev" }, vi.fn());
-    expect(yOf(incoming)).toBe(-H);
+    expect(xOf(incoming)).toBe(-W);
     coordinator.currentTimeline()!.progress(1);
-    expect(yOf(incoming)).toBe(0);
-    expect(yOf(outgoing)).toBe(H);
+    expect(xOf(incoming)).toBe(0);
+    expect(xOf(outgoing)).toBe(W);
   });
 
   it("reports exactly one settle for the pair, with the outgoing id and generation", () => {
@@ -130,11 +130,11 @@ describe("idempotence and interruption (022)", () => {
     coordinator.apply(nextCommand(), vi.fn());
     const timeline = coordinator.currentTimeline()!;
     timeline.progress(0.3);
-    const before = yOf(incoming);
+    const before = xOf(incoming);
     coordinator.apply(nextCommand(), vi.fn()); // unrelated shell rerender
     // The live timeline survived: same instance, playhead position kept.
     expect(coordinator.currentTimeline()!).toBe(timeline);
-    expect(yOf(incoming)).toBe(before);
+    expect(xOf(incoming)).toBe(before);
     expect(timeline.progress()).toBeCloseTo(0.3, 5);
     expect(coordinator.isTransitioning()).toBe(true);
   });
@@ -142,8 +142,8 @@ describe("idempotence and interruption (022)", () => {
   it("a reversal retargets BOTH layers from current progress, never the entry pose", () => {
     coordinator.apply(nextCommand(), vi.fn());
     coordinator.currentTimeline()!.progress(0.5);
-    const incomingMid = yOf(incoming); // mid-slide, descending
-    const outgoingMid = yOf(outgoing);
+    const incomingMid = xOf(incoming); // mid-slide, descending
+    const outgoingMid = xOf(outgoing);
     expect(incomingMid).toBeGreaterThan(0);
     expect(outgoingMid).toBeLessThan(0);
 
@@ -156,24 +156,24 @@ describe("idempotence and interruption (022)", () => {
         outgoingId: "b",
         direction: "prev",
         enterFromOffset: false,
-        viewportHeight: H,
+        viewportWidth: W,
       },
       vi.fn(),
     );
     // Killing the old timeline preserved the interrupted poses, and the
     // new tweens' origins are those values — no reset to entry offsets.
-    expect(yOf(incoming)).toBeCloseTo(incomingMid, 3);
-    expect(yOf(outgoing)).toBeCloseTo(outgoingMid, 3);
+    expect(xOf(incoming)).toBeCloseTo(incomingMid, 3);
+    expect(xOf(outgoing)).toBeCloseTo(outgoingMid, 3);
     const fresh = coordinator.currentTimeline()!;
     fresh.progress(0);
-    expect(yOf(incoming)).toBeCloseTo(incomingMid, 3);
-    expect(yOf(outgoing)).toBeCloseTo(outgoingMid, 3);
+    expect(xOf(incoming)).toBeCloseTo(incomingMid, 3);
+    expect(xOf(outgoing)).toBeCloseTo(outgoingMid, 3);
 
     fresh.progress(1);
     // "a" (the page that was exiting) returns to rest; "b" (the page that
     // was entering) slides away to the previous-direction exit offset.
-    expect(yOf(outgoing)).toBe(0);
-    expect(yOf(incoming)).toBe(H);
+    expect(xOf(outgoing)).toBe(0);
+    expect(xOf(incoming)).toBe(W);
   });
 
   it("a newer command supersedes the running one — only its completion settles", () => {
@@ -192,9 +192,9 @@ describe("idempotence and interruption (022)", () => {
   it("rests non-participant layers when a new pair takes over", () => {
     const third = makeLayer("c");
     coordinator.registerLayer("c", third);
-    gsap.set(third, { y: 120 }); // a stale pose from an older transition
+    gsap.set(third, { x: 120 }); // a stale pose from an older transition
     coordinator.apply(nextCommand(), vi.fn());
-    expect(yOf(third)).toBe(0);
+    expect(xOf(third)).toBe(0);
   });
 });
 
@@ -204,8 +204,8 @@ describe("settle and teardown (022)", () => {
     coordinator.currentTimeline()!.progress(0.4);
     coordinator.settleAll();
     expect(coordinator.isTransitioning()).toBe(false);
-    expect(yOf(incoming)).toBe(0);
-    expect(yOf(outgoing)).toBe(0);
+    expect(xOf(incoming)).toBe(0);
+    expect(xOf(outgoing)).toBe(0);
   });
 
   it("a completion after dispose never fires", () => {

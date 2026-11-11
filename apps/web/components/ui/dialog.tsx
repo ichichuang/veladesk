@@ -132,7 +132,42 @@ export function DialogContent({
           className={cn("fixed inset-0 z-50", panel ? "bg-black/15" : "bg-black/55")}
         />
       </DialogPrimitive.Overlay>
-      <DialogPrimitive.Content asChild forceMount {...props}>
+      <DialogPrimitive.Content
+        asChild
+        forceMount
+        onEscapeKeyDown={(event) => {
+          // A nested react-aria/HeroUI overlay opened INSIDE this dialog
+          // (a Select listbox, a popover) owns the FIRST Escape — its own
+          // handler closes it (and detaches it) BEFORE this Radix
+          // callback runs, so the check cannot look for a live overlay in
+          // the DOM. It rides the EVENT PATH instead: focus inside this
+          // dialog's overlay HOST but outside the painted SURFACE means a
+          // nested overlay had focus, and the modal must not be dismissed
+          // underneath it.
+          if (overlayHost === null) {
+            return;
+          }
+          const path = event.composedPath();
+          const surface = overlayHost.querySelector(":scope > [data-vd-dialog-surface]");
+          // A LIVE (still-connected) node of this dialog's overlay host
+          // that is not part of the painted surface = an open nested
+          // overlay owning this Escape. Detached exit remnants (their
+          // nodes leave the tree before this Radix callback runs) must NOT
+          // block — the modal then closes normally on the next Escape.
+          const liveOverlay = path.some(
+            (node) =>
+              node instanceof Node &&
+              node !== overlayHost && // the host itself is not an overlay
+              node.isConnected &&
+              overlayHost.contains(node) &&
+              (surface === null || !surface.contains(node)),
+          );
+          if (liveOverlay) {
+            event.preventDefault();
+          }
+        }}
+        {...props}
+      >
         {/* OUTER positioning node (Radix-owned placement semantics; never
             animated). The centered variant shrinkwraps the inner surface so
             the -50%,-50% translate is exact. */}
@@ -148,8 +183,10 @@ export function DialogContent({
               : "fixed left-1/2 top-1/2 w-max -translate-x-1/2 -translate-y-1/2 max-w-[calc(100vw_-_32px)] max-h-[calc(100dvh_-_32px)]",
           )}
         >
-          {/* INNER visual surface — the GSAP-owned window. */}
+          {/* INNER visual surface — the GSAP-owned window. The marker
+              attributes the Escape-ownership check above. */}
           <VdAnimatedSurface
+            data-vd-dialog-surface=""
             variant={surfaceVariant}
             active={open}
             onPresenceReleased={() => { completeExit(); onExitComplete?.(); }}

@@ -19,7 +19,7 @@ import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
 import { useWorkspaceRuntimeInstance } from "../../workspace-runtime/use-workspace-runtime";
 import { Dock } from "../dock";
-import { SectionRail } from "../section-rail";
+import { SectionPill } from "../section-pill";
 import { HelmHeader } from "./helm-header";
 import { loadWorkspaceViewState } from "../workspace-view-state";
 import type { WorkspaceViewStateV1 } from "../workspace-view-state";
@@ -368,7 +368,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     contextMenu !== null ||
     overlayFolderId !== null;
 
-  /** Wheel navigation over the rail stands down while anything owns the desktop. */
+  /** Wheel navigation over the section pill stands down while anything owns the desktop. */
   const railNavigationLocked = scrollLocked;
 
   // The before-workspace-change guard (use-before-change-guard.ts): a
@@ -404,6 +404,8 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     resizeLockRef: tiles.commits.resizeLockRef,
     pageIdRef,
     draggingRef: tiles.draggingRef,
+    pageIds,
+    switchSection: scene.switchSection,
   });
 
   const sceneSwitchSection = scene.switchSection;
@@ -506,20 +508,12 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         <StaticDropFeedback />
         <div className="vela-workbench">
           {/*
-            The always-visible section rail (Helm r3): a REAL layout column
-            beside the tiles — every section labelled, clickable, keyboard-
-            and wheel-reachable with no hover, never overlapping content.
-            Below 900px it becomes the horizontal section bar.
+            The whole-width tile workspace (t61): the right SectionRail is
+            GONE — the screen is left/right symmetric and the grid centers
+            over the full width. Section switching lives in the glass pill
+            above the dock (rendered after the Dock below), plus keyboard
+            arrows, wheel and the ⌘K palette.
           */}
-          <SectionRail
-            pages={pages}
-            activePageId={effectiveActivePageId}
-            onSelectSection={(pageId) => scene.switchSection(pageId)}
-            onSectionContextMenu={(pageId, x, y) => menus.openContextMenu({ kind: "section", pageId, x, y })}
-            onOpenCommandMenu={(x, y) => menus.openContextMenu({ kind: "desktop", x, y })}
-            navigationLocked={railNavigationLocked}
-          />
-
           <ShellWorkspace
             arrange={arrange}
             activePage={activePage}
@@ -561,6 +555,19 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
           menus.openContextMenu({ kind: "entity", entityId, source: "dock", x, y })
         }
         onDesktopContextMenu={(x, y) => menus.openContextMenu({ kind: "desktop", x, y })}
+      />
+
+      {/*
+        The section pill (t61): one compact glass capsule centered above
+        the dock — the full section switcher (click, wheel, long-press
+        management menu) without a permanent side column.
+      */}
+      <SectionPill
+        pages={pages}
+        activePageId={effectiveActivePageId}
+        onSelectSection={(pageId) => scene.switchSection(pageId)}
+        onSectionContextMenu={(pageId, x, y) => menus.openContextMenu({ kind: "section", pageId, x, y })}
+        navigationLocked={railNavigationLocked}
       />
 
       <ShellSurfaces

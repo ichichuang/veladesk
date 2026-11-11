@@ -36,6 +36,7 @@ import { gsap } from "@components/vd/gsap";
 import { markDawnOpeningPlayedForTests, resetDawnOpeningSessionForTests } from "./scene/use-dawn-intro";
 
 const H = 480; // injected viewport height — never a browser measurement
+const W = 960; // injected viewport width (t61 horizontal pair slide)
 
 const PAGE_IDS = ["page-a", "page-b", "page-c", "page-d"] as const;
 const PAGE_NAMES: Record<string, string> = {
@@ -131,7 +132,8 @@ function viewportElement(): HTMLElement {
 }
 
 function yOf(element: HTMLElement): number {
-  return Number(gsap.getProperty(element, "y"));
+  // t61: the pair slide is HORIZONTAL — the axis under test is x.
+  return Number(gsap.getProperty(element, "x"));
 }
 
 /**
@@ -186,7 +188,7 @@ afterEach(() => {
 describe("A→B completion boundary (022-R2 rollback)", () => {
   it("keeps the outgoing page outside the viewport until the settlement commit hides it", async () => {
     render(<ShellHost />);
-    stubBox(viewportElement(), { clientHeight: H });
+    stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
 
     await navigateTo("Beta");
 
@@ -202,7 +204,7 @@ describe("A→B completion boundary (022-R2 rollback)", () => {
       livePairTimeline().progress(1);
       // The window a browser paints between the final timeline update and
       // React's idle commit: A must STILL be outside the viewport here.
-      expect(yOf(layerA)).toBe(-H);
+      expect(yOf(layerA)).toBe(-W);
       expect(layerA.dataset.phase).toBe("exit"); // visible phase, offscreen pose
       expect(yOf(layerB)).toBe(0);
       // Nothing but the pair wrote opacity — the slide never crossfades.
@@ -222,7 +224,7 @@ describe("A→B completion boundary (022-R2 rollback)", () => {
 
   it("mirrors the same boundary for a previous-direction (B→A) completion", async () => {
     render(<ShellHost />);
-    stubBox(viewportElement(), { clientHeight: H });
+    stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
 
     await navigateTo("Beta");
     await act(async () => {
@@ -235,7 +237,7 @@ describe("A→B completion boundary (022-R2 rollback)", () => {
     await act(async () => {
       livePairTimeline().progress(1);
       // "prev" slides the outgoing page DOWN: B must stay at +H here.
-      expect(yOf(layerB)).toBe(H);
+      expect(yOf(layerB)).toBe(W);
       expect(layerB.dataset.phase).toBe("exit");
       expect(yOf(layerA)).toBe(0);
     });
@@ -246,7 +248,7 @@ describe("A→B completion boundary (022-R2 rollback)", () => {
 
   it("keeps the destination node identity across settle and warm rotation (retention)", async () => {
     render(<ShellHost />);
-    stubBox(viewportElement(), { clientHeight: H });
+    stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
 
     const layerABefore = layerOf("page-a");
     await navigateTo("Beta");
@@ -280,7 +282,7 @@ describe("A→B completion boundary (022-R2 rollback)", () => {
   });
 });
 
-describe("initial rail selection through the workspace-entry policy (022-R2)", () => {
+describe("initial pill selection through the workspace-entry policy (022-R2, pill t61)", () => {
   it("a valid configured category other than the first agrees across background, aria-current, marker and displayed section", async () => {
     const record = makeRecord(workspaceDefaultingTo("page-c"));
     render(
@@ -293,27 +295,25 @@ describe("initial rail selection through the workspace-entry policy (022-R2)", (
 
     // The rail highlights exactly the configured default — never the first
     // row as a guess, never a hover/focus artifact.
-    const activeRows = document.querySelectorAll('.vela-rail__item[data-active="true"]');
+    const activeRows = document.querySelectorAll('.vela-pill__item[data-active="true"]');
     expect(activeRows).toHaveLength(1);
     expect((activeRows[0] as HTMLElement).dataset.pageId).toBe("page-c");
     expect((activeRows[0] as HTMLElement).getAttribute("aria-current")).toBe("page");
     expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
 
     // The displayed section is the same page (its warm neighbors are the
-    // pages around the DEFAULT, not around the first row), and the rail's
-    // indicator rests ON the active row — a real placed box, never the
-    // unset origin pose.
+    // pages around the DEFAULT, not around the first row), and the pill's
+    // highlight block renders inside exactly one segment (t61: Motion
+    // layout element — no GSAP-measured top box to pin).
     expect(layerOf("page-c").dataset.phase).toBe("active");
     expect(layerOf("page-b").dataset.warmHidden).toBe("true");
     expect(layerOf("page-d").dataset.warmHidden).toBe("true");
-    const indicator = document.querySelector(".vela-rail__indicator") as HTMLElement | null;
-    expect(indicator).not.toBeNull();
-    expect(indicator!.style.top).toMatch(/px/);
+    expect(document.querySelectorAll(".vela-pill__highlight")).toHaveLength(1);
   });
 
   it("a same-workspace snapshot replacement never re-applies the startup selection", async () => {
     const { rerender } = render(<ShellHost />);
-    stubBox(viewportElement(), { clientHeight: H });
+    stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
 
     await navigateTo("Beta");
 
@@ -325,7 +325,7 @@ describe("initial rail selection through the workspace-entry policy (022-R2)", (
     expect(
       (
         document.querySelector(
-          '.vela-rail__item[data-active="true"]',
+          '.vela-pill__item[data-active="true"]',
         ) as HTMLElement | null
       )?.dataset.pageId,
     ).toBe("page-b");
@@ -340,7 +340,7 @@ describe("initial rail selection through the workspace-entry policy (022-R2)", (
 describe("interruption policies at the real boundaries (022-R2)", () => {
   it("an intentional mid-flight reversal returns to the origin without a visible bounce of the abandoned target", async () => {
     render(<ShellHost />);
-    stubBox(viewportElement(), { clientHeight: H });
+    stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
 
     await navigateTo("Beta");
     await act(async () => {
@@ -356,7 +356,7 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
       // B is the abandoned target mid-exit at the completion boundary: it
       // must still hold its exit pose (outside the viewport), not be rested
       // into view while its phase still says "exit".
-      expect(yOf(layerB)).toBe(H);
+      expect(yOf(layerB)).toBe(W);
       expect(layerB.dataset.phase).toBe("exit");
       expect(yOf(layerA)).toBe(0);
     });
@@ -367,7 +367,7 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
 
   it("a parked third destination is adopted at settle and never resurrects the first source", async () => {
     render(<ShellHost />);
-    stubBox(viewportElement(), { clientHeight: H });
+    stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
 
     const layerA = layerOf("page-a");
     await navigateTo("Beta");
@@ -380,7 +380,7 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
       livePairTimeline().progress(1);
       // The A→B pair completed: A must still hold its exit pose here (the
       // parked adoption and warm rotation commit only after this scope).
-      expect(yOf(layerA)).toBe(-H);
+      expect(yOf(layerA)).toBe(-W);
       expect(layerA.dataset.phase).toBe("exit");
     });
 
@@ -401,7 +401,7 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
   it("an unrelated rerender carrying the same generation never restarts the live playhead", async () => {
     const record = makeRecord(fourPageWorkspace());
     const { rerender } = render(<ShellHost record={record} />);
-    stubBox(viewportElement(), { clientHeight: H });
+    stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
 
     await navigateTo("Beta");
     await act(async () => {
@@ -426,20 +426,20 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
 
     await act(async () => {
       timeline.progress(1);
-      expect(yOf(layerA)).toBe(-H);
+      expect(yOf(layerA)).toBe(-W);
     });
     expect(layerOf("page-b").dataset.phase).toBe("active");
   });
 
   it("completes coherently under StrictMode (double-invoked effects settle once)", async () => {
     render(<ShellHost strict />);
-    stubBox(viewportElement(), { clientHeight: H });
+    stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
 
     await navigateTo("Beta");
     const layerA = layerOf("page-a");
     await act(async () => {
       livePairTimeline().progress(1);
-      expect(yOf(layerA)).toBe(-H);
+      expect(yOf(layerA)).toBe(-W);
     });
     expect(layerOf("page-b").dataset.phase).toBe("active");
     expect(yOf(layerA)).toBe(0);
@@ -461,7 +461,7 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
 
     try {
       render(<ShellHost />);
-      stubBox(viewportElement(), { clientHeight: H });
+      stubBox(viewportElement(), { clientHeight: H, clientWidth: W });
 
       await navigateTo("Beta");
 

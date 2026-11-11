@@ -242,6 +242,7 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
   gsap.globalTimeline.clear();
+  gsap.ticker.wake();
 });
 
 describe("first meaningful render (023-A §7/§8/§30)", () => {
@@ -258,15 +259,13 @@ describe("first meaningful render (023-A §7/§8/§30)", () => {
     // The warm set around the REMEMBERED section — not around the default.
     expect(layerOf("page-b").dataset.warmHidden).toBe("true");
     const activeRow = container.querySelector(
-      '.vela-rail__item[data-active="true"]',
+      '.vela-pill__item[data-active="true"]',
     ) as HTMLElement;
     expect(activeRow.dataset.pageId).toBe("page-c");
     expect(activeRow.getAttribute("aria-current")).toBe("page");
-    // The rail's indicator rests on the remembered row: a placed box,
-    // not the unset origin pose.
-    const indicator = container.querySelector(".vela-rail__indicator") as HTMLElement | null;
-    expect(indicator).not.toBeNull();
-    expect(indicator!.style.top).toMatch(/px/);
+    // t61: the pill's highlight is a Motion layout element (no GSAP-placed
+    // top box); the ACTIVE segment itself carries the marker semantics.
+    expect(container.querySelectorAll(".vela-pill__highlight")).toHaveLength(1);
     expectNoNavigationRan();
   });
 
@@ -326,6 +325,12 @@ describe("persistence on navigation and exit (023-A §11/§13/§31/§33/§34)", 
         animation.pause();
       }
     };
+    // t61: the pair slide is 300ms — inside one act() the jsdom gsap
+    // ticker can genuinely run it to completion, which would settle the
+    // machine and adopt the parked destination mid-test. PAUSING THE TICKER
+    // before the first click is the deterministic freeze (the per-click
+    // animation pause below stays as the belt-and-suspenders).
+    gsap.ticker.sleep();
     await navigateTo("Beta");
     freezeTimelines();
     await navigateTo("Gamma");

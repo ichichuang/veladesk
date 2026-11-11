@@ -138,20 +138,20 @@ describe("scope discipline", () => {
     expect(desktop![1]!).not.toMatch(/overflow(-y)?:\s*scroll/);
   });
 
-  it("leaves the section rail wheel navigation fully intact (019/020)", () => {
-    const rail = readSource("./section-rail.tsx");
-    expect(rail).toMatch(/addEventListener\(\s*["']wheel["'],\s*onWheel,\s*\{\s*passive:\s*false\s*\}\)/);
-    expect(rail).toMatch(/event\.preventDefault\(\);/);
-    // The inner list only receives the scroll STYLING attribute — never a
-    // wheel scope that would break full-column navigation. (The rail's
-    // listener CODE reads the data-vd-wheel-scope attribute off the event
-    // path — that's the 017 overlay-ownership contract, not a scope here.)
-    expect(rail).toMatch(/data-vd-scroll="y"/);
-    expect(rail).not.toMatch(/data-vd-wheel-scope=/);
-    // And the rail list keeps no native-wheel conflict: the shared layer
-    // owns the scrollbar, the rail root owns the wheel.
+  it("leaves the section pill wheel navigation fully intact (019/020, pill t61)", () => {
+    const pill = readSource("./section-pill.tsx");
+    expect(pill).toMatch(/addEventListener\(\s*["']wheel["'],\s*onWheel,\s*\{\s*passive:\s*false\s*\}\)/);
+    expect(pill).toMatch(/event\.preventDefault\(\);/);
+    // The inner strip only receives the scroll STYLING attribute — never a
+    // wheel scope that would break pill navigation. (The pill's listener
+    // CODE reads the data-vd-wheel-scope attribute off the event path —
+    // that's the 017 overlay-ownership contract, not a scope here.)
+    expect(pill).toMatch(/data-vd-scroll="x"/);
+    expect(pill).not.toMatch(/data-vd-wheel-scope=/);
+    // And the pill strip keeps no native-wheel conflict: the shared layer
+    // owns the scrollbar, the pill root owns the wheel.
     const css = readSource("./home-shell.css");
-    expect(css).not.toMatch(/\.vela-rail__list \{[^}]*scrollbar-width:\s*none/);
+    expect(css).not.toMatch(/\.vela-pill__scroller \{[^}]*scrollbar-width:\s*none/);
   });
 
   it("does not reintroduce scroll-event React state on any migrated surface", () => {

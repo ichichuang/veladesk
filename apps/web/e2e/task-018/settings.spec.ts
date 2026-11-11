@@ -59,7 +59,7 @@ test("Appearance uses designed controls and previews live", async ({ page, reque
 
   const dialog = settingsDialog(page);
   // Theme mode is a designed segmented toggle (pressed-state buttons).
-  await dialog.getByRole("button", { name: /浅色|Light/ }).first().click();
+  await dialog.getByRole("radio", { name: /浅色|Light/ }).first().click();
   await expect(page.locator(".vela-desktop")).toHaveAttribute(
     "data-vd-color-mode",
     "light",
@@ -96,7 +96,9 @@ test("Layout and General rows use Switch and Select; Save persists once", async 
   // Start-in-view is a Switch, not a checkbox.
   const startSwitch = dialog.getByRole("switch");
   await expect(startSwitch).toBeVisible();
-  await startSwitch.click();
+  // The accessible input is visually hidden inside its <label> — click
+  // the label (the visible switch) to toggle it.
+  await startSwitch.locator("xpath=../..").click();
 
   // Default-section selector is a designed Select (portalled listbox); the
   // trigger shows the current value.
@@ -109,7 +111,7 @@ test("Layout and General rows use Switch and Select; Save persists once", async 
   // Save → exactly one revision, then the window closes.
   const before = await (await request.get(`/api/v1/workspaces/${id}`)).json();
   await dialog.getByRole("button", { name: /保存|Save/ }).click();
-  await expect(page.getByRole("dialog")).toBeHidden({ timeout: 10_000 });
+  await expect(settingsDialog(page)).toBeHidden({ timeout: 10_000 });
   const after = await (await request.get(`/api/v1/workspaces/${id}`)).json();
   expect(after.workspace.revision).toBe(before.workspace.revision + 1);
   expect(after.workspace.snapshot.preferences.defaultPageId).toBe("page-beta");

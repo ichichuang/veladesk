@@ -31,6 +31,7 @@ export const WALLPAPER_OPTIONS: readonly {
   readonly value: WorkspaceWallpaperPreset;
   readonly labelKey: TranslationKey;
 }[] = [
+  { value: "chart", labelKey: "settings.wallpaper.chart" },
   { value: "aurora", labelKey: "settings.wallpaper.aurora" },
   { value: "midnight", labelKey: "settings.wallpaper.midnight" },
   { value: "dawn", labelKey: "settings.wallpaper.dawn" },

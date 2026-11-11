@@ -7,7 +7,7 @@ import type { PagePlacement } from "@veladesk/domain";
 import type { LayoutItemId } from "@veladesk/desktop-engine";
 
 import type { CanvasPixelMetrics } from "./canvas-metrics";
-import { commitCanvasDrag, previewCanvasDrag } from "./canvas-drag";
+import { commitCanvasDrag, gridTranslationOf } from "./canvas-drag";
 import type { GridItemGeometry } from "./canvas-resize";
 
 /** Custom property the item body moves with during a drag preview. */
@@ -57,18 +57,26 @@ export interface CanvasDragOptions {
 /**
  * The canvas drag session.
  *
- * dnd-kit owns the pointer-follow transform of the dragged source; this hook
- * owns everything else: it snapshots the placement, metrics/pitch and the
- * moving ids at drag start, previews the resolved translation during the
- * move — driven by NATIVE pointermove positions, because the 0.5
- * DragMoveEvent payload lags the real pointer by one event (freeform: the
- * lag is sub-pixel noise; grid: it visibly misses the snapped cell) —
- * writes grid: whole cells / freeform: continuous, one rigid delta for the
- * whole group, applied to the source as a correction so the source and its
- * peers stay aligned, and commits each drag exactly once at drop time.
+ * dnd-kit owns the pointer-follow transform of the dragged source — the
+ * fixed source element rides the RAW pointer delta every frame, and since
+ * the t61 drag rework NOTHING cancels it: the tile the user holds always
+ * sits under the pointer (grab offset preserved), even outside the grid,
+ * over the header or the dock. This hook owns everything else: it
+ * snapshots the placement, metrics/pitch and the moving ids at drag start,
+ * translates the PEERS with the same raw delta (a rigid group), reports
+ * the resolved grid target cells for the drop placeholder — driven by
+ * NATIVE pointermove positions, because the 0.5 DragMoveEvent payload
+ * lags the real pointer by one event — and commits each drag exactly once
+ * at drop time (grid: whole cells; freeform: continuous, clamped).
  *
- * Pointermove NEVER stages or persists anything — the preview is a CSS
- * custom property write, and the single durable commit happens on pointerup.
+ * The resolved (snapped/clamped) translation is therefore PREVIEW-FREE:
+ * the drop placeholder carries it during the drag and the commit owns it
+ * at release, with the settle (dnd-static-drop.ts) gliding from the
+ * release position into the committed geometry.
+ *
+ * Pointermove NEVER stages or persists anything — the peer preview is a
+ * CSS custom property write, and the single durable commit happens on
+ * pointerup.
  */
 export function useCanvasDrag({
   placement,
@@ -250,33 +258,34 @@ export function useCanvasDrag({
   };
 
   /**
-   * Writes the resolved preview (source correction + peer transforms +
-   * target feedback) for one raw pointer delta.
+   * Writes the drag preview (peer transforms + target feedback) for one
+   * raw pointer delta. The SOURCE gets no correction var at all: dnd-kit's
+   * fixed element already carries the exact raw delta, and a correction
+   * here would pin the visible tile to its resolved cell instead of the
+   * pointer — the t61 "doesn't follow my hand" artifact (at its worst for
+   * large tiles and clamped directions, where the resolved cell never
+   * changes and the correction cancels the whole drag).
    */
   function runPreview(session: ActiveCanvasDragSession, deltaX: number, deltaY: number): void {
-    const preview = previewCanvasDrag({
-      placement: session.placementAtStart,
-      itemIds: session.itemIds,
-      deltaX,
-      deltaY,
-      metrics: session.metricsAtStart ?? { width: 1, height: 1 },
-      pitchPx: session.pitchAtStart ?? 1,
-    });
-
     for (const id of session.itemIds) {
       if (id === session.sourceItemId) {
-        // dnd-kit already moved the source by the RAW pointer delta; the
-        // correction carries it onto the cell/rounded target so a grid
-        // group never looks torn between its source and its peers.
-        writePreview(
-          id,
-          `translate3d(${preview.appliedX - deltaX}px, ${preview.appliedY - deltaY}px, 0)`,
-        );
         continue;
       }
-      writePreview(id, `translate3d(${preview.appliedX}px, ${preview.appliedY}px, 0)`);
+      writePreview(id, `translate3d(${deltaX}px, ${deltaY}px, 0)`);
     }
-    reportGridTargets(session, preview.columnDelta, preview.rowDelta);
+    if (session.placementAtStart.mode === "grid") {
+      // The resolved whole-cell delta drives ONLY the drop placeholder
+      // (and the commit below) — the tiles themselves ride the raw delta.
+      const { columnDelta, rowDelta } = gridTranslationOf({
+        placement: session.placementAtStart,
+        itemIds: session.itemIds,
+        deltaX,
+        deltaY,
+        metrics: session.metricsAtStart ?? { width: 1, height: 1 },
+        pitchPx: session.pitchAtStart ?? 1,
+      });
+      reportGridTargets(session, columnDelta, rowDelta);
+    }
   }
 
   /**
@@ -284,10 +293,11 @@ export function useCanvasDrag({
    * DragMoveEvent.operation.position: in @dnd-kit/react 0.5 the event's
    * `current` lags the real pointer by one event (observed mid-gesture in
    * the browser), so a correction computed from it visibly misses the
-   * snapped cell until the pointer stops. Native moves are exact; the
-   * event's `initial` is still the authoritative delta origin, captured
-   * once on the first move event (native moves that arrive earlier are
-   * replayed against it).
+   * snapped cell until the pointer stops. Native moves are exact — the
+   * peer preview and the grid target feedback ride them frame by frame —
+   * and the event's `initial` is still the authoritative delta origin,
+   * captured once on the first move event (native moves that arrive
+   * earlier are replayed against it).
    */
   function attachNativePointerTracking(): void {
     const handler = (event: PointerEvent) => {
@@ -348,6 +358,18 @@ export function useCanvasDrag({
   const handleDragEnd = (event: DragEndEvent) => {
     const session = sessionRef.current;
     sessionRef.current = null;
+    // The release delta is captured BEFORE the tracking teardown clears
+    // the live pointer: the LAST native pointermove is where the user let
+    // go (the dragend payload lags it by one event in @dnd-kit/react 0.5).
+    const releaseFromLive =
+      sawNativePointerRef.current &&
+      livePointerRef.current !== null &&
+      dragInitialRef.current !== null
+        ? {
+            x: livePointerRef.current.x - dragInitialRef.current.x,
+            y: livePointerRef.current.y - dragInitialRef.current.y,
+          }
+        : null;
     detachNativePointerTracking();
     dragInitialRef.current = null;
     sawNativePointerRef.current = false;
@@ -398,8 +420,16 @@ export function useCanvasDrag({
       return;
     }
 
-    const deltaX = event.operation.position.current.x - event.operation.position.initial.x;
-    const deltaY = event.operation.position.current.y - event.operation.position.initial.y;
+    // The commit delta prefers the captured native release position over
+    // the dragend payload (one event behind the real pointer).
+    const deltaX =
+      releaseFromLive !== null
+        ? releaseFromLive.x
+        : event.operation.position.current.x - event.operation.position.initial.x;
+    const deltaY =
+      releaseFromLive !== null
+        ? releaseFromLive.y
+        : event.operation.position.current.y - event.operation.position.initial.y;
     const moved = commitCanvasDrag({
       placement: session.placementAtStart,
       itemIds: session.itemIds,

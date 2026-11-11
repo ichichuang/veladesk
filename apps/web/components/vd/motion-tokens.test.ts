@@ -24,6 +24,8 @@ const EXPECTED_SECONDS: Readonly<Record<keyof typeof VD_MOTION, number>> = {
   dialog: 0.34,
   inspector: 0.38,
   sectionPage: 0.5,
+  // t61: the DESKTOP horizontal pair slide (mobile keeps sectionPage).
+  sectionPageDesktop: 0.3,
 };
 
 describe("gsap motion preset contract (022)", () => {

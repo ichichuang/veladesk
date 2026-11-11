@@ -426,7 +426,9 @@ export function buildWorkspaceTemplate(template: WorkspaceTemplate, idFactory: S
     ...DEFAULT_WORKSPACE_APPEARANCE,
     // Both templates are the dark dawn chart first picture; they differ by
     // hue, not by a forced mode — the user can pick light/system in Settings.
-    wallpaperPreset: work ? "midnight" : "dawn",
+    // t61: the Dawn Chart scene is its own "chart" preset (the default);
+    // the personal template keeps it, the work one keeps midnight.
+    wallpaperPreset: work ? "midnight" : "chart",
     accentHue: work ? 205 : 60,
     interfaceStyle: "glass",
   } }, pages: workspace.pages.map(page => withPageCanvas(materializePagePlacement(page), {

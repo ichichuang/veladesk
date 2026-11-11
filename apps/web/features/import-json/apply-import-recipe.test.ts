@@ -309,7 +309,7 @@ describe("wallpaper asset availability (D1)", () => {
     );
     expect(pageNamed(next, "AI").wallpaperByMode).toEqual({
       light: { kind: "preset", presetId: "aurora" },
-      dark: { kind: "preset", presetId: "dawn" },
+      dark: { kind: "preset", presetId: "chart" },
     });
   });
 
@@ -333,7 +333,7 @@ describe("wallpaper asset availability (D1)", () => {
       applyTheme: true,
       availableAssetIds: new Set(),
     });
-    expect(applied.preferences.appearance?.wallpaper).toEqual({ kind: "preset", presetId: "dawn" });
+    expect(applied.preferences.appearance?.wallpaper).toEqual({ kind: "preset", presetId: "chart" });
     const untouched = importRecipeText(officeWorkspace().workspace, text, { availableAssetIds: new Set() });
     expect(untouched.preferences.appearance?.wallpaper).toBeUndefined();
   });

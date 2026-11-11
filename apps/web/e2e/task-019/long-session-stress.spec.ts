@@ -8,7 +8,7 @@ import {
   dirtyEditorDraft,
   escapeDialog,
   failOnConsoleError,
-  railRoot,
+  pillRoot,
   wheelFlick,
 } from "../task-018/helpers";
 import { captureGeometry, workbenchViolations } from "./geometry";
@@ -52,8 +52,17 @@ async function desktopMenuAction(
   page: import("@playwright/test").Page,
   name: RegExp,
 ): Promise<void> {
-  await page.mouse.click(700, 450, { button: "right" });
+  await page.mouse.click(20, 500, { button: "right" });
   await page.getByRole("menuitem", { name }).first().click();
+}
+
+/** Enters arrange mode through the desktop menu (idempotent — the fixture
+ *  may already boot arranged when layoutLocked is false). */
+async function enterArrangeMode(page: import("@playwright/test").Page): Promise<void> {
+  if ((await page.locator(".vela-desktop").getAttribute("data-arrange")) !== "true") {
+    await desktopMenuAction(page, /整理桌面|Arrange/);
+  }
+  await expect(page.locator(".vela-desktop")).toHaveAttribute("data-arrange", "true");
 }
 
 interface CycleHealth {
@@ -71,7 +80,7 @@ async function assertCycleHealth(page: import("@playwright/test").Page, cycle: n
   const label = `cycle ${cycle} post-journey`;
   const capture = await captureGeometry(page, label);
   const violations = workbenchViolations(capture);
-  const rail = capture.rects[".vela-rail"] ?? null;
+  const rail = capture.rects[".vela-pill"] ?? null;
   const railOnScreen =
     rail !== null &&
     rail.x >= -0.5 &&
@@ -99,7 +108,7 @@ async function assertCycleHealth(page: import("@playwright/test").Page, cycle: n
       pointerEvents: {
         ".vela-desktop": read(".vela-desktop"),
         ".vela-workbench": read(".vela-workbench"),
-        ".vela-rail": read(".vela-rail"),
+        ".vela-pill": read(".vela-pill"),
         ".vela-workspace": read(".vela-workspace"),
       },
       workbenchTransform: workbench ? getComputedStyle(workbench).transform : "missing",
@@ -118,6 +127,8 @@ async function assertCycleHealth(page: import("@playwright/test").Page, cycle: n
 }
 
 test("ten continuous cycles stay geometrically stable", async ({ page, request }) => {
+  // A ten-cycle journey outruns the default 60s budget on a loaded box.
+  test.setTimeout(300_000);
   failOnConsoleError(page);
 
   const snapshot = buildGridSnapshot("ws-019-stress", WORKSPACE_NAME, SECTIONS);
@@ -163,9 +174,14 @@ test("ten continuous cycles stay geometrically stable", async ({ page, request }
     await escapeDialog(page);
 
     // --- Arrange: gap, drag, resize, exit -----------------------------
-    await desktopMenuAction(page, /整理桌面|Arrange/);
+    await enterArrangeMode(page);
     await expect(page.getByRole("toolbar")).toBeVisible();
-    await page.locator(".vela-arrange-bar__gap-step").last().click();
+    const gapStep = page.locator(".vela-arrange-bar__gap-step").last();
+    if (await gapStep.isDisabled()) {
+      // A previous cycle already maxed the gap — the step is a no-op then.
+    } else {
+      await gapStep.click();
+    }
     await page.waitForTimeout(400);
 
     const tile = page.locator(".vela-item", { hasText: "Alpha" }).first();
@@ -177,7 +193,10 @@ test("ten continuous cycles stay geometrically stable", async ({ page, request }
     await page.mouse.up();
     await page.waitForTimeout(400);
 
-    await tile.hover();
+    // Handles ride the single-app SELECTION — click the tile first (a
+    // previous step may have cleared or moved the selection).
+    await tile.click({ force: true });
+    await expect(tile).toHaveAttribute("data-selected", "true");
     const handle = tile.locator('.vela-item__resize-handle[data-handle="se"]');
     await expect(handle).toBeVisible();
     const handleBox = await handle.boundingBox();
@@ -192,14 +211,14 @@ test("ten continuous cycles stay geometrically stable", async ({ page, request }
 
     // --- Rail wheel navigation ----------------------------------------
     await page.evaluate(() => window.scrollTo(0, 0));
-    const rail = await railRoot(page).boundingBox();
+    const rail = await pillRoot(page).boundingBox();
     expect(rail).not.toBeNull();
-    await wheelFlick(page, rail!.x + 40, rail!.y + 80, true);
+    await wheelFlick(page, rail!.x + 40, rail!.y + rail!.height / 2, true);
     await expect.poll(() => activeSectionName(page), { timeout: 10_000 }).toBe("Second");
     await page.evaluate(() => window.scrollTo(0, 0));
-    const railAgain = await railRoot(page).boundingBox();
+    const railAgain = await pillRoot(page).boundingBox();
     expect(railAgain).not.toBeNull();
-    await wheelFlick(page, railAgain!.x + 40, railAgain!.y + 80, false);
+    await wheelFlick(page, railAgain!.x + 40, railAgain!.y + railAgain!.height / 2, false);
     await expect.poll(() => activeSectionName(page), { timeout: 10_000 }).toBe("Home");
 
     // --- Health gate for THIS cycle ------------------------------------

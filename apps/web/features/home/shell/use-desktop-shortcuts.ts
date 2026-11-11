@@ -11,6 +11,7 @@ import { canRedo, canUndo } from "../../canvas/arrange-history";
 import type { ArrangeCanvasHistories } from "../../canvas/arrange-history";
 import type { PendingCanvasHandoff } from "../../canvas/canvas-handoff";
 import { resolveArrangeHistoryCommand } from "../arrange-shortcuts";
+import { stepSectionIndex } from "../section-wheel-nav";
 import { selectAllIds } from "../selection-state";
 import { EMPTY_SELECTION } from "../tile-host/use-tile-session";
 import type { ContextMenuState } from "../context-menu";
@@ -35,14 +36,19 @@ export interface UseDesktopShortcutsInput {
   readonly resizeLockRef: RefObject<boolean>;
   readonly pageIdRef: RefObject<DesktopPageId | null>;
   readonly draggingRef: RefObject<boolean>;
+  /** All sections, in order (the ←/→ section switch steps through them). */
+  readonly pageIds: readonly DesktopPageId[];
+  /** Switches the active section (the scene's transition-aware switch). */
+  readonly switchSection: (pageId: DesktopPageId) => void;
 }
 
 /**
  * The shell's GLOBAL keyboard layer (P1-ENG-1), extracted verbatim from
  * the former desktop-shell.tsx: undo/redo, select all, launcher chord,
- * Escape selection clear, arrow nudge. Global section arrows are GONE —
- * the rail owns section keyboard navigation and the right side owns real
- * vertical scrolling.
+ * Escape selection clear, arrow nudge. Since t61 the ←/→ arrows also
+ * switch SECTIONS when no input holds focus — in view mode always, in
+ * arrange mode only while nothing is selected (a selection keeps the
+ * arrows for nudging, the pre-t61 arrange contract).
  */
 export function useDesktopShortcuts(input: UseDesktopShortcutsInput): void {
   const {
@@ -64,6 +70,8 @@ export function useDesktopShortcuts(input: UseDesktopShortcutsInput): void {
     resizeLockRef,
     pageIdRef,
     draggingRef,
+    pageIds,
+    switchSection,
   } = input;
 
   // Latest-value mirror: the effect binding stays on its original deps;
@@ -193,8 +201,35 @@ export function useDesktopShortcuts(input: UseDesktopShortcutsInput): void {
         if (event.key === "ArrowDown") nudgeSelection(0, 1);
         return;
       }
+
+      // Section arrows (t61): ←/→ page through sections with no focused
+      // input. In arrange mode an active selection outranks them (the
+      // nudge branch above consumed that event); a held key still steps —
+      // the switch transition parks faster requests and stays coherent.
+      if (
+        (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+        !inField &&
+        !surfaceOpen &&
+        !draggingRef.current &&
+        !resizeLockRef.current &&
+        pendingHandoffRef.current === null &&
+        !(arrange && selectionRef.current.size > 0)
+      ) {
+        const currentIndex = pageIds.findIndex((pageId) => pageId === pageIdRef.current);
+        const nextIndex = stepSectionIndex(
+          currentIndex,
+          pageIds.length,
+          event.key === "ArrowRight" ? "next" : "prev",
+        );
+        const target = nextIndex === null ? undefined : pageIds[nextIndex];
+        if (target !== undefined && target !== pageIdRef.current) {
+          event.preventDefault();
+          switchSection(target);
+        }
+        return;
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [arrange, contextMenu, dialog, overlayFolderId, launcherOpen, settingsOpen, dragging, activePage, nudgeSelection, applyHistoryStep, setLauncherOpen, selectionRef, arrangeHistoriesRef, pendingHandoffRef, resizeLockRef, pageIdRef, draggingRef]);
+  }, [arrange, contextMenu, dialog, overlayFolderId, launcherOpen, settingsOpen, dragging, activePage, nudgeSelection, applyHistoryStep, setLauncherOpen, selectionRef, arrangeHistoriesRef, pendingHandoffRef, resizeLockRef, pageIdRef, draggingRef, pageIds, switchSection]);
 }

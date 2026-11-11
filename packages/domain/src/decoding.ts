@@ -247,7 +247,7 @@ function isDock(value: unknown): boolean {
 }
 
 const COLOR_MODES: readonly string[] = ["system", "dark", "light"];
-const WALLPAPER_PRESETS: readonly string[] = ["aurora", "midnight", "dawn", "mist"];
+const WALLPAPER_PRESETS: readonly string[] = ["chart", "aurora", "midnight", "dawn", "mist"];
 const ICON_SIZES: readonly string[] = ["small", "medium", "large"];
 const INTERFACE_STYLES: readonly string[] = ["clean", "soft", "glass"];
 

@@ -39,7 +39,7 @@ export function WorkspaceManagerProvider({ workspace, children, notice }: { read
   function finishDialog() { setDialog(null); setClosing(false); }
   function returnFocus() {
     if (dialogOrigin.current?.isConnected && dialogOrigin.current.closest("[inert]") === null && !dialogOrigin.current.matches(":disabled")) dialogOrigin.current.focus();
-    else document.querySelector<HTMLButtonElement>(".vela-rail button, .vela-mobile-shell button, .vela-desktop button")?.focus();
+    else document.querySelector<HTMLButtonElement>(".vela-pill button, .vela-mobile-shell button, .vela-desktop button")?.focus();
   }
   const [busy, setBusy] = useState(false);
   const working = useRef(false);

@@ -23,7 +23,7 @@ describe("buildAppearanceTheme", () => {
   it("maps the exact defaults to the Dawn Chart baseline CSS variables (P1: accent hue 60, dark main scene)", () => {
     expect(buildAppearanceTheme(DEFAULT_WORKSPACE_APPEARANCE)).toEqual({
       colorMode: "dark",
-      wallpaperPreset: "dawn",
+      wallpaperPreset: "chart",
       // The raw default surface values (0.55/18/14) sit nearest the
       // 玻璃 glass preset — the tier the shell emits for a fresh snapshot.
       materialTier: "glass",

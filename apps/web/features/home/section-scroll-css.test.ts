@@ -143,20 +143,22 @@ describe("home-shell.css right-side scroll ownership (task 017)", () => {
     );
   });
 
-  it("hands the section page transition to the GSAP pair coordinator, viewport-sized (018/020-A2, 022)", () => {
+  it("hands the section page transition to the GSAP pair coordinator, viewport-sized (018/020-A2, 022, t61 horizontal)", () => {
     // The CSS phase keyframes are gone — GSAP owns the page transition.
     expect(css).not.toMatch(/vela-section-enter-next/);
-    // data-phase is a DOM debug attribute only — no CSS keyframe phases.
-    expect(css).not.toMatch(/data-phase/);
+    // data-phase stays a debug attribute — the ONLY stylesheet use is the
+    // reduced-motion fade (t61: no slide, a plain fade instead).
+    expect(css.match(/data-phase/g) ?? []).toHaveLength(1);
+    expect(css).toMatch(/prefers-reduced-motion: reduce[\s\S]*vela-section-reduced-fade/);
     // The moving node stays the warm section LAYER; .vela-item transforms
     // are untouched (dnd-kit hard-snap contract).
     expect(css).toMatch(/\.vela-section-layer\s*\{/);
 
     const coordinator = readSource("./section-pair-animator.ts");
-    // Travel is the MEASURED section viewport height, never the content
-    // height: the shell passes clientHeight per command.
+    // Travel is the MEASURED section viewport WIDTH (t61 horizontal slide),
+    // never the content width: the shell passes clientWidth per command.
     const shell = readShellSources();
-    expect(shell).toMatch(/clientHeight \?\? 480/);
+    expect(shell).toMatch(/clientWidth \?\? 960/);
     expect(shell).toMatch(/createSectionPairCoordinator/);
     // One shared playhead: both layers are tweens of ONE pair timeline.
     expect(coordinator).toMatch(/gsap\.timeline\(/);
@@ -167,21 +169,21 @@ describe("home-shell.css right-side scroll ownership (task 017)", () => {
   });
 });
 
-describe("left rail wheel navigation (task 017, rebuilt 018)", () => {
-  it("binds one stable non-passive wheel listener to the full rail root", () => {
-    const rail = readSource("./section-rail.tsx");
-    expect(rail).toMatch(/addEventListener\(\s*["']wheel["'],\s*onWheel,\s*\{\s*passive:\s*false\s*\}\)/);
-    expect(rail).toContain("event.preventDefault();");
+describe("section pill wheel navigation (task 017, rebuilt 018, pill t61)", () => {
+  it("binds one stable non-passive wheel listener to the pill scroller", () => {
+    const pill = readSource("./section-pill.tsx");
+    expect(pill).toMatch(/addEventListener\(\s*["']wheel["'],\s*onWheel,\s*\{\s*passive:\s*false\s*\}\)/);
+    expect(pill).toContain("event.preventDefault();");
     // The intent model is the pure module — no inline delta math, and the
     // 320ms lock-unlock contract is gone with it. 019-E routes the
     // normalization through the event-facing helper (ctrl zoom excluded).
-    expect(rail).toContain("advanceWheelNav(");
-    expect(rail).toContain("normalizeWheelEvent(");
-    expect(rail).toContain("stepSectionIndex");
-    expect(rail).toContain("resetWheelNav");
-    expect(rail).not.toContain("unlockWheelNav");
-    // The listener rides the full-height rail root (railRef), not the list.
-    expect(rail).toMatch(/ref=\{railRef\}/);
+    expect(pill).toContain("advanceWheelNav(");
+    expect(pill).toContain("normalizeWheelEvent(");
+    expect(pill).toContain("stepSectionIndex");
+    expect(pill).toContain("resetWheelNav");
+    expect(pill).not.toContain("unlockWheelNav");
+    // The listener rides the pill's scrolling strip (scrollerRef).
+    expect(pill).toMatch(/ref=\{scrollerRef\}/);
   });
 
   it("never mounts onWheel React props on the content scroll path", () => {
@@ -195,30 +197,28 @@ describe("left rail wheel navigation (task 017, rebuilt 018)", () => {
     }
   });
 
-  it("gives the rail titles-only items with aria-current", () => {
-    const rail = readSource("./section-rail.tsx");
-    expect(rail).toContain('aria-current={active ? "page" : undefined}');
-    expect(rail).toContain("page.name");
-    // No footer, no ⋯ button, no sync status inside the rail.
-    expect(rail).not.toMatch(/vela-rail__more|vela-rail__footer|SectionSyncStatus/);
+  it("gives the pill titles-only items with aria-current", () => {
+    const pill = readSource("./section-pill.tsx");
+    expect(pill).toContain('aria-current={active ? "page" : undefined}');
+    expect(pill).toContain("page.name");
+    // No footer, no ⋯ button, no sync status inside the pill.
+    expect(pill).not.toMatch(/vela-pill__more|vela-pill__footer|SectionSyncStatus/);
   });
 
-  it("keeps the rail keyboard model: arrows, Home/End, context-menu keys", () => {
-    const rail = readSource("./section-rail.tsx");
-    expect(rail).toMatch(/case "ArrowUp"/);
-    expect(rail).toMatch(/case "ArrowDown"/);
-    expect(rail).toMatch(/case "Home"/);
-    expect(rail).toMatch(/case "End"/);
-    expect(rail).toContain("isContextMenuKeyEvent");
+  it("keeps the pill keyboard model: arrows, Home/End, context-menu keys", () => {
+    const pill = readSource("./section-pill.tsx");
+    expect(pill).toMatch(/case "ArrowUp"/);
+    expect(pill).toMatch(/case "ArrowDown"/);
+    expect(pill).toMatch(/case "Home"/);
+    expect(pill).toMatch(/case "End"/);
+    expect(pill).toContain("isContextMenuKeyEvent");
   });
 
-  it("keeps the global desktop keyboard free of section arrows", () => {
-    const shell = readShellSources();
-    expect(shell).not.toMatch(/sectionNavDirection/);
-    expect(shell).not.toMatch(/scrollToSection/);
+  it("keeps the global desktop keyboard owning section arrows (t61)", () => {
+    const shortcuts = readSource("./shell/use-desktop-shortcuts.ts");
+    expect(shortcuts).toContain("switchSection(target);");
     // The active section is explicit state, never scroll-derived.
-    expect(shell).toContain("useState<DesktopPageId | null>(");
-    expect(shell).not.toMatch(/IntersectionObserver/);
+    expect(readShellSources()).not.toMatch(/IntersectionObserver/);
   });
 
   it("marks local overlay scroll scopes", () => {

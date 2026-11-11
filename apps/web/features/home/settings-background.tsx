@@ -223,7 +223,7 @@ export function BackgroundSection({
               if (value === "follow") {
                 writeLayer(null);
               } else if (editedConfig === null && !editingModeLayer) {
-                pickPreset({ kind: "preset", presetId: "dawn" });
+                pickPreset({ kind: "preset", presetId: "chart" });
               }
             }}
             aria-label={t("settings.background.sectionMode")}

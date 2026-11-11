@@ -421,11 +421,12 @@
   );
 
   /*
-   * The section rail's column width (≥900px) and the horizontal bar's
-   * height (below that). The helm header centers over the tile column.
+   * The section pill's footprint (t61): the capsule above the dock, plus
+   * the clearance the grid content reserves so tiles never slide under it
+   * or the dock.
    */
-  --vd-rail-width: clamp(196px, 15vw, 236px);
-  --vd-railbar-height: 46px;
+  --vd-pill-height: 38px;
+  --vd-pill-clearance: 46px;
 
   position: fixed;
   inset: 0;
@@ -672,18 +673,13 @@
     var(--vds-wall-ground);
 }
 
-.vela-wallpaper-surface--preset[data-wallpaper-preset="midnight"] {
-  --vds-wall-h1: 265;
-  --vds-wall-h2: 292;
-  --vds-wall-h3: 240;
-  --vds-wall-cf1: 1;
-  --vds-wall-cf2: 0.95;
-  --vds-wall-cf3: 1;
-}
-
-/* The dawn preset (dark values) mirrors the desktop root's parameters so
-   Settings thumbnails render the SAME ground the desktop shows. */
-.vela-wallpaper-surface--preset[data-wallpaper-preset="dawn"] {
+/*
+ * The CHART preset (t61): the Dawn Chart scene's own ground — the dim
+ * blobs over the night sky. This is the application default and the ONLY
+ * preset that renders the horizon band, stars, graticule, ambient washes
+ * and grain (see SceneBackdrop's t61 scene tiers).
+ */
+.vela-wallpaper-surface--preset[data-wallpaper-preset="chart"] {
   --vds-wall-h1: 262;
   --vds-wall-h2: 232;
   --vds-wall-h3: 30;
@@ -702,14 +698,14 @@
 }
 
 /*
- * The dawn NIGHT SKY (Helm first picture, round 2): the dark ground is a
+ * The chart NIGHT SKY (Helm first picture, round 2): the dark ground is a
  * real sky, not a near-black slab — deep indigo overhead, lifting through
  * cold blue toward a rose-tinged pre-horizon, then the dark sea at the
  * very bottom. Every stop is a token mix (bg-deep ← dawn-3/dawn-2), so
  * nothing is hardcoded; the light 白昼海图 keeps its mist ground — the
  * override is scoped to the RESOLVED dark mode on any themed root.
  */
-[data-vd-color-mode="dark"] .vela-wallpaper-surface--preset[data-wallpaper-preset="dawn"] {
+[data-vd-color-mode="dark"] .vela-wallpaper-surface--preset[data-wallpaper-preset="chart"] {
   --vds-wall-ground: linear-gradient(
     to bottom,
     color-mix(in oklab, var(--vd-color-dawn-3) 13%, var(--vd-color-bg-deep)),
@@ -720,13 +716,162 @@
   );
 }
 
+/*
+ * The four COLOR presets (t61): full backgrounds, each unmistakable at a
+ * glance and honest in its Settings thumbnail (the same component paints
+ * both). They replace the old near-identical blob retunes — a preset
+ * switch MUST visibly change the desktop. Values stay in the deep-glass
+ * luminance band so tile text keeps its contrast; light mode lifts each
+ * scene toward its daytime twin.
+ */
+
+/* 极光: cold green-teal curtains falling through a violet night. */
+.vela-wallpaper-surface--preset[data-wallpaper-preset="aurora"] {
+  background:
+    radial-gradient(
+      58% 34% at 76% 14%,
+      oklch(0.66 0.15 168 / 0.34),
+      transparent 70%
+    ),
+    radial-gradient(
+      46% 26% at 28% 24%,
+      oklch(0.6 0.12 198 / 0.3),
+      transparent 72%
+    ),
+    radial-gradient(
+      66% 44% at 54% 40%,
+      oklch(0.5 0.11 290 / 0.2),
+      transparent 76%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.22 0.05 268),
+      oklch(0.16 0.04 252) 58%,
+      oklch(0.13 0.035 244)
+    );
+}
+
+[data-vd-color-mode="light"] .vela-wallpaper-surface--preset[data-wallpaper-preset="aurora"] {
+  background:
+    radial-gradient(
+      58% 34% at 76% 14%,
+      oklch(0.87 0.09 168 / 0.5),
+      transparent 70%
+    ),
+    radial-gradient(
+      46% 26% at 28% 24%,
+      oklch(0.9 0.07 198 / 0.45),
+      transparent 72%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.94 0.02 240),
+      oklch(0.9 0.03 210) 60%,
+      oklch(0.87 0.035 195)
+    );
+}
+
+/* 午夜: a still indigo night, one cold moon-glow high in the corner. */
+.vela-wallpaper-surface--preset[data-wallpaper-preset="midnight"] {
+  background:
+    radial-gradient(
+      40% 28% at 82% 10%,
+      oklch(0.4 0.08 250 / 0.5),
+      transparent 72%
+    ),
+    radial-gradient(
+      90% 60% at 50% 110%,
+      oklch(0.24 0.06 262 / 0.5),
+      transparent 72%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.19 0.045 268),
+      oklch(0.14 0.04 258) 55%,
+      oklch(0.11 0.035 255)
+    );
+}
+
+[data-vd-color-mode="light"] .vela-wallpaper-surface--preset[data-wallpaper-preset="midnight"] {
+  background:
+    radial-gradient(
+      40% 28% at 82% 10%,
+      oklch(0.88 0.04 250 / 0.6),
+      transparent 72%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.93 0.015 255),
+      oklch(0.89 0.02 250) 55%,
+      oklch(0.86 0.025 248)
+    );
+}
+
+/* 晨曦: a warm sunrise — apricot light climbing out of a plum night. */
+.vela-wallpaper-surface--preset[data-wallpaper-preset="dawn"] {
+  background:
+    radial-gradient(
+      56% 42% at 48% 106%,
+      oklch(0.72 0.15 55 / 0.5),
+      transparent 66%
+    ),
+    radial-gradient(
+      40% 26% at 26% 94%,
+      oklch(0.64 0.13 25 / 0.36),
+      transparent 72%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.25 0.06 312),
+      oklch(0.2 0.07 334) 52%,
+      oklch(0.27 0.1 30) 94%
+    );
+}
+
+[data-vd-color-mode="light"] .vela-wallpaper-surface--preset[data-wallpaper-preset="dawn"] {
+  background:
+    radial-gradient(
+      56% 42% at 48% 106%,
+      oklch(0.92 0.09 60 / 0.75),
+      transparent 66%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.95 0.03 330),
+      oklch(0.94 0.045 30) 60%,
+      oklch(0.93 0.07 65)
+    );
+}
+
+/* 薄雾: a quiet slate haze — the calmest scene, almost a flat ground. */
 .vela-wallpaper-surface--preset[data-wallpaper-preset="mist"] {
-  --vds-wall-h1: 250;
-  --vds-wall-h2: 230;
-  --vds-wall-h3: 270;
-  --vds-wall-cf1: 0.3;
-  --vds-wall-cf2: 0.28;
-  --vds-wall-cf3: 0.32;
+  background:
+    radial-gradient(
+      72% 46% at 50% 10%,
+      oklch(0.44 0.025 250 / 0.55),
+      transparent 78%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.33 0.018 250),
+      oklch(0.26 0.015 245) 60%,
+      oklch(0.22 0.012 240)
+    );
+}
+
+[data-vd-color-mode="light"] .vela-wallpaper-surface--preset[data-wallpaper-preset="mist"] {
+  background:
+    radial-gradient(
+      72% 46% at 50% 10%,
+      oklch(0.96 0.008 250 / 0.8),
+      transparent 78%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.95 0.006 250),
+      oklch(0.92 0.008 245) 60%,
+      oklch(0.9 0.01 240)
+    );
 }
 
 /* Custom image: neutral canvas behind a centered, non-repeating image.
@@ -1131,14 +1276,14 @@
   container-type: inline-size;
 }
 
-/* --- Two-column workspace composition (task 017; rail as real column, r3) -- */
+/* --- Whole-width workspace composition (t61: the section pill) ------------- */
 
 /*
- * Desktop = the tile workspace + the section rail's own column on the
- * right (Helm r3). The rail is LAYOUT, never an overlay: it can never
- * cover a tile, and the grid's measured width simply excludes it. Below
- * 900px the workbench flips to a column and the rail renders as the
- * horizontal section bar above the tiles.
+ * Desktop = the tile workspace, full width (t61): the right SectionRail
+ * column is GONE — the screen is left/right symmetric, the grid centers
+ * over the whole width, and section switching lives in the glass pill
+ * above the dock (see .vela-pill below), the arrow keys and the ⌘K
+ * palette. The helm landmark centers on the plain window center again.
  */
 .vela-workbench {
   padding-right: 0;
@@ -1151,185 +1296,181 @@
   align-items: stretch;
 }
 
-@media (min-width: 900px) {
-  .vela-workbench {
-    flex-direction: row;
-  }
-
-  /* The helm landmark centers over the TILE column (the rail owns the
-     right edge), not the raw window center. */
-  .vela-desktop {
-    --vd-helm-center: calc((100% - var(--vd-rail-width)) / 2);
-  }
-}
-
-/* --- The section rail (Helm r3: always visible, hover-free) -------------- */
+/* --- The section pill (t61: the switcher above the dock) ------------------- */
 
 /*
- * One labelled waypoint row per section — clickable, keyboard- and
- * wheel-reachable with no hover; the active row carries the accent and the
- * GSAP indicator (the comet's resting glow) glides between rows. The list
- * scrolls when there are many sections (the wheel switches to scrolling
- * then); below 900px the whole rail becomes the horizontal bar.
+ * ONE compact glass capsule, centered above the dock: a segmented strip
+ * of the section names (their emoji ride along), a Motion layout-animated
+ * highlight block under the active segment, horizontal scrolling with
+ * fading edges when there are many sections, and the same management
+ * context menu the rail had (right-click / long-press / Menu key).
+ *
+ * The compact form (short viewports) renders the current name + ‹ ›
+ * steppers instead of the full strip — same switcher, one row tall.
  */
-.vela-rail {
-  --vd-rail-row-height: 38px;
-  position: relative;
-  z-index: 12;
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: 10px 12px 14px;
+.vela-pill {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 18px;
+  z-index: 19;
+  max-width: min(92vw, 760px);
+  border: 1px solid var(--vd-surface-border, var(--vd-border));
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--vd-color-fg-primary) 7%, transparent),
+      transparent 42%
+    ),
+    var(--vd-surface);
+  backdrop-filter: blur(var(--vd-blur-panel));
+  -webkit-backdrop-filter: blur(var(--vd-blur-panel));
+  box-shadow:
+    inset 0 1px 0 var(--vd-color-border-highlight),
+    var(--vd-surface-shadow, var(--vd-shadow-panel));
   text-shadow: var(--vd-label-shadow);
 }
 
-@media (min-width: 900px) {
-  .vela-rail {
-    /* The Helm first-picture side: the orbit's old edge. In the row
-       workbench the rail is the LAST (right) column. */
-    order: 2;
-    flex: 0 0 var(--vd-rail-width);
-    padding: clamp(18px, 4vh, 40px) 14px 18px 8px;
-  }
-
-  /* The list owns the rail's full remaining height, so MANY sections make
-     it actually overflow (its own quiet scrolling) instead of growing the
-     rail past the viewport. */
-  .vela-rail .vela-rail__list {
-    flex: 1;
-  }
+/* The pill clears the dock: it floats one dock-height above it. */
+.vela-desktop[data-has-dock="true"] .vela-pill {
+  bottom: calc(18px + 70px + 10px);
 }
 
-.vela-rail__list {
-  position: relative;
+.vela-pill__scroller {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 2px;
-  min-height: 0;
-  /* Scroll styling is owned by the canonical [data-vd-scroll] layer (task
-     021-A) via the attribute on this element. When the rows overflow, the
-     component's wheel handler yields to this native scrolling. */
-  padding: 2px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px;
+  /*
+   * Edge fades while the strip overflows: the mask fades only the ~18px
+   * at each end, so segments visibly dissolve instead of hard-clipping.
+   * The scroll itself (and its quiet shared scrollbar) is owned by the
+   * canonical [data-vd-scroll="x"] layer via the attribute on this node.
+   */
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black 18px,
+    black calc(100% - 18px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black 18px,
+    black calc(100% - 18px),
+    transparent 100%
+  );
 }
 
-/* The horizontal bar (below 900px): one strip of pills the width of the
-   workbench — the mobile shell's tab language. */
-@media (max-width: 899px) {
-  .vela-rail {
-    padding: 6px 12px;
-  }
-
-  .vela-rail__list {
-    flex-direction: row;
-    gap: 6px;
-    align-items: stretch;
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-x: contain;
-    padding: 2px;
-  }
-}
-
-.vela-rail__item {
+.vela-pill__item {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: var(--vd-rail-row-height);
+  justify-content: center;
   flex: 0 0 auto;
-  padding: 7px 14px 7px 12px;
+  min-height: 30px;
+  padding: 5px 13px;
   border: none;
-  border-radius: 10px;
+  border-radius: 999px;
   background: transparent;
   color: var(--vd-text-muted);
   font-family: var(--vd-font);
-  font-size: 13px;
-  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-/* The waypoint dot: a quiet chart point; the active one lights accent
-   (the comet rests there). */
-.vela-rail__waypoint {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: color-mix(in oklab, var(--vd-color-fg-primary) 38%, transparent);
-  box-shadow: 0 0 0 2.5px color-mix(in oklab, var(--vd-color-bg-deep) 35%, transparent);
-  transition:
-    background-color var(--vd-motion-fast) var(--vd-motion-ease),
-    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
+.vela-pill__item:hover {
+  color: var(--vd-text);
 }
 
-.vela-rail__item:hover .vela-rail__waypoint,
-.vela-rail__item:focus-visible .vela-rail__waypoint {
-  background: color-mix(in oklab, var(--vd-color-fg-primary) 70%, transparent);
+.vela-pill__item:focus-visible {
+  outline: 2px solid var(--vd-accent);
+  outline-offset: -1px;
 }
 
-.vela-rail__item[data-active="true"] .vela-rail__waypoint {
-  background: var(--vd-accent);
+/*
+ * The sliding highlight block: ONE Motion-owned element (layoutId) that
+ * travels between segments — the accent wash pill the active label sits
+ * on. It never takes pointers; the label stays above it.
+ */
+.vela-pill__highlight {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--vd-accent) 22%, transparent);
   box-shadow:
-    0 0 0 3px var(--vd-accent-wash),
-    0 0 12px color-mix(in oklab, var(--vd-color-accent) 48%, transparent);
+    inset 0 0 0 1px color-mix(in oklab, var(--vd-accent) 45%, transparent),
+    0 2px 10px color-mix(in oklab, var(--vd-color-bg-deep) 40%, transparent);
+  pointer-events: none;
 }
 
-.vela-rail__item-label {
+.vela-pill__item[data-active="true"] {
+  color: var(--vd-text);
+}
+
+.vela-pill__item-label {
   position: relative;
   display: block;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  max-width: 15ch;
 }
 
-/*
- * The active indicator (022): ONE absolutely-positioned accent bar that
- * glides between titles on the live axis (GSAP VdAnimatedIndicator).
- * Until a valid row box exists the marker stays hidden (opacity 0) —
- * deliberately NO percent-size fallback.
- */
-.vela-rail__indicator {
-  position: absolute;
-  left: 0;
-  width: 3px;
-  border-radius: 3px;
-  background: var(--vd-accent);
-  box-shadow: var(--vd-glow-wake);
-  opacity: 0;
-  pointer-events: none;
+/* The compact form (short viewports): current name + steppers. */
+.vela-pill[data-compact="true"] {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
 }
 
-@media (max-width: 899px) {
-  .vela-rail__indicator {
-    /* Horizontal mode: the marker is an underline that glides between
-       pills (GSAP writes x + width; the vertical slot stays unset). */
-    left: 0;
-    bottom: 0;
-    width: auto;
-    height: 3px;
-    border-radius: 999px;
-  }
+.vela-pill__stepper {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--vd-text-muted);
+  font-family: var(--vd-font);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
 }
 
-.vela-rail__item:hover {
+.vela-pill__stepper:hover:not(:disabled) {
   color: var(--vd-text);
-  background: color-mix(in oklab, var(--vd-color-fg-primary) 5%, transparent);
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 7%, transparent);
 }
 
-.vela-rail__item[data-active="true"] {
-  color: var(--vd-text);
-  background: color-mix(in oklab, var(--vd-color-fg-primary) 8%, transparent);
+.vela-pill__stepper:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
-.vela-rail__item:focus-visible {
+.vela-pill__stepper:focus-visible {
   outline: 2px solid var(--vd-accent);
   outline-offset: -1px;
 }
 
-/* Light mode needs no rail overrides: the hover/active washes mix the
-   MODE-RESOLVED foreground, so they darken on the light scene by
-   themselves, and the label shadow flips through --vd-label-shadow. */
+.vela-pill__compact-name {
+  max-width: 34ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 0 8px;
+  color: var(--vd-text);
+  font-size: 12.5px;
+}
 
 /* --- Right workspace + section scroll ownership ---------------------------- */
 
@@ -1375,6 +1516,8 @@
 /* The ONLY consumer of the clock type token, at its fluid size: thin mono
    digits, tabular so the colon never breathes while minutes tick over. */
 .vela-helm-clock__time {
+  display: inline-flex;
+  align-items: center;
   font-family: var(--vd-font-mono);
   font-variant-numeric: var(--vd-font-numeric);
   font-size: var(--vd-helm-clock-size);
@@ -1382,7 +1525,96 @@
   letter-spacing: 0.03em;
   line-height: 1;
   color: var(--vd-text);
-  text-shadow: var(--vd-label-shadow);
+  /* t61 live clock: the label shadow for readability plus a whisper of
+     accent glow, so the large thin numerals read as lit rather than
+     printed — the same light logic as the horizon band below them. */
+  text-shadow:
+    var(--vd-label-shadow),
+    0 0 22px color-mix(in oklab, var(--vd-color-accent) 20%, transparent);
+}
+
+/*
+ * One odometer digit column (t61): a 1em window over a 20-cell reel
+ * (0–9 twice). The reel only ever translates UP — a decreasing digit
+ * rolls the long way around, so every change slides the old glyph out the
+ * top and the new one in from below. The window's vertical mask fades the
+ * glyph in/out through the roll (the "slight blur/opacity" of the spec
+ * without ever animating a filter). Reduced motion drops the transition;
+ * the swap is then an in-place cut.
+ */
+.vela-clock-digit {
+  display: inline-block;
+  width: 1ch;
+  height: 1em;
+  overflow: hidden;
+  vertical-align: top;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 22%,
+    black 78%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 22%,
+    black 78%,
+    transparent 100%
+  );
+}
+
+.vela-clock-digit__reel {
+  display: block;
+  will-change: transform;
+  /* Longhand on purpose: the drag-ownership contract forbids transform
+     transition SHORTHANDS anywhere in this sheet. */
+  transition-property: transform;
+  transition-duration: var(--vd-clock-roll, 400ms);
+  transition-timing-function: cubic-bezier(0.3, 0.9, 0.24, 1);
+}
+
+.vela-clock-digit__reel > span {
+  display: block;
+  height: 1em;
+  line-height: 1;
+  text-align: center;
+}
+
+/* The seconds block sits a step dimmer than hours/minutes — alive, but
+   clearly the fine hand of the clock. */
+.vela-helm-clock__seconds {
+  display: inline-flex;
+  align-items: center;
+  color: color-mix(in oklab, var(--vd-text) 74%, transparent);
+}
+
+/* The colon breathes on a slow sine (never under reduced motion): the
+   clock's quiet pulse between the rolls. */
+.vela-helm-clock__colon {
+  display: inline-block;
+  padding: 0 0.045em;
+  animation: vela-clock-breathe var(--vd-clock-breathe, 2.4s) ease-in-out infinite;
+}
+
+@keyframes vela-clock-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vela-clock-digit__reel {
+    transition: none;
+  }
+
+  .vela-helm-clock__colon {
+    animation: none;
+  }
 }
 
 .vela-helm-clock__date {
@@ -1521,6 +1753,13 @@
     display: none;
   }
 
+  /* Collapse hides the seconds (and their leading colon, which lives
+     inside the seconds block): the band is one control row tall here, and
+     HH:MM keeps the landmark proportionate. */
+  .vela-helm-clock__seconds {
+    display: none;
+  }
+
   .vela-helm-commandbar {
     justify-content: center;
     width: var(--vd-helm-bar-height);
@@ -1560,15 +1799,15 @@
  * dock actually exists.
  */
 .vela-section-viewport {
-  /* The rail is a real column since r3 — the content only clears the
-     scroller's own edge padding now. */
+  /* Full width since t61 — the rail column is gone; the content only
+     clears the scroller's own edge padding. */
   --vd-section-padding-right: clamp(20px, 2.6vw, 44px);
   /* The Helm header band (clock + ⌘K bar) floats above the viewport; the
      scroller reserves EXACTLY the token-derived band height so content can
-     never slide under the clock at any viewport (Helm r3). Below 900px the
-     horizontal section bar adds its own row on top. */
+     never slide under the clock at any viewport (Helm r3). The bottom
+     reserve clears the section pill (t61). */
   --vd-section-padding-top: calc(var(--vd-helm-band));
-  --vd-section-padding-bottom: 30px;
+  --vd-section-padding-bottom: calc(18px + var(--vd-pill-clearance));
 
   position: relative;
   flex: 1;
@@ -1576,14 +1815,12 @@
   overflow: clip;
 }
 
-@media (max-width: 899px) {
-  .vela-section-viewport {
-    --vd-section-padding-top: calc(var(--vd-helm-band) + var(--vd-railbar-height));
-  }
-}
-
+/*
+ * With a dock, the grid content clears BOTH the dock and the pill that
+ * floats above it (t61) — the bottom reserve is one composed band.
+ */
 .vela-desktop[data-has-dock="true"] .vela-section-viewport {
-  --vd-section-padding-bottom: 108px;
+  --vd-section-padding-bottom: calc(18px + 70px + 10px + var(--vd-pill-height) + 8px);
 }
 
 /*
@@ -1608,6 +1845,28 @@
   flex-direction: column;
   min-height: 0;
   contain: layout paint;
+}
+
+/*
+ * Reduced-motion section switches (t61): no horizontal slide — a plain
+ * fade instead. The animation lives on the ACTIVE phase, so it re-runs
+ * exactly when a layer becomes the visible one (the machine swaps
+ * instantly under reduced motion; the entering layer's phase flips to
+ * active in that same commit).
+ */
+@media (prefers-reduced-motion: reduce) {
+  .vela-section-layer[data-phase="active"] {
+    animation: vela-section-reduced-fade 200ms ease-out;
+  }
+}
+
+@keyframes vela-section-reduced-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /*
@@ -3331,8 +3590,6 @@ button.vela-sync-status:focus-visible {
   }
 
   .vela-grid-slots,
-  .vela-rail__item,
-  .vela-rail__item::before,
   .vela-section-layer,
   .vela-arrange-bar__history,
   .vela-arrange-bar__gap-step,
@@ -3868,10 +4125,6 @@ header.vela-inspector__subject {
 .vela-workspace-templates label { position: relative; isolation: isolate; }
 .vela-template-selected { opacity: 0; position: absolute; inset: 0; z-index: -1; background: var(--vdu-accent-wash); border-radius: inherit; pointer-events: none; }
 .vela-toast-stack { position: fixed; z-index: 100; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
-/* Desktop: toasts clear the rail column on the right edge (Helm r3). */
-@media (min-width: 900px) {
-  .vela-toast-stack { right: calc(var(--vd-rail-width) + 16px); }
-}
 .vela-toast-stack > div { max-width: 100%; }
 .vela-toast-stack .vela-onboarding-success { position: relative; inset: auto; max-width: 100%; pointer-events: auto; }
 .vela-onboarding-success[data-exiting="true"], .vela-toast-stack .vela-onboarding-success[data-exiting="true"] { pointer-events: none; }

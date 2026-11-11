@@ -122,9 +122,9 @@ describe("the page transition animates the wrapper transform only (020-A1 §23, 
   it("the coordinator animates y only — never layout properties, never an opacity crossfade", () => {
     // The 022 choreography slides pages at opacity 1; the visible regions
     // meet at a moving boundary, so opacity must never be animated.
-    expect(coordinator).toMatch(/\by: 0\b/);
-    expect(coordinator).toMatch(/y: exitY/);
-    expect(coordinator).toMatch(/y: entryY/);
+    expect(coordinator).toMatch(/\bx: 0\b/);
+    expect(coordinator).toMatch(/x: exitX/);
+    expect(coordinator).toMatch(/x: entryX/);
     expect(coordinator).not.toMatch(/\bopacity:\s*0/);
     const forbidden = [/\btop:/, /\bleft:/, /\bright:/, /\bbottom:/, /\bwidth:/, /\bheight:/, /\bmargin/, /\bpadding/];
     for (const pattern of forbidden) {
@@ -133,7 +133,7 @@ describe("the page transition animates the wrapper transform only (020-A1 §23, 
   });
 
   it("the resting pose goes through the same GSAP owner, targeted (never clearProps:all)", () => {
-    expect(coordinator).toMatch(/gsap\.set\(element, \{ y: 0, opacity: 1 \}\)/);
+    expect(coordinator).toMatch(/gsap\.set\(element, \{ x: 0, opacity: 1 \}\)/);
     expect(coordinator).not.toMatch(/clearProps:\s*"all"/);
   });
 
@@ -169,21 +169,17 @@ describe("scroll restoration stays off the animation frames (020-A1 §28)", () =
   });
 });
 
-describe("the rail marker is GSAP-placed and never stretched by CSS (022-R2)", () => {
-  it("the stylesheet fallback HIDES the marker — no percent box, no opposing constraint", () => {
-    const rule = ruleBlock(".vela-rail__indicator");
-    // Hidden until GSAP places it: the pre-022-R2 fallback (top: 20%;
-    // height: 60% of the LIST) painted the marker across several rows
-    // whenever inline geometry was absent (first entry / re-entry).
-    expect(rule).toMatch(/opacity:\s*0/);
-    expect(rule).not.toMatch(/top:/);
-    expect(rule).not.toMatch(/height:/);
-    // GSAP animates top/height — no bottom/inset constraint may fight it.
-    expect(rule).not.toMatch(/bottom:/);
-    expect(rule).not.toMatch(/inset-block-end:/);
+describe("the pill highlight is Motion-owned and pointer-free (022-R2, pill t61)", () => {
+  it("the highlight block fills its segment and never takes pointers", () => {
+    const rule = ruleBlock(".vela-pill__highlight");
+    // t61: the sliding highlight replaced the rail's GSAP marker — ONE
+    // Motion layoutId element travelling between segments.
+    expect(rule).toMatch(/position:\s*absolute/);
+    expect(rule).toMatch(/inset:\s*0/);
+    expect(rule).toMatch(/pointer-events:\s*none/);
   });
 
-  it("the indicator measures the selected ROW in the container's coordinate space", () => {
+  it("the shared animated indicator stays measurement-driven for its users", () => {
     const indicator = readSource("../../components/vd/animated-indicator.tsx");
     // Direct row measurement, one verified coordinate space, geometry
     // re-validation without timers, and hidden before a valid box exists.

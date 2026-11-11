@@ -154,7 +154,7 @@ describe("preferencesFromSettingsDraft", () => {
       expect(result.workspace.preferences.appearance).toEqual({
         colorMode: "dark",
         accentHue: 60,
-        wallpaperPreset: "dawn",
+        wallpaperPreset: "chart",
         surfaceOpacity: 0.5,
         blurPx: 24,
         radiusPx: 18,

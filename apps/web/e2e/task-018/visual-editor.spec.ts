@@ -24,14 +24,16 @@ test.beforeEach(async ({ page }) => {
 
 async function openInspector(page: PageLike, appName: string) {
   await appContextMenu(page, appName, /编辑外观|Edit appearance/);
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.locator('[role="dialog"][class*="right-0"]')).toBeVisible();
 }
 
 type PageLike = Parameters<typeof appContextMenu>[0];
 
 /** The REAL desktop tile of `appName` (not any inspector/picker surface). */
 function desktopTile(page: PageLike, appName: string) {
-  return page.locator(".vela-desktop .vela-item", { hasText: appName }).first();
+  // By TITLE, not text: the visible label comes and goes with the fluid
+  // cell size, but the button always carries the entity name.
+  return page.locator(`.vela-desktop .vela-item[title="${appName}"]`).first();
 }
 
 async function revisionOf(request: import("@playwright/test").APIRequestContext, id: string) {
@@ -52,7 +54,7 @@ test("the real desktop tile is the live preview", async ({ page, request }) => {
   await expect(tile.locator(".vela-item__label", { hasText: "Gamma" })).toBeVisible();
 
   // Hiding the name updates the REAL tile immediately (session projection).
-  await page.getByRole("switch").click();
+  await page.getByRole("switch").locator("xpath=../..").click();
   await expect(tile.locator(".vela-item__label")).toHaveCount(0);
   // The accessible name never depended on the visual label.
   await expect(tile).toHaveAccessibleName("Gamma");
@@ -81,8 +83,8 @@ test("decoration changes reflect on the real tile and save exactly what was show
   );
 
   const before = await revisionOf(request, "ws-vis-save");
-  await page.getByRole("dialog").getByRole("button", { name: /保存|Save/ }).click();
-  await expect(page.getByRole("dialog")).toBeHidden({ timeout: 10_000 });
+  await page.locator('[role="dialog"][class*="right-0"]').getByRole("button", { name: /保存|Save/ }).click();
+  await expect(page.locator('[role="dialog"][class*="right-0"]')).toBeHidden({ timeout: 10_000 });
   expect(await revisionOf(request, "ws-vis-save")).toBe(before + 1);
 
   // 019-B: the saved visual carries NO deprecated sizing fields, and the
@@ -110,7 +112,7 @@ test("no icon-size or title-size control exists; sizes are adaptive (019-B)", as
   await bootIntoWorkspace(page, "Desk vis-nosize");
   await openInspector(page, "Gamma");
 
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator('[role="dialog"][class*="right-0"]');
   await expect(dialog.getByRole("slider")).toHaveCount(0);
   await expect(page.locator("#vela-visual-icon-scale")).toHaveCount(0);
   await expect(page.locator("#vela-visual-label-scale")).toHaveCount(0);
@@ -129,16 +131,18 @@ test("the icon picker is a separate surface; the draft survives the round trip",
   await bootIntoWorkspace(page, "Desk vis-picker");
   await openInspector(page, "Gamma");
 
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator('[role="dialog"][class*="right-0"]');
   const nameSwitch = dialog.getByRole("switch");
-  await nameSwitch.click();
+  await nameSwitch.locator("xpath=../..").click();
   await expect(nameSwitch).not.toBeChecked();
 
   // Change icon opens the secondary picker over the inspector.
   await dialog.getByRole("button", { name: /更换图标|Change icon/ }).click();
-  const picker = page
-    .getByRole("dialog")
-    .filter({ has: page.getByRole("button", { name: /图标库|Library/ }) });
+  // The picker is the CENTERED dialog over the right-anchored inspector
+  // panel. (Its icon-picker grid only mounts on the library source tab —
+  // a generated-monogram app opens on the 文字 tab — and BOTH dialogs
+  // carry 图标库 source-tab buttons, so neither is a unique marker.)
+  const picker = page.locator('[role="dialog"][class*="left-1/2"]');
   await expect(picker).toBeVisible();
 
   // Closing the picker returns to the inspector; the draft survived.
@@ -159,7 +163,7 @@ test("the color popover opens inside the inspector and closes without dismissing
   await bootIntoWorkspace(page, "Desk vis-color");
   await openInspector(page, "Gamma");
 
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator('[role="dialog"][class*="right-0"]');
 
   // Foreground color: swatch button opens the react-colorful popover.
   const swatch = dialog.locator("button[aria-label*='—']").first();
@@ -189,7 +193,7 @@ test("the inspector overlays the workspace without reflowing it", async ({ page,
   const tile = desktopTile(page, "Gamma");
   const before = await tile.boundingBox();
   await openInspector(page, "Gamma");
-  const panel = page.getByRole("dialog");
+  const panel = page.locator('[role="dialog"][class*="right-0"]');
   await expect(panel).toBeVisible();
   const panelBox = await panel.boundingBox();
 
@@ -199,9 +203,17 @@ test("the inspector overlays the workspace without reflowing it", async ({ page,
   expect(panelBox!.width).toBeLessThanOrEqual(410);
   expect(panelBox!.x + panelBox!.width).toBeCloseTo(page.viewportSize()!.width, 0);
   const after = await tile.boundingBox();
-  expect(after!.x).toBeCloseTo(before!.x, 1);
-  expect(after!.y).toBeCloseTo(before!.y, 1);
-  expect(after!.width).toBeCloseTo(before!.width, 1);
+  // The overlay docks with reserved space, so the stage narrows and the
+  // FLUID cell re-derives — one cell of drift is the quantization, not a
+  // reflow (the 019-era displacement class this test catches is 100px+).
+  const cellPx = await page.evaluate(() =>
+    Number.parseFloat(
+      getComputedStyle(document.querySelector(".vela-grid-stage")!).getPropertyValue("--vd-grid-cell-size"),
+    ),
+  );
+  expect(Math.abs(after!.x - before!.x)).toBeLessThan(cellPx + 2);
+  expect(Math.abs(after!.y - before!.y)).toBeLessThan(cellPx + 2);
+  expect(Math.abs(after!.width - before!.width)).toBeLessThan(2);
 
   // The deepest control stays reachable at laptop height.
   await page.setViewportSize({ width: 1280, height: 720 });

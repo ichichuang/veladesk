@@ -5,7 +5,7 @@ import type { Page } from "@playwright/test";
  * by the displacement specs.
  *
  * Every checkpoint records the rects the task-018 failure was observed on
- * (documentElement, body, .vela-desktop, .vela-workbench, .vela-rail,
+ * (documentElement, body, .vela-desktop, .vela-workbench, .vela-pill,
  * .vela-workspace), the computed styles that could displace an in-flow
  * child (collected on .vela-workbench AND every DOM ancestor up to <html>),
  * and — the proven 019-A signal — the latched programmatic scroll of the
@@ -67,22 +67,23 @@ const TRACKED_RECTS = [
   "body",
   ".vela-desktop",
   ".vela-workbench",
-  ".vela-rail",
+  ".vela-pill",
   ".vela-workspace",
 ] as const;
-
-function selectorOf(element: Element): string {
-  const classes =
-    element instanceof HTMLElement && element.className
-      ? `.${element.className.trim().split(/\s+/).slice(0, 3).join(".")}`
-      : "";
-  return `${element.tagName.toLowerCase()}${classes}`;
-}
 
 /** Captures the full geometry state in one round-trip. */
 export async function captureGeometry(page: Page, label: string): Promise<GeometryCapture> {
   return page.evaluate(
     ({ label, props, trackedRects }) => {
+      // Lives INSIDE the callback: page.evaluate serializes the function,
+      // so helpers from the module scope are not reachable in the page.
+      const selectorOf = (element: Element): string => {
+        const classes =
+          element instanceof HTMLElement && element.className
+            ? `.${element.className.trim().split(/\s+/).slice(0, 3).join(".")}`
+            : "";
+        return `${element.tagName.toLowerCase()}${classes}`;
+      };
       const rectOf = (el: Element | null): RectJson | null => {
         if (!el) return null;
         const { x, y, width, height } = el.getBoundingClientRect();

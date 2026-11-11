@@ -145,6 +145,8 @@ const zhCNCatalog = {
   // --- Left section navigation --------------------------------------------
   "nav.label": "分区",
   "nav.more": "更多命令",
+  "nav.previousSection": "上一个分区",
+  "nav.nextSection": "下一个分区",
 
   // --- Arrange toolbar (017) ------------------------------------------------
   "arrange.toolbarLabel": "整理工具",
@@ -436,6 +438,7 @@ const zhCNCatalog = {
   "settings.interfaceStyle.glass": "玻璃",
   "settings.interfaceStyle.glass.hint": "通透 · 背景模糊 · 明亮边框",
   "settings.wallpaper": "壁纸",
+  "settings.wallpaper.chart": "晨昏海图",
   "settings.wallpaper.aurora": "极光",
   "settings.wallpaper.midnight": "午夜",
   "settings.wallpaper.dawn": "晨曦",
@@ -795,6 +798,8 @@ export const enUS: MessageCatalog = {
 
   "nav.label": "Sections",
   "nav.more": "More commands",
+  "nav.previousSection": "Previous section",
+  "nav.nextSection": "Next section",
 
   "arrange.toolbarLabel": "Arrange tools",
   "arrange.modeLabel": "Placement mode",
@@ -1066,6 +1071,7 @@ export const enUS: MessageCatalog = {
   "settings.interfaceStyle.glass": "Glass",
   "settings.interfaceStyle.glass.hint": "Translucent · backdrop blur · bright border",
   "settings.wallpaper": "Wallpaper",
+  "settings.wallpaper.chart": "Dawn Chart",
   "settings.wallpaper.aurora": "Aurora",
   "settings.wallpaper.midnight": "Midnight",
   "settings.wallpaper.dawn": "Dawn",

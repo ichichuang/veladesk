@@ -469,9 +469,9 @@ describe("the browse surface (§14/§24/§75)", () => {
     expect(document.querySelector(".vela-mobile-header__sync")).toBeNull();
   });
 
-  it("a cold asset-backed section shows Dawn until local bytes resolve (§46/§80)", () => {
+  it("a cold asset-backed section shows the chart scene until local bytes resolve (§46/§80, t61)", () => {
     const { container } = render(<MobileHost initialPageId="page-d" />);
-    expect(container.querySelector('[data-wallpaper-preset="dawn"]')).not.toBeNull();
+    expect(container.querySelector('[data-wallpaper-preset="chart"]')).not.toBeNull();
     expect(container.querySelector("img[data-wallpaper-image]")).toBeNull();
   });
 });
@@ -514,10 +514,11 @@ describe("material tier and the shared Dawn scene (P1)", () => {
     expect(root.querySelector(".vela-dawn-veil")).not.toBeNull();
   });
 
-  it("keeps the static Dawn horizon over a custom image wallpaper", () => {
+  it("drops the chart decorations over a custom image wallpaper (t61 plain tier)", () => {
     render(<MobileHost initialPageId="page-d" />);
     const root = document.querySelector("[data-vd-mobile-shell]")!;
     expect(root.querySelector(".vela-desktop__scene")).not.toBeNull();
-    expect(root.querySelector(".vela-dawn-horizon")).not.toBeNull();
+    expect(root.querySelector(".vela-dawn-horizon")).toBeNull();
+    expect(root.querySelector(".vela-desktop__stars")).toBeNull();
   });
 });

@@ -62,7 +62,7 @@ export function animateWorkspace(incoming: HTMLElement, outgoing: HTMLElement | 
  */
 export function animateWorkspaceEntrance(root: HTMLElement, reduced: boolean) {
   if (reduced) return () => {};
-  const candidates = Array.from(root.querySelectorAll<HTMLElement>(".vela-item__body, .vela-mobile-tile__button, .vela-rail__item, .vela-mobile-tabs__tab"));
+  const candidates = Array.from(root.querySelectorAll<HTMLElement>(".vela-item__body, .vela-mobile-tile__button, .vela-pill__item, .vela-mobile-tabs__tab"));
   const visible = candidates.map(element => ({ element, rect: element.getBoundingClientRect() })).filter(({ element, rect }) =>
     rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth &&
     !element.closest('[inert], [aria-hidden="true"], [data-phase="warm"]') && getComputedStyle(element).visibility !== "hidden" &&

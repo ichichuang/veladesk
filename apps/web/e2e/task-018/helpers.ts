@@ -41,35 +41,37 @@ export async function bootIntoWorkspace(page: Page, workspaceName: string): Prom
 }
 
 export async function activeSectionName(page: Page): Promise<string> {
-  return (await page.locator('.vela-rail__item[data-active="true"]').textContent()) ?? "";
+  return (await page.locator('.vela-pill__item[data-active="true"]').textContent()) ?? "";
 }
 
-export function railRoot(page: Page) {
-  return page.locator(".vela-rail");
+export function pillRoot(page: Page) {
+  return page.locator(".vela-pill");
 }
 
-export function railItem(page: Page, name: string) {
-  return page.locator(".vela-rail__item", { hasText: name });
+export function pillItem(page: Page, name: string) {
+  return page.locator(".vela-pill__item", { hasText: name });
 }
 
 /**
- * One synthetic wheel event at the given rail point. Playwright's
+ * One synthetic wheel event at the given pill point. Playwright's
  * mouse.wheel goes through the browser input pipeline (trusted event,
  * deltaMode=0 pixel deltas) — the same listener path a real device takes.
+ * t61: the HORIZONTAL axis pages sections (trackpad-x / Shift+wheel).
  */
 export async function wheelAt(
   page: Page,
   x: number,
   y: number,
-  deltaY: number,
+  deltaX: number,
 ): Promise<void> {
   await page.mouse.move(x, y);
-  await page.mouse.wheel(0, deltaY);
+  await page.mouse.wheel(deltaX, 0);
 }
 
 /**
  * A synthetic trackpad FLICK: ramp-up then geometric decay at ~12ms
- * cadence (the recorded macOS trace shape from the unit tests).
+ * cadence (the recorded macOS trace shape from the unit tests). t61: the
+ * flick is HORIZONTAL — the section pill pages on trackpad-x / Shift+wheel.
  */
 export async function wheelFlick(page: Page, x: number, y: number, down: boolean): Promise<void> {
   const magnitudes = [
@@ -78,12 +80,12 @@ export async function wheelFlick(page: Page, x: number, y: number, down: boolean
   const sign = down ? 1 : -1;
   await page.mouse.move(x, y);
   for (const magnitude of magnitudes) {
-    await page.mouse.wheel(0, sign * magnitude);
+    await page.mouse.wheel(sign * magnitude, 0);
     await page.waitForTimeout(12);
   }
 }
 
-/** Chained notch-mouse detents: one big spike per 120ms. */
+/** Chained notch-mouse detents: one big spike per 120ms (horizontal). */
 export async function wheelDetents(
   page: Page,
   x: number,
@@ -94,27 +96,51 @@ export async function wheelDetents(
   const sign = down ? 1 : -1;
   await page.mouse.move(x, y);
   for (let index = 0; index < count; index += 1) {
-    await page.mouse.wheel(0, sign * 100);
+    await page.mouse.wheel(sign * 100, 0);
     await page.waitForTimeout(120);
   }
 }
 
 /** Opens the desktop context menu and clicks 设置… */
 export async function openSettings(page: Page): Promise<void> {
-  await page.mouse.click(700, 450, { button: "right" });
+  // A point that stays clear of tiles, dock and pill at every viewport
+  // this suite uses — INCLUDING under documentElement zoom, where the
+  // context menu's clamp math mixes zoom spaces and edges can push out.
+  await page.mouse.click(120, 460, { button: "right" });
   await page.getByRole("menuitem", { name: /设置|Settings/ }).first().click();
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(settingsDialog(page)).toBeVisible();
 }
 
-/** The settings window surface (portalled into the themed overlay root). */
+/**
+ * The settings window surface (portalled into the themed overlay root).
+ * Pinned to its marker: a HeroUI Select popover also carries role=dialog
+ * while it exits, and the bare role locator strict-violates on the pair.
+ */
 export function settingsDialog(page: Page) {
-  return page.getByRole("dialog");
+  return page.locator("[data-settings-dialog]");
 }
 
-/** Closes any open dialog with Escape and waits for it to be gone. */
+/**
+ * Closes any open dialog with Escape and waits for it to be gone.
+ * Counts only LIVE dialogs (a HeroUI Select popover keeps role=dialog
+ * briefly with data-exiting while it animates out).
+ */
 export async function escapeDialog(page: Page): Promise<void> {
+  // Escape first (the idiomatic close); if a nested overlay's exit has
+  // focus stranded off-document the key can vanish, so the visible close
+  // affordance finishes the job deterministically.
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toBeHidden({ timeout: 10_000 });
+  // Let any exit animation finish before deciding whether a second,
+  // button-driven close is needed (mid-exit nodes are unclickable).
+  await page.waitForTimeout(450);
+  const remaining = page.locator('[role="dialog"]:not([data-exiting])');
+  if (await remaining.isVisible().catch(() => false)) {
+    const close = remaining.getByRole("button", { name: /关闭设置|关闭|Close/ }).first();
+    if (await close.isVisible().catch(() => false)) {
+      await close.click();
+    }
+  }
+  await expect(remaining).toBeHidden({ timeout: 10_000 });
 }
 
 /**
@@ -155,7 +181,7 @@ export async function appContextMenu(page: Page, appName: string, entry: RegExp)
  * and the inspector has flat sections, not tabs).
  */
 export async function dirtyEditorDraft(page: Page): Promise<void> {
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator('[role="dialog"][class*="right-0"]');
   const options = dialog.locator(".vela-appearance-inspector__decoration");
   await expect(options.first()).toBeVisible();
   const count = await options.count();
