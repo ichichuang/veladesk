@@ -323,9 +323,17 @@ describe("applySettingsDraftToSnapshot (t148 — ONE projection for Save and pre
     const draftPreferences = preferencesFromSettingsDraft(draft);
     const baseAppearance =
       draftPreferences.appearance ?? resolveWorkspaceAppearance(draftPreferences);
+    // The draft stages a workspace preset (never "unset"/"removed"), but the
+    // patch type is `WallpaperConfig | null | undefined` — narrow it before
+    // rebuilding the former inline-save appearance, which under
+    // exactOptionalPropertyTypes only accepts `WallpaperConfig | undefined`.
+    const workspaceWallpaper = draft.background.workspace;
+    if (workspaceWallpaper === null || workspaceWallpaper === undefined) {
+      throw new Error("expected the draft to stage a workspace wallpaper preset");
+    }
     const manual = replaceWorkspacePreferences(snapshot, {
       ...draftPreferences,
-      appearance: { ...baseAppearance, wallpaper: draft.background.workspace },
+      appearance: { ...baseAppearance, wallpaper: workspaceWallpaper },
     });
     expect(manual.ok).toBe(true);
     if (manual.ok) {
