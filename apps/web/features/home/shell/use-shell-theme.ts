@@ -17,13 +17,11 @@ import { buildAppearanceTheme, resolveEffectiveColorMode } from "../appearance-t
  * former desktop-shell.tsx: the effective appearance (Settings preview ??
  * persisted), the CSS-variable theme object and the EFFECTIVE color mode.
  *
- * UX-07: the DESKTOP no longer renders a Settings preview — the shell
- * calls this once with `appearancePreview: null` for the desktop's own
- * theme (and the document color-scheme), and once more WITH the preview
- * for the shared overlay portal root, so the Settings window previews the
- * draft live inside itself while the desktop behind it only changes on
- * Save. The second call passes `applyDocumentScheme: false` — the
- * document-level scheme always follows the persisted desktop theme.
+ * t137: the desktop theme is LIVE-previewed from the Settings draft (the
+ * shell calls this with the preview for BOTH themed roots); dropping the
+ * preview on Cancel/close returns the desktop to the persisted appearance.
+ * The portal-root call keeps `applyDocumentScheme: false` — the document
+ * scheme stays with the desktop's own (previewed) derivation.
  */
 export function useShellTheme({
   appearancePreview,

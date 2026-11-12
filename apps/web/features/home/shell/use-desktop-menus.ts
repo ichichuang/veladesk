@@ -178,7 +178,13 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
             }
           },
           onSync: () => void runtime.syncCurrent(),
-          onOpenSettings: openSettings,
+          // t137 (Chris): opening Settings from a section's canvas (this
+          // menu is the section's empty-canvas right-click) preselects THAT
+          // section in the background editor — the same smart entry the
+          // section pill's 编辑背景 uses. No page context (defensive): the
+          // plain workspace-default entry.
+          onOpenSettings: () =>
+            currentPageId !== null ? openSectionBackgroundSettings(currentPageId) : openSettings(),
         },
       }),
     });

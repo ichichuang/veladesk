@@ -15,8 +15,9 @@ import { appLabelPresentation, appVisual } from "./app-icon";
  *     → the SAME renderer helpers DesktopItem uses report title hidden /
  *       solo mode
  *
- * and back to visible on callback(true), with zero workspace mutation
- * until Save (§19) and Cancel restoring the persisted value.
+ * and back to visible on callback(true), with the projection never
+ * mutating the persisted snapshot (persistence happens through the
+ * inspector's autosave, not through the projection).
  */
 
 function makeApp(overrides: Partial<AppShortcut> = {}): AppShortcut {

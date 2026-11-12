@@ -165,7 +165,7 @@ describe("home-shell.css geometry contract (task 017; whole-width t61)", () => {
     expect(folder).toMatch(/var\(--vd-color-bg-tile\)/);
   });
 
-  it("plates every desktop icon kind on ONE translucent well (Helm r2)", () => {
+  it("plates every desktop icon kind on ONE translucent well (Helm r2, t137 pair)", () => {
     const plate = ruleBlock(
       [
         ".vela-canvas .vela-app-content__icon[data-icon-kind=\"library\"]",
@@ -176,10 +176,27 @@ describe("home-shell.css geometry contract (task 017; whole-width t61)", () => {
         ".vela-grid-host .vela-app-content__icon[data-icon-kind=\"generated\"]",
       ].join(", "),
     );
-    expect(plate).toMatch(/var\(\s*--vd-app-icon-bg,/);
+    // t137: the plate reads the PLATE var (transparent when the custom
+    // decoration paints the whole tile surface), well-colored on Auto.
+    expect(plate).toMatch(/var\(\s*--vd-app-plate-bg,/);
+    expect(plate).toMatch(/var\(\s*--vd-app-plate-shadow,/);
+    // The custom decoration color is consumed by the whole-tile SURFACE
+    // rule, not by the plate.
+    const surface = ruleBlock(
+      [
+        ".vela-canvas .vela-app-icon--surface[data-decoration=\"gradient\"]",
+        ".vela-canvas .vela-app-icon--surface[data-decoration=\"solid\"]",
+        ".vela-canvas .vela-app-icon--surface[data-decoration=\"glass\"]",
+        ".vela-grid-host .vela-app-icon--surface[data-decoration=\"gradient\"]",
+        ".vela-grid-host .vela-app-icon--surface[data-decoration=\"solid\"]",
+        ".vela-grid-host .vela-app-icon--surface[data-decoration=\"glass\"]",
+      ].join(", "),
+    );
+    expect(surface).toMatch(/var\(\s*--vd-app-icon-bg,\s*var\(--vd-color-bg-tile\)/);
     // The retired saturated monogram badge must not come back.
     expect(css).not.toMatch(/vela-app-content__icon\[data-icon-kind="generated"\][^{]*\{[^}]*dawn-3/);
-    // The glyph insets on the desktop plate instead of running edge-to-edge.
+    // t138: the glyph insets optically on SMALL plates (82%) and converges
+    // toward the plate edge as the plate grows — never a fixed fraction.
     const inset = ruleBlock(
       [
         ".vela-canvas .vela-app-content__icon .vela-app-icon__glyph",
@@ -188,8 +205,8 @@ describe("home-shell.css geometry contract (task 017; whole-width t61)", () => {
         ".vela-grid-host .vela-app-content__icon .vela-app-icon__image",
       ].join(", "),
     );
-    expect(inset).toMatch(/width:\s*82%/);
-    expect(inset).toMatch(/height:\s*82%/);
+    expect(inset).toMatch(/width:\s*max\(82%,\s*calc\(100% - 12px\)\)/);
+    expect(inset).toMatch(/height:\s*max\(82%,\s*calc\(100% - 12px\)\)/);
   });
 
   it("sizes every item from its box and keeps the body as the visual layer", () => {

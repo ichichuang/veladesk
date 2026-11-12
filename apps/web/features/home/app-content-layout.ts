@@ -24,35 +24,34 @@ import type { AppShortcut } from "@veladesk/domain";
 /** Aspect ratio (W/H) at or above which the composition goes inline. */
 export const INLINE_ASPECT_THRESHOLD = 1.55;
 
-/**
- * Share of the smaller side used by the icon box (the plate) in stack
- * mode, before the available-space bound. 0.52 is the Helm r2 retune: the
- * glyph no longer fills the tile — a spec-baseline 1×1 cell (96–112px)
- * plates its icon at ~50–58px with the glyph inset inside the plate.
+/*
+ * t138 (2026-11-12): the per-mode ICON SHARES are RETIRED. Chris: a tile
+ * that spans several cells must show its icon FILLED, never "a 1×1 icon
+ * centered in a four-cell box". The icon box is now bounded ONLY by the
+ * space the box actually has (width/height minus padding and the title
+ * strip) — small cells keep their optical proportions because the title
+ * strip and padding take proportionally the same share there.
  */
-const STACK_ICON_SHARE = 0.52;
-/** Icon box share in inline mode — a landscape strip may use more height. */
-const INLINE_ICON_SHARE = 0.72;
-/** Icon box share in solo mode (no title strip to reserve space for). */
-const SOLO_ICON_SHARE = 0.56;
 
 /**
  * Title font size = LABEL_FONT_SHARE × the smaller side, clamped. 0.125
  * puts a spec-baseline 1×1 cell (96–112px) at the 13px Helm label; the
- * caps keep 3×3 restrained and tiny cells readable.
+ * 22px cap keeps multi-cell titles at one restrained size so the ICON
+ * owns the freed space (t138).
  */
 const LABEL_FONT_SHARE = 0.125;
 const LABEL_FONT_MIN_PX = 10;
-const LABEL_FONT_MAX_PX = 30;
+const LABEL_FONT_MAX_PX = 22;
 const LABEL_LINE_HEIGHT_FACTOR = 1.25;
 
 /** Content insets/gaps, as shares of the smaller side, with safety caps. */
 const PADDING_SHARE = 0.1;
 const PADDING_MIN_PX = 5;
-const PADDING_MAX_PX = 26;
+/** t138: 26 → 14 — a large tile keeps a small Dawn Chart inset, not a moat. */
+const PADDING_MAX_PX = 14;
 const GAP_SHARE = 0.055;
 const GAP_MIN_PX = 3;
-const GAP_MAX_PX = 14;
+const GAP_MAX_PX = 10;
 
 /**
  * Generated-text glyph: fraction of the icon box a single code point fills.
@@ -162,9 +161,10 @@ export function resolveAppContentLayout(input: AppContentLayoutInput): AppConten
   const gap = roundPx(clamp(side * GAP_SHARE, GAP_MIN_PX, GAP_MAX_PX));
 
   if (!input.labelVisible) {
-    // Solo: the glyph owns the useful content area, no title strip.
+    // Solo: the glyph owns the useful content area, no title strip — the
+    // icon box IS the padded box (t138 fill contract).
     const inner = Math.max(0, Math.min(width - 2 * padding, height - 2 * padding));
-    const iconBoxSize = roundPx(clamp(side * SOLO_ICON_SHARE, ICON_BOX_MIN_PX, Math.max(ICON_BOX_MIN_PX, inner)));
+    const iconBoxSize = roundPx(clamp(inner, ICON_BOX_MIN_PX, Math.max(ICON_BOX_MIN_PX, inner)));
     return {
       mode: "solo",
       padding,
@@ -188,7 +188,7 @@ export function resolveAppContentLayout(input: AppContentLayoutInput): AppConten
     const widthBudget = Math.max(0, width - 2 * padding - gap - LABEL_MIN_WIDTH_PX);
     const iconBoxSize = roundPx(
       clamp(
-        Math.min(side * INLINE_ICON_SHARE, heightBudget, widthBudget),
+        Math.min(heightBudget, widthBudget),
         ICON_BOX_MIN_PX,
         Math.max(ICON_BOX_MIN_PX, Math.min(heightBudget, widthBudget)),
       ),
@@ -211,13 +211,14 @@ export function resolveAppContentLayout(input: AppContentLayoutInput): AppConten
   }
 
   // Stack: icon, gap, title as ONE vertically centered group — the icon
-  // box is bounded by what remains after the title strip so the group
-  // never overflows the box (small items never overlap).
+  // box takes EVERYTHING that remains after the title strip so the group
+  // never overflows the box and a multi-cell tile FILLS with its icon
+  // (t138) instead of centering a 1×1-size glyph.
   const stackBudget = Math.max(0, height - 2 * padding - gap - labelLineHeight);
   const widthBudget = Math.max(0, width - 2 * padding);
   const iconBoxSize = roundPx(
     clamp(
-      Math.min(side * STACK_ICON_SHARE, stackBudget, widthBudget),
+      Math.min(stackBudget, widthBudget),
       ICON_BOX_MIN_PX,
       Math.max(ICON_BOX_MIN_PX, Math.min(stackBudget, widthBudget)),
     ),

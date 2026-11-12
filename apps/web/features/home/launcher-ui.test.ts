@@ -71,8 +71,13 @@ describe("launcher rows (021-B)", () => {
   });
 
   it("marks the selected row with a quiet accent bar, not a saturated slab", () => {
+    // t137: the bar exists on every row (base rule) and GROWS on selection —
+    // selection travels with a smooth grow instead of a pop.
+    const bar = ruleBlock('.vela-launcher__option::before');
+    expect(bar).toMatch(/width:\s*2px/);
+    expect(bar).toMatch(/transform:\s*scaleY\(0\)/);
     const active = ruleBlock('.vela-launcher__option[data-active="true"]::before');
-    expect(active).toMatch(/width:\s*2px/);
+    expect(active).toMatch(/transform:\s*scaleY\(1\)/);
     const fill = ruleBlock('.vela-launcher__option[data-active="true"]');
     // The row fill is a quiet surface token, never a high-saturation accent fill.
     expect(fill).toMatch(/background:\s*var\(--vdu-bg-active/);

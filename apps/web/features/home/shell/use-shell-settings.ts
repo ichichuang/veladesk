@@ -4,27 +4,22 @@ import type { RefObject } from "react";
 import { useCallback } from "react";
 
 import type { WorkspaceClientRuntime } from "@veladesk/client-runtime";
-import {
-  replacePageModeWallpaper,
-  replacePageWallpaper,
-  replaceWorkspacePreferences,
-  resolveWorkspaceAppearance,
-} from "@veladesk/domain";
+import { replaceWorkspacePreferences, resolveWorkspaceAppearance } from "@veladesk/domain";
 import type {
   DesktopPageId,
   WorkspaceAppearancePreferences,
-  WorkspaceEditResult,
   WorkspacePreferences,
-  WorkspaceSnapshot,
 } from "@veladesk/domain";
 
-import type { PageBackgroundPatch } from "../settings-draft";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 
 import { getBrowserAssetRuntime } from "../../assets/browser-assets";
 import { retainWallpaperAssetUrl } from "../desktop-wallpaper";
 import type { PreparedWallpaperImage } from "../wallpaper-prep";
-import { preferencesFromSettingsDraft } from "../settings-draft";
+import {
+  applyBackgroundPatchesToSnapshot,
+  preferencesFromSettingsDraft,
+} from "../settings-draft";
 import type { WorkspaceSettingsDraft } from "../settings-draft";
 import type { SettingsSaveResult } from "../settings-center";
 import { stageWorkspaceAndTrySync } from "../workspace-commit";
@@ -40,8 +35,12 @@ export interface UseShellSettingsInput {
   readonly layoutQueueRef: RefObject<Promise<void>>;
   readonly setContextMenu: (next: ContextMenuState | null) => void;
   readonly setAppearancePreview: (next: WorkspaceAppearancePreferences | null) => void;
+  /** Live Settings draft projection (t137): the desktop previews it. */
+  readonly setSettingsDraftPreview: (next: WorkspaceSettingsDraft | null) => void;
   readonly setSettingsBackgroundSection: (next: DesktopPageId | null) => void;
   readonly setSettingsOpen: (open: boolean | ((current: boolean) => boolean)) => void;
+  /** Whether Settings is already open (entry guards keep a live session). */
+  readonly settingsOpen: boolean;
   readonly setPendingGapPx: (gapPx: number | null) => void;
 }
 
@@ -50,6 +49,12 @@ export interface UseShellSettingsInput {
  * former desktop-shell.tsx: open/close with preview hygiene, the
  * save-then-stage transaction (asset-before-workspace ordering), and the
  * grid-gap live preview.
+ *
+ * t137: Settings is LIVE on the desktop — while the window is open the
+ * shell renders the session draft (theme + background patches) through the
+ * preview states below. Save persists the draft; Cancel/Escape/close drop
+ * the previews and the desktop returns to the snapshot as it was when
+ * Settings opened (nothing was staged before Save).
  */
 export function useShellSettings(input: UseShellSettingsInput) {
   const {
@@ -59,76 +64,72 @@ export function useShellSettings(input: UseShellSettingsInput) {
     layoutQueueRef,
     setContextMenu,
     setAppearancePreview,
+    setSettingsDraftPreview,
     setSettingsBackgroundSection,
     setSettingsOpen,
+    settingsOpen,
     setPendingGapPx,
   } = input;
 
   /**
    * Settings is the top surface: opening it clears any stale preview and
    * closes stray presentation state, but never stacks on top of another
-   * modal (the keyboard guard and entry points keep it exclusive).
+   * modal (the keyboard guard and entry points keep it exclusive). An
+   * entry while Settings is ALREADY open keeps the live session untouched
+   * (the draft and its desktop preview belong to the user mid-edit).
    */
   function openSettings() {
     setContextMenu(null);
+    if (settingsOpen) {
+      return;
+    }
     setAppearancePreview(null);
+    setSettingsDraftPreview(null);
     setSettingsBackgroundSection(null);
     setSettingsOpen(true);
   }
 
   /**
-   * Enters Settings through a section's context menu (023-C.2): the SAME
-   * window and shared background editor open with that exact section's
-   * scope preselected — no duplicate editor.
+   * Enters Settings through a section's context menu (023-C.2, t137): the
+   * SAME window and shared background editor open with that exact
+   * section's scope preselected — no duplicate editor. While already open,
+   * the scope FOLLOWS the newly right-clicked section (the editor's own
+   * entry-scope effect) without touching the live draft session.
    */
   function openSectionBackgroundSettings(pageId: DesktopPageId) {
     setContextMenu(null);
-    setAppearancePreview(null);
     setSettingsBackgroundSection(pageId);
+    if (settingsOpen) {
+      return;
+    }
+    setAppearancePreview(null);
+    setSettingsDraftPreview(null);
     setSettingsOpen(true);
   }
 
-  /** Cancel/close: the preview dies with the surface, nothing was staged. */
+  /**
+   * Cancel/close (t137): the previews die with the surface — the desktop
+   * returns to the opened snapshot, nothing was staged.
+   */
   function closeSettings() {
     setAppearancePreview(null);
+    setSettingsDraftPreview(null);
     setSettingsBackgroundSection(null);
     setSettingsOpen(false);
   }
 
   /**
    * Applies every scoped background page patch (023-C.2 + P1 mode layers)
-   * onto `base`: per page, up to three layers — the mode-agnostic upload
-   * plus the optional light/dark overrides — each applied through its
-   * dedicated immutable domain op. Stops at the FIRST refusal (a deleted
-   * target page), keeping that failure for the caller's message mapping.
+   * onto `base` through the SHARED projection the live preview also uses
+   * (settings-draft.ts) — Save and preview can never disagree. Stops at
+   * the FIRST refusal (a deleted target page), keeping that failure for
+   * the caller's message mapping.
    */
   function applyBackgroundPatches(
     base: LocalWorkspaceRecord["snapshot"],
-    pages: Readonly<Record<DesktopPageId, PageBackgroundPatch>>,
-  ): WorkspaceEditResult {
-    let result: WorkspaceEditResult = { ok: true, workspace: base };
-    for (const [pageId, patch] of Object.entries(pages)) {
-      if (patch === undefined) {
-        continue;
-      }
-      const layers = [
-        ...(patch.general !== undefined ? [["general", patch.general] as const] : []),
-        ...(patch.light !== undefined ? [["light", patch.light] as const] : []),
-        ...(patch.dark !== undefined ? [["dark", patch.dark] as const] : []),
-      ] as const;
-      for (const [layer, config] of layers) {
-        const current: WorkspaceSnapshot = result.ok ? result.workspace : base;
-        const next: WorkspaceEditResult =
-          layer === "general"
-            ? replacePageWallpaper(current, pageId, config)
-            : replacePageModeWallpaper(current, pageId, layer, config);
-        if (!next.ok) {
-          return next;
-        }
-        result = next;
-      }
-    }
-    return result;
+    pages: Readonly<Record<DesktopPageId, import("../settings-draft").PageBackgroundPatch>>,
+  ): import("@veladesk/domain").WorkspaceEditResult {
+    return applyBackgroundPatchesToSnapshot(base, { workspace: undefined, pages });
   }
 
   /**
@@ -216,9 +217,10 @@ export function useShellSettings(input: UseShellSettingsInput) {
       console.error(`VelaDesk: settings were not staged (${staged.reason})`);
       return { ok: false, message: t("settings.error.saveFailed") };
     }
-    // Success: the preview clears; the snapshot now carries the same
+    // Success: the previews clear; the snapshot now carries the same
     // configs, so nothing flashes back and no dead blob ever intervenes.
     setAppearancePreview(null);
+    setSettingsDraftPreview(null);
     setSettingsBackgroundSection(null);
     setSettingsOpen(false);
     return { ok: true };

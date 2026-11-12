@@ -31,6 +31,8 @@ import {
 import { handleAppearanceAppClick } from "../appearance-app-click";
 import { openAppearanceSession } from "../app-appearance-session";
 import type { AppAppearanceSession } from "../app-appearance-session";
+import { applyBackgroundPatchesToSnapshot } from "../settings-draft";
+import type { WorkspaceSettingsDraft } from "../settings-draft";
 import { useI18n } from "../../i18n/use-i18n";
 import { useWorkspaceManager } from "../workspace-manager";
 import type { ContextMenuState } from "../context-menu";
@@ -109,13 +111,16 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
    */
   const [deleteUndo, setDeleteUndo] = useState<{ readonly entry: DeletedAppRestoreEntry; readonly occurrence: number } | null>(null);
   /**
-   * The Settings appearance draft (UX-07): previewed on the shared overlay
-   * portal root ONLY — the Settings window itself shows the draft live
-   * while the DESKTOP keeps the persisted theme until Save. Cleared on
-   * Cancel/close and after a successful Save (the snapshot then carries
-   * the same values, so there is no flash-back).
+   * The Settings appearance draft (t137 live preview): while the Settings
+   * window is open, EVERY draft change — theme, wallpaper, scoped
+   * background — shows on the real desktop immediately (the desktop theme
+   * and the rendered snapshot below both consume the preview). Save
+   * persists; Cancel/Escape/close drop the preview and the desktop returns
+   * to the snapshot as it was when Settings opened.
    */
   const [appearancePreview, setAppearancePreview] = useState<WorkspaceAppearancePreferences | null>(null);
+  /** The full Settings draft backing that preview (background patches). */
+  const [settingsDraftPreview, setSettingsDraftPreview] = useState<WorkspaceSettingsDraft | null>(null);
   /** The section whose context menu opened Settings (its scope preselected). */
   const [settingsBackgroundSection, setSettingsBackgroundSection] = useState<DesktopPageId | null>(null);
   const [launcherOpen, setLauncherOpen] = useState(false);
@@ -244,23 +249,35 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   } = dialogs;
 
   const inspectorOpen = dialog !== null && dialog.kind === "edit-visual";
+  // The t137 Settings live preview, applied to the RENDERED snapshot: the
+  // draft's scoped background patches ride the same domain ops a Save uses
+  // (settings-draft.ts), so what the desktop previews is exactly what Save
+  // persists. Same reference when no patch is live (memo identity holds).
+  const settingsProjectedSnapshot = useMemo(() => {
+    if (settingsDraftPreview === null) {
+      return snapshot;
+    }
+    const result = applyBackgroundPatchesToSnapshot(snapshot, settingsDraftPreview.background);
+    return result.ok ? result.workspace : snapshot;
+  }, [snapshot, settingsDraftPreview]);
   // The appearance projection (persisted + session draft through ONE
   // canonical projection — see use-appearance-projection.ts).
   const { renderedSnapshot, appearanceEditingId } = useAppearanceProjection({
     appearanceSession,
     inspectorOpen,
-    snapshot,
+    snapshot: settingsProjectedSnapshot,
   });
 
-  // The DESKTOP's rendered theme (UX-07: always the PERSISTED appearance —
-  // Settings never touches the desktop before Save) and the EFFECTIVE color
-  // mode, which also owns the document-level color-scheme. One derivation,
-  // in use-shell-theme.ts.
+  // The DESKTOP's rendered theme (t137: the LIVE Settings preview — every
+  // appearance change paints the desktop immediately; closing without
+  // saving drops the preview and the persisted theme returns) and the
+  // EFFECTIVE color mode, which also owns the document-level color-scheme.
+  // One derivation, in use-shell-theme.ts.
   const {
     resolvedAppearance,
     theme,
     effectiveColorMode,
-  } = useShellTheme({ appearancePreview: null, preferences: snapshot.preferences });
+  } = useShellTheme({ appearancePreview, preferences: snapshot.preferences });
   // The overlay portal root's theme: the Settings draft while a preview is
   // live, otherwise the same persisted theme — so the Settings window (and
   // only portalled surfaces) previews the draft in place.
@@ -333,8 +350,10 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     layoutQueueRef: tiles.commits.layoutQueueRef,
     setContextMenu,
     setAppearancePreview,
+    setSettingsDraftPreview,
     setSettingsBackgroundSection,
     setSettingsOpen,
+    settingsOpen,
     setPendingGapPx,
   });
 
@@ -650,6 +669,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         closeSettings={settings.closeSettings}
         settingsBackgroundSection={settingsBackgroundSection}
         setAppearancePreview={setAppearancePreview}
+        setSettingsDraftPreview={setSettingsDraftPreview}
         openContextMenu={menus.openContextMenu}
         t={t}
       />

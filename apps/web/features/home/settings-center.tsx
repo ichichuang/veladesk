@@ -17,7 +17,7 @@ import {
 } from "./settings-draft";
 import type { WorkspaceSettingsDraft } from "./settings-draft";
 import { Dialog, DialogContent, DialogTitle } from "@components/ui/dialog";
-import { releaseWallpaperPreviewUrl } from "./desktop-wallpaper";
+import { releaseWallpaperPreviewUrl, retainWallpaperAssetUrl } from "./desktop-wallpaper";
 import {
   prepareWallpaperImage,
   type PreparedWallpaperImage,
@@ -43,11 +43,19 @@ interface SettingsCenterProps {
 
   /**
    * Fires on every appearance control change — the LIVE DRAFT, previewed by
-   * the shell on the overlay portal root ONLY (the Settings window itself
-   * previews the draft; UX-07 keeps the desktop on the persisted theme
-   * until Save).
+   * the shell on the desktop AND the overlay portal root (t137: what the
+   * user changes shows on the real desktop immediately; Save persists it,
+   * Cancel/close reverts to the opened state).
    */
   readonly onPreviewAppearance: (appearance: import("@veladesk/domain").WorkspaceAppearancePreferences) => void;
+
+  /**
+   * Fires on EVERY draft change (appearance, layout, scoped backgrounds) —
+   * the shell projects the background patches onto the rendered desktop
+   * (t137 live preview) through the same domain ops Save uses. Optional so
+   * minimal mounts (tests) keep working without a preview sink.
+   */
+  readonly onDraftChange?: ((draft: WorkspaceSettingsDraft) => void) | undefined;
 
   /**
    * Persists the whole draft. Success closes this surface (the shell owns
@@ -107,16 +115,19 @@ const SECTION_LABEL_KEY: Readonly<Record<SettingsSection, TranslationKey>> = {
  * settings-background.tsx and settings-shared.tsx since P1; this module
  * owns the window frame, the draft session and the background image
  * picker only. Controls are canonical HeroUI
- * components themed through the --vdu-* token bridge. Save is the only
- * staging path (UX-07: every control edits the draft — the desktop itself
- * changes only on Save; Cancel/Escape drop the draft and its preview),
- * and the interface language stays an immediate browser-local preference
- * outside the draft.
+ * components themed through the --vdu-* token bridge. t137: while the
+ * window is open, every control change streams to the shell as the LIVE
+ * draft (onDraftChange/onPreviewAppearance) and the desktop paints it
+ * immediately; Save is still the only STAGING path, and Cancel/Escape/
+ * close drop the draft and its preview, returning the desktop to the
+ * snapshot as opened. The interface language stays an immediate
+ * browser-local preference outside the draft.
  */
 export function SettingsCenter({
   open,
   workspace,
   onPreviewAppearance,
+  onDraftChange = () => {},
   onSave,
   onClose,
   backgroundEntrySectionId = null,
@@ -158,12 +169,18 @@ export function SettingsCenter({
   // keeps rendering it) — revoking it here would black out the wallpaper.
   // The cancel path releases DELAYED (UX-07): the panel's own thumbnail and
   // any in-flight decode/crossfade finish against a live URL first.
+  // t137 live preview: a URL retained into the shared asset cache at PICK
+  // time is that cache's for the rest of the tab session — revoking it
+  // would poison the content-addressed cache entry (the same bytes always
+  // hash to the same id), so it is never released here.
   const transferredUrlsRef = useRef<ReadonlySet<string>>(new Set());
+  const retainedUrlsRef = useRef<ReadonlySet<string>>(new Set());
   useEffect(() => {
     return () => {
       if (
         backgroundImage !== null &&
-        !transferredUrlsRef.current.has(backgroundImage.previewUrl)
+        !transferredUrlsRef.current.has(backgroundImage.previewUrl) &&
+        !retainedUrlsRef.current.has(backgroundImage.previewUrl)
       ) {
         releaseWallpaperPreviewUrl(backgroundImage.previewUrl);
       }
@@ -200,6 +217,21 @@ export function SettingsCenter({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open-transition lifecycle only
   }, [open, workspace]);
 
+  // t137 (Chris): entering through a section's context menu while Settings
+  // is ALREADY open must move the background editor onto that section too —
+  // the entry scope is followed on every CHANGE of the entry id (never on
+  // unrelated renders, so the user's own scope pick is not clobbered), and
+  // the editor is brought back into view on the Appearance tab.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setBackgroundScope(backgroundEntrySectionId ?? "workspace");
+    setBackgroundLayer("general");
+    setActiveSection("appearance");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- entry-scope follow only
+  }, [backgroundEntrySectionId]);
+
   const initialDraft = useMemo(() => createWorkspaceSettingsDraft(workspace), [workspace]);
   const dirty = !areWorkspaceSettingsDraftsEqual(draft, initialDraft);
 
@@ -211,11 +243,14 @@ export function SettingsCenter({
     setDraft(next);
     setError(null);
     onPreviewAppearance(next.appearance);
+    onDraftChange(next);
   }
 
   function updateLayout(patch: Partial<Omit<WorkspaceSettingsDraft, "appearance">>) {
-    setDraft({ ...draft, ...patch });
+    const next: WorkspaceSettingsDraft = { ...draft, ...patch };
+    setDraft(next);
     setError(null);
+    onDraftChange(next);
   }
 
   /**
@@ -225,33 +260,37 @@ export function SettingsCenter({
    * persisted block exists (or none).
    */
   function updateMotionExperiment(patch: { readonly helmMotion?: boolean }) {
-    setDraft((current) => ({
-      ...current,
+    const next: WorkspaceSettingsDraft = {
+      ...draft,
       motion: {
-        ...current.motion,
-        experiments: { ...current.motion?.experiments, ...patch },
+        ...draft.motion,
+        experiments: { ...draft.motion?.experiments, ...patch },
       },
-    }));
+    };
+    setDraft(next);
+    onDraftChange(next);
     setError(null);
   }
 
   /**
-   * (UX-07) The background draft NO LONGER streams to the desktop — every
-   * settings item is draft-only now; the desktop changes on Save. The
-   * editor's own renderer-based thumbnails (workspace layer, per-section
-   * layer, per-mode layer) preview the draft INSIDE the panel, and Save
-   * applies the whole draft atomically through the shell's transaction.
+   * (t137 live preview) The background draft STREAMS to the desktop: the
+   * editor's own renderer-based thumbnails preview inside the panel, AND
+   * the shell projects the same patches onto the rendered desktop through
+   * the same domain ops Save uses (onDraftChange above). Cancel/close drop
+   * the projection; Save persists the whole draft atomically.
    */
 
   function updateBackground(patch: Partial<WorkspaceSettingsDraft["background"]>) {
-    setDraft((current) => ({
-      ...current,
+    const next: WorkspaceSettingsDraft = {
+      ...draft,
       background: {
-        ...current.background,
+        ...draft.background,
         ...patch,
-        pages: { ...current.background.pages, ...patch.pages },
+        pages: { ...draft.background.pages, ...patch.pages },
       },
-    }));
+    };
+    setDraft(next);
+    onDraftChange(next);
     setError(null);
   }
 
@@ -391,6 +430,15 @@ export function SettingsCenter({
                   );
                   return;
                 }
+                // t137 live preview: retain the pending image's URL in the
+                // shared wallpaper asset cache so the DESKTOP can resolve
+                // and paint it before Save stages the bytes (content
+                // addressing keeps the id stable across the stage).
+                retainWallpaperAssetUrl(result.image.asset.id, result.image.previewUrl);
+                retainedUrlsRef.current = new Set([
+                  ...retainedUrlsRef.current,
+                  result.image.previewUrl,
+                ]);
                 setBackgroundImage(result.image);
                 const config: WallpaperConfig = {
                   kind: "asset",

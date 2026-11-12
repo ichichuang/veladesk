@@ -623,6 +623,17 @@
 
 .vela-wallpaper-choice {
   min-width: 0;
+  /* t137: the preset card's selection ring / hover border eases. */
+  transition:
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease),
+    transform var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .vela-wallpaper-choice:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .vela-wallpaper-surface--preset {
@@ -1675,14 +1686,25 @@
   color: var(--vd-text-muted);
   font-family: var(--vd-font);
   cursor: pointer;
+  /* t137: the whole hover response eases — rim, shadow AND the text/icon
+     highlight (the instant color flip was the "生硬" Chris felt). */
   transition:
     border-color var(--vd-motion-fast) var(--vd-motion-ease),
-    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease),
+    transform var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-helm-commandbar:hover {
   border-color: var(--vd-color-border-highlight);
   color: var(--vd-text);
+}
+
+/* The 1px hover lift — motion-gated (no travel under reduced motion). */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .vela-helm-commandbar:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .vela-helm-commandbar:focus-visible {
@@ -1695,6 +1717,13 @@
   width: 17px;
   height: 17px;
   opacity: 0.85;
+  transition:
+    opacity var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+.vela-helm-commandbar:hover .vela-helm-commandbar__icon {
+  opacity: 1;
 }
 
 .vela-helm-commandbar__placeholder {
@@ -1716,6 +1745,15 @@
   font-family: var(--vd-font-mono);
   font-size: var(--vd-type-xs);
   color: var(--vd-text);
+  transition:
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+.vela-helm-commandbar:hover .vela-helm-commandbar__kbd {
+  border-color: color-mix(in oklab, var(--vd-color-fg-primary) 42%, transparent);
+  background: color-mix(in oklab, var(--vd-color-fg-primary) 18%, transparent);
 }
 
 /*
@@ -2835,14 +2873,18 @@ button.vela-sync-status:focus-visible {
      the tile must read as glass over the scene, never a dark slab), the
      backdrop blur, a diagonal specular sheen from the upper left and a
      warm inner underglow at the bottom edge: the dawn lighting every tile
-     from the horizon. */
+     from the horizon.
+     t137: a CUSTOM decoration color now paints THIS whole surface (the
+     composed --vd-app-icon-bg from app-icon.ts — a derived gradient, a
+     solid, or a translucent glass wash) instead of living down on the icon
+     plate; Auto keeps the token glass. */
   background:
     linear-gradient(
       165deg,
       color-mix(in oklab, var(--vd-color-fg-primary) 14%, transparent),
       transparent 40%
     ),
-    var(--vd-color-bg-tile);
+    var(--vd-app-icon-bg, var(--vd-color-bg-tile));
   backdrop-filter: blur(var(--vd-blur-glass));
   -webkit-backdrop-filter: blur(var(--vd-blur-glass));
   box-shadow:
@@ -2850,10 +2892,13 @@ button.vela-sync-status:focus-visible {
     inset 0 -22px 34px -16px color-mix(in oklab, var(--vd-color-dawn-1) 48%, transparent),
     var(--vd-shadow-tile);
   /* Border/shadow responses are paint-only — the transform stays owned by
-     the GSAP hover lift on .vela-item__body (never transitioned here). */
+     the GSAP hover lift on .vela-item__body (never transitioned here).
+     background-color animates a solid decoration retune (a color drag); a
+     gradient layer cannot interpolate, it hands over in one step. */
   transition:
     border-color var(--vd-motion-fast) var(--vd-motion-ease),
-    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease),
+    background-color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 /* Hover: the hairline becomes the brighter highlight rim (the 2px lift is
@@ -2937,14 +2982,21 @@ button.vela-sync-status:focus-visible {
 .vela-grid-host .vela-app-content__icon[data-icon-kind="image"],
 .vela-grid-host .vela-app-content__icon[data-icon-kind="generated"] {
   /* The well at 64% presence: translucent enough to sit IN the glass,
-     still a step lighter than the tile ground so the plate READS. */
+     still a step lighter than the tile ground so the plate READS.
+     t137: a custom decoration color paints the whole TILE surface now —
+     the plate goes transparent for that app (--vd-app-plate-bg, emitted
+     by buildAppIconStyleVars) so the glyph sits directly on the colored
+     container instead of on a same-color inner plate. */
   background: var(
-    --vd-app-icon-bg,
+    --vd-app-plate-bg,
     color-mix(in oklab, var(--vd-color-bg-well) 64%, transparent)
   );
-  box-shadow:
+  /* Same t137 pair: a transparent plate drops its inner ring too. */
+  box-shadow: var(
+    --vd-app-plate-shadow,
     inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 24%, transparent),
-    inset 0 0 0 1px color-mix(in oklab, var(--vd-color-fg-primary) 6%, transparent);
+    inset 0 0 0 1px color-mix(in oklab, var(--vd-color-fg-primary) 6%, transparent)
+  );
 }
 
 /* Text monograms are the optically LIGHTEST glyphs in the family (thin
@@ -3009,18 +3061,20 @@ button.vela-sync-status:focus-visible {
 }
 
 /*
- * Helm r2 plate inset: on the DESKTOP hosts the plate is a real base the
- * glyph sits ON, so the glyph breathes at ~82% inside it — a spec 1×1 cell
- * plates a 44–48px glyph, never an edge-to-edge silhouette. The pinned
- * 100% contract above still serves the preview and any host without
- * plates.
+ * Plate inset (Helm r2, retuned t138): on the DESKTOP hosts the plate is a
+ * real base the glyph sits ON, so the glyph breathes at ~82% inside it on
+ * small plates (a spec 1×1 cell keeps its 44–48px optical glyph). On
+ * LARGE plates the fixed 82% is exactly what made a four-cell tile show a
+ * tiny centered icon — the inset now converges toward the plate edge
+ * (100% − 12px) as the plate grows, so a filled multi-cell tile shows a
+ * filled glyph while a small tile keeps its optical breathing room.
  */
 .vela-canvas .vela-app-content__icon .vela-app-icon__glyph,
 .vela-canvas .vela-app-content__icon .vela-app-icon__image,
 .vela-grid-host .vela-app-content__icon .vela-app-icon__glyph,
 .vela-grid-host .vela-app-content__icon .vela-app-icon__image {
-  width: 82%;
-  height: 82%;
+  width: max(82%, calc(100% - 12px));
+  height: max(82%, calc(100% - 12px));
 }
 
 /* Generated text: the resolver's optical size (code-point aware). The
@@ -3655,11 +3709,17 @@ button.vela-sync-status:focus-visible {
   color: var(--vd-text);
   font-family: var(--vd-font);
   font-size: 15px;
+  /* t137: the focus response eases (border + soft accent halo) instead of
+     snapping between states. */
+  transition:
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-launcher__input:focus {
   outline: none;
   border-color: var(--vd-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--vd-accent) 20%, transparent);
 }
 
 /* The scroll OWNER (VdScrollArea, task 021-A): only the results scroll —
@@ -3711,6 +3771,11 @@ button.vela-sync-status:focus-visible {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  /* t137: hover/selection washes and text highlight ease in and out —
+     the instant background flip read as 生硬. */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-launcher__option:hover {
@@ -3723,7 +3788,9 @@ button.vela-sync-status:focus-visible {
   background: var(--vdu-bg-active, var(--vd-accent-wash));
 }
 
-.vela-launcher__option[data-active="true"]::before {
+/* The quiet accent bar exists on every row, grown only while selected —
+   so selection travels with a smooth grow/shrink, not a pop. */
+.vela-launcher__option::before {
   content: "";
   position: absolute;
   left: 0;
@@ -3732,6 +3799,12 @@ button.vela-sync-status:focus-visible {
   width: 2px;
   border-radius: 999px;
   background: var(--vdu-accent, var(--vd-accent));
+  transform: scaleY(0);
+  transition: transform var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+.vela-launcher__option[data-active="true"]::before {
+  transform: scaleY(1);
 }
 
 .vela-launcher__option:focus-visible {
@@ -3770,6 +3843,9 @@ button.vela-sync-status:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* t137: the selected-row text highlight eases (the weight step stays
+     discrete by design — animating it jitters the row width). */
+  transition: color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-launcher__option[data-active="true"] .vela-launcher__label {
@@ -3838,7 +3914,19 @@ button.vela-sync-status:focus-visible {
   .vela-folder-overlay__panel,
   .vela-launcher-backdrop,
   .vela-launcher,
-  .vela-launcher__option {
+  .vela-launcher__option,
+  /* t137 chrome transitions: state changes stay instant, never animated,
+     under reduced motion (the gated transforms above never apply). */
+  .vela-launcher__option::before,
+  .vela-launcher__input,
+  .vela-launcher__label,
+  .vela-helm-commandbar,
+  .vela-helm-commandbar__icon,
+  .vela-helm-commandbar__kbd,
+  .vela-appearance-inspector__decoration,
+  .vela-inspector__row,
+  .vela-inspector__row-chevron,
+  .vela-wallpaper-choice {
     transition: none;
     animation: none;
   }
@@ -3905,6 +3993,12 @@ button.vela-sync-status:focus-visible {
   font-size: 11.5px;
   color: var(--vd-text-muted);
   cursor: pointer;
+  /* t137: selection/hover ease instead of snapping. */
+  transition:
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease),
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-appearance-inspector__decoration:focus-visible {
@@ -4026,10 +4120,25 @@ button.vela-sync-status:focus-visible {
   background: var(--vdu-bg-raised, transparent);
   text-align: left;
   cursor: pointer;
+  /* t137: the hover wash eases; the chevron nudge below rides it. */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    border-color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-inspector__row:hover {
   background: var(--vdu-bg-hover, transparent);
+}
+
+/* The trailing chevron leans forward on hover — motion-gated. */
+.vela-inspector__row-chevron {
+  transition: transform var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .vela-inspector__row:hover .vela-inspector__row-chevron {
+    transform: translateX(2px);
+  }
 }
 
 .vela-inspector__row:focus-visible {

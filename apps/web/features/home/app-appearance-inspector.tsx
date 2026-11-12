@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ChangeEvent,
   Dispatch,
@@ -13,7 +13,7 @@ import type { AppShortcut, WorkspaceSnapshot } from "@veladesk/domain";
 import { replaceApp } from "@veladesk/domain";
 import type { WorkspaceEditFailureReason } from "@veladesk/domain";
 import type { PreparedAsset } from "@veladesk/assets/core";
-import { Button, CloseButton, Input, Label, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import { CloseButton, Input, Label, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { ChevronRight } from "lucide-react";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
@@ -27,6 +27,9 @@ import { appGlyphColorModel, appIconDisplayText, humanizeIconName } from "./app-
 import {
   buildDraftApp,
   decorationStyleChoices,
+  draftEquals,
+  draftFromApp,
+  isDraftSavable,
   validateIconText,
 } from "./app-visual-draft";
 import type { AppVisualDraft } from "./app-visual-draft";
@@ -59,8 +62,12 @@ import "./home-shell.css";
  * never appear as the primary icon label — the icon row shows a
  * human-readable name and opens the focused picker.
  *
- * Persistence: ONLY the Save handler below stages anything. Draft changes,
- * cancel and Escape never touch the workspace.
+ * Persistence (t138, Chris): AUTOSAVE. Every draft change is previewed on
+ * the real desktop through the shell session AND persisted a short
+ * debounce later — there is no Save button and no unsaved-changes gate.
+ * Switching to another app or closing the panel flushes the last pending
+ * edit first, so rapid multi-app editing never loses a change and never
+ * asks whether to save. Closing never reverts anything.
  */
 
 interface PendingUpload {
@@ -68,19 +75,32 @@ interface PendingUpload {
   readonly previewUrl: string;
 }
 
+/**
+ * Debounce window for the autosave: continuous edits (a color drag, fast
+ * toggles) coalesce into one write while the DESKTOP preview follows the
+ * draft immediately through the shell session projection.
+ */
+const APPEARANCE_AUTOSAVE_DEBOUNCE_MS = 350;
+
+/** One not-yet-persisted edit, captured for debounce and flush runs. */
+interface PendingAppearanceEdit {
+  readonly appId: AppShortcut["id"];
+  readonly draft: AppVisualDraft;
+  readonly workspace: WorkspaceSnapshot;
+  readonly pendingUpload: PendingUpload | null;
+}
+
 export interface AppAppearanceInspectorProps {
   /** Requested visibility; the panel stays mounted through its exit. */
   readonly open: boolean;
-  /** The PERSISTED snapshot — the source of truth Save starts from. */
+  /** The PERSISTED snapshot — the autosave stages onto its latest render. */
   readonly workspace: WorkspaceSnapshot;
   readonly appId: AppShortcut["id"];
   /** The shell-owned session draft (single source; the picker edits it too). */
   readonly draft: AppVisualDraft;
   readonly onDraftChange: (draft: AppVisualDraft) => void;
-  /** Cancel/Escape/close: drop the session, revert to the persisted look. */
-  readonly onCancel: () => void;
-  /** Save SUCCEEDED: close the panel; the shell runs the zero-bounce handoff. */
-  readonly onSaved: () => void;
+  /** Escape/×/close: flush the pending edit and close — never a revert. */
+  readonly onClose: () => void;
 }
 
 export function AppAppearanceInspector({
@@ -89,8 +109,7 @@ export function AppAppearanceInspector({
   appId,
   draft,
   onDraftChange,
-  onCancel,
-  onSaved,
+  onClose,
 }: AppAppearanceInspectorProps) {
   const runtime = useWorkspaceRuntimeInstance();
   const { t } = useI18n();
@@ -99,7 +118,6 @@ export function AppAppearanceInspector({
   );
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Keep the panel surface mounted while switching apps. Reset app-specific
@@ -109,7 +127,6 @@ export function AppAppearanceInspector({
     setPreviousAppId(appId);
     setPendingUpload(null);
     setPickerOpen(false);
-    setBusy(false);
     setError(null);
   }
 
@@ -122,17 +139,146 @@ export function AppAppearanceInspector({
     if (open && !wasOpen) {
       setPendingUpload(null);
       setPickerOpen(false);
-      setBusy(false);
       setError(null);
     }
   }, [open]);
 
   // The one projection: what the header identity thumbnail shows, what the
-  // desktop renders (via the shell session) and what Save persists.
+  // desktop renders (via the shell session) and what the autosave persists.
   const projected =
     existing === undefined ? undefined : buildDraftApp(existing, draft);
   const pristine = existing !== undefined && isSessionPristine(existing, { appId, draft });
   const savable = existing !== undefined && isSessionSavable(existing, { appId, draft });
+
+  // --- Autosave (t138) ------------------------------------------------------
+  // The PENDING edit mirrors the current render: non-null exactly while the
+  // draft is dirty and structurally savable with the panel open. Debounced
+  // writes coalesce continuous edits; the flush below guarantees the LAST
+  // change lands even when the user switches apps or closes mid-debounce.
+  const pendingRef = useRef<PendingAppearanceEdit | null>(null);
+  useEffect(() => {
+    pendingRef.current =
+      open && existing !== undefined && !pristine && savable
+        ? { appId, draft, workspace, pendingUpload }
+        : null;
+  });
+
+  /**
+   * Persists one captured edit: validates, stages a NEW upload's bytes
+   * first (asset-before-workspace ordering, 016-B), then replaces the app
+   * on the snapshot the edit was captured against and stages + syncs. A
+   * save already landed (draft equals the persisted app) is a no-op, so a
+   * debounced run racing a flush never double-writes.
+   */
+  const inflightRef = useRef(false);
+  const queuedEditRef = useRef<PendingAppearanceEdit | null>(null);
+  const savePendingEditRef = useRef<(pending: PendingAppearanceEdit) => Promise<void>>(
+    async () => {}
+  );
+  const savePendingEdit = useCallback(
+    async (pending: PendingAppearanceEdit): Promise<void> => {
+      if (inflightRef.current) {
+        queuedEditRef.current = pending;
+        return;
+      }
+      inflightRef.current = true;
+      try {
+        if (pending.draft.source === "text" && pending.draft.textMode === "custom") {
+          const issue = validateIconText(pending.draft.customText);
+          if (issue === "empty") {
+            setError(t("visualEditor.error.enterText"));
+            return;
+          }
+          if (issue === "too-long") {
+            setError(t("visualEditor.error.textTooLong"));
+            return;
+          }
+        }
+        const persisted = pending.workspace.entities.find(
+          (entity): entity is AppShortcut =>
+            entity.kind === "app" && entity.id === pending.appId
+        );
+        if (persisted === undefined || draftEquals(pending.draft, draftFromApp(persisted))) {
+          return;
+        }
+        if (!isDraftSavable(pending.draft)) {
+          return;
+        }
+        if (pending.draft.source === "upload" && pending.pendingUpload !== null) {
+          const assetRuntime = await getBrowserAssetRuntime();
+          const stagedAsset = await assetRuntime.stageAsset(pending.pendingUpload.asset.blob);
+          if (!stagedAsset.ok || stagedAsset.record.id !== pending.draft.assetId) {
+            setError(t("visualEditor.error.saveAssetFailed"));
+            return;
+          }
+        }
+        const nextApp = buildDraftApp(persisted, pending.draft);
+        const result = replaceApp(pending.workspace, nextApp);
+        if (!result.ok) {
+          setError(describeEditFailure(result.reason, t));
+          return;
+        }
+        const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
+        if (!staged.ok) {
+          setError(t("dialog.editApp.error.saveFailed"));
+          return;
+        }
+        setError(null);
+      } catch (editorError: unknown) {
+        setError(
+          editorError instanceof Error
+            ? editorError.message
+            : t("dialog.editApp.error.exception")
+        );
+      } finally {
+        inflightRef.current = false;
+        const queued = queuedEditRef.current;
+        queuedEditRef.current = null;
+        if (queued !== null) {
+          pendingRef.current = queued;
+          void savePendingEditRef.current(queued);
+        }
+      }
+    },
+    [runtime, t]
+  );
+  useEffect(() => {
+    savePendingEditRef.current = savePendingEdit;
+  }, [savePendingEdit]);
+
+  // The debounced write: one timer per settled draft state.
+  useEffect(() => {
+    if (pendingRef.current === null) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const pending = pendingRef.current;
+      if (pending !== null) {
+        void savePendingEditRef.current(pending);
+      }
+    }, APPEARANCE_AUTOSAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+    // Re-armed by the draft/app/open state it reads — the run itself goes
+    // through the ref, so the timer effect owns no churning dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, appId, open, pristine, savable]);
+
+  // The flush: when the edit TARGET changes (another app clicked) or the
+  // panel closes/unmounts, whatever was still inside the debounce window
+  // is persisted immediately — switching apps quickly never loses the
+  // previous app's last change (Chris t138).
+  useEffect(() => {
+    return () => {
+      const pending = pendingRef.current;
+      pendingRef.current = null;
+      if (pending !== null) {
+        void savePendingEditRef.current(pending);
+      }
+    };
+    // The runner is read through its ref; only the edit TARGET and the
+    // panel's presence own this effect's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appId, open]);
 
   // Object-URL hygiene: replacing a pending upload revokes the old URL;
   // closing the inspector revokes the last one.
@@ -150,68 +296,16 @@ export function AppAppearanceInspector({
 
   // Patch keys may explicitly pass undefined (Auto colors); the spread
   // overwrites only provided keys, so the assertion is exact at runtime.
+  // A new edit also retires the previous autosave error.
   function patch(next: { readonly [K in keyof AppVisualDraft]?: AppVisualDraft[K] | undefined }) {
-    onDraftChange({ ...draft, ...next } as AppVisualDraft);
-  }
-
-  async function handleSave() {
-    if (busy || !savable) {
-      return;
-    }
-    if (draft.source === "text" && draft.textMode === "custom") {
-      const issue = validateIconText(draft.customText);
-      if (issue === "empty") {
-        setError(t("visualEditor.error.enterText"));
-        return;
-      }
-      if (issue === "too-long") {
-        setError(t("visualEditor.error.textTooLong"));
-        return;
-      }
-    }
-    setBusy(true);
     setError(null);
-    try {
-      // Save ordering (016-B): a NEW pending upload is staged into the
-      // asset store FIRST, and the staged content id must equal the
-      // draft's. Nothing workspace-side happens until the bytes are
-      // durably local. An existing asset app without a new file never
-      // re-stages.
-      if (draft.source === "upload" && pendingUpload !== null) {
-        const assetRuntime = await getBrowserAssetRuntime();
-        const stagedAsset = await assetRuntime.stageAsset(pendingUpload.asset.blob);
-        if (!stagedAsset.ok || stagedAsset.record.id !== draft.assetId) {
-          setError(t("visualEditor.error.saveAssetFailed"));
-          setBusy(false);
-          return;
-        }
-      }
-      const nextApp = buildDraftApp(existing, draft);
-      const result = replaceApp(workspace, nextApp);
-      if (!result.ok) {
-        setError(describeEditFailure(result.reason, t));
-        setBusy(false);
-        return;
-      }
-      const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
-      if (!staged.ok) {
-        setError(t("dialog.editApp.error.saveFailed"));
-        setBusy(false);
-        return;
-      }
-      onSaved();
-    } catch (editorError: unknown) {
-      setError(
-        editorError instanceof Error ? editorError.message : t("dialog.editApp.error.exception")
-      );
-      setBusy(false);
-    }
+    onDraftChange({ ...draft, ...next } as AppVisualDraft);
   }
 
   const showForegroundControl = appGlyphColorModel(projected) === "tinted";
 
   return (
-    <Dialog modal={false} open={open} onOpenChange={(next) => (next ? undefined : onCancel())}>
+    <Dialog modal={false} open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogContent
         variant="panel"
         onInteractOutside={(event) => event.preventDefault()}
@@ -247,7 +341,7 @@ export function AppAppearanceInspector({
               {t("visualEditor.closeHint")}
             </DialogDescription>
           </div>
-          <CloseButton aria-label={t("common.close")} className="scale-90 text-vdu-fg-muted" onPress={onCancel} />
+          <CloseButton aria-label={t("common.close")} className="scale-90 text-vdu-fg-muted" onPress={onClose} />
         </header>
 
         {/* Body: flat label/control rows, one independent scroll region
@@ -278,7 +372,7 @@ export function AppAppearanceInspector({
                   {describeDraftSourceSecondary(draft, t)}
                 </span>
               </span>
-              <ChevronRight size={16} className="shrink-0 text-vdu-fg-muted" aria-hidden="true" />
+              <ChevronRight size={16} className="vela-inspector__row-chevron shrink-0 text-vdu-fg-muted" aria-hidden="true" />
             </button>
             {draft.source === "text" ? (
               <GeneratedTextControls draft={draft} autoText={autoGeneratedText(projected)} patch={patch} />
@@ -365,16 +459,6 @@ export function AppAppearanceInspector({
             </p>
           ) : null}
         </VdScrollArea>
-
-        {/* Footer: Cancel reverts; Save persists exactly the projection. */}
-        <footer className="flex h-[60px] shrink-0 items-center justify-end gap-2.5 border-t border-vdu-border px-5">
-          <Button variant="ghost" aria-label={t("common.cancel")} onPress={onCancel} isDisabled={busy}>
-            {t("common.cancel")}
-          </Button>
-          <Button variant="primary" aria-label={busy ? t("dialog.editApp.saving") : t("common.save")} onPress={() => void handleSave()} isDisabled={busy || pristine || !savable}>
-            {busy ? t("dialog.editApp.saving") : t("common.save")}
-          </Button>
-        </footer>
       </DialogContent>
 
       {pickerOpen ? (

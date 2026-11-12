@@ -103,6 +103,8 @@ export interface ShellSurfacesProps {
   readonly closeSettings: () => void;
   readonly settingsBackgroundSection: DesktopPageId | null;
   readonly setAppearancePreview: (next: WorkspaceAppearancePreferences | null) => void;
+  /** Live Settings draft stream (t137): the desktop previews it. */
+  readonly setSettingsDraftPreview: (next: WorkspaceSettingsDraft | null) => void;
   readonly openContextMenu: (target: ContextMenuTarget) => void;
   readonly t: TranslateFn;
 }
@@ -138,6 +140,7 @@ export function ShellSurfaces(props: ShellSurfacesProps) {
     closeSettings,
     settingsBackgroundSection,
     setAppearancePreview,
+    setSettingsDraftPreview,
     openContextMenu,
     t,
   } = props;
@@ -204,14 +207,11 @@ export function ShellSurfaces(props: ShellSurfacesProps) {
           onDraftChange={(draft) =>
             setAppearanceSession((current) => (current === null ? current : { ...current, draft }))
           }
-          onCancel={() => {
-            closeDialog();
-            setAppearanceSession(null);
-          }}
-          onSaved={() => {
-            // Panel exits; the session STAYS until the staged snapshot
-            // carries the same projected app (handoff effect below) — the
-            // desktop must never flash the pre-save appearance.
+          onClose={() => {
+            // t138 autosave: closing only closes — the inspector has already
+            // flushed the last edit, and the session STAYS as the zero-bounce
+            // override until the staged snapshot carries the same projected
+            // app (the desktop must never flash the pre-save appearance).
             closeDialog();
           }}
         />
@@ -301,6 +301,7 @@ export function ShellSurfaces(props: ShellSurfacesProps) {
         open={settingsOpen}
         workspace={snapshot}
         onPreviewAppearance={setAppearancePreview}
+        onDraftChange={setSettingsDraftPreview}
         onSave={handleSettingsSave}
         onClose={closeSettings}
         backgroundEntrySectionId={settingsBackgroundSection}

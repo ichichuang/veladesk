@@ -8,9 +8,10 @@ import { fileURLToPath } from "node:url";
  * The REAL desktop is the preview: a fixed right-side panel receives the
  * shell-owned session draft and reports changes upward — no simulated
  * tile, no preview sizing, no second projection. These tests pin the
- * source/CSS shape: the panel overlay, the single projection, the
- * persistence boundary (draft changes and cancel NEVER persist; only the
- * Save handler may) and the removal of every fake-preview artifact.
+ * source/CSS shape: the panel overlay, the single projection, the t138
+ * autosave persistence boundary (every change persists through the ONE
+ * autosave routine; close never reverts) and the removal of every
+ * fake-preview artifact.
  */
 
 const inspectorSource = readFileSync(
@@ -118,8 +119,7 @@ describe("inspector: fixed right-side panel over the workspace (019-C §7)", () 
   it("owns no workspace-copy draft — it receives the session draft", () => {
     expect(inspectorSource).toMatch(/readonly draft: AppVisualDraft/);
     expect(inspectorSource).toMatch(/readonly onDraftChange: \(draft: AppVisualDraft\) => void/);
-    expect(inspectorSource).toMatch(/readonly onCancel: \(\) => void/);
-    expect(inspectorSource).toMatch(/readonly onSaved: \(\) => void/);
+    expect(inspectorSource).toMatch(/readonly onClose: \(\) => void/);
     // No internal copy of the editing draft.
     expect(inspectorSource).not.toMatch(/useState<AppVisualDraft/);
   });
@@ -136,13 +136,12 @@ describe("inspector: fixed right-side panel over the workspace (019-C §7)", () 
   });
 });
 
-describe("inspector: persistence boundary (019-C §24)", () => {
-  it("persists ONLY inside the Save handler — never on draft change or cancel", () => {
-    const saveStart = inspectorSource.indexOf("async function handleSave");
+describe("inspector: autosave persistence boundary (t138)", () => {
+  it("persists ONLY inside the autosave routine — the close path never writes", () => {
+    // t138: the Save button is gone; every draft change is persisted by the
+    // ONE autosave routine (debounced, flushed on app switch/close).
+    const saveStart = inspectorSource.indexOf("const savePendingEdit = useCallback");
     expect(saveStart).toBeGreaterThan(-1);
-    const afterSave = inspectorSource.slice(saveStart);
-    // Everything before the save handler is draft/UI code and must not
-    // touch any persistence entry point.
     const beforeSave = inspectorSource.slice(0, saveStart);
     for (const forbidden of [
       "replaceApp(",
@@ -150,16 +149,23 @@ describe("inspector: persistence boundary (019-C §24)", () => {
       "runtime.stage",
       "stageAsset(",
     ]) {
-      expect(beforeSave, `${forbidden} before handleSave`).not.toContain(forbidden);
+      expect(beforeSave, `${forbidden} before savePendingEdit`).not.toContain(forbidden);
     }
-    // The save handler itself uses the domain op + staging.
-    expect(afterSave).toContain("replaceApp(workspace, nextApp)");
+    // The autosave routine itself uses the domain op + staging.
+    const afterSave = inspectorSource.slice(saveStart);
+    expect(afterSave).toContain("replaceApp(pending.workspace, nextApp)");
     expect(afterSave).toContain("stageWorkspaceAndTrySync(runtime, result.workspace)");
-    // Cancel and close are pure session drops.
-    const cancelSite = inspectorSource.slice(
-      inspectorSource.indexOf('onOpenChange={(open) => (open ? undefined : onCancel())}')
+    // The flush (app switch / close / unmount) routes the LAST pending edit
+    // through the same routine — it never reverts or drops it.
+    expect(inspectorSource).toMatch(/void savePendingEdit\(pending\)/);
+    // Closing is a pure panel close: no Save/Cancel footer, no revert.
+    expect(inspectorSource).toMatch(/onOpenChange=\{\(next\) => \(next \? undefined : onClose\(\)\)\}/);
+    const closeSite = inspectorSource.slice(
+      inspectorSource.indexOf("onOpenChange={(next) => (next ? undefined : onClose())}")
     );
-    expect(cancelSite.slice(0, 200)).not.toContain("replaceApp");
+    expect(closeSite.slice(0, 200)).not.toContain("replaceApp");
+    expect(inspectorSource).not.toMatch(/common\.save/);
+    expect(inspectorSource).not.toMatch(/<footer/);
   });
 });
 
@@ -251,8 +257,9 @@ describe("inspector information architecture (019-C §8/§9)", () => {
 
 describe("inspector: product-grade controls (019-D §9/§21)", () => {
   it("uses the canonical HeroUI controls on the panel surface", () => {
+    // t138: Button left with the Save/Cancel footer — the panel's remaining
+    // controls are the canonical composites below.
     for (const component of [
-      "Button",
       "CloseButton",
       "ToggleButtonGroup",
       "ToggleButton",

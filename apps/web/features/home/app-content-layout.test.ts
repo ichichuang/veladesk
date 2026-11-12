@@ -210,22 +210,24 @@ describe("adaptive app content layout (019-B)", () => {
     expect(tall.mode).toBe("stack");
   });
 
-  it("plates the Helm r2 spec baseline: 96–112px cell, 13px label, glyph share", () => {
-    // The Helm r2 tile retune: a spec 1×1 cell (96–112px) plates its icon
-    // at ~50–58px (the glyph then insets to ~44–48px on the plate) and
-    // keeps the title at the 13px Helm label size.
+  it("fills the spec-baseline cell: 96–112px cell, 13px label, budget-sized icon", () => {
+    // t138 fill contract (supersedes the Helm r2 0.52 share): the icon box
+    // takes everything that remains after the title strip and padding, so
+    // a spec 1×1 cell plates its icon at ~60% of the tile and multi-cell
+    // tiles FILLED with their icon — never a centered 1×1-size glyph.
     for (const side of [96, 104, 112]) {
       const layout = resolve(side, side);
       expect(layout.mode, `${side}px cell`).toBe("stack");
-      expect(layout.iconBoxSize).toBeGreaterThanOrEqual(side * 0.5 - 0.51);
-      expect(layout.iconBoxSize).toBeLessThanOrEqual(side * 0.55 + 0.51);
+      expect(layout.iconBoxSize).toBeGreaterThanOrEqual(side * 0.55 - 0.51);
+      expect(layout.iconBoxSize).toBeLessThanOrEqual(side * 0.7 + 0.51);
       expect(layout.labelFontSize).toBeGreaterThanOrEqual(side * 0.12 - 0.51);
       expect(layout.labelFontSize).toBeLessThanOrEqual(side * 0.135 + 0.51);
     }
-    // The named anchors: 104px cell → 13px label, ~54px plate.
+    // The named anchors: 104px cell → 13px label, ~61.5px plate (the exact
+    // stack budget: 104 − 2·10.5 padding − 5.5 gap − 16.25 label line).
     const anchor = resolve(104, 104);
     expect(anchor.labelFontSize).toBeCloseTo(13, 1);
-    expect(anchor.iconBoxSize).toBeCloseTo(54, 1);
+    expect(anchor.iconBoxSize).toBeCloseTo(61.5, 1);
   });
 });
 

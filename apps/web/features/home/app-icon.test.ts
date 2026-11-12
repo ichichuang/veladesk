@@ -228,6 +228,11 @@ describe("buildAppIconStyleVars", () => {
     expect(vars["--vd-app-icon-fg"]).toBe("#aabbcc");
     expect(vars["--vd-app-icon-scale"]).toBeUndefined();
     expect(vars["--vd-app-label-scale"]).toBeUndefined();
+    // t137: a custom decoration color paints the WHOLE desktop tile, so
+    // the desktop plate goes transparent (ring included); the fixed-slot
+    // contexts ignore these vars — their tile IS the plate.
+    expect(vars["--vd-app-plate-bg"]).toBe("transparent");
+    expect(vars["--vd-app-plate-shadow"]).toBe("none");
   });
 
   it("ignores persisted-but-invalid colors (validation owns the error)", () => {

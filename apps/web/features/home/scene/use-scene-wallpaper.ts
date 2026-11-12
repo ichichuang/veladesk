@@ -17,9 +17,9 @@ export interface UseSceneWallpaperInput {
   /** The navigation machine — the wallpaper binds to the VISIBLE page. */
   readonly sectionNavMachine: SectionNavMachine;
   readonly effectiveActivePageId: DesktopPageId | null;
-  /** The RENDERED workspace's pages (appearance projection). */
+  /** The RENDERED workspace's pages (appearance + Settings preview projection). */
   readonly renderedPages: readonly import("@veladesk/domain").DesktopPage[];
-  /** The resolved PERSISTED appearance (the desktop never renders a draft — UX-07). */
+  /** The resolved appearance — the LIVE Settings preview while one is open (t137). */
   readonly resolvedAppearance: WorkspaceAppearancePreferences;
   /**
    * The EFFECTIVE color mode ("dark"/"light", already resolved from
@@ -36,10 +36,12 @@ export interface UseSceneWallpaperInput {
  * color mode's page override substitutes first, then the page general
  * image → Dawn chain.
  *
- * UX-07: there is no Settings draft substitution anymore — every settings
- * item is draft-only and the desktop resolves the PERSISTED snapshot,
- * changing on Save (a staged upload's preview URL arrives through the
- * shared asset cache the save transaction retains it in).
+ * t137: the desktop resolves the RENDERED pages and the LIVE appearance —
+ * while Settings is open, its draft's page patches and wallpaper are in
+ * the inputs already (the shell projects them), and a pending upload's
+ * preview URL arrives through the shared asset cache the settings session
+ * retains it in at pick time. Cancel/close drop the projection; nothing
+ * was staged before Save.
  */
 export function useSceneWallpaper(input: UseSceneWallpaperInput) {
   const {

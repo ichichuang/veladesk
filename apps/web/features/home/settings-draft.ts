@@ -1,5 +1,7 @@
 import {
   inferInterfaceStyle,
+  replacePageModeWallpaper,
+  replacePageWallpaper,
   resolveGridGapPx,
   resolveInterfaceStyle,
   resolveWorkspaceAppearance,
@@ -7,6 +9,7 @@ import {
 import type {
   DesktopPageId,
   WallpaperConfig,
+  WorkspaceEditResult,
   WorkspaceAppearancePreferences,
   WorkspaceMotionPreferences,
   WorkspacePreferences,
@@ -194,4 +197,42 @@ export function areWorkspaceSettingsDraftsEqual(
     motionPreferencesEqual(a.motion, b.motion) &&
     backgroundPatchesEqual(a.background, b.background)
   );
+}
+
+/**
+ * Applies the draft's scoped background patches onto `base` through the
+ * same immutable domain ops a Save uses (t137 Settings live preview): the
+ * returned snapshot is what the DESKTOP renders while Settings is open —
+ * every background change is visible immediately, Save persists it, and
+ * Cancel/Escape/close simply drops the projection (the persisted snapshot
+ * was never touched, so the desktop returns to the opened state). Stops at
+ * the FIRST refusal (a deleted target page) with that failure, exactly
+ * like the save path — Save and preview can never disagree.
+ */
+export function applyBackgroundPatchesToSnapshot(
+  base: WorkspaceSnapshot,
+  background: WorkspaceBackgroundPatches,
+): WorkspaceEditResult {
+  let result: WorkspaceEditResult = { ok: true, workspace: base };
+  for (const [pageId, patch] of Object.entries(background.pages)) {
+    if (patch === undefined) {
+      continue;
+    }
+    const layers = [
+      ...(patch.general !== undefined ? [["general", patch.general] as const] : []),
+      ...(patch.light !== undefined ? [["light", patch.light] as const] : []),
+      ...(patch.dark !== undefined ? [["dark", patch.dark] as const] : []),
+    ] as const;
+    for (const [layer, config] of layers) {
+      const next =
+        layer === "general"
+          ? replacePageWallpaper(result.workspace, pageId as DesktopPageId, config)
+          : replacePageModeWallpaper(result.workspace, pageId as DesktopPageId, layer, config);
+      if (!next.ok) {
+        return next;
+      }
+      result = next;
+    }
+  }
+  return result;
 }

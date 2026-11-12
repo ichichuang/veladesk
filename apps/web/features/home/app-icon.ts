@@ -192,6 +192,15 @@ export function buildAppIconStyleVars(style: AppVisualStyle): Readonly<Record<st
   const decoration = style.decorationColor;
   if (decoration !== undefined && isValidAppHexColor(decoration)) {
     vars["--vd-app-icon-bg"] = decorationBackground(style.decorationStyle, decoration);
+    // t137: on the desktop the custom decoration paints the WHOLE tile
+    // surface (see .vela-app-icon--surface in home-shell.css), so the icon
+    // plate must stop re-painting the same color at glyph scale — it goes
+    // transparent (inner ring included) and the glyph sits directly on the
+    // colored container. The fixed-slot contexts (dock, folder overlay,
+    // launcher) never read these vars; their tile IS the plate and keeps
+    // the custom color.
+    vars["--vd-app-plate-bg"] = "transparent";
+    vars["--vd-app-plate-shadow"] = "none";
   }
   if (
     style.foregroundColor !== undefined &&

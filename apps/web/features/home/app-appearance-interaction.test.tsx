@@ -39,7 +39,7 @@ function Harness({ initiallyOpen = true, launch = vi.fn() }) {
       <AppAppearanceInspector open={open} workspace={workspace}
         appId={session.appId} draft={session.draft}
         onDraftChange={(draft) => setSession({ ...session, draft })}
-        onCancel={() => setOpen(false)} onSaved={() => setOpen(false)} />
+        onClose={() => setOpen(false)} />
     </div>
   </UiLocaleProvider>;
 }
