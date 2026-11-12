@@ -30,7 +30,7 @@ and open everything from desktop or phone. Your data stays in a local SQLite dat
 The UI is Chinese by default; English can be switched on in Settings → General.
 
 <p align="center">
-  <img src="docs/screenshots/workspace-switch.gif" alt="右键菜单切换工作区的过渡动画" width="800">
+  <img src="docs/screenshots/workspace-switch.gif" alt="分区切换的过渡动画" width="800">
 </p>
 
 ## 在线演示
@@ -60,17 +60,19 @@ VelaDesk 是一个免费开源的浏览器主页程序。
 **整理网站**
 
 - 磁贴式桌面：常用网站一个图标一个磁贴，点一下就打开
-- 分区（页面）：按「前端开发」「AI 工具」这样的主题分区，左侧一键切换
-- 文件夹：把同类网站收进一个文件夹
+- 分区（页面）：按「前端开发」「AI 工具」这样的主题分区，左侧一键切换，切换带过渡动画
+- 文件夹：把同类网站收进一个文件夹，点开后以浮层网格展开，不打断当前桌面
 - 底部快捷栏（Dock）：最常用的几个网站固定在底部
 - 在电脑端拖动、调整应用的位置，右键「整理桌面」
 - 添加应用时粘贴网址，自动识别网站名称和图标；常见品牌使用内置离线图标
 - 没有图标的网站显示名称的第一个字，搜索结果和面板里仍显示全名
+- 空分区会显示引导，直接点「添加应用」开始填充
+- 删除应用时弹出提示，可以马上点「撤销」找回来
 - 使用 JSON 批量导入网站
 
 **快速找到**
 
-- 右键「搜索…」：输入关键字，同时搜索应用和分区，键盘 ↑ ↓ 选择、回车打开、Esc 关闭
+- 右键「搜索…」或点击桌面搜索框：输入关键字，同时搜索应用和分区，键盘 ↑ ↓ 选择、回车打开、Esc 关闭
 - 手机端顶部也有搜索按钮
 
 **多工作区**
@@ -82,14 +84,18 @@ VelaDesk 是一个免费开源的浏览器主页程序。
 
 **外观**
 
-- 颜色模式：跟随系统（默认）、深色、浅色
+- 设置以草稿方式编辑，点「保存」才生效：改颜色、换壁纸的途中桌面不会被反复刷新
+- 颜色模式：跟随系统（默认）、深色、浅色；浅色模式下磁带有柔和描边
 - 强调色，以及「清爽 / 柔和 / 玻璃」三种界面风格
-- 背景：内置「极光 / 午夜 / 晨曦 / 薄雾」，也可以上传自己的图片（PNG / JPEG / WebP / AVIF，不超过 4 MiB），可以给整个工作区或单个分区设置
+- 背景：内置「晨昏海图 / 极光 / 午夜 / 晨曦 / 薄雾」，也可以上传自己的图片（PNG / JPEG / WebP / AVIF，不超过 4 MB），保存后一直都在，可以给整个工作区或单个分区设置
 - 界面语言：中文（默认）/ English
 
 **电脑和手机都能用**
 
-- 在手机端查看分类、搜索和打开应用
+- 手机端查看分类、搜索和打开应用
+- 手机端长按磁贴即可编辑：菜单里有「编辑」「移到分区…」「删除」
+- 手机端菜单里可以直接「添加应用」和「管理分区」
+- 服务器暂时连不上时仍可离线打开，使用本地数据，恢复后一键同步
 - 数据保存在自己的设备上（服务器端 SQLite，浏览器端 IndexedDB 本地副本）
 
 ## 截图
@@ -99,12 +105,14 @@ VelaDesk 是一个免费开源的浏览器主页程序。
 | 深色 · 桌面 | 浅色 · 桌面 |
 | --- | --- |
 | <img src="docs/screenshots/desktop-dark.png" alt="深色模式桌面"> | <img src="docs/screenshots/desktop-light.png" alt="浅色模式桌面"> |
-| **右键搜索** | **没有图标时显示首字** |
-| <img src="docs/screenshots/search.png" alt="右键搜索面板"> | <img src="docs/screenshots/first-char-icons.png" alt="没有图标的网站显示名称首字"> |
+| **搜索** | **没有图标时显示首字** |
+| <img src="docs/screenshots/search.png" alt="搜索面板"> | <img src="docs/screenshots/first-char-icons.png" alt="没有图标的网站显示名称首字"> |
 | **右键菜单 · 工作区** | **新增工作区（含模板）** |
 | <img src="docs/screenshots/workspace-menu.png" alt="右键菜单与工作区子菜单"> | <img src="docs/screenshots/new-workspace.png" alt="新增工作区对话框"> |
-| **外观设置** | **第一次打开** |
-| <img src="docs/screenshots/settings-appearance.png" alt="外观设置：颜色模式、强调色、界面风格、背景"> | <img src="docs/screenshots/onboarding.png" alt="首次打开：一键体验示例工作区"> |
+| **外观设置（草稿 + 保存）** | **文件夹浮层** |
+| <img src="docs/screenshots/settings-appearance.png" alt="外观设置：面板已选浅色，桌面仍是深色，保存后才切换"> | <img src="docs/screenshots/folder-overlay.png" alt="文件夹以浮层网格展开"> |
+| **第一次打开** | **手机端 · 长按编辑** |
+| <img src="docs/screenshots/onboarding.png" alt="首次打开：一键体验示例工作区"> | <img src="docs/screenshots/mobile-edit.png" alt="手机端长按磁贴：编辑 / 移到分区 / 删除" width="260"> |
 
 <p align="center">
   <img src="docs/screenshots/mobile-dark.png" alt="手机端 · 深色" width="260">
@@ -115,7 +123,8 @@ VelaDesk 是一个免费开源的浏览器主页程序。
 ## 下载
 
 > 当前正式版是 **v1.0.0**（2026-10-01 发布）。
-> 一键示例工作区、多工作区、颜色模式跟随系统、无图标显示首字等功能是之后才加入 `main` 分支的，
+> 一键示例工作区、多工作区、颜色模式跟随系统、无图标显示首字、设置草稿保存、
+> 自定义壁纸、文件夹浮层、手机端长按编辑等功能是之后才加入 `main` 分支的，
 > 还没有进入正式程序包。想体验这些功能，请打开[在线演示](https://veladesk.chichuangdev.dpdns.org)或[从源码运行](#从源码运行)。
 
 下载地址：
