@@ -129,6 +129,15 @@ export function useSectionSwipe(options: UseSectionSwipeOptions): SectionSwipeHa
     const fromSwipe = swipeCommitted.current;
     swipeCommitted.current = false;
     const parent = element.parentElement;
+    // The strip owns EVERY horizontal pixel — the scroller never scrolls
+    // sideways by user input (pan-y). But the parked neighbour panes give
+    // the hidden-overflow scroller a real scrollWidth, so a programmatic
+    // scroll (focus chains, automation) can leave a stale horizontal
+    // scrollLeft behind; zero it in the same commit so the new pane lands
+    // flush.
+    if (parent !== null) {
+      parent.scrollLeft = 0;
+    }
     if (fromSwipe) {
       // The neighbour was shown from its top during the drag.
       if (parent !== null) {

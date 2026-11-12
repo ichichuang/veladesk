@@ -413,20 +413,27 @@ describe("mobile menu (§47–§52/§79)", () => {
     return await screen.findByRole("dialog");
   }
 
-  it("uses the content-sized MENU sheet variant with the fixed row order (R1 §45/§26)", async () => {
+  it("uses the content-sized MENU sheet variant with the fixed row order (R1 §45/§26 + UX-12)", async () => {
     render(<MobileHost />);
     const dialog = await openMenu();
     // §45A: the menu rides its own sizing variant, not the folder surface.
     expect(document.querySelector(".vela-mobile-sheet__surface--menu")).not.toBeNull();
     expect(document.querySelector(".vela-mobile-sheet__surface--folder")).toBeNull();
-    // §45D: fixed DOM order — title head, workspace, language, version,
-    // then the divider-backed hint last.
+    // §45D + UX-12: fixed DOM order — the edit action pair first (添加应用 /
+    // 管理分区), then the workspace row, language, version, and the
+    // divider-backed hint last.
     const body = dialog.querySelector(".vela-mobile-menu__body")!;
-    const rows = Array.from(body.querySelectorAll(":scope > *")).map((node) => node.className);
-    expect(rows[0]).toContain("vela-mobile-menu__row");
-    expect(rows[1]).toContain("vela-mobile-menu__row");
-    expect(rows[2]).toContain("vela-mobile-menu__row");
-    expect(rows[3]).toContain("vela-mobile-menu__hint");
+    const blocks = Array.from(body.querySelectorAll(":scope > *")).map((node) => node.className);
+    expect(blocks[0]).toContain("vela-mobile-menu__actions");
+    expect(blocks[1]).toContain("vela-mobile-menu__row");
+    expect(blocks[2]).toContain("vela-mobile-menu__row");
+    expect(blocks[3]).toContain("vela-mobile-menu__row");
+    expect(blocks[4]).toContain("vela-mobile-menu__hint");
+    const actions = body.querySelector(".vela-mobile-menu__actions")!;
+    const actionButtons = Array.from(actions.querySelectorAll<HTMLButtonElement>(".vela-mobile-menu__action"));
+    expect(actionButtons).toHaveLength(2);
+    expect(actionButtons[0]!.textContent).toContain("添加应用");
+    expect(actionButtons[1]!.textContent).toContain("管理分区");
     const texts = body.textContent ?? "";
     expect(texts.indexOf("Desk")).toBeLessThan(texts.indexOf("语言"));
     expect(texts.indexOf("语言")).toBeLessThan(texts.indexOf("版本"));
@@ -453,7 +460,7 @@ describe("mobile menu (§47–§52/§79)", () => {
     expect(document.querySelector(".vela-mobile-sheet__surface--menu")).toBeNull();
   });
 
-  it("shows ONLY the allowed rows: workspace, language, version, desktop hint", async () => {
+  it("shows the allowed rows: edit entries, workspace, language, version, desktop hint", async () => {
     render(<MobileHost />);
     const dialog = await openMenu();
     const text = dialog.textContent ?? "";
@@ -461,6 +468,8 @@ describe("mobile menu (§47–§52/§79)", () => {
     expect(text).toContain("语言");
     expect(text).toContain("版本");
     expect(text).toContain("桌面端管理");
+    expect(text).toContain("添加应用");
+    expect(text).toContain("管理分区");
     // The forbidden set — absent from every ROW, not disabled. (The hint
     // sentence itself mentions what belongs to the desktop; no row does.)
     for (const row of dialog.querySelectorAll(".vela-mobile-menu__row")) {
@@ -471,8 +480,10 @@ describe("mobile menu (§47–§52/§79)", () => {
         expect(rowText).not.toContain(forbidden);
       }
     }
-    // No management CONTROLS: the only interactive elements are the two
-    // language options (plus the standard close affordance).
+    // Interactive elements: the two edit entries (UX-12), the workspace
+    // manager's own controls and the two language options (plus the
+    // standard close affordance).
+    expect(dialog.querySelectorAll(".vela-mobile-menu__action")).toHaveLength(2);
     expect(dialog.querySelectorAll(".vela-mobile-menu__language-option")).toHaveLength(2);
   });
 

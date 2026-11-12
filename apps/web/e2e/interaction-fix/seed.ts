@@ -167,6 +167,17 @@ function gridPage(
  * refuses duplicate ids with 409, and one run seeds per test). */
 let seedSequence = 0;
 
+/** The UX-13 stress scene: one section with 44 one-tile apps (6 rows of 8). */
+const STRESS_APP_COUNT = 44;
+const stressApps: readonly SeedApp[] = Array.from(
+  { length: STRESS_APP_COUNT },
+  (_, index) => ({
+    id: `app-stress-${index}`,
+    name: `压测${index + 1}`,
+    url: `https://example.com/stress/${index}`,
+  }),
+);
+
 /**
  * Seeds the interaction-fix workspace and returns its id. With
  * `manySections`, twelve extra one-app sections ride along — the rail's
@@ -181,6 +192,8 @@ export async function seedInteractionWorkspace(
     readonly manySections?: boolean;
     readonly richScene?: boolean;
     readonly t77Scene?: boolean;
+    /** UX-13: a 44-app stress section (压测分区) rides along. */
+    readonly stressSection?: boolean;
   } = {},
 ): Promise<string> {
   seedSequence += 1;
@@ -200,6 +213,7 @@ export async function seedInteractionWorkspace(
       : []),
     ...DESIGN_APPS.map((app) => entity(app)),
     ...FOLDER_APPS.map((app) => entity(app)),
+    ...(options.stressSection === true ? stressApps.map((app) => entity(app)) : []),
     {
       kind: "folder",
       id: "folder-frameworks",
@@ -224,6 +238,9 @@ export async function seedInteractionWorkspace(
       ),
       gridPage("sec-ai", "AI 工具", AI_APPS, 8),
       gridPage("sec-design", "设计灵感", DESIGN_APPS, 8),
+      ...(options.stressSection === true
+        ? [gridPage("sec-stress", "压测分区", stressApps, 8)]
+        : []),
       ...(options.manySections === true
         ? Array.from({ length: 20 }, (_, index) =>
             gridPage(`sec-many-${index}`, `扩展分区${index + 1}`, [
@@ -290,6 +307,7 @@ export async function bootSeededDesktop(
     readonly manySections?: boolean;
     readonly richScene?: boolean;
     readonly t77Scene?: boolean;
+    readonly stressSection?: boolean;
     readonly allowMobileShell?: boolean;
   } = {},
 ): Promise<void> {

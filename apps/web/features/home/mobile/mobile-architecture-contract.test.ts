@@ -31,23 +31,34 @@ const MOBILE_MODULE_NAMES = [
   "mobile-search.tsx",
   "mobile-folder-sheet.tsx",
   "mobile-menu-sheet.tsx",
+  "mobile-manage-sections.tsx",
+  "mobile-tile-menu.tsx",
   "mobile-sheet.tsx",
   "mobile-section-items.ts",
+  "use-mobile-long-press.ts",
 ] as const;
 
 function mobileModules(): readonly { readonly name: string; readonly source: string }[] {
   return MOBILE_MODULE_NAMES.map((name) => ({ name, source: readSource(name) }));
 }
 
-/** Banned direct imports: the desktop authoring machinery (§29/§64). */
+/**
+ * Banned direct imports: the desktop AUTHORING machinery (§29/§64). The
+ * shared management DIALOGS are deliberately NOT on this list anymore —
+ * UX-12's product decision reuses them from the mobile shell so the two
+ * shells share one validation/staging/undo path. What stays banned is
+ * everything that drags the desktop's authoring runtime along: DnD,
+ * canvas commits, the context-menu/launcher layers, Settings and the
+ * appearance inspector.
+ */
 const BANNED_IMPORT_PATTERNS: readonly { readonly pattern: RegExp; readonly why: string }[] = [
   { pattern: /["']\.\.\/desktop-shell(\.tsx)?["']/, why: "DesktopShell itself" },
+  { pattern: /["']\.\.\/desktop-shell\//, why: "the desktop shell layer (menus/shortcuts/settings wiring)" },
   { pattern: /["']\.\.\/\.\.\/desktop-grid\//, why: "desktop-grid DnD helpers" },
   { pattern: /["']\.\.\/\.\.\/canvas\//, why: "canvas drag/resize/handoff/history" },
   { pattern: /["']\.\.\/arrange-toolbar["']/, why: "arrange toolbar" },
   { pattern: /["']\.\.\/context-menu["']/, why: "desktop context menu" },
   { pattern: /["']\.\.\/desktop-command-menu["']/, why: "desktop command menu" },
-  { pattern: /["']\.\.\/(add-app-dialog|edit-app-dialog|section-dialog|folder-dialog|move-to-section-dialog|confirm-dialog)["']/, why: "management dialogs" },
   { pattern: /["']\.\.\/settings-center["']/, why: "desktop Settings Center" },
   { pattern: /["']\.\.\/app-appearance-inspector["']/, why: "desktop App Inspector" },
   { pattern: /["']\.\.\/\.\.\/import-json\//, why: "JSON Import" },
@@ -58,7 +69,7 @@ const BANNED_IMPORT_PATTERNS: readonly { readonly pattern: RegExp; readonly why:
 ];
 
 describe("mobile dependency boundary (§29/§64/§88)", () => {
-  it("no mobile module imports ANY desktop editing/authoring dependency", () => {
+  it("no mobile module imports ANY desktop authoring dependency", () => {
     for (const unit of mobileModules()) {
       for (const banned of BANNED_IMPORT_PATTERNS) {
         expect(
@@ -67,6 +78,23 @@ describe("mobile dependency boundary (§29/§64/§88)", () => {
         ).toBe(false);
       }
     }
+  });
+
+  it("the edit path (UX-12) reuses the SHARED dialogs — no mobile copies of them", () => {
+    const shell = readSource("mobile-shell.tsx");
+    for (const shared of [
+      "../add-app-dialog",
+      "../edit-app-dialog",
+      "../move-to-section-dialog",
+      "../section-dialog",
+      "../confirm-dialog",
+      "../motion-toast",
+    ]) {
+      expect(shell).toContain(`from "${shared}"`);
+    }
+    // The shell never imports the desktop menu layer for the container-page
+    // lookup — it derives it locally through the domain.
+    expect(shell).toContain("pageItemIds(candidate)");
   });
 
   it("the mobile shell reuses the SHARED consumption modules (not copies)", () => {
