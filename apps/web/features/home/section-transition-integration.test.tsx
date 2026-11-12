@@ -406,21 +406,40 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
     }
 
     // The arm frame (one rAF after the hidden mount): Gamma enters from
-    // the full offset while Beta AND A ride the same timeline out.
+    // the full offset while Beta AND A ride the same timeline out. The
+    // playhead is made deterministic here: GSAP's ticker follows real
+    // time, and jsdom's rAF (a 16ms wall-clock timer) can tick inside
+    // this act's scheduler waits — gliding (even completing) the young
+    // pair before the read (CI saw mid-flight values like ~603 instead
+    // of W). The paused ROOT bounds the flush; the seek then forces the
+    // from-frame render (under a paused root the fromTo write is
+    // deferred to the first ticker render, which never comes), and only
+    // the PAIR stays paused afterwards so the settle's zero-duration
+    // gsap.set rests render under a playing root, exactly like
+    // production.
     const layerC = layerOf("page-c");
-    await act(async () => {
-      for (const callback of armFrames.splice(0)) {
-        callback(0);
-      }
-    });
-    expect(layerC.dataset.phase).toBe("entering");
-    expect(yOf(layerC)).toBe(W); // fresh entry from the full offset
-    expect(layerOf("page-b").dataset.phase).toBe("exit");
-    expect(layerA.dataset.phase).toBe("exit");
+    try {
+      await act(async () => {
+        gsap.globalTimeline.pause();
+        for (const callback of armFrames.splice(0)) {
+          callback(0);
+        }
+      });
+      const armed = livePairTimeline();
+      armed.progress(0).pause();
+      gsap.globalTimeline.resume();
+      expect(layerC.dataset.phase).toBe("entering");
+      expect(yOf(layerC)).toBe(W); // fresh entry from the full offset
+      expect(layerOf("page-b").dataset.phase).toBe("exit");
+      expect(layerA.dataset.phase).toBe("exit");
 
-    await act(async () => {
-      livePairTimeline().progress(1);
-    });
+      await act(async () => {
+        armed.progress(1);
+      });
+    } finally {
+      // A failed boundary read must not leak the pause into later tests.
+      gsap.globalTimeline.resume();
+    }
     // The train settles together: Gamma rests active, the machine idles,
     // the rotation around Gamma keeps Beta warm and evicts A.
     expect(layerC.dataset.phase).toBe("active");
@@ -444,25 +463,54 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
       await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
       livePairTimeline().progress(0.4); // C partway in, B/A on the exit train
     });
-    await navigateTo("Delta"); // cold again → prepares while C enters
-    await act(async () => {
-      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
-    });
-    // Delta is entering; the ENTIRE chain (C, B, A) rides the exit train —
-    // no destination was swallowed and none hard-cut.
-    const layerD = layerOf("page-d");
-    expect(layerD.dataset.phase).toBe("entering");
-    expect(yOf(layerD)).toBe(W);
-    expect(layerOf("page-c").dataset.phase).toBe("exit");
-    expect(layerOf("page-b").dataset.phase).toBe("exit");
-    expect(layerOf("page-a").dataset.phase).toBe("exit");
 
-    await act(async () => {
-      livePairTimeline().progress(1);
-    });
-    expect(layerD.dataset.phase).toBe("active");
-    expect(yOf(layerD)).toBe(0);
-    expect(viewportElement().dataset.sectionTransitioning).toBeUndefined();
+    // The Delta leg freezes BOTH scheduling seams for the frame under
+    // test: rAF (jsdom's is a 16ms wall-clock timer — awaiting one, as
+    // this test used to, lets the arm land AND GSAP's real-time ticker
+    // glide Delta's fresh entry off the full offset before the read; CI
+    // saw ~677 instead of W) and the playhead (the paused GSAP root
+    // bounds the arm flush — the ticker captured the real rAF at wake,
+    // so replacing window.requestAnimationFrame alone does not stop it;
+    // the from-frame write itself is deferred under a paused root, so
+    // the seek forces it, and only the PAIR stays paused so the settle's
+    // zero-duration gsap.set rests render under a playing root).
+    const armFrames: FrameRequestCallback[] = [];
+    const realRaf = window.requestAnimationFrame;
+    window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      armFrames.push(callback);
+      return armFrames.length;
+    }) as typeof window.requestAnimationFrame;
+    try {
+      gsap.globalTimeline.pause();
+      await navigateTo("Delta"); // cold again → prepares while C enters
+      await act(async () => {
+        for (const callback of armFrames.splice(0)) {
+          callback(0);
+        }
+      });
+      const armed = livePairTimeline();
+      armed.progress(0).pause();
+      gsap.globalTimeline.resume();
+      // Delta is entering; the ENTIRE chain (C, B, A) rides the exit
+      // train — no destination was swallowed and none hard-cut.
+      const layerD = layerOf("page-d");
+      expect(layerD.dataset.phase).toBe("entering");
+      expect(yOf(layerD)).toBe(W);
+      expect(layerOf("page-c").dataset.phase).toBe("exit");
+      expect(layerOf("page-b").dataset.phase).toBe("exit");
+      expect(layerOf("page-a").dataset.phase).toBe("exit");
+
+      await act(async () => {
+        armed.progress(1);
+      });
+      expect(layerD.dataset.phase).toBe("active");
+      expect(yOf(layerD)).toBe(0);
+      expect(viewportElement().dataset.sectionTransitioning).toBeUndefined();
+    } finally {
+      window.requestAnimationFrame = realRaf;
+      // A failed boundary read must not leak the pause into later tests.
+      gsap.globalTimeline.resume();
+    }
   });
 
   it("an unrelated rerender carrying the same generation never restarts the live playhead", async () => {
