@@ -115,10 +115,19 @@ export function useTileSession(input: UseTileSessionInput) {
     handoffLock,
     pendingHandoffRef,
     resizeLockRef,
-    displayPlacement,
+    displayPlacement: committedDisplayPlacement,
     setArrangeHistories,
     commitDraggedCanvas,
   } = commits;
+
+  // --- Grid live reflow preview (t129) ---------------------------------------
+  // While a grid drag holds a resolved target, the tile layer renders the
+  // BYSTANDERS at their reflowed cells (dragged slots stay at their origin);
+  // the FLIP slots spring the yielding tiles live, and the drop commits the
+  // exact same placement. Null when no drag is reflowing — the composed
+  // display placement below then falls back to the commit layer's.
+  const [gridReflowPreview, setGridReflowPreview] = useState<PagePlacement | null>(null);
+  const displayPlacement = gridReflowPreview ?? committedDisplayPlacement;
 
   function applySelection(next: ReadonlySet<LayoutItemId>) {
     selectionRef.current = next;
@@ -220,7 +229,11 @@ export function useTileSession(input: UseTileSessionInput) {
   }, [pageIdRef, viewportRef]);
 
   const { dragging, handleDragStart, handleDragMove, handleDragEnd } = useCanvasDrag({
-    placement: displayPlacement,
+    // The BASE placement: the drag session snapshots at start and validates
+    // against the committed geometry — the reflow PREVIEW (which moves
+    // bystanders) must never feed the staleness check or it would invalidate
+    // its own commit.
+    placement: committedDisplayPlacement,
     metrics: freeformMetrics,
     pitchPx: gridMetrics?.pitchPx ?? null,
     resolveScroller,
@@ -234,6 +247,7 @@ export function useTileSession(input: UseTileSessionInput) {
       [commitDraggedCanvas, playSnapDrop],
     ),
     onGridTargetChange: setDragTargetBoxes,
+    onGridReflowChange: setGridReflowPreview,
     getDragItemIds: useCallback(
       (sourceId: LayoutItemId) => resolveDragItemIds(sourceId, selectionRef.current),
       []
@@ -416,6 +430,10 @@ export function useTileSession(input: UseTileSessionInput) {
     // The canvas command layer (also consumed by the shell: menus, toolbar,
     // keyboard shortcuts, scene resize-lock input).
     commits,
+    // The placement the ACTIVE section renders this frame: the live grid
+    // reflow preview while a drag yields bystanders (t129), otherwise the
+    // commit layer's handoff/authoritative placement.
+    displayPlacement,
     // Selection + gestures.
     selectedItemIds,
     applySelection,

@@ -2,7 +2,9 @@ import {
   clampCanvasTranslation,
   clampGridTranslation,
   displaceGridOverlaps,
+  gridReflowPushOf,
   raiseCanvasItems,
+  reflowGridOverlaps,
   translateCanvasItems,
   translateGridItems,
 } from "@veladesk/canvas-engine";
@@ -106,7 +108,12 @@ export function commitCanvasDrag(args: CanvasDragArgs): PagePlacement | null {
 
   if (args.placement.mode === "grid") {
     const { columnDelta, rowDelta } = gridTranslationOf(args);
-    return translateGridItems(args.placement, args.itemIds, columnDelta, rowDelta);
+    const translated = translateGridItems(args.placement, args.itemIds, columnDelta, rowDelta);
+    // t129: the drop settles with the Apple-style reflow — bystanders the
+    // dragged set landed on yield by cascading toward the vacated cells, so
+    // the committed layout is EXACTLY the one the live preview showed.
+    const push = gridReflowPushOf(columnDelta, rowDelta);
+    return push === null ? translated : reflowGridOverlaps(translated, args.itemIds, push);
   }
 
   const logicalX = pixelsToUnits(args.deltaX, args.metrics.width);
@@ -151,11 +158,48 @@ export function freeformRaisedPlacement(
 }
 
 /**
- * The GRID drop's settle commit (Helm r2): the dragged tiles keep exactly
- * the cells the target feedback showed, while every bystander they landed
- * on is displaced to its nearest free cell by the engine — a Grid drop can
- * never end with two tiles stacked in one cell. Pure: the moved set's
- * geometry is untouched, only overlapped bystanders relocate.
+ * The live Apple-style reflow PREVIEW for a grid drag (t129): the bystanders
+ * render at the cells they will occupy at commit — reflowed against the
+ * dragged set's resolved target — while the dragged items themselves keep
+ * their ORIGIN cells (the pointer-following source and the drop placeholder
+ * carry the target; committing moves the dragged slots in one step that the
+ * drop settle glides closed). Returns the input reference when the resolved
+ * delta would reflow nothing, so the renderer can cheaply dedupe reports.
+ * Pure; the same `reflowGridOverlaps` the commit runs guarantees preview and
+ * commit agree cell for cell.
+ */
+export function gridReflowPreviewPlacement(args: CanvasDragArgs): PagePlacement {
+  if (args.placement.mode !== "grid") {
+    return args.placement;
+  }
+  const { columnDelta, rowDelta } = gridTranslationOf(args);
+  const push = gridReflowPushOf(columnDelta, rowDelta);
+  if (push === null) {
+    return args.placement;
+  }
+  const dragged = new Set(args.itemIds);
+  const startById = new Map(args.placement.items.map((item) => [item.id, item] as const));
+  const reflowed = reflowGridOverlaps(
+    translateGridItems(args.placement, args.itemIds, columnDelta, rowDelta),
+    args.itemIds,
+    push,
+  );
+  return {
+    ...reflowed,
+    items: reflowed.items.map((item) => {
+      const origin = startById.get(item.id);
+      return dragged.has(item.id) && origin !== undefined ? origin : item;
+    }),
+  };
+}
+
+/**
+ * The GRID drop's settle commit (Helm r2, reflow since t129): the dragged
+ * tiles keep exactly the cells the target feedback showed while bystanders
+ * were already reflowed by {@link commitCanvasDrag}. This pass remains as
+ * the NO-STACKING safety net — anything still under the dragged set (a
+ * reflow budget fallback) is displaced to its nearest free cell, and an
+ * overlap-free layout returns the input reference untouched.
  */
 export function settledGridDropPlacement(
   movedPlacement: PagePlacement,

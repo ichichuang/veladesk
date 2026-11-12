@@ -300,6 +300,195 @@ export function displaceGridOverlaps(
   return changed ? next : layout;
 }
 
+/**
+ * The push vector of an Apple-style live reflow (t129): while a Grid drag
+ * holds its resolved target, every bystander it covers shifts ONE cell at a
+ * time in `direction` along `axis` — the direction is OPPOSITE the drag's
+ * dominant delta, so the wave of yielding tiles travels toward the vacated
+ * cells and the gap follows the pointer. Null when the resolved delta is
+ * zero (nothing to reflow).
+ */
+export interface GridReflowPush {
+  readonly axis: "column" | "row";
+  readonly direction: -1 | 1;
+}
+
+/**
+ * Derives the reflow push from the resolved whole-cell drag delta. Pure.
+ */
+export function gridReflowPushOf(
+  columnDelta: number,
+  rowDelta: number,
+): GridReflowPush | null {
+  if (columnDelta === 0 && rowDelta === 0) {
+    return null;
+  }
+  if (Math.abs(columnDelta) >= Math.abs(rowDelta)) {
+    return { axis: "column", direction: columnDelta > 0 ? -1 : 1 };
+  }
+  return { axis: "row", direction: rowDelta > 0 ? -1 : 1 };
+}
+
+/** The next cell of a one-step reflow push, or null at the backward edge. */
+function reflowStepOf(
+  item: Omit<GridCanvasItem, "id">,
+  push: GridReflowPush,
+  columns: number,
+): { readonly column: number; readonly row: number } | null {
+  if (push.axis === "column") {
+    const column = item.column + push.direction;
+    if (column >= 0 && column + item.columnSpan <= columns) {
+      return { column, row: item.row };
+    }
+    if (push.direction > 0) {
+      // Pushed past the right edge: flow to the next row's start (reading
+      // order keeps increasing, so the wave always terminates).
+      return { column: 0, row: item.row + 1 };
+    }
+    // Pushed past the left edge: flow to the previous row's end. Above row 0
+    // there is no further backward room — the settle fallback owns it.
+    const row = item.row - 1;
+    return row >= 0
+      ? { column: Math.max(0, columns - item.columnSpan), row }
+      : null;
+  }
+  const row = item.row + push.direction;
+  // Rows are unbounded downward; upward stops at row 0 (fallback).
+  return row >= 0 ? { column: item.column, row } : null;
+}
+
+/**
+ * The Apple-style live reflow settle (t129): given a layout whose DRAGGED
+ * items already sit at their resolved target cells, every bystander they
+ * cover yields by cascading ONE CELL at a time along `push` — the tile
+ * under the dragged footprint steps aside, whatever it lands on steps aside
+ * in turn, and the wave keeps travelling until it falls into the cells the
+ * dragged set vacated. Same-row neighbours slide toward the hole while the
+ * gap follows the pointer, instead of the Helm r2 "displace the bystander
+ * downward" scan. Untouched items NEVER move, so intentional saved gaps
+ * survive a drag that never crosses them; spans are preserved; the dragged
+ * set's own geometry is exactly what the caller placed.
+ *
+ * Deterministic: conflicts are processed from the bystanders under the
+ * dragged set (array order); between two overlapping bystanders the one
+ * further along the push direction yields. A generous iteration budget
+ * bounds pathological packings — if it ever runs out, the remainder is
+ * settled by {@link displaceGridOverlaps} so the no-stacking invariant
+ * holds regardless. Pure; returns the input reference when nothing moved.
+ */
+export function reflowGridOverlaps(
+  layout: GridCanvasLayoutV2,
+  draggedIds: readonly string[],
+  push: GridReflowPush,
+): GridCanvasLayoutV2 {
+  // The working copies shed `readonly` for the in-place cascade; the result
+  // rebuilds fresh frozen-shape items from them (order preserved).
+  type WorkingItem = { -readonly [K in keyof GridCanvasItem]: GridCanvasItem[K] };
+  const dragged = new Set(draggedIds);
+  const working: WorkingItem[] = layout.items.map((item) => ({ ...item }));
+  const byId = new Map(working.map((item) => [item.id, item] as const));
+  let changed = false;
+  let pushes = 0;
+  // Each push moves one item one cell strictly along the push direction
+  // (reading order monotone), so a budget of cells-per-item bounds every
+  // realistic cascade; the cap keeps the worst case cheap.
+  const budget = Math.min(working.length * (layout.columns + 4) + 16, 2048);
+
+  const conflictsOf = (item: WorkingItem): WorkingItem[] =>
+    working.filter(
+      (other) => other.id !== item.id && cellsOverlap(item, other),
+    );
+
+  const applyPush = (item: WorkingItem): boolean => {
+    const step = reflowStepOf(item, push, layout.columns);
+    let next = step;
+    if (next === null) {
+      // Backward edge exhausted: nearest free cell from its own origin (the
+      // Helm r2 scan) — if that is where it already sits, this item cannot
+      // progress and the caller's settle fallback takes over.
+      const without = working.filter((candidate) => candidate.id !== item.id);
+      next = firstFreeGridPlacement(
+        { ...layout, items: without },
+        { columnSpan: item.columnSpan, rowSpan: item.rowSpan },
+        { column: item.column, row: item.row },
+      );
+      if (next.column === item.column && next.row === item.row) {
+        return false;
+      }
+    }
+    item.column = next.column;
+    item.row = next.row;
+    changed = true;
+    pushes += 1;
+    return true;
+  };
+
+  // Seeds: the bystanders a dragged tile currently covers, array order.
+  const stack: WorkingItem[] = [];
+  for (const item of working) {
+    if (!dragged.has(item.id) && conflictsOf(item).some((other) => dragged.has(other.id))) {
+      stack.push(item);
+    }
+  }
+
+  while (stack.length > 0) {
+    if (pushes > budget) {
+      // Pathological packing: settle whatever is left with the older
+      // displacement pass so two tiles can never share a cell.
+      return displaceGridOverlaps(
+        { ...layout, items: working },
+        draggedIds,
+      );
+    }
+    const current = stack[stack.length - 1] as WorkingItem;
+    const conflicts = conflictsOf(current);
+    if (conflicts.length === 0) {
+      stack.pop();
+      continue;
+    }
+    // Under a dragged tile, the bystander itself moves. Otherwise the tile
+    // it just landed on yields — the one furthest along the push direction,
+    // so the wave travels toward the vacated cells.
+    if (conflicts.some((other) => dragged.has(other.id))) {
+      if (!applyPush(current)) {
+        stack.pop();
+      }
+      continue;
+    }
+    const along = (item: WorkingItem): number =>
+      push.axis === "column" ? item.column : item.row;
+    let obstacle = conflicts[0] as WorkingItem;
+    for (const candidate of conflicts) {
+      const better =
+        push.direction < 0
+          ? along(candidate) < along(obstacle)
+          : along(candidate) > along(obstacle);
+      if (better) {
+        obstacle = candidate;
+      }
+    }
+    if (!applyPush(obstacle)) {
+      // The obstacle cannot yield further; move the current aside instead.
+      if (!applyPush(current)) {
+        stack.pop();
+      }
+      continue;
+    }
+    stack.push(obstacle);
+  }
+
+  if (!changed) {
+    return layout;
+  }
+  return {
+    ...layout,
+    items: layout.items.map((item) => {
+      const moved = byId.get(item.id);
+      return moved === undefined ? item : { ...moved };
+    }),
+  };
+}
+
 /** The rigid delta a group drag may apply, after bounds clamping. */
 export function clampGridTranslation(
   layout: GridCanvasLayoutV2,

@@ -34,14 +34,29 @@ import type { VdScrollAxis } from "./scroll-area";
  * transitions under the media query). jsdom (unit tests) has no matchMedia;
  * the surface degrades to the plain native scrollbar styling.
  */
+/** Per-surface behavior options for {@link useVdScrollbar}. */
+export interface VdScrollbarOptions {
+  /**
+   * When the bar auto-hides (OverlayScrollbars `autoHide`). Defaults to
+   * `"move"` (the t63 contract: visible while the pointer moves over the
+   * host or it scrolls). `"scroll"` is the QUIET variant for narrow strip
+   * surfaces (the section pill, the mobile tabs): the bar only appears
+   * while actually scrolling and fades straight after — a strip the user
+   * merely hovers never flashes an accent bar (t129).
+   */
+  readonly autoHide?: "move" | "scroll" | "leave" | "never";
+}
+
 export function useVdScrollbar(
   ref: RefObject<HTMLElement | null>,
   axis: VdScrollAxis,
+  options?: VdScrollbarOptions,
 ): void {
-  const managed = useRef<{ host: HTMLElement; axis: VdScrollAxis; dispose: () => void } | null>(null);
+  const autoHide = options?.autoHide ?? "move";
+  const managed = useRef<{ host: HTMLElement; axis: VdScrollAxis; autoHide: VdScrollbarOptions["autoHide"]; dispose: () => void } | null>(null);
   useEffect(() => {
     const host = ref.current;
-    if (managed.current?.host === host && managed.current.axis === axis) return;
+    if (managed.current?.host === host && managed.current.axis === axis && managed.current.autoHide === autoHide) return;
     managed.current?.dispose();
     managed.current = null;
     if (host === null || typeof window.matchMedia !== "function") {
@@ -58,7 +73,7 @@ export function useVdScrollbar(
       scrollbars: {
         theme: "os-theme-vd",
         visibility: "auto",
-        autoHide: "move",
+        autoHide,
         autoHideDelay: Number.parseFloat(getComputedStyle(host).getPropertyValue("--vd-scrollbar-idle-ms")) || 1000,
         dragScroll: true,
         clickScroll: true,
@@ -67,7 +82,7 @@ export function useVdScrollbar(
     // The library's [data-overlayscrollbars] rule sets position: relative.
     // Keep fixed/absolute/sticky hosts in their existing coordinate space.
     if (position !== "static") host.style.position = position;
-    managed.current = { host, axis, dispose: () => {
+    managed.current = { host, axis, autoHide, dispose: () => {
       instance.destroy();
       host.style.position = originalPosition;
     } };

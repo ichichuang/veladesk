@@ -172,6 +172,13 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   const captureActiveScrollRef = useRef<() => void>(() => {});
 
   /**
+   * Stable wrapper over the scene's DOM scroll capture (latest-value
+   * mirror): consumed by BOTH the shared active-section hook's flush
+   * boundaries and the workspace-change guard, so neither re-binds when
+   * the scene re-renders.
+   */
+  const captureActiveScroll = useCallback(() => captureActiveScrollRef.current(), []);
+  /**
    * The ACTIVE SECTION owner (026 §17): the shared minimal controller,
    * either the externally-owned instance from ResponsiveWorkspaceShell or
    * — for standalone renders — an internally-owned one with exactly the
@@ -184,7 +191,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     workspaceId: workspace.id,
     pageIds,
     defaultSectionId: snapshot.preferences.defaultPageId,
-    captureActiveScroll: useCallback(() => captureActiveScrollRef.current(), []),
+    captureActiveScroll,
   });
   const effectiveActivePageId = activeSection.effectiveActivePageId;
 
@@ -420,7 +427,8 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
 
   // The before-workspace-change guard (use-before-change-guard.ts): a
   // workspace switch waits out drags, resizes, open surfaces, the layout
-  // commit queue and pending geometry handoffs.
+  // commit queue and pending geometry handoffs — and captures the active
+  // section's scroll while the outgoing DOM is still mounted (t129).
   useBeforeWorkspaceChangeGuard({
     runtime,
     dialog,
@@ -430,6 +438,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     resizeLockRef: tiles.commits.resizeLockRef,
     layoutQueueRef: tiles.commits.layoutQueueRef,
     pendingHandoffRef: tiles.commits.pendingHandoffRef,
+    captureActiveScroll,
   });
 
   useDesktopShortcuts({

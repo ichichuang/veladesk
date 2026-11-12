@@ -7,7 +7,11 @@ import type { PagePlacement } from "@veladesk/domain";
 import type { LayoutItemId } from "@veladesk/desktop-engine";
 
 import type { CanvasPixelMetrics } from "./canvas-metrics";
-import { commitCanvasDrag, gridTranslationOf } from "./canvas-drag";
+import {
+  commitCanvasDrag,
+  gridReflowPreviewPlacement,
+  gridTranslationOf,
+} from "./canvas-drag";
 import type { GridItemGeometry } from "./canvas-resize";
 
 /** Custom property the item body moves with during a drag preview. */
@@ -70,6 +74,19 @@ export interface CanvasDragOptions {
     | ((boxes: readonly GridItemGeometry[] | null) => void)
     | undefined;
   /**
+   * Grid-only Apple-style reflow preview (t129): reports the placement the
+   * bystanders should render at RIGHT NOW — dragged slots at their origin,
+   * everyone the dragged set covers reflowed toward the vacated cells —
+   * deduped per integer delta change exactly like the target boxes. `null`
+   * on every gesture exit path, ALWAYS before the commit callback so the
+   * commit render replaces the preview in one paint. The consumer feeds it
+   * to the tile layer, where the snap FLIP slots spring the yielding tiles
+   * live (reduced motion repositions them instantly).
+   */
+  readonly onGridReflowChange?:
+    | ((placement: PagePlacement | null) => void)
+    | undefined;
+  /**
    * Resolves the ACTIVE section's scroller (t63): the scroll container a
    * drag can push content through — the drag session tracks its scrollTop
    * (dnd-kit's auto-scroll moves it while the pointer rides the bottom
@@ -96,9 +113,10 @@ export interface CanvasDragOptions {
  * the scroller's own travel added to the pointer delta so a drop below the
  * fold lands exactly where the user aimed).
  *
- * The resolved (snapped/clamped) translation is therefore PREVIEW-FREE:
- * the drop placeholder carries it during the drag and the commit owns it
- * at release, with the settle (dnd-static-drop.ts) gliding from the
+ * The resolved (snapped/clamped) translation drives the drop placeholder,
+ * the BYSTANDER reflow preview (t129 — every tile the dragged set covers
+ * reflows live toward the vacated cells; see onGridReflowChange) and the
+ * commit at release, with the settle (dnd-static-drop.ts) gliding from the
  * release position into the committed geometry.
  *
  * Pointermove NEVER stages or persists anything — the peer preview is a
@@ -113,6 +131,7 @@ export function useCanvasDrag({
   getDragItemIds,
   resolveItemElement,
   onGridTargetChange,
+  onGridReflowChange,
   resolveScroller,
 }: CanvasDragOptions): {
   dragging: boolean;
@@ -130,8 +149,11 @@ export function useCanvasDrag({
   const getDragItemIdsRef = useRef(getDragItemIds);
   const resolveItemElementRef = useRef(resolveItemElement);
   const onGridTargetChangeRef = useRef(onGridTargetChange);
+  const onGridReflowChangeRef = useRef(onGridReflowChange);
   const resolveScrollerRef = useRef(resolveScroller);
   const lastTargetKeyRef = useRef<string | null>(null);
+  /** The last reported reflow preview (structural-equality dedupe). */
+  const lastReflowRef = useRef<PagePlacement | null>(null);
   /** dnd-kit's delta origin, captured from the first DragMoveEvent. */
   const dragInitialRef = useRef<{ x: number; y: number } | null>(null);
   /** Latest native pointermove position while a session is live. */
@@ -179,6 +201,9 @@ export function useCanvasDrag({
   });
   useEffect(() => {
     onGridTargetChangeRef.current = onGridTargetChange;
+  });
+  useEffect(() => {
+    onGridReflowChangeRef.current = onGridReflowChange;
   });
 
   // Zero-bounce handoff: the drop render (with the consumer's optimistic
@@ -292,15 +317,24 @@ export function useCanvasDrag({
   /**
    * Target-slot feedback: the resolved boxes of the moving items at the
    * current integer delta. Reported only when the delta actually crossed a
-   * cell boundary — a setState per crossing, never per pointer frame.
+   * cell boundary — a setState per crossing, never per pointer frame. The
+   * same crossing also recomputes the Apple-style reflow preview (t129):
+   * the bystanders' live placement, deduped structurally against the last
+   * report so an unchanged reflow never re-renders the tile layer.
    */
   function reportGridTargets(
     session: ActiveCanvasDragSession,
     columnDelta: number,
     rowDelta: number,
+    deltaX: number,
+    effectiveDeltaY: number,
   ): void {
     const callback = onGridTargetChangeRef.current;
-    if (callback === undefined || session.placementAtStart.mode !== "grid") {
+    const reflowCallback = onGridReflowChangeRef.current;
+    if (
+      (callback === undefined && reflowCallback === undefined) ||
+      session.placementAtStart.mode !== "grid"
+    ) {
       return;
     }
     const boxes = session.placementAtStart.items
@@ -312,17 +346,37 @@ export function useCanvasDrag({
         rowSpan: item.rowSpan,
       }));
     const key = JSON.stringify(boxes);
-    if (key === lastTargetKeyRef.current) {
-      return;
+    if (key !== lastTargetKeyRef.current && callback !== undefined) {
+      callback(boxes);
+    }
+    if (key !== lastTargetKeyRef.current && reflowCallback !== undefined) {
+      const preview = gridReflowPreviewPlacement({
+        placement: session.placementAtStart,
+        itemIds: session.itemIds,
+        deltaX,
+        deltaY: effectiveDeltaY,
+        metrics: session.metricsAtStart ?? { width: 1, height: 1 },
+        pitchPx: session.pitchAtStart ?? 1,
+      });
+      if (
+        lastReflowRef.current === null ||
+        !areCanvasLayoutsEqual(preview, lastReflowRef.current)
+      ) {
+        lastReflowRef.current = preview;
+        reflowCallback(preview);
+      }
     }
     lastTargetKeyRef.current = key;
-    callback(boxes);
   }
 
-  /** Clears the target-slot feedback (idempotent). */
+  /** Clears both feedback channels (idempotent). */
   function reportTargets(value: null): void {
     lastTargetKeyRef.current = null;
     onGridTargetChangeRef.current?.(value);
+    if (lastReflowRef.current !== null) {
+      lastReflowRef.current = null;
+      onGridReflowChangeRef.current?.(null);
+    }
   }
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -417,8 +471,9 @@ export function useCanvasDrag({
       writePreview(id, `translate3d(${deltaX}px, ${effectiveDeltaY}px, 0)`);
     }
     if (session.placementAtStart.mode === "grid") {
-      // The resolved whole-cell delta drives ONLY the drop placeholder
-      // (and the commit below) — the tiles themselves ride the raw delta.
+      // The resolved whole-cell delta drives the drop placeholder, the
+      // bystander reflow preview and the commit below — the dragged tiles
+      // themselves ride the raw delta under the pointer.
       const { columnDelta, rowDelta } = gridTranslationOf({
         placement: session.placementAtStart,
         itemIds: session.itemIds,
@@ -427,7 +482,7 @@ export function useCanvasDrag({
         metrics: session.metricsAtStart ?? { width: 1, height: 1 },
         pitchPx: session.pitchAtStart ?? 1,
       });
-      reportGridTargets(session, columnDelta, rowDelta);
+      reportGridTargets(session, columnDelta, rowDelta, deltaX, effectiveDeltaY);
     }
     updateRunway(session, effectiveDeltaY);
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 
 import {
   calculateSquareGridMetrics,
@@ -36,7 +36,13 @@ export function useSquareGridMetrics(
   const [node, setNode] = useState<HTMLDivElement | null>(null);
   const [metrics, setMetrics] = useState<SquareGridMetrics | null>(null);
 
-  useEffect(() => {
+  // LAYOUT-phase on purpose (t129): the first measurement must land before
+  // the first paint, or the grid renders one 0px-cell frame whose collapsed
+  // content clamps the section's scroll restore to 0 — the "flash to the
+  // top, then jump back to the remembered position" Chris saw on refresh
+  // and cold mounts. The ResizeObserver below keeps every later resize in
+  // sync; jsdom (no layout) measures zeros exactly like before.
+  useLayoutEffect(() => {
     if (node === null) {
       return;
     }

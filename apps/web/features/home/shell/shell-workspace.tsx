@@ -134,7 +134,7 @@ export function ShellWorkspace({
             machine={scene.machine}
             activePageId={effectiveActivePageId}
             onLayerElement={scene.registerSectionLayer}
-            displayPlacement={page.id === effectiveActivePageId ? tiles.commits.displayPlacement : null}
+            displayPlacement={page.id === effectiveActivePageId ? tiles.displayPlacement : null}
             renderedWorkspace={renderedSnapshot}
             arrange={arrange}
             dragEnabled={arrange && !tiles.commits.handoffLock && !tiles.commits.resizeLock}

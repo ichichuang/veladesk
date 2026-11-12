@@ -4,6 +4,7 @@ import type { PagePlacement } from "@veladesk/domain";
 
 import {
   commitCanvasDrag,
+  gridReflowPreviewPlacement,
   isCanvasDragNoop,
   previewCanvasDrag,
   settledGridDropPlacement,
@@ -221,7 +222,7 @@ describe("settledGridDropPlacement — the Helm r2 grid drop settle", () => {
     return placement.mode === "grid" ? placement.items : [];
   }
 
-  it("keeps the dropped tile's cells and displaces the bystander it landed on", () => {
+  it("keeps the dropped tile's cells and slides the bystander into the vacated cell", () => {
     const start = grid([
       { id: "a", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
       { id: "b", column: 1, row: 0, columnSpan: 1, rowSpan: 1 },
@@ -240,8 +241,9 @@ describe("settledGridDropPlacement — the Helm r2 grid drop settle", () => {
     const byId = new Map(gridItems(settled).map((item) => [item.id, item]));
     // The drop is authoritative: "a" stays at its feedback cell…
     expect(byId.get("a")).toMatchObject({ column: 1, row: 0 });
-    // …and "b" hops to the next free cell instead of stacking beneath it.
-    expect(byId.get("b")).toMatchObject({ column: 2, row: 0 });
+    // …and "b" yields Apple-style into the cell "a" vacated — the t129
+    // reflow — never stacks beneath the drop.
+    expect(byId.get("b")).toMatchObject({ column: 0, row: 0 });
   });
 
   it("passes freeform placements through untouched (that path raises z-order instead)", () => {
@@ -266,5 +268,122 @@ describe("settledGridDropPlacement — the Helm r2 grid drop settle", () => {
     });
     expect(moved).not.toBeNull();
     expect(settledGridDropPlacement(moved!, start)).toBe(moved);
+  });
+});
+
+describe("grid drag reflow — the t129 Apple-style live yield", () => {
+  function byId(placement: PagePlacement): Map<string, GridCanvasItem> {
+    expect(placement.mode).toBe("grid");
+    return new Map(
+      placement.mode === "grid" ? placement.items.map((item) => [item.id, item]) : [],
+    );
+  }
+
+  it("cascades the whole row one cell toward the vacated cells", () => {
+    // A dense row a,b,c,d: dragging "a" three cells right onto "d" shifts
+    // b, c and d ONE cell left each — the hole travels with the pointer,
+    // nobody gets pushed down a row.
+    const start = grid([
+      { id: "a", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "b", column: 1, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "c", column: 2, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "d", column: 3, row: 0, columnSpan: 1, rowSpan: 1 },
+    ]);
+    const moved = commitCanvasDrag({
+      placement: start,
+      itemIds: ["a"],
+      deltaX: 300,
+      deltaY: 0,
+      metrics,
+      pitchPx: 100,
+    });
+    const settled = byId(moved!);
+    expect(settled.get("a")).toMatchObject({ column: 3, row: 0 });
+    expect(settled.get("b")).toMatchObject({ column: 0, row: 0 });
+    expect(settled.get("c")).toMatchObject({ column: 1, row: 0 });
+    expect(settled.get("d")).toMatchObject({ column: 2, row: 0 });
+  });
+
+  it("reflows upward for a downward drag onto a lower row", () => {
+    const start = grid([
+      { id: "a", column: 1, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "x", column: 1, row: 2, columnSpan: 1, rowSpan: 1 },
+    ]);
+    const moved = commitCanvasDrag({
+      placement: start,
+      itemIds: ["a"],
+      deltaX: 0,
+      deltaY: 200,
+      metrics,
+      pitchPx: 100,
+    });
+    const settled = byId(moved!);
+    expect(settled.get("a")).toMatchObject({ column: 1, row: 2 });
+    expect(settled.get("x")).toMatchObject({ column: 1, row: 1 });
+  });
+
+  it("never moves bystanders the dragged set did not cross", () => {
+    // "e" sits past the drop with a deliberate gap before it — intentional
+    // saved holes survive a drag that never touches them (t129 rule).
+    const start = grid([
+      { id: "a", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "b", column: 1, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "e", column: 4, row: 0, columnSpan: 1, rowSpan: 1 },
+    ]);
+    const moved = commitCanvasDrag({
+      placement: start,
+      itemIds: ["a"],
+      deltaX: 100,
+      deltaY: 0,
+      metrics,
+      pitchPx: 100,
+    });
+    const settled = byId(moved!);
+    expect(settled.get("b")).toMatchObject({ column: 0, row: 0 });
+    expect(settled.get("e")).toMatchObject({ column: 4, row: 0 });
+  });
+
+  it("previews the bystanders' committed cells with the dragged slots at their origin", () => {
+    const start = grid([
+      { id: "a", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "b", column: 1, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "c", column: 2, row: 0, columnSpan: 1, rowSpan: 1 },
+    ]);
+    const args = {
+      placement: start,
+      itemIds: ["a"],
+      deltaX: 200,
+      deltaY: 0,
+      metrics,
+      pitchPx: 100,
+    } as const;
+    const preview = gridReflowPreviewPlacement(args);
+    const previewById = byId(preview);
+    // The dragged slot stays at its origin (the pointer-following source
+    // and the drop placeholder carry the target)…
+    expect(previewById.get("a")).toMatchObject({ column: 0, row: 0 });
+    // …while the bystanders already sit at their committed cells.
+    expect(previewById.get("b")).toMatchObject({ column: 0, row: 0 });
+    expect(previewById.get("c")).toMatchObject({ column: 1, row: 0 });
+    const committed = byId(commitCanvasDrag(args)!);
+    expect(committed.get("a")).toMatchObject({ column: 2, row: 0 });
+    expect(committed.get("b")).toMatchObject({ column: 0, row: 0 });
+    expect(committed.get("c")).toMatchObject({ column: 1, row: 0 });
+  });
+
+  it("returns the input reference for a delta that reflows nothing", () => {
+    const floating = grid([
+      { id: "solo", column: 3, row: 4, columnSpan: 1, rowSpan: 1 },
+    ]);
+    expect(
+      gridReflowPreviewPlacement({
+        placement: floating,
+        itemIds: ["solo"],
+        deltaX: 40, // below the half-pitch threshold — no resolved delta
+        deltaY: 0,
+        metrics,
+        pitchPx: 100,
+      }),
+    ).toBe(floating);
   });
 });

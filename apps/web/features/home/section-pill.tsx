@@ -92,7 +92,9 @@ export function SectionPill({
   const pillWheelStateRef = useRef<PillWheelNavState>(resetPillWheelNav());
   const navRef = useRef<HTMLElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  useVdScrollbar(scrollerRef, "x");
+  // t129: hairline scrollbar, revealed only while the strip actually
+  // scrolls — the edge mask fades carry the overflow affordance.
+  useVdScrollbar(scrollerRef, "x", { autoHide: "scroll" });
   useVdSmoothScroll(scrollerRef, true);
   /** Long-press timer + origin, cancelled by slop travel or release. */
   const longPressRef = useRef<{

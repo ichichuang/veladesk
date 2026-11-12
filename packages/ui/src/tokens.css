@@ -116,6 +116,20 @@
   --vd-scrollbar-thumb-width: 4px;
   --vd-scrollbar-thumb-width-hover: 7px;
   --vd-scrollbar-thumb-width-active: 8px;
+  /*
+   * The HAIRLINE variant (t129) for narrow horizontal strips that list
+   * sections (the desktop pill above the dock, the mobile tabs bar): a
+   * 2px near-invisible thumb in MUTED foreground — never the accent — that
+   * only appears while the strip actually scrolls (autoHide "scroll"). The
+   * strip's edge mask fades carry the affordance; the bar must not compete
+   * with the segment labels inside a one-row capsule.
+   */
+  --vd-scrollbar-hairline-width: 2px;
+  --vd-scrollbar-hairline-width-hover: 4px;
+  --vd-scrollbar-hairline-width-active: 5px;
+  --vd-scrollbar-hairline-thumb: color-mix(in oklab, var(--vd-color-fg-muted) 34%, transparent);
+  --vd-scrollbar-hairline-thumb-hover: color-mix(in oklab, var(--vd-color-fg-muted) 55%, transparent);
+  --vd-scrollbar-hairline-thumb-active: color-mix(in oklab, var(--vd-color-fg-muted) 70%, transparent);
   --vd-scrollbar-radius: 999px;
   --vd-scrollbar-lerp: 0.12;
   --vd-scrollbar-settle-ms: 500;

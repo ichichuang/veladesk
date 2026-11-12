@@ -209,6 +209,27 @@
   display: none;
 }
 
+/*
+ * t129: the strip's OverlayScrollbars overlay bar (the useVdScrollbar
+ * instance above) is the HAIRLINE variant — 2px muted thumb, shown only
+ * while the strip actually scrolls (the hook passes autoHide "scroll").
+ * The native scrollbar was always fully hidden; the overlay accent bar
+ * that appeared on any pointer motion was the loud one. Sizes/colors come
+ * from the --vd-scrollbar-hairline-* tokens; scoped over the shared
+ * .os-theme-vd block in packages/ui by specificity.
+ */
+[data-vd-ui] .vela-mobile-tabs .os-theme-vd {
+  --os-size: 6px;
+  --os-padding-perpendicular: 1px;
+  --os-padding-axis: 1px;
+  --os-handle-bg: var(--vd-scrollbar-hairline-thumb);
+  --os-handle-bg-hover: var(--vd-scrollbar-hairline-thumb-hover);
+  --os-handle-bg-active: var(--vd-scrollbar-hairline-thumb-active);
+  --os-handle-perpendicular-size: var(--vd-scrollbar-hairline-width);
+  --os-handle-perpendicular-size-hover: var(--vd-scrollbar-hairline-width-hover);
+  --os-handle-perpendicular-size-active: var(--vd-scrollbar-hairline-width-active);
+}
+
 .vela-mobile-tabs__tab {
   position: relative;
   flex: none;

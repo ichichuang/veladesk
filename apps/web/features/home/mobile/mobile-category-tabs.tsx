@@ -42,7 +42,9 @@ export function MobileCategoryTabs({
    */
   const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  useVdScrollbar(listRef, "x");
+  // t129: hairline scrollbar, revealed only while the strip actually
+  // scrolls — a quiet category strip, never a loud bar above the content.
+  useVdScrollbar(listRef, "x", { autoHide: "scroll" });
   useVdSmoothScroll(listRef, true);
   const setList = useCallback((node: HTMLDivElement | null) => {
     listRef.current = node;
