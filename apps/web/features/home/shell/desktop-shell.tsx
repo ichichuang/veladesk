@@ -31,7 +31,7 @@ import {
 import { handleAppearanceAppClick } from "../appearance-app-click";
 import { openAppearanceSession } from "../app-appearance-session";
 import type { AppAppearanceSession } from "../app-appearance-session";
-import { applyBackgroundPatchesToSnapshot } from "../settings-draft";
+import { applySettingsDraftToSnapshot } from "../settings-draft";
 import type { WorkspaceSettingsDraft } from "../settings-draft";
 import { useI18n } from "../../i18n/use-i18n";
 import { useWorkspaceManager } from "../workspace-manager";
@@ -249,17 +249,21 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   } = dialogs;
 
   const inspectorOpen = dialog !== null && dialog.kind === "edit-visual";
-  // The t137 Settings live preview, applied to the RENDERED snapshot: the
-  // draft's scoped background patches ride the same domain ops a Save uses
-  // (settings-draft.ts), so what the desktop previews is exactly what Save
-  // persists. Same reference when no patch is live (memo identity holds).
-  const settingsProjectedSnapshot = useMemo(() => {
+  // The t137/t148 Settings live preview, applied to the RENDERED snapshot:
+  // the WHOLE draft rides the ONE shared projection a Save uses
+  // (applySettingsDraftToSnapshot in settings-draft.ts) — appearance,
+  // workspace wallpaper, scoped page patches, grid gap and motion — so
+  // what the desktop previews is exactly what Save persists. Null when no
+  // draft is live or the projection refused (a deleted target page); the
+  // callers below then fall back to the unprojected snapshot.
+  const settingsProjection = useMemo(() => {
     if (settingsDraftPreview === null) {
-      return snapshot;
+      return null;
     }
-    const result = applyBackgroundPatchesToSnapshot(snapshot, settingsDraftPreview.background);
-    return result.ok ? result.workspace : snapshot;
+    const result = applySettingsDraftToSnapshot(snapshot, settingsDraftPreview);
+    return result.ok ? result.workspace : null;
   }, [snapshot, settingsDraftPreview]);
+  const settingsProjectedSnapshot = settingsProjection ?? snapshot;
   // The appearance projection (persisted + session draft through ONE
   // canonical projection — see use-appearance-projection.ts).
   const { renderedSnapshot, appearanceEditingId } = useAppearanceProjection({
@@ -268,27 +272,50 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     snapshot: settingsProjectedSnapshot,
   });
 
-  // The DESKTOP's rendered theme (t137: the LIVE Settings preview — every
-  // appearance change paints the desktop immediately; closing without
+  // The DESKTOP's rendered theme (t137/t148: the LIVE Settings preview —
+  // every appearance change paints the desktop immediately; closing without
   // saving drops the preview and the persisted theme returns) and the
   // EFFECTIVE color mode, which also owns the document-level color-scheme.
   // One derivation, in use-shell-theme.ts.
+  //
+  // t148: while the draft projection is live, the theme resolves the
+  // PROJECTED snapshot's preferences — the draft's appearance WITH the
+  // workspace wallpaper merged exactly like Save. The separate
+  // appearancePreview stream never carried background.workspace, which is
+  // why workspace wallpaper picks used to show only after Save; it remains
+  // only as the fallback when the projection refused (a deleted target
+  // page), preserving the pre-t148 appearance-only preview in that case.
+  const previewThemePreferences =
+    settingsProjection !== null ? settingsProjection.preferences : snapshot.preferences;
+  const previewAppearanceOverride = settingsProjection !== null ? null : appearancePreview;
   const {
     resolvedAppearance,
     theme,
     effectiveColorMode,
-  } = useShellTheme({ appearancePreview, preferences: snapshot.preferences });
+  } = useShellTheme({
+    appearancePreview: previewAppearanceOverride,
+    preferences: previewThemePreferences,
+  });
   // The overlay portal root's theme: the Settings draft while a preview is
   // live, otherwise the same persisted theme — so the Settings window (and
   // only portalled surfaces) previews the draft in place.
   const portalTheme = useShellTheme({
-    appearancePreview,
-    preferences: snapshot.preferences,
+    appearancePreview: previewAppearanceOverride,
+    preferences: previewThemePreferences,
     applyDocumentScheme: false,
   });
 
   /** The persisted gap, resolved for legacy snapshots. */
   const persistedGapPx = useMemo(() => resolveGridGapPx(snapshot.preferences), [snapshot.preferences]);
+  /**
+   * The Settings draft's gap while its projection is live (t148): the real
+   * grid follows the draft immediately; Settings owns the desktop while
+   * its window is open, so the toolbar's transient pendingGapPx stands
+   * down (the two previews never fight). Cancel/close drops the projection
+   * and the persisted gap returns.
+   */
+  const settingsGapPreview =
+    settingsProjection !== null ? resolveGridGapPx(settingsProjection.preferences) : null;
   /**
    * The effective grid gap: a just-clicked toolbar change previews until the
    * durable snapshot carries the same value (derived in render, never an
@@ -296,7 +323,8 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
    * the switch is invisible).
    */
   const displayGapPx =
-    pendingGapPx !== null && pendingGapPx !== persistedGapPx ? pendingGapPx : persistedGapPx;
+    settingsGapPreview ??
+    (pendingGapPx !== null && pendingGapPx !== persistedGapPx ? pendingGapPx : persistedGapPx);
 
   const arrange = mode === "arrange";
 

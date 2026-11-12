@@ -8,6 +8,7 @@ import {
 import type { WorkspaceSnapshot } from "@veladesk/domain";
 
 import {
+  applySettingsDraftToSnapshot,
   areWorkspaceSettingsDraftsEqual,
   createWorkspaceSettingsDraft,
   preferencesFromSettingsDraft,
@@ -282,5 +283,101 @@ describe("Settings V2 — motion preferences survive (P1 helmMotion flag)", () =
       areWorkspaceSettingsDraftsEqual(withFlag, { ...withFlag, motion: { experiments: { helmMotion: false } } })
     ).toBe(false);
     expect(areWorkspaceSettingsDraftsEqual(withFlag, { ...withFlag })).toBe(true);
+  });
+});
+
+describe("applySettingsDraftToSnapshot (t148 — ONE projection for Save and preview)", () => {
+  it("projects the workspace wallpaper, page wallpaper and grid gap exactly like the former inline save path", async () => {
+    const { replaceWorkspacePreferences, validateWorkspace, resolveWorkspaceAppearance } = await import(
+      "@veladesk/domain"
+    );
+    const snapshot = workspaceWith(true);
+    const draft: WorkspaceSettingsDraft = {
+      ...createWorkspaceSettingsDraft(snapshot),
+      gridGapPx: 24,
+      background: {
+        workspace: { kind: "preset", presetId: "dawn" },
+        pages: { "page-2": { general: { kind: "preset", presetId: "mist" } } },
+      },
+    };
+
+    const projected = applySettingsDraftToSnapshot(snapshot, draft);
+    expect(projected.ok).toBe(true);
+    if (!projected.ok) {
+      return;
+    }
+    // All three surfaces moved: the gap, the workspace wallpaper (inside
+    // the merged appearance) and the scoped page patch.
+    expect(projected.workspace.preferences.gridGapPx).toBe(24);
+    expect(projected.workspace.preferences.appearance?.wallpaper).toEqual({
+      kind: "preset",
+      presetId: "dawn",
+    });
+    const page2 = projected.workspace.pages.find((page) => page.id === "page-2");
+    expect(page2?.wallpaper).toEqual({ kind: "preset", presetId: "mist" });
+    expect(validateWorkspace(projected.workspace)).toEqual([]);
+
+    // The projection is EXACTLY the former inline save sequence:
+    // preferencesFromSettingsDraft → workspace wallpaper merged into the
+    // appearance → replaceWorkspacePreferences → page patches.
+    const draftPreferences = preferencesFromSettingsDraft(draft);
+    const baseAppearance =
+      draftPreferences.appearance ?? resolveWorkspaceAppearance(draftPreferences);
+    const manual = replaceWorkspacePreferences(snapshot, {
+      ...draftPreferences,
+      appearance: { ...baseAppearance, wallpaper: draft.background.workspace },
+    });
+    expect(manual.ok).toBe(true);
+    if (manual.ok) {
+      expect(projected.workspace).toEqual({
+        ...manual.workspace,
+        pages: manual.workspace.pages.map((page) =>
+          page.id === "page-2"
+            ? { ...page, wallpaper: { kind: "preset", presetId: "mist" } }
+            : page,
+        ),
+      });
+    }
+  });
+
+  it("projects a workspace wallpaper removal as the field's absence (legacy preset resolves again)", () => {
+    const snapshot = workspaceWith(false);
+    const draft: WorkspaceSettingsDraft = {
+      ...createWorkspaceSettingsDraft(snapshot),
+      background: {
+        workspace: { kind: "preset", presetId: "aurora" },
+        pages: {},
+      },
+    };
+    const first = applySettingsDraftToSnapshot(snapshot, draft);
+    expect(first.ok).toBe(true);
+
+    const cleared = applySettingsDraftToSnapshot(snapshot, {
+      ...draft,
+      background: { workspace: null, pages: {} },
+    });
+    expect(cleared.ok).toBe(true);
+    if (cleared.ok && first.ok) {
+      expect("wallpaper" in (cleared.workspace.preferences.appearance ?? {})).toBe(false);
+      expect(first.workspace.preferences.appearance?.wallpaper).toEqual({
+        kind: "preset",
+        presetId: "aurora",
+      });
+    }
+  });
+
+  it("keeps the draft's motion visible in the projection (Save and preview carry it identically)", () => {
+    const snapshot = workspaceWith(false);
+    const draft: WorkspaceSettingsDraft = {
+      ...createWorkspaceSettingsDraft(snapshot),
+      motion: { experiments: { helmMotion: true } },
+    };
+    const projected = applySettingsDraftToSnapshot(snapshot, draft);
+    expect(projected.ok).toBe(true);
+    if (projected.ok) {
+      expect(projected.workspace.preferences.motion).toEqual({
+        experiments: { helmMotion: true },
+      });
+    }
   });
 });

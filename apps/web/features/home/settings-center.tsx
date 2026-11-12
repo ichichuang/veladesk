@@ -246,6 +246,11 @@ export function SettingsCenter({
     onDraftChange(next);
   }
 
+  /**
+   * Layout controls (grid gap, …): the draft streams out via onDraftChange
+   * and the shell projects it (t148) — the real desktop grid follows the
+   * gap immediately; Cancel/close reverts, Save persists.
+   */
   function updateLayout(patch: Partial<Omit<WorkspaceSettingsDraft, "appearance">>) {
     const next: WorkspaceSettingsDraft = { ...draft, ...patch };
     setDraft(next);
@@ -255,7 +260,9 @@ export function SettingsCenter({
 
   /**
    * Motion experiment switches (P1): the helmMotion master flag rides the
-   * draft's optional motion block — never live-previewed, applied on Save
+   * draft's optional motion block — streamed through onDraftChange like
+   * every other control (t148: the shell projects the WHOLE draft, motion
+   * included, onto the desktop's rendered snapshot), and persisted by Save
    * with the rest of the preferences. Toggling merges into whatever
    * persisted block exists (or none).
    */

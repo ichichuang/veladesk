@@ -2,6 +2,7 @@ import {
   inferInterfaceStyle,
   replacePageModeWallpaper,
   replacePageWallpaper,
+  replaceWorkspacePreferences,
   resolveGridGapPx,
   resolveInterfaceStyle,
   resolveWorkspaceAppearance,
@@ -197,6 +198,45 @@ export function areWorkspaceSettingsDraftsEqual(
     motionPreferencesEqual(a.motion, b.motion) &&
     backgroundPatchesEqual(a.background, b.background)
   );
+}
+
+/**
+ * The ONE projection a Settings draft applies to a snapshot (t148): the
+ * exact sequence `handleSettingsSave` used to inline — full preferences
+ * from the draft, the workspace wallpaper patch merged into the appearance
+ * (`undefined` = untouched, `null` = removed so the legacy preset resolves
+ * again, a value = written), `replaceWorkspacePreferences`, then the scoped
+ * page patches. BOTH callers go through it — Save (persisting) and the
+ * shell's live desktop preview — so what the desktop shows while Settings
+ * is open is, by construction, what Save persists. Stops at the FIRST
+ * refusal with that failure, exactly like the former save path.
+ */
+export function applySettingsDraftToSnapshot(
+  base: WorkspaceSnapshot,
+  draft: WorkspaceSettingsDraft,
+): WorkspaceEditResult {
+  const draftPreferences = preferencesFromSettingsDraft(draft);
+  const baseAppearance: WorkspaceAppearancePreferences =
+    draftPreferences.appearance ?? resolveWorkspaceAppearance(draftPreferences);
+  const appearance: WorkspaceAppearancePreferences =
+    draft.background.workspace === undefined
+      ? baseAppearance
+      : draft.background.workspace === null
+        ? (() => {
+            const { wallpaper: removed, ...rest } = baseAppearance;
+            void removed;
+            return rest;
+          })()
+        : { ...baseAppearance, wallpaper: draft.background.workspace };
+  const preferences: WorkspacePreferences = { ...draftPreferences, appearance };
+  const replaced: WorkspaceEditResult = replaceWorkspacePreferences(base, preferences);
+  if (!replaced.ok) {
+    return replaced;
+  }
+  return applyBackgroundPatchesToSnapshot(replaced.workspace, {
+    workspace: undefined,
+    pages: draft.background.pages,
+  });
 }
 
 /**

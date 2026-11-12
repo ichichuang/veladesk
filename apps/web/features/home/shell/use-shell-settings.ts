@@ -4,22 +4,15 @@ import type { RefObject } from "react";
 import { useCallback } from "react";
 
 import type { WorkspaceClientRuntime } from "@veladesk/client-runtime";
-import { replaceWorkspacePreferences, resolveWorkspaceAppearance } from "@veladesk/domain";
-import type {
-  DesktopPageId,
-  WorkspaceAppearancePreferences,
-  WorkspacePreferences,
-} from "@veladesk/domain";
+import { replaceWorkspacePreferences } from "@veladesk/domain";
+import type { DesktopPageId, WorkspaceAppearancePreferences } from "@veladesk/domain";
 
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 
 import { getBrowserAssetRuntime } from "../../assets/browser-assets";
 import { retainWallpaperAssetUrl } from "../desktop-wallpaper";
 import type { PreparedWallpaperImage } from "../wallpaper-prep";
-import {
-  applyBackgroundPatchesToSnapshot,
-  preferencesFromSettingsDraft,
-} from "../settings-draft";
+import { applySettingsDraftToSnapshot } from "../settings-draft";
 import type { WorkspaceSettingsDraft } from "../settings-draft";
 import type { SettingsSaveResult } from "../settings-center";
 import { stageWorkspaceAndTrySync } from "../workspace-commit";
@@ -119,24 +112,17 @@ export function useShellSettings(input: UseShellSettingsInput) {
   }
 
   /**
-   * Applies every scoped background page patch (023-C.2 + P1 mode layers)
-   * onto `base` through the SHARED projection the live preview also uses
-   * (settings-draft.ts) — Save and preview can never disagree. Stops at
-   * the FIRST refusal (a deleted target page), keeping that failure for
-   * the caller's message mapping.
-   */
-  function applyBackgroundPatches(
-    base: LocalWorkspaceRecord["snapshot"],
-    pages: Readonly<Record<DesktopPageId, import("../settings-draft").PageBackgroundPatch>>,
-  ): import("@veladesk/domain").WorkspaceEditResult {
-    return applyBackgroundPatchesToSnapshot(base, { workspace: undefined, pages });
-  }
-
-  /**
    * Settings save path: draft → full preferences → immutable domain edit →
    * local stage + sync attempt. The appearance persisted on success, so
    * the preview can be dropped without a theme flash-back. Staging
    * failures keep Settings open with the preview alive for correction.
+   *
+   * t148: the draft lands on the snapshot through the ONE shared
+   * projection (applySettingsDraftToSnapshot in settings-draft.ts) the
+   * shell's live desktop preview ALSO uses — Save and preview can never
+   * disagree. Only the image-asset staging (a side-effectful runtime
+   * step) stays here. The projection stops at the FIRST refusal (a
+   * deleted target page), keeping that failure for the mapping below.
    *
    * The active section stays untouched: a changed default section only
    * applies to the next session, never yanks the current view.
@@ -166,27 +152,11 @@ export function useShellSettings(input: UseShellSettingsInput) {
       }
     }
 
-    // The workspace wallpaper patch rides the preferences edit; null means
-    // removal (the field is omitted so the legacy preset resolves again).
-    const draftPreferences = preferencesFromSettingsDraft(draft);
-    const baseAppearance: WorkspaceAppearancePreferences =
-      draftPreferences.appearance ?? resolveWorkspaceAppearance(draftPreferences);
-    const appearance: WorkspaceAppearancePreferences =
-      draft.background.workspace === undefined
-        ? baseAppearance
-        : draft.background.workspace === null
-          ? (() => {
-              const { wallpaper: removed, ...rest } = baseAppearance;
-              void removed;
-              return rest;
-            })()
-          : { ...baseAppearance, wallpaper: draft.background.workspace };
-    const preferences: WorkspacePreferences = { ...draftPreferences, appearance };
-
-    let result = replaceWorkspacePreferences(workspaceRef.current.snapshot, preferences);
-    if (result.ok) {
-      result = applyBackgroundPatches(result.workspace, draft.background.pages);
-    }
+    // The workspace wallpaper patch rides the preferences edit (null means
+    // removal — the field is omitted so the legacy preset resolves again),
+    // then the scoped page patches land on the result; all inside the ONE
+    // shared projection (see the doc above).
+    const result = applySettingsDraftToSnapshot(workspaceRef.current.snapshot, draft);
     if (!result.ok) {
       return {
         ok: false,
