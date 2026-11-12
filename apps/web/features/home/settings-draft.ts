@@ -224,10 +224,11 @@ export function applyBackgroundPatchesToSnapshot(
       ...(patch.dark !== undefined ? [["dark", patch.dark] as const] : []),
     ] as const;
     for (const [layer, config] of layers) {
-      const next =
+      const current: WorkspaceSnapshot = result.ok ? result.workspace : base;
+      const next: WorkspaceEditResult =
         layer === "general"
-          ? replacePageWallpaper(result.workspace, pageId as DesktopPageId, config)
-          : replacePageModeWallpaper(result.workspace, pageId as DesktopPageId, layer, config);
+          ? replacePageWallpaper(current, pageId as DesktopPageId, config)
+          : replacePageModeWallpaper(current, pageId as DesktopPageId, layer, config);
       if (!next.ok) {
         return next;
       }
