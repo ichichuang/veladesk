@@ -278,6 +278,12 @@
   overscroll-behavior-y: contain;
   overscroll-behavior-x: none;
   touch-action: pan-y;
+  /* The strip owns horizontal paging (a transform) — the scroller must
+     never carry a horizontal offset of its own (the parked neighbour
+     panes give the hidden-overflow box a real scrollWidth, and content
+     swaps like empty-state → grid are exactly what scroll anchoring
+     adjusts on). */
+  overflow-anchor: none;
   z-index: 1;
 }
 
@@ -344,14 +350,49 @@
   }
 }
 
-/* Empty section: quiet centered hint, never a management affordance. */
+/* Empty section: quiet centered hint + the minimal add entry (UX-12). */
 .vela-mobile-grid--empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 16px;
   min-height: 40dvh;
+  padding: 24px 16px;
   color: var(--vd-text-muted, inherit);
   font-size: 13px;
+}
+
+.vela-mobile-grid__empty-text {
+  margin: 0;
+  text-align: center;
+}
+
+/* The add button: accent-quiet, ≥44px touch target (no new colors). */
+.vela-mobile-grid__empty-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 20px;
+  border: 1px solid color-mix(in oklab, var(--vd-accent) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--vd-accent) 18%, transparent);
+  color: var(--vd-text, inherit);
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vela-mobile-grid__empty-add:active {
+  background: color-mix(in oklab, var(--vd-accent) 28%, transparent);
+}
+
+.vela-mobile-grid__empty-add:focus-visible {
+  outline: 2px solid var(--vdu-focus, currentColor);
+  outline-offset: 2px;
 }
 
 /* ---------------------------------------------------------------------------
@@ -397,10 +438,27 @@
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  /* UX-12: a hold must never raise the system callout/selection — taps
+     still click normally. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .vela-mobile-tile__button:active {
   transform: scale(0.96);
+}
+
+/* The long-press hold feedback (UX-12): 0.97 on the canonical fast/ease
+   tokens; the attribute clears the moment the action menu opens, so the
+   tile restores its size as the sheet rises. */
+.vela-mobile-tile__button[data-hold="true"] {
+  transform: scale(0.97);
+}
+
+.vela-mobile-tile__button,
+.vela-mobile-tile__button[data-hold="true"] {
+  transition: transform var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-mobile-tile__button:focus-visible {
@@ -793,17 +851,193 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * Tile action menu (UX-12): the bottom sheet a long-press opens — one
+ * ≥52px row per action, destructive delete apart on the danger token.
+ * ------------------------------------------------------------------------- */
+.vela-mobile-action-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 10px 10px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+}
+
+.vela-mobile-action-menu__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 52px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--vdu-fg, inherit);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vela-mobile-action-menu__row:active {
+  background: color-mix(in oklab, currentColor 12%, transparent);
+}
+
+.vela-mobile-action-menu__row:focus-visible {
+  outline: 2px solid var(--vdu-focus, currentColor);
+  outline-offset: -2px;
+}
+
+.vela-mobile-action-menu__row--danger {
+  color: var(--vdu-danger, var(--vdu-fg, inherit));
+}
+
+/* ---------------------------------------------------------------------------
+ * Menu drawer edit entries (UX-12): 添加应用 / 管理分区 — two quiet
+ * accent-tinted rows above the workspace block, ≥48px touch targets.
+ * ------------------------------------------------------------------------- */
+.vela-mobile-menu__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0 10px;
+  border-bottom: 1px solid var(--vdu-border, transparent);
+  margin-bottom: 6px;
+}
+
+.vela-mobile-menu__action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--vd-accent) 12%, transparent);
+  color: var(--vdu-fg, inherit);
+  font-size: 15px;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vela-mobile-menu__action:active {
+  background: color-mix(in oklab, var(--vd-accent) 22%, transparent);
+}
+
+.vela-mobile-menu__action:focus-visible {
+  outline: 2px solid var(--vdu-focus, currentColor);
+  outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Section manager (UX-12): the tall bottom sheet — 新建分区 on top, one
+ * ≥52px row per section, icon tools reuse the ≥44px mobile icon button.
+ * ------------------------------------------------------------------------- */
+.vela-mobile-manage__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 16px 18px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+}
+
+.vela-mobile-manage__create {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  margin: 2px 0 10px;
+  border: 1px solid color-mix(in oklab, var(--vd-accent) 45%, transparent);
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--vd-accent) 18%, transparent);
+  color: var(--vdu-fg, inherit);
+  font-size: 15px;
+  font-weight: 550;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vela-mobile-manage__create:active {
+  background: color-mix(in oklab, var(--vd-accent) 28%, transparent);
+}
+
+.vela-mobile-manage__create:focus-visible,
+.vela-mobile-manage__delete:focus-visible {
+  outline: 2px solid var(--vdu-focus, currentColor);
+  outline-offset: 2px;
+}
+
+.vela-mobile-manage__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vela-mobile-manage__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  padding: 4px 2px;
+}
+
+.vela-mobile-manage__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  color: var(--vdu-fg, inherit);
+}
+
+.vela-mobile-manage__tools {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.vela-mobile-manage__tools .vela-mobile-icon-button {
+  width: 44px;
+  height: 44px;
+}
+
+.vela-mobile-manage__tools .vela-mobile-icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.vela-mobile-manage__delete {
+  color: var(--vdu-danger, var(--vdu-fg, inherit));
+}
+
+/* ---------------------------------------------------------------------------
  * Reduced motion (§61): the GSAP owners check the shared bridge; these
  * rules only neutralize the CSS press/settle transforms.
  * ------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   .vela-mobile-tile__button,
+  .vela-mobile-tile__button[data-hold="true"],
   .vela-mobile-dock__item,
   .vela-mobile-icon-button {
     transition: none;
   }
 
   .vela-mobile-tile__button:active,
+  .vela-mobile-tile__button[data-hold="true"],
   .vela-mobile-dock__item:active {
     transform: none;
   }

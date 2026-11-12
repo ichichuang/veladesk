@@ -666,13 +666,17 @@ const zhCNCatalog = {
   "mobile.menu.workspaceLabel": "当前工作区",
   "mobile.menu.language": "语言",
   "mobile.menu.versionLabel": "版本",
-  "mobile.menu.desktopHint": "布局、应用、背景和高级设置请在桌面端管理。",
+  "mobile.menu.desktopHint": "背景与高级设置请在桌面端管理。",
   "mobile.tabs.label": "分类",
   "mobile.folder.open": "打开文件夹",
   "mobile.folder.close": "关闭",
   "mobile.dock.label": "常用应用",
   "mobile.section.label": "当前分类的应用",
-  "mobile.section.empty": "这个分类还没有应用。在桌面端添加后，这里会自动出现。",
+  "mobile.section.empty": "这个分类还没有应用。",
+
+  /* Mobile minimal edit path (UX-12). */
+  "mobile.tileMenu.label": "「{name}」的操作",
+  "mobile.sections.manage": "管理分区",
 } as const;
 
 export type TranslationKey = keyof typeof zhCNCatalog;
@@ -1312,13 +1316,17 @@ export const enUS: MessageCatalog = {
   "mobile.menu.workspaceLabel": "Workspace",
   "mobile.menu.language": "Language",
   "mobile.menu.versionLabel": "Version",
-  "mobile.menu.desktopHint": "Manage layout, apps, backgrounds and advanced settings on the desktop.",
+  "mobile.menu.desktopHint": "Manage backgrounds and advanced settings on the desktop.",
   "mobile.tabs.label": "Sections",
   "mobile.folder.open": "Open folder",
   "mobile.folder.close": "Close",
   "mobile.dock.label": "Pinned apps",
   "mobile.section.label": "Apps in this section",
-  "mobile.section.empty": "No apps in this section yet. Add them on the desktop and they appear here.",
+  "mobile.section.empty": "No apps in this section yet.",
+
+  /* Mobile minimal edit path (UX-12). */
+  "mobile.tileMenu.label": "Actions for {name}",
+  "mobile.sections.manage": "Manage sections",
 };
 
 export type { MessageParams };

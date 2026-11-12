@@ -72,7 +72,7 @@ export function VdFormDialog({
               <DialogDescription className="mt-1">{description}</DialogDescription>
             ) : null}
           </header>
-          <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 py-2">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-2">
             {children}
             {error !== null ? (
               <p className="text-xs text-vdu-danger" role="alert">

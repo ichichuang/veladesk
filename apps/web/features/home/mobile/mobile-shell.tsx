@@ -3,7 +3,7 @@
 import { useVdSmoothScroll } from "@components/vd/smooth-scroll";
 import { useVdScrollbar } from "@components/vd/use-vd-scrollbar";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   VdHeroOverlayScope,
@@ -11,19 +11,28 @@ import {
 } from "@components/ui/overlay-scope";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
 import {
+  captureDeletedAppEntry,
+  deleteApp,
+  deleteEmptyPage,
   findDesktopPage,
+  movePage,
+  pageItemIds,
   resolveModeAwareWallpaper,
   resolveWorkspaceAppearance,
+  restoreDeletedApp,
 } from "@veladesk/domain";
 import type {
   AppShortcut,
+  DeletedAppRestoreEntry,
   DesktopPage,
   DesktopPageId,
   EntityId,
+  WorkspaceSnapshot,
 } from "@veladesk/domain";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
+import { useWorkspaceRuntimeInstance } from "../../workspace-runtime/use-workspace-runtime";
 import { useWallpaperAssetUrl } from "../desktop-wallpaper";
 import { SceneBackdrop } from "../scene/scene-backdrop";
 import { buildAppearanceTheme, resolveEffectiveColorMode } from "../appearance-theme";
@@ -33,6 +42,14 @@ import { getBrowserAssetRuntime } from "../../assets/browser-assets";
 import { useI18n } from "../../i18n/use-i18n";
 import { launchApp } from "../launch-app";
 import { resolveDockEntities } from "../dock-model";
+import { stageWorkspaceAndTrySync } from "../workspace-commit";
+import { resolveSectionAfterDelete } from "../section-navigation-model";
+import { AddAppDialog } from "../add-app-dialog";
+import { ConfirmDialog } from "../confirm-dialog";
+import { EditAppDialog } from "../edit-app-dialog";
+import { MoveToSectionDialog } from "../move-to-section-dialog";
+import { SectionDialog } from "../section-dialog";
+import { MotionToast, MotionToastStack } from "../motion-toast";
 import type { WorkspaceActiveSection } from "../workspace-active-section";
 import { resolveMobileSectionItems } from "./mobile-section-items";
 import { swipePaneSlots } from "./mobile-swipe-model";
@@ -44,23 +61,43 @@ import { MobileAppGrid } from "./mobile-app-grid";
 import { MobileDock } from "./mobile-dock";
 import { MobileSearch } from "./mobile-search";
 import { MobileFolderSheet } from "./mobile-folder-sheet";
+import { MobileManageSections } from "./mobile-manage-sections";
 import { MobileMenuSheet } from "./mobile-menu-sheet";
+import { MobileTileMenu } from "./mobile-tile-menu";
 import "./mobile-shell.css";
 
 /**
- * The mobile companion shell (task 026): VelaDesk's CONSUMPTION surface —
- * browse sections, launch apps, open folders, search, use the dock. It
- * shares the workspace runtime, data, wallpaper resolver, icons, search
- * model, i18n and view-state with the desktop, and mounts NONE of the
- * desktop's authoring machinery (no DnD, no resize, no arrange, no
- * management dialogs — §28/§29).
+ * One mobile edit surface at a time (UX-12). The sheets/menus are mobile
+ * surfaces; everything else names the SHARED desktop dialog that renders
+ * for it (the dialogs own their own staging + validation).
+ */
+type MobileEditSurface =
+  | { readonly kind: "tile-menu"; readonly appId: EntityId }
+  | { readonly kind: "edit-app"; readonly appId: EntityId }
+  | { readonly kind: "add-app" }
+  | { readonly kind: "move-app"; readonly appId: EntityId }
+  | { readonly kind: "delete-app"; readonly appId: EntityId }
+  | { readonly kind: "manage-sections" }
+  | { readonly kind: "new-section" }
+  | { readonly kind: "rename-section"; readonly pageId: DesktopPageId }
+  | { readonly kind: "delete-section"; readonly pageId: DesktopPageId };
+
+/**
+ * The mobile companion shell (task 026): VelaDesk's phone surface —
+ * browse sections, launch apps, open folders, search, use the dock, plus
+ * the MINIMAL edit path (UX-12: long-press tile menu, drawer 添加应用 /
+ * 管理分区, empty-section add button). It shares the workspace runtime,
+ * data, wallpaper resolver, icons, search model, i18n and view-state with
+ * the desktop; editing reuses the desktop's DIALOGS verbatim (same domain
+ * ops, same URL gate, same delete-undo toast) while the desktop's
+ * authoring machinery (DnD, resize, arrange, settings) stays unmounted —
+ * §28/§29.
  *
  * Layout (§11): themed root (data-vd-material like the desktop) → shared
  * scene backdrop (wallpaper + Dawn) → header → category tabs →
  * natively scrolling content (regular derived grid) → pinned dock, with a
  * themed portal sibling for the sheet surfaces. The active section comes
- * from the SHARED owner above the shell switch; every mobile interaction
- * is read-only against the workspace snapshot (§68).
+ * from the SHARED owner above the shell switch.
  */
 export function MobileShell({
   workspace,
@@ -72,11 +109,18 @@ export function MobileShell({
   readonly activeSection: WorkspaceActiveSection;
 }) {
   const snapshot = workspace.snapshot;
+  const runtime = useWorkspaceRuntimeInstance();
   const reducedMotion = useVdReducedMotion();
   const scrollRef = useRef<HTMLElement | null>(null);
   useVdScrollbar(scrollRef, "y");
   useVdSmoothScroll(scrollRef, true);
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
+
+  /** Latest-value mirror for the async edit handlers. */
+  const workspaceRef = useRef(workspace);
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
 
   // --- Theme (shared resolver, no mobile preview state — §49) --------------
   const resolvedAppearance = useMemo(
@@ -134,6 +178,104 @@ export function MobileShell({
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [folderId, setFolderId] = useState<EntityId | null>(null);
+
+  // --- The minimal edit path (UX-12) ----------------------------------------
+  // One surface at a time. Sheets (tile menu, manage sections) are mobile
+  // surfaces; every dialog kind renders the DESKTOP's shared dialog for
+  // the operation — one code path for validation, staging and undo.
+  const [surface, setSurface] = useState<MobileEditSurface | null>(null);
+  /** Inline error surface for the confirm dialogs (delete app/section). */
+  const [surfaceError, setSurfaceError] = useState<string | null>(null);
+  /**
+   * The pending delete-undo (the UX-09 contract on mobile): the captured
+   * restore entry of the most recent successful app delete, as a toast
+   * with an 撤销 action for ~6 seconds.
+   */
+  const [deleteUndo, setDeleteUndo] = useState<{
+    readonly entry: DeletedAppRestoreEntry;
+    readonly occurrence: number;
+  } | null>(null);
+
+  function closeSurface(): void {
+    setSurface(null);
+    setSurfaceError(null);
+  }
+
+  const openAddApp = useCallback(() => {
+    setSurface({ kind: "add-app" });
+  }, []);
+
+  async function handleDeleteApp(appId: EntityId): Promise<void> {
+    const current = workspaceRef.current.snapshot;
+    // Capture the undo entry BEFORE the immutable delete (UX-09).
+    const entry = captureDeletedAppEntry(current, appId);
+    const result = deleteApp(current, appId);
+    if (!result.ok) {
+      setSurfaceError(t("dialog.deleteApp.error.appGone"));
+      return;
+    }
+    const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
+    if (!staged.ok) {
+      setSurfaceError(t("dialog.deleteApp.error.failed"));
+      return;
+    }
+    setSurface(null);
+    if (entry !== null) {
+      setDeleteUndo((current2) => ({ entry, occurrence: (current2?.occurrence ?? 0) + 1 }));
+    }
+  }
+
+  function undoDeleteApp(entry: DeletedAppRestoreEntry): void {
+    setDeleteUndo(null);
+    void (async () => {
+      const restored = restoreDeletedApp(workspaceRef.current.snapshot, entry);
+      if (!restored.ok) {
+        console.error(`VelaDesk: delete-undo was refused (${restored.reason})`);
+        return;
+      }
+      const staged = await stageWorkspaceAndTrySync(runtime, restored.workspace);
+      if (!staged.ok) {
+        console.error(`VelaDesk: delete-undo was not staged (${staged.reason})`);
+      }
+    })();
+  }
+
+  async function handleDeleteSection(pageId: DesktopPageId): Promise<void> {
+    const current = workspaceRef.current.snapshot;
+    // The surviving neighbor is decided BEFORE the deletion so the switch
+    // can never land on a page that no longer exists.
+    const neighbor = resolveSectionAfterDelete(
+      current.pages.map((page) => page.id),
+      pageId,
+    );
+    const result = deleteEmptyPage(current, pageId);
+    if (!result.ok) {
+      setSurfaceError(
+        result.reason === "page-not-found"
+          ? t("dialog.deleteSection.error.sectionGone")
+          : t("dialog.deleteSection.error.failed")
+      );
+      return;
+    }
+    const staged = await stageWorkspaceAndTrySync(runtime, result.workspace);
+    if (!staged.ok) {
+      setSurfaceError(t("dialog.deleteSection.error.failed"));
+      return;
+    }
+    setSurface(null);
+    if (neighbor !== null) {
+      activeSection.requestActiveSection(neighbor);
+    }
+  }
+
+  /** Reorder from the section manager — the sheet stays open (the list re-renders). */
+  async function handleMoveSection(pageId: DesktopPageId, direction: "up" | "down"): Promise<void> {
+    const result = movePage(workspaceRef.current.snapshot, pageId, direction);
+    if (!result.ok) {
+      return;
+    }
+    await stageWorkspaceAndTrySync(runtime, result.workspace);
+  }
 
   // Section paging is now a SWIPE STRIP (previous | active | next, moved
   // as one transform). The old two-phase prepared-target coordinator is gone:
@@ -200,6 +342,9 @@ export function MobileShell({
               workspace={snapshot}
               onOpenApp={openApp}
               onOpenFolder={setFolderId}
+              onOpenAppMenu={(app) => setSurface({ kind: "tile-menu", appId: app.id })}
+              onDismissAppMenu={() => setSurface(null)}
+              onAddApp={pageId === activePageId ? openAddApp : undefined}
             />
           )}
         />
@@ -227,7 +372,140 @@ export function MobileShell({
         onOpenApp={openApp}
         onFolderClosed={() => setFolderId(null)}
       />
-      <MobileMenuSheet open={menuOpen} onOpenChange={setMenuOpen} workspace={workspace} />
+      <MobileMenuSheet
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        workspace={workspace}
+        onAddApp={openAddApp}
+        onManageSections={() => setSurface({ kind: "manage-sections" })}
+      />
+
+      {/*
+        The minimal edit path (UX-12): mobile sheets for the menus, the
+        DESKTOP's shared dialogs for the operations — one validation/staging
+        path across shells, portalled to the mobile shell's themed root.
+      */}
+      {surface !== null && surface.kind === "tile-menu" ? (
+        (() => {
+          const app = snapshot.entities.find(
+            (entity): entity is AppShortcut => entity.kind === "app" && entity.id === surface.appId,
+          );
+          if (app === undefined) {
+            return null;
+          }
+          return (
+            <MobileTileMenu
+              appName={app.name}
+              onOpenChange={(open) => {
+                if (!open) {
+                  closeSurface();
+                }
+              }}
+              onEdit={() => setSurface({ kind: "edit-app", appId: app.id })}
+              onMoveToSection={() => setSurface({ kind: "move-app", appId: app.id })}
+              onDelete={() => setSurface({ kind: "delete-app", appId: app.id })}
+            />
+          );
+        })()
+      ) : null}
+      {surface !== null && surface.kind === "edit-app" ? (
+        <EditAppDialog
+          workspace={snapshot}
+          appId={surface.appId}
+          onClose={closeSurface}
+        />
+      ) : null}
+      {surface !== null && surface.kind === "add-app" && activePageId !== null ? (
+        <AddAppDialog
+          workspace={snapshot}
+          destination={{ kind: "page", pageId: activePageId }}
+          onClose={closeSurface}
+        />
+      ) : null}
+      {surface !== null && surface.kind === "move-app" ? (
+        <MoveToSectionDialog
+          workspace={snapshot}
+          appId={surface.appId}
+          currentPageId={containerPageId(snapshot, surface.appId)}
+          onClose={closeSurface}
+        />
+      ) : null}
+      {surface !== null && surface.kind === "delete-app" ? (
+        <ConfirmDialog
+          title={t("dialog.deleteApp.title", {
+            name:
+              snapshot.entities.find(
+                (entity): entity is AppShortcut => entity.kind === "app" && entity.id === surface.appId,
+              )?.name ?? t("launcher.kind.app"),
+          })}
+          message={t("dialog.deleteApp.message")}
+          confirmLabel={t("dialog.deleteApp.confirm")}
+          error={surfaceError}
+          onConfirm={() => void handleDeleteApp(surface.appId)}
+          onCancel={closeSurface}
+        />
+      ) : null}
+      {surface !== null && surface.kind === "manage-sections" ? (
+        <MobileManageSections
+          workspace={snapshot}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeSurface();
+            }
+          }}
+          onCreate={() => setSurface({ kind: "new-section" })}
+          onRename={(pageId) => setSurface({ kind: "rename-section", pageId })}
+          onDelete={(pageId) => setSurface({ kind: "delete-section", pageId })}
+          onMove={(pageId, direction) => void handleMoveSection(pageId, direction)}
+        />
+      ) : null}
+      {surface !== null && (surface.kind === "new-section" || surface.kind === "rename-section") ? (
+        <SectionDialog
+          workspace={snapshot}
+          gridSourcePage={activePage ?? snapshot.pages[0]!}
+          section={
+            surface.kind === "rename-section"
+              ? findDesktopPage(snapshot, surface.pageId)
+              : undefined
+          }
+          onCreated={(pageId) => {
+            activeSection.requestActiveSection(pageId);
+          }}
+          onClose={closeSurface}
+        />
+      ) : null}
+      {surface !== null && surface.kind === "delete-section" ? (
+        <ConfirmDialog
+          title={t("dialog.deleteSection.title")}
+          message={t("dialog.deleteSection.message")}
+          confirmLabel={t("dialog.deleteSection.confirm")}
+          error={surfaceError}
+          onConfirm={() => void handleDeleteSection(surface.pageId)}
+          onCancel={closeSurface}
+        />
+      ) : null}
+
+      {/*
+        The delete-undo toast (the UX-09 contract on mobile): 「已删除「{name}」」+
+        撤销 for ~6s. Reduced motion settles it instantly (MotionToast's
+        own contract).
+      */}
+      <MotionToastStack>
+        {deleteUndo !== null ? (
+          <MotionToast
+            key={deleteUndo.occurrence}
+            lifetime={6000}
+            slot="workspace"
+            onDismiss={() => setDeleteUndo(null)}
+            action={{
+              label: t("common.undo"),
+              onAction: () => undoDeleteApp(deleteUndo.entry),
+            }}
+          >
+            {t("toast.appDeleted", { name: deleteUndo.entry.app.name })}
+          </MotionToast>
+        ) : null}
+      </MotionToastStack>
     </div>
     <div
       ref={setPortalRoot}
@@ -240,6 +518,19 @@ export function MobileShell({
     </VdHeroOverlayScope>
     </VdPortalContainerProvider>
   );
+}
+
+/**
+ * The page whose canvas currently holds this entity, when any (the same
+ * derivation the desktop menus use — kept local so the mobile chunk never
+ * imports the desktop menu layer for it).
+ */
+function containerPageId(
+  workspace: WorkspaceSnapshot,
+  entityId: EntityId,
+): DesktopPageId | null {
+  const page = workspace.pages.find((candidate) => pageItemIds(candidate).includes(entityId));
+  return page?.id ?? null;
 }
 
 /**

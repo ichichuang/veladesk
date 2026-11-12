@@ -1,5 +1,6 @@
 "use client";
 
+import { ListTree, Plus } from "lucide-react";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 
 import { VELADESK_VERSION } from "../../../lib/app-version";
@@ -14,18 +15,27 @@ import "./mobile-shell.css";
  * deliberately tiny — the current workspace, the browser-local language
  * choice, the product version, and the desktop-management hint. Rows are
  * two-level (quiet label, clear value) so a long workspace name never
- * crowds a `label:value` single line. Management features are NOT disabled
- * here; workspace management now expands in place through the shared
- * manager, while desktop layout authoring stays outside this surface.
+ * crowds a `label:value` single line.
+ *
+ * UX-12 adds the minimal mobile EDIT entry points at the top: 添加应用
+ * (the shared Add dialog, targeted at the active section) and 管理分区
+ * (the mobile section manager). Layout/background authoring stays on the
+ * desktop — the hint below says exactly that.
  */
 export function MobileMenuSheet({
   open,
   onOpenChange,
   workspace,
+  onAddApp,
+  onManageSections,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly workspace: LocalWorkspaceRecord;
+  /** Opens the shared Add-app dialog targeted at the active section (UX-12). */
+  readonly onAddApp: () => void;
+  /** Opens the mobile section manager (UX-12). */
+  readonly onManageSections: () => void;
 }) {
   const { locale, setLocale, t } = useI18n();
   return (
@@ -34,6 +44,30 @@ export function MobileMenuSheet({
         <h2 className="vela-mobile-sheet__title">{t("mobile.menu.title")}</h2>
       </div>
       <div className="vela-mobile-menu__body">
+        <div className="vela-mobile-menu__actions">
+          <button
+            type="button"
+            className="vela-mobile-menu__action"
+            onClick={() => {
+              onOpenChange(false);
+              onAddApp();
+            }}
+          >
+            <Plus size={20} aria-hidden="true" />
+            <span>{t("dialog.addApp.title")}</span>
+          </button>
+          <button
+            type="button"
+            className="vela-mobile-menu__action"
+            onClick={() => {
+              onOpenChange(false);
+              onManageSections();
+            }}
+          >
+            <ListTree size={20} aria-hidden="true" />
+            <span>{t("mobile.sections.manage")}</span>
+          </button>
+        </div>
         <WorkspaceMenuInline beforeAction={() => onOpenChange(false)} />
         <div className="vela-mobile-menu__row">
           <span className="vela-mobile-menu__row-label">{t("mobile.menu.workspaceLabel")}</span>
