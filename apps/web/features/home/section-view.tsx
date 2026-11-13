@@ -230,6 +230,55 @@ function SectionViewImpl({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restore runs exactly once per mount
   }, []);
 
+  // Editing-session scroll continuity (t159): a lock can come WITH a
+  // reflow — the appearance inspector reserves workbench width, the grid
+  // re-caps its cells and the shrinking content clamps scrollTop downward
+  // even though the lock itself never moves it. Remember the pre-lock
+  // offset when the lock engages and, on release, re-apply it — clamped,
+  // retried on content resize exactly like the mount restore above — so
+  // closing the surface returns the section where the user left it. When
+  // the lock never reflowed anything the re-apply is the identity and
+  // nothing visibly happens.
+  const lockedScrollTopRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) {
+      return;
+    }
+    if (scrollLocked) {
+      if (lockedScrollTopRef.current === null) {
+        lockedScrollTopRef.current = scroller.scrollTop;
+      }
+      return;
+    }
+    const saved = lockedScrollTopRef.current;
+    lockedScrollTopRef.current = null;
+    if (saved === null || saved === 0) {
+      return;
+    }
+    const apply = () => {
+      const max = scroller.scrollHeight - scroller.clientHeight;
+      scroller.scrollTop = Math.min(saved, Number.isFinite(max) ? Math.max(0, max) : 0);
+    };
+    apply();
+    const content = scroller.firstElementChild;
+    let observer: ResizeObserver | undefined;
+    if (content !== null && typeof ResizeObserver === "function") {
+      observer = new ResizeObserver(() => {
+        if (scroller.scrollTop >= saved - 1) {
+          observer?.disconnect();
+          return;
+        }
+        apply();
+      });
+      observer.observe(content);
+    }
+    return () => {
+      observer?.disconnect();
+    };
+    // Only the lock transition owns this effect's lifetime.
+  }, [scrollLocked]);
+
   return (
     <div
       className="vela-section-scroller"

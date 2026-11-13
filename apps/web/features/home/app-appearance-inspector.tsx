@@ -13,7 +13,7 @@ import type { AppShortcut, WorkspaceSnapshot } from "@veladesk/domain";
 import { replaceApp } from "@veladesk/domain";
 import type { WorkspaceEditFailureReason } from "@veladesk/domain";
 import type { PreparedAsset } from "@veladesk/assets/core";
-import { CloseButton, Input, Label, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import { Button, CloseButton, Input, Label, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { ChevronRight } from "lucide-react";
 
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
@@ -459,6 +459,18 @@ export function AppAppearanceInspector({
             </p>
           ) : null}
         </VdScrollArea>
+
+        {/* Footer (t159, Chris): a pinned "Done" button under the edit
+            form. It ONLY closes the panel through the same onClose path as
+            Esc/× — the t138 autosave has already staged every change, so
+            this is an explicit easy-to-hit close, never a save gate and
+            never a revert. The body above owns its own scrolling, so the
+            button stays reachable however long the form gets. */}
+        <footer className="flex h-[60px] shrink-0 items-center border-t border-vdu-border px-5">
+          <Button variant="primary" className="w-full" onPress={onClose}>
+            {t("visualEditor.done")}
+          </Button>
+        </footer>
       </DialogContent>
 
       {pickerOpen ? (

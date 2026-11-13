@@ -157,7 +157,7 @@ describe("inspector: autosave persistence boundary (t138)", () => {
     expect(afterSave).toContain("stageWorkspaceAndTrySync(runtime, result.workspace)");
     // The flush (app switch / close / unmount) routes the LAST pending edit
     // through the same routine — it never reverts or drops it.
-    expect(inspectorSource).toMatch(/void savePendingEdit\(pending\)/);
+    expect(inspectorSource).toMatch(/void savePendingEditRef\.current\(pending\)/);
     // Closing is a pure panel close: no Save/Cancel footer, no revert.
     expect(inspectorSource).toMatch(/onOpenChange=\{\(next\) => \(next \? undefined : onClose\(\)\)\}/);
     const closeSite = inspectorSource.slice(
@@ -165,7 +165,17 @@ describe("inspector: autosave persistence boundary (t138)", () => {
     );
     expect(closeSite.slice(0, 200)).not.toContain("replaceApp");
     expect(inspectorSource).not.toMatch(/common\.save/);
-    expect(inspectorSource).not.toMatch(/<footer/);
+    expect(inspectorSource).not.toMatch(/common\.cancel/);
+    // The pinned footer (t159) is CLOSE-ONLY: its single "Done" button
+    // routes through onClose — it must never become a save gate, so no
+    // persistence may sneak into the footer either.
+    const footerStart = inspectorSource.indexOf("<footer");
+    expect(footerStart).toBeGreaterThan(-1);
+    const footerSite = inspectorSource.slice(footerStart, footerStart + 600);
+    expect(footerSite).toContain('t("visualEditor.done")');
+    expect(footerSite).toContain("onPress={onClose}");
+    expect(footerSite).not.toContain("replaceApp");
+    expect(footerSite).not.toContain("stageWorkspaceAndTrySync");
   });
 });
 
