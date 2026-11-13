@@ -55,6 +55,16 @@ export interface WorkspaceActiveSection {
   readonly requestActiveSection: (pageId: DesktopPageId) => void;
   /** Records one section's scrollTop into the persisted view state. */
   readonly recordScrollTop: (pageId: DesktopPageId, scrollTop: number) => void;
+  /**
+   * t176: late-binds the DOM-specific scroll capture (the shell's scene
+   * querying the live scroller) to this controller's flush boundaries
+   * (pagehide / visibilitychange-hidden / unmount). The owner lives ABOVE
+   * the shells (ResponsiveWorkspaceShell) where no DOM exists to pass as a
+   * hook input, so the shell that owns the scrollers registers its capture
+   * from an effect instead — without this, a reload mid-section persisted
+   * only the sections the user had LEFT, never the one being read.
+   */
+  readonly registerScrollCapture: (capture: (() => void) | null) => void;
 }
 
 export interface UseWorkspaceActiveSectionInput {
@@ -139,10 +149,22 @@ export function useWorkspaceActiveSection(
 
   // --- View-state controller lifecycle (one per workspace, owner only) ----
   const controllerRef = useRef<WorkspaceViewStateController | null>(null);
+  // The input prop is the INITIAL capture only (the standalone shell's
+  // stable wrapper). It must never re-sync per render: the production owner
+  // (ResponsiveWorkspaceShell) passes NO prop, so a per-render sync would
+  // wipe the shell-registered capture back to undefined before every flush
+  // — exactly the t176 hole (reload persisted only left sections).
   const captureRef = useRef<(() => void) | null | undefined>(captureActiveScroll);
-  useEffect(() => {
-    captureRef.current = captureActiveScroll;
-  });
+  /**
+   * t176: the effect-registered DOM capture (see
+   * {@link WorkspaceActiveSection.registerScrollCapture}). Stable, and
+   * deliberately NOT a no-op when externally-owned — registration is the
+   * ONLY way the production desktop shell (rendered below an external
+   * owner) feeds its scrollers into this controller's flushes.
+   */
+  const registerScrollCapture = useCallback((capture: (() => void) | null) => {
+    captureRef.current = capture;
+  }, []);
   useEffect(() => {
     if (!owned) {
       return;
@@ -157,13 +179,24 @@ export function useWorkspaceActiveSection(
       },
     });
     controllerRef.current = controller;
-    const onPageHide = () => {
+    const captureAndFlush = () => {
       captureRef.current?.();
       controller.flushNow();
     };
+    const onPageHide = captureAndFlush;
+    // t176: a tab moved to the background (or the mobile browser hiding the
+    // page) flushes immediately too — a later forced kill never reaches
+    // pagehide, and the capture is idempotent at the next boundary anyway.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        captureAndFlush();
+      }
+    };
     window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       captureRef.current?.();
       controller.flushNow();
       controller.dispose();
@@ -196,8 +229,8 @@ export function useWorkspaceActiveSection(
   return useMemo(
     () =>
       owned
-        ? { activePageId, effectiveActivePageId, requestActiveSection, recordScrollTop }
+        ? { activePageId, effectiveActivePageId, requestActiveSection, recordScrollTop, registerScrollCapture }
         : external,
-    [owned, external, activePageId, effectiveActivePageId, requestActiveSection, recordScrollTop],
+    [owned, external, activePageId, effectiveActivePageId, requestActiveSection, recordScrollTop, registerScrollCapture],
   );
 }

@@ -84,6 +84,7 @@ function Host() {
     effectiveActivePageId: pageId,
     requestActiveSection: (id) => setPageId(id),
     recordScrollTop: () => {},
+    registerScrollCapture: () => {},
   };
   return (
     <WorkspaceRuntimeContextProvider value={rejectRuntime}>

@@ -120,6 +120,7 @@ function Host({ snapshot }: { readonly snapshot: WorkspaceSnapshot }) {
     effectiveActivePageId: pageId ?? snapshot.pages[0]!.id,
     requestActiveSection: (id) => setPageId(id),
     recordScrollTop: () => {},
+    registerScrollCapture: () => {},
   };
   return (
     <WorkspaceRuntimeContextProvider value={rejectRuntime}>

@@ -126,6 +126,7 @@ function MobileHost({
     effectiveActivePageId: pageId ?? snapshot.pages[0]!.id,
     requestActiveSection: (id) => setPageId(id),
     recordScrollTop: () => {},
+    registerScrollCapture: () => {},
   };
   return (
     <WorkspaceRuntimeContextProvider value={rejectRuntime}>
@@ -353,6 +354,7 @@ describe("mobile browsing never writes the workspace (§68)", () => {
         effectiveActivePageId: current ?? snapshot.pages[0]!.id,
         requestActiveSection: (id) => setCurrent(id),
         recordScrollTop: () => {},
+        registerScrollCapture: () => {},
       };
       return (
         <WorkspaceRuntimeContextProvider value={spyRuntime}>

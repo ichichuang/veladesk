@@ -105,6 +105,13 @@ export interface AppAppearanceInspectorProps {
   readonly onDraftChange: (draft: AppVisualDraft) => void;
   /** Escape/×/close: flush the pending edit and close — never a revert. */
   readonly onClose: () => void;
+  /**
+   * t176: reports whether the panel's SECONDARY modal surface (the
+   * AppearanceIconPickerDialog) is up. The shell keys the desktop scroll
+   * lock off this — the side panel alone scrolls the page freely; only the
+   * modal editor freezes it (director decision overriding part of t159).
+   */
+  readonly onModalEditorOpenChange?: ((open: boolean) => void) | undefined;
 }
 
 export function AppAppearanceInspector({
@@ -114,6 +121,7 @@ export function AppAppearanceInspector({
   draft,
   onDraftChange,
   onClose,
+  onModalEditorOpenChange,
 }: AppAppearanceInspectorProps) {
   const runtime = useWorkspaceRuntimeInstance();
   const { t } = useI18n();
@@ -168,6 +176,20 @@ export function AppAppearanceInspector({
       setError(null);
     }
   }, [open]);
+
+  // t176: the shell keys the desktop scroll lock off the MODAL editor only
+  // — this reports the picker's visibility at every real transition (panel
+  // open/close, picker open/close) and always releases to false on unmount,
+  // so a lock can never outlive the dialog that justified it. The callback
+  // rides a ref: the unmount release must not depend on its identity.
+  const onModalEditorOpenChangeRef = useRef(onModalEditorOpenChange);
+  useEffect(() => {
+    onModalEditorOpenChangeRef.current = onModalEditorOpenChange;
+  });
+  useEffect(() => {
+    onModalEditorOpenChangeRef.current?.(open && pickerOpen);
+  }, [open, pickerOpen]);
+  useEffect(() => () => onModalEditorOpenChangeRef.current?.(false), []);
 
   // The one projection: what the header identity thumbnail shows, what the
   // desktop renders (via the shell session) and what the autosave persists.

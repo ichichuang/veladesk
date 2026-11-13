@@ -151,6 +151,7 @@ function EditHost({ initialPageId = "page-a" }: { readonly initialPageId?: strin
     effectiveActivePageId: pageId ?? snapshot.pages[0]!.id,
     requestActiveSection: (id) => setPageId(id),
     recordScrollTop: () => {},
+    registerScrollCapture: () => {},
   };
   return (
     <WorkspaceRuntimeContextProvider value={runtime}>

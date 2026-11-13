@@ -105,6 +105,8 @@ export interface ShellSurfacesProps {
   readonly setAppearancePreview: (next: WorkspaceAppearancePreferences | null) => void;
   /** Live Settings draft stream (t137): the desktop previews it. */
   readonly setSettingsDraftPreview: (next: WorkspaceSettingsDraft | null) => void;
+  /** t176: reports the inspector's modal icon-picker dialog (scroll lock). */
+  readonly onInspectorModalOpenChange: (open: boolean) => void;
   readonly openContextMenu: (target: ContextMenuTarget) => void;
   readonly t: TranslateFn;
 }
@@ -141,6 +143,7 @@ export function ShellSurfaces(props: ShellSurfacesProps) {
     settingsBackgroundSection,
     setAppearancePreview,
     setSettingsDraftPreview,
+    onInspectorModalOpenChange,
     openContextMenu,
     t,
   } = props;
@@ -214,6 +217,7 @@ export function ShellSurfaces(props: ShellSurfacesProps) {
             // app (the desktop must never flash the pre-save appearance).
             closeDialog();
           }}
+          onModalEditorOpenChange={onInspectorModalOpenChange}
         />
       ) : null}
       {dialog !== null && dialog.kind === "delete-app" ? (

@@ -148,6 +148,7 @@ function MobileHost({
     effectiveActivePageId: pageId ?? snapshot.pages[0]!.id,
     requestActiveSection: (id) => setPageId(id),
     recordScrollTop: () => {},
+    registerScrollCapture: () => {},
   };
   return (
     <WorkspaceRuntimeContextProvider value={rejectRuntime}>
@@ -415,6 +416,7 @@ describe("the browse surface (§14/§24/§75)", () => {
         effectiveActivePageId: pageId ?? withItems.pages[0]!.id,
         requestActiveSection: (id) => setPageId(id),
         recordScrollTop: () => {},
+        registerScrollCapture: () => {},
       };
       return (
         <WorkspaceRuntimeContextProvider value={rejectRuntime}>

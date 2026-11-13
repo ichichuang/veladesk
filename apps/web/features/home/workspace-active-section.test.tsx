@@ -123,6 +123,7 @@ describe("useWorkspaceActiveSection (external pass-through)", () => {
       effectiveActivePageId: "page-b",
       requestActiveSection: () => {},
       recordScrollTop: () => {},
+      registerScrollCapture: () => {},
     };
     const { result, unmount } = renderHook(() =>
       useWorkspaceActiveSection(hookInput({ external })),

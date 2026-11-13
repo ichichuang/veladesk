@@ -26,11 +26,15 @@ const workspace = {
   entities: apps,
 };
 
-function Harness({ initiallyOpen = true, launch = vi.fn() }) {
+function Harness({ initiallyOpen = true, launch = vi.fn(), onModalEditorOpenChange }: {
+  initiallyOpen?: boolean;
+  launch?: import("react").MouseEventHandler<HTMLButtonElement>;
+  onModalEditorOpenChange?: (open: boolean) => void;
+}) {
   const [open, setOpen] = useState(initiallyOpen);
   const [session, setSession] = useState(() => openAppearanceSession(apps[0]!));
   return <UiLocaleProvider>
-    <div onClickCapture={(event) => handleAppearanceAppClick(event, open, session.appId, apps,
+      <div onClickCapture={(event) => handleAppearanceAppClick(event, open, session.appId, apps,
       (app) => setSession(openAppearanceSession(app)))}>
       <button>Empty desktop</button>
       {apps.map((app) => <button key={app.id} data-appearance-app-id={app.id} onClick={launch}>
@@ -39,7 +43,8 @@ function Harness({ initiallyOpen = true, launch = vi.fn() }) {
       <AppAppearanceInspector open={open} workspace={workspace}
         appId={session.appId} draft={session.draft}
         onDraftChange={(draft) => setSession({ ...session, draft })}
-        onClose={() => setOpen(false)} />
+        onClose={() => setOpen(false)}
+        onModalEditorOpenChange={onModalEditorOpenChange} />
     </div>
   </UiLocaleProvider>;
 }
@@ -96,5 +101,19 @@ describe("appearance drawer interaction", () => {
     const view = render(<Harness initiallyOpen={false} launch={launch} />);
     fireEvent.click(view.getByText("Beta tile"));
     expect(launch).toHaveBeenCalledOnce();
+  });
+
+  it("reports the modal icon picker as the only scroll-locking surface (t176)", async () => {
+    const changes: boolean[] = [];
+    // Stable identity — the shell passes the setState function directly.
+    const onChange = (open: boolean) => { changes.push(open); };
+    const view = render(<Harness onModalEditorOpenChange={onChange} />);
+    // The side panel alone: never reported as modal.
+    await waitFor(() => expect(changes).toEqual([false]));
+    fireEvent.click(view.getByRole("button", { name: "更换图标" }));
+    await waitFor(() => expect(changes).toEqual([false, true]));
+    // Closing the panel with the picker up releases the modal flag too.
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(changes).toEqual([false, true, false]));
   });
 });

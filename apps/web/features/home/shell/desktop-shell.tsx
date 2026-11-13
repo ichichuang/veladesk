@@ -249,6 +249,15 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   } = dialogs;
 
   const inspectorOpen = dialog !== null && dialog.kind === "edit-visual";
+  /**
+   * t176 (director decision, overriding part of t159): the side inspector
+   * alone no longer freezes the desktop — the section scroller keeps
+   * scrolling normally (wheel, keyboard, touch, Lenis) while the 340px
+   * panel is open. This flag tracks the inspector's SECONDARY modal
+   * surface (AppearanceIconPickerDialog); the scroll lock below engages
+   * only while THAT dialog is up, with its t159 scroll-restore on close.
+   */
+  const [inspectorModalOpen, setInspectorModalOpen] = useState(false);
   // The t137/t148 Settings live preview, applied to the RENDERED snapshot:
   // the WHOLE draft rides the ONE shared projection a Save uses
   // (applySettingsDraftToSnapshot in settings-draft.ts) — appearance,
@@ -360,6 +369,18 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   useEffect(() => {
     captureActiveScrollRef.current = sceneCaptureActiveScroll;
   }, [sceneCaptureActiveScroll]);
+  /**
+   * t176: bind the scene's DOM scroll capture into the OWNING shared
+   * controller's flush boundaries (pagehide / visibilitychange / unmount).
+   * The owner lives in ResponsiveWorkspaceShell — above the DOM — so the
+   * hook-input path only covers standalone renders; without this
+   * registration, a reload persisted every section the user had LEFT but
+   * never the one being read (the live scrollTop missed the flush).
+   */
+  useEffect(() => {
+    activeSection.registerScrollCapture(captureActiveScroll);
+    return () => activeSection.registerScrollCapture(null);
+  }, [activeSection, captureActiveScroll]);
 
   // The launcher + dock model (entries follow the live snapshot).
   const { launcherEntries, launcherAppsById, hasDock } = useLauncherModel({
@@ -460,12 +481,21 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   // push content below the fold, so dnd-kit's auto-scroll needs the scroller
   // live — the drag session compensates every canvas-space delta for the
   // scroller's travel instead of freezing it.
+  //
+  // t176: the app-appearance SIDE INSPECTOR is no longer in this set by
+  // itself — the desktop scrolls normally while only the panel is open
+  // (its 340px reservation reflows the grid and the browser clamps
+  // naturally). The lock (and its scroll-restore on close) survives ONLY
+  // while the inspector's modal icon-picker dialog is up.
+  const dialogLocksScroll =
+    dialog !== null &&
+    !(dialog.kind === "edit-visual" && !inspectorModalOpen);
   const scrollLocked =
     tiles.commits.handoffLock ||
     tiles.commits.resizeLock ||
     settingsOpen ||
     launcherOpen ||
-    dialog !== null ||
+    dialogLocksScroll ||
     contextMenu !== null ||
     overlayFolderId !== null;
 
@@ -698,6 +728,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         settingsBackgroundSection={settingsBackgroundSection}
         setAppearancePreview={setAppearancePreview}
         setSettingsDraftPreview={setSettingsDraftPreview}
+        onInspectorModalOpenChange={setInspectorModalOpen}
         openContextMenu={menus.openContextMenu}
         t={t}
       />
