@@ -4068,7 +4068,8 @@ button.vela-sync-status:focus-visible {
 }
 
 .vela-icon-picker__note {
-  font-size: 11.5px;
+  /* t171 legibility: helper copy is 13px minimum, never below. */
+  font-size: 13px;
   color: var(--vd-text-muted);
 }
 
@@ -4080,7 +4081,7 @@ button.vela-sync-status:focus-visible {
 }
 
 .vela-icon-picker__count {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--vd-text-muted);
   white-space: nowrap;
 }
@@ -4102,11 +4103,18 @@ button.vela-sync-status:focus-visible {
    label above, one full-width row with a thumb, a human-readable primary
    label and a trailing chevron. */
 .vela-inspector__section-label {
-  font-size: 12px;
+  /* t171 legibility: nothing smaller than 13px on the editing surfaces. */
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--vdu-fg-muted, var(--vd-text-muted));
+}
+
+/* t171: once the scroll region under a pinned header has moved, the
+   header grows a light shadow so the content visibly slides UNDER it. */
+.vela-editor-header[data-scrolled="true"] {
+  box-shadow: 0 10px 20px -12px oklch(0.16 0.03 255 / 0.4);
 }
 
 .vela-inspector__row {

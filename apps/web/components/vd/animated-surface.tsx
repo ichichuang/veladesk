@@ -3,7 +3,7 @@
 import { forwardRef, useLayoutEffect, useRef } from "react";
 import type { HTMLAttributes, ReactNode } from "react";
 
-import { gsap } from "./gsap";
+import { gsap, VD_EASE_WINDOW_CLOSE, VD_EASE_WINDOW_OPEN } from "./gsap";
 import { VD_MOTION_EASE, vdMotionDuration } from "./motion-tokens";
 import { useVdReducedMotion } from "./reduced-motion";
 
@@ -25,7 +25,9 @@ import { useVdReducedMotion } from "./reduced-motion";
  *    slot retargets from the surface's CURRENT values, so no snap and no
  *    remount.
  *  - Reduced motion: poses settle instantly and an exit releases presence
- *    immediately — product state never waits for an animation.
+ *    immediately — product state never waits for an animation. The ONE
+ *    exception is the editing-window band (t171): a 120ms opacity-only
+ *    crossfade, still no transform.
  *
  * The exit is slightly quicker than the entrance (the 018 contract).
  */
@@ -37,16 +39,32 @@ export type VdSurfaceVariant =
   | "popup"
   | "tooltip"
   | "launcher"
-  | "recognition";
+  | "recognition"
+  | "editor"
+  | "sheet";
 
 interface SurfacePose {
-  readonly hidden: { opacity: number; y?: number; x?: number; scale?: number };
-  readonly shown: { opacity: 1; y: 0; x: 0; scale: 1 };
+  readonly hidden: { opacity: number; y?: number; x?: number; scale?: number; yPercent?: number };
+  readonly shown: { opacity: 1; y: 0; x: 0; scale: 1; yPercent?: number };
+  /**
+   * Where the EXIT lands. Defaults to `hidden` — most poses reverse their
+   * entrance; the t171 editing window leaves toward a shallower scale
+   * (0.98) than it arrived from (0.96), per the motion spec.
+   */
+  readonly exitTo?: { opacity: number; y?: number; x?: number; scale?: number; yPercent?: number };
   readonly duration: number;
   readonly exitDuration: number;
+  /** Enter curve; the canonical power2.out unless a spec pins an exact one. */
+  readonly ease?: string | gsap.EaseFunction;
+  /** Leave curve; defaults to the enter curve. */
+  readonly exitEase?: string | gsap.EaseFunction;
+  /** t171: reduced motion crossfades opacity over this long instead of settling instantly. */
+  readonly reducedFade?: number;
 }
 
 const EXIT_SCALE = 0.75;
+/** The t171 reduced-motion crossfade band (opacity only, 120ms). */
+const REDUCED_FADE = 0.12;
 
 function poseFor(variant: VdSurfaceVariant): SurfacePose {
   switch (variant) {
@@ -54,8 +72,8 @@ function poseFor(variant: VdSurfaceVariant): SurfacePose {
       return {
         hidden: { opacity: 0 },
         shown: { opacity: 1, y: 0, x: 0, scale: 1 },
-        duration: vdMotionDuration("hoverPress"),
-        exitDuration: vdMotionDuration("hoverPress"),
+        duration: vdMotionDuration("scrim"),
+        exitDuration: vdMotionDuration("editorWindowExit"),
       };
     case "dialog":
       return {
@@ -70,6 +88,33 @@ function poseFor(variant: VdSurfaceVariant): SurfacePose {
         shown: { opacity: 1, y: 0, x: 0, scale: 1 },
         duration: vdMotionDuration("inspector"),
         exitDuration: vdMotionDuration("inspector") * EXIT_SCALE,
+      };
+    case "editor":
+      // The visual editor window (t171 motion spec): rises from
+      // scale(0.96) + 8px on cubic-bezier(0.2,0,0,1); closes toward
+      // scale(0.98) on cubic-bezier(0.4,0,1,1).
+      return {
+        hidden: { opacity: 0, y: 8, scale: 0.96 },
+        shown: { opacity: 1, y: 0, x: 0, scale: 1 },
+        exitTo: { opacity: 0, scale: 0.98 },
+        duration: vdMotionDuration("editorWindow"),
+        exitDuration: vdMotionDuration("editorWindowExit"),
+        ease: VD_EASE_WINDOW_OPEN,
+        exitEase: VD_EASE_WINDOW_CLOSE,
+        reducedFade: REDUCED_FADE,
+      };
+    case "sheet":
+      // Small-screen bottom sheet (t171): no scale — slides the full
+      // height in/out on the window curves.
+      return {
+        hidden: { opacity: 1, yPercent: 100 },
+        shown: { opacity: 1, y: 0, x: 0, scale: 1, yPercent: 0 },
+        exitTo: { opacity: 1, yPercent: 100 },
+        duration: vdMotionDuration("editorSheet"),
+        exitDuration: vdMotionDuration("editorSheetExit"),
+        ease: VD_EASE_WINDOW_OPEN,
+        exitEase: VD_EASE_WINDOW_CLOSE,
+        reducedFade: REDUCED_FADE,
       };
     case "popup":
     case "tooltip":
@@ -128,7 +173,12 @@ export const VdAnimatedSurface = forwardRef<HTMLDivElement, VdAnimatedSurfacePro
         return;
       }
       const pose = poseFor(variant);
-      gsap.set(element, { ...pose.hidden, scale: pose.hidden.scale ?? 1, x: pose.hidden.x ?? 0 });
+      gsap.set(element, {
+        ...pose.hidden,
+        scale: pose.hidden.scale ?? 1,
+        x: pose.hidden.x ?? 0,
+        yPercent: pose.hidden.yPercent ?? 0,
+      });
       // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only by design
     }, []);
 
@@ -141,19 +191,37 @@ export const VdAnimatedSurface = forwardRef<HTMLDivElement, VdAnimatedSurfacePro
         return;
       }
       const pose = poseFor(variant);
+      const ease = pose.ease ?? VD_MOTION_EASE;
+      const exitEase = pose.exitEase ?? ease;
       tweenRef.current?.kill();
       if (active) {
         releasedRef.current = false;
         element.style.pointerEvents = "";
         if (reducedMotion) {
-          gsap.set(element, pose.shown);
-          tweenRef.current = null;
+          if (pose.reducedFade === undefined) {
+            gsap.set(element, pose.shown);
+            tweenRef.current = null;
+            return;
+          }
+          // t171: opacity-only crossfade. The transform settles to REST
+          // immediately — a fresh mount's hidden pose (scale 0.96 + 8px,
+          // a sheet's yPercent 100) must never survive the fade.
+          gsap.set(element, { x: 0, y: 0, scale: 1, yPercent: 0 });
+          tweenRef.current = gsap.to(element, {
+            opacity: 1,
+            duration: pose.reducedFade,
+            ease: "none",
+            overwrite: "auto",
+            onComplete: () => {
+              tweenRef.current = null;
+            },
+          });
           return;
         }
         tweenRef.current = gsap.to(element, {
           ...pose.shown,
           duration: pose.duration,
-          ease: VD_MOTION_EASE,
+          ease,
           overwrite: "auto",
           onComplete: () => {
             tweenRef.current = null;
@@ -163,18 +231,34 @@ export const VdAnimatedSurface = forwardRef<HTMLDivElement, VdAnimatedSurfacePro
         // Pointer-inert while the exit plays.
         element.style.pointerEvents = "none";
         if (reducedMotion) {
-          gsap.set(element, { opacity: 0 });
-          tweenRef.current = null;
-          if (!releasedRef.current) {
-            releasedRef.current = true;
-            releaseRef.current?.();
+          if (pose.reducedFade === undefined) {
+            gsap.set(element, { opacity: 0 });
+            tweenRef.current = null;
+            if (!releasedRef.current) {
+              releasedRef.current = true;
+              releaseRef.current?.();
+            }
+            return;
           }
+          tweenRef.current = gsap.to(element, {
+            opacity: 0,
+            duration: pose.reducedFade,
+            ease: "none",
+            overwrite: "auto",
+            onComplete: () => {
+              tweenRef.current = null;
+              if (!releasedRef.current) {
+                releasedRef.current = true;
+                releaseRef.current?.();
+              }
+            },
+          });
           return;
         }
         tweenRef.current = gsap.to(element, {
-          ...pose.hidden,
+          ...(pose.exitTo ?? pose.hidden),
           duration: pose.exitDuration,
-          ease: VD_MOTION_EASE,
+          ease: exitEase,
           overwrite: "auto",
           onComplete: () => {
             tweenRef.current = null;

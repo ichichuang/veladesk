@@ -265,6 +265,41 @@ describe("inspector information architecture (019-C §8/§9)", () => {
   });
 });
 
+describe("t171 editing-window UX contract", () => {
+  it("the visual editor dialog keeps ONE fixed size across tabs/states", () => {
+    // 560px wide, min(80dvh, 720px) tall with the viewport clamps; the
+    // narrow-viewport bottom sheet replaces the size entirely.
+    expect(inspectorSource).toMatch(/h-\[min\(80dvh,720px\)\]/);
+    expect(inspectorSource).toMatch(/w-\[560px\]/);
+    expect(inspectorSource).toMatch(/max-h-\[calc\(100dvh-32px\)\]/);
+    expect(inspectorSource).toMatch(/sheet=\{sheet\}/);
+  });
+
+  it("the editing window uses the t171 motion band and crossfades tabs", () => {
+    expect(inspectorSource).toMatch(/motionPreset="editor"/);
+    expect(inspectorSource).toMatch(/<VdTabCrossfade/);
+    expect(inspectorSource).toMatch(/staggerSelector=/);
+  });
+
+  it("the editing surfaces paint the OPAQUE window token", () => {
+    // Legibility (t171): no frosted/translucent layer under text — the
+    // inspector panel and the visual editor dialog both go solid.
+    expect(inspectorSource.match(/surfaceTone="solid"/g) ?? []).toHaveLength(2);
+  });
+
+  it("no editing-surface copy drops below 13px", () => {
+    expect(inspectorSource).not.toMatch(/text-xs/);
+    expect(ruleBlock(".vela-inspector__section-label")).toMatch(/font-size:\s*13px/);
+    expect(ruleBlock(".vela-icon-picker__note")).toMatch(/font-size:\s*13px/);
+    expect(ruleBlock(".vela-icon-picker__count")).toMatch(/font-size:\s*13px/);
+  });
+
+  it("the pinned headers gain a shadow once their scroll region moves", () => {
+    const shadow = ruleBlock('.vela-editor-header[data-scrolled="true"]');
+    expect(shadow).toMatch(/box-shadow/);
+  });
+});
+
 describe("inspector: product-grade controls (019-D §9/§21)", () => {
   it("uses the canonical HeroUI controls on the panel surface", () => {
     // t138: Button left with the Save/Cancel footer — the panel's remaining

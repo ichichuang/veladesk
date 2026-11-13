@@ -26,6 +26,19 @@ export const VD_MOTION = {
   tooltip: 0.18,
   /** Popup band: popovers, selects, color picker, context menu, launcher. */
   popup: 0.24,
+  /**
+   * The editing-window band (t171 motion spec): the visual editor dialog
+   * rises 240ms on the window-open curve and leaves in 160ms.
+   */
+  editorWindow: 0.24,
+  editorWindowExit: 0.16,
+  /** Tab/step content swap inside the editing window: crossfade + 12px, no layout change. */
+  editorTab: 0.2,
+  /** The scrim behind an editing window: in with the window, out with it. */
+  scrim: 0.2,
+  /** Small-screen bottom sheet (t171): slide 280ms in, 200ms out. */
+  editorSheet: 0.28,
+  editorSheetExit: 0.2,
   /** Settings section pane content. */
   tabContent: 0.26,
   /** Moving selection indicators (rail). */

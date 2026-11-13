@@ -132,6 +132,44 @@ describe("VdAnimatedSurface", () => {
     expect(el.style.opacity).toBe("1");
   });
 
+  it("the editor window follows the t171 spec (240ms in from scale 0.96, 160ms out to 0.98)", () => {
+    const view = render(
+      <VdAnimatedSurface active={true} variant="editor" data-testid="surface" />
+    );
+    const el = view.getByTestId("surface") as HTMLElement;
+    // The committed start pose: scale 0.96 + 8px rise + opacity 0.
+    expect(el.style.opacity).toBe("0");
+    expect(el.style.transform).toContain("8px");
+    expect(el.style.transform).toContain("0.96");
+    const enter = surfaceTween(el)!;
+    expect(enter.duration()).toBeCloseTo(0.24, 5);
+    enter.progress(1);
+    expect(el.style.opacity).toBe("1");
+
+    view.rerender(<VdAnimatedSurface active={false} variant="editor" data-testid="surface" />);
+    const exit = surfaceTween(el)!;
+    expect(exit.duration()).toBeCloseTo(0.16, 5);
+    // The leave lands on the shallower 0.98 scale, not the 0.96 origin.
+    expect(exit.vars.scale).toBe(0.98);
+  });
+
+  it("the sheet pose slides the full height (t171: 280ms in, 200ms out, no scale travel)", () => {
+    const view = render(
+      <VdAnimatedSurface active={true} variant="sheet" data-testid="surface" />
+    );
+    const el = view.getByTestId("surface") as HTMLElement;
+    const enter = surfaceTween(el)!;
+    expect(enter.duration()).toBeCloseTo(0.28, 5);
+    // The slide is translation-only: scale stays at the identity.
+    expect(enter.vars.scale).toBe(1);
+
+    view.rerender(<VdAnimatedSurface active={false} variant="sheet" data-testid="surface" />);
+    const exit = surfaceTween(el)!;
+    expect(exit.duration()).toBeCloseTo(0.2, 5);
+    // The leave never touches scale either.
+    expect(exit.vars.scale).toBeUndefined();
+  });
+
   it("reduced motion settles instantly and releases an exit immediately", () => {
     const listeners = new Set<(event: MediaQueryListEvent) => void>();
     const mql = {

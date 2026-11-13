@@ -66,6 +66,8 @@ export function DialogContent({
   showCloseButton = true,
   variant = "center",
   motionPreset,
+  sheet = false,
+  surfaceTone = "glass",
   surfaceProps,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
@@ -76,10 +78,26 @@ export function DialogContent({
   readonly variant?: "center" | "panel";
   /**
    * Canonical motion timing (022): "picker" (the secondary icon-picker
-   * windows) uses the quicker popup band; otherwise panel/dialog by
-   * variant. Durations live in the preset module.
+   * windows) uses the quicker popup band; "editor" (t171) uses the
+   * editing-window band — rise from scale 0.96 + 8px on the window-open
+   * curve; otherwise panel/dialog by variant. Durations live in the
+   * preset module.
    */
-  readonly motionPreset?: "dialog" | "panel" | "picker";
+  readonly motionPreset?: "dialog" | "panel" | "picker" | "editor";
+  /**
+   * Small-screen placement (t171): instead of the centered window the
+   * content becomes a full-screen bottom sheet — anchored to the viewport
+   * edges, filled by the surface, sliding in/out with the sheet pose (no
+   * scale). The caller owns the responsive decision (a media-query hook).
+   */
+  readonly sheet?: boolean;
+  /**
+   * Window material (t171 legibility spec): "glass" (default) rides the
+   * interface-style alpha + backdrop blur; "solid" paints the OPAQUE
+   * window token — the ground under long-form text in editing overlays,
+   * where muted copy must keep its contrast over any wallpaper.
+   */
+  readonly surfaceTone?: "glass" | "solid";
   /**
    * Extra attributes for the INNER painted surface — NOT the outer
    * positioning node, where the rest of the props land. Settings
@@ -94,8 +112,15 @@ export function DialogContent({
   const portalContainer = useVdPortalContainer();
   const open = useContext(DialogOpenContext);
   const panel = variant === "panel";
-  const surfaceVariant: VdSurfaceVariant =
-    motionPreset === "picker" ? "popup" : panel ? "panel" : "dialog";
+  const surfaceVariant: VdSurfaceVariant = sheet
+    ? "sheet"
+    : motionPreset === "picker"
+      ? "popup"
+      : motionPreset === "editor"
+        ? "editor"
+        : panel
+          ? "panel"
+          : "dialog";
   const presence = useVdPresence(open);
 
   /**
@@ -180,7 +205,14 @@ export function DialogContent({
             "z-50 flex flex-col outline-none",
             panel
               ? "fixed right-0 top-0 h-dvh w-[calc(100vw_-_16px)] max-w-[400px]"
-              : "fixed left-1/2 top-1/2 w-max -translate-x-1/2 -translate-y-1/2 max-w-[calc(100vw_-_32px)] max-h-[calc(100dvh_-_32px)]",
+              : sheet
+                ? "fixed inset-0"
+                : // Centered window: the outer node shrinkwraps the surface
+                  // (w-max, auto height) — the surface may carry an EXPLICIT
+                  // h-[], so it must not be a flex-grow item (flex-basis 0
+                  // would override the height and re-content-size the
+                  // window, t171). Panel/sheet surfaces FILL their outer.
+                  "fixed left-1/2 top-1/2 w-max -translate-x-1/2 -translate-y-1/2 max-w-[calc(100vw_-_32px)] max-h-[calc(100dvh_-_32px)]",
           )}
         >
           {/* INNER visual surface — the GSAP-owned window. The marker
@@ -192,13 +224,21 @@ export function DialogContent({
             onPresenceReleased={() => { completeExit(); onExitComplete?.(); }}
             {...surfaceProps}
             className={cn(
-              "flex min-h-0 flex-1 flex-col",
+              "flex min-h-0 flex-col",
+              panel || sheet ? "flex-1" : "flex-none",
               panel
                 ? "rounded-l-vdu-dialog border-l border-vdu-border"
-                : "rounded-vdu-dialog border border-vdu-border",
+                : sheet
+                  ? "rounded-t-vdu-dialog border-t border-vdu-border"
+                  : "rounded-vdu-dialog border border-vdu-border",
               // The window surface follows the interface style (translucent
               // + backdrop blur while a style is active; solid fallback).
-              "bg-[var(--vdu-window)] backdrop-blur-[var(--vdu-window-blur)] shadow-[var(--vdu-shadow)]",
+              // The SOLID tone (t171) paints the opaque window token with
+              // no blur — the legible ground for editing overlays.
+              surfaceTone === "solid"
+                ? "bg-[var(--vdu-window-solid)]"
+                : "bg-[var(--vdu-window)] backdrop-blur-[var(--vdu-window-blur)]",
+              "shadow-[var(--vdu-shadow)]",
               className,
             )}
           >

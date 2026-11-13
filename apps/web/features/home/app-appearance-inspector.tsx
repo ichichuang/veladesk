@@ -16,6 +16,8 @@ import type { PreparedAsset } from "@veladesk/assets/core";
 import { Button, CloseButton, Input, Label, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { ChevronRight } from "lucide-react";
 
+import { cn } from "@components/ui/cn";
+
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
 import { useI18n } from "../i18n/use-i18n";
 import type { TranslateFn } from "../i18n/use-i18n";
@@ -42,6 +44,8 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@componen
 import { VdScrollArea } from "@components/vd/scroll-area";
 import { VdSwitch } from "@components/vd/switch";
 import { ColorField } from "@components/vd/color-popover";
+import { VdTabCrossfade } from "@components/vd/content-transition";
+import { useVdMediaQuery } from "@components/vd/use-vd-media-query";
 import "./home-shell.css";
 
 /**
@@ -120,6 +124,28 @@ export function AppAppearanceInspector({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // t171: the header gains a shadow once the body below it has scrolled.
+  // A passive native listener writes the data attribute directly — scroll
+  // frames never re-render the panel (the 021-A scroll-state contract).
+  const inspectorHeaderRef = useRef<HTMLElement | null>(null);
+  const inspectorBodyRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const host = inspectorBodyRef.current;
+    const header = inspectorHeaderRef.current;
+    if (host === null || header === null) {
+      return;
+    }
+    const sync = () => {
+      header.setAttribute("data-scrolled", host.scrollTop > 0 ? "true" : "false");
+    };
+    host.addEventListener("scroll", sync, { passive: true });
+    sync();
+    return () => {
+      host.removeEventListener("scroll", sync);
+      header.removeAttribute("data-scrolled");
+    };
+    // The body remounts per app (its key) — rebind to the fresh host.
+  }, [appId]);
   // Keep the panel surface mounted while switching apps. Reset app-specific
   // transient state before children render, so no previous upload can flash.
   const [previousAppId, setPreviousAppId] = useState(appId);
@@ -311,13 +337,21 @@ export function AppAppearanceInspector({
         onInteractOutside={(event) => event.preventDefault()}
         showCloseButton={false}
         aria-describedby={undefined}
+        // t171 legibility: the editing surfaces paint the OPAQUE window
+        // token — muted copy keeps ≥4.5:1 over any wallpaper, no frosting
+        // under text.
+        surfaceTone="solid"
         className="w-[340px]"
         data-vd-wheel-scope="local"
       >
         {/* Header: app identity thumbnail + name. The thumbnail is an
             identity cue at a fixed slot size — deliberately NOT a preview
             of adaptive desktop composition (019-C §12). */}
-        <header key={`identity-${appId}`} className="vela-inspector__subject flex h-[64px] shrink-0 items-center gap-3 border-b border-vdu-border px-5">
+        <header
+          key={`identity-${appId}`}
+          ref={inspectorHeaderRef}
+          className="vela-inspector__subject vela-editor-header flex h-[64px] shrink-0 items-center gap-3 border-b border-vdu-border px-5"
+        >
           {draft.source === "upload" && pendingUpload !== null ? (
             <span
               aria-hidden="true"
@@ -337,7 +371,7 @@ export function AppAppearanceInspector({
           )}
           <div className="min-w-0 flex-1">
             <DialogTitle className="truncate text-sm">{existing.name}</DialogTitle>
-            <DialogDescription className="mt-1 text-xs">
+            <DialogDescription className="mt-1 text-[13px]">
               {t("visualEditor.closeHint")}
             </DialogDescription>
           </div>
@@ -349,6 +383,7 @@ export function AppAppearanceInspector({
         <VdScrollArea
           axis="y"
           key={`controls-${appId}`}
+          ref={inspectorBodyRef}
           className="vela-inspector__subject flex min-h-0 flex-1 flex-col gap-5 px-5 py-5"
         >
           {/* SECTION — Icon: one row that opens the focused picker. The
@@ -368,7 +403,7 @@ export function AppAppearanceInspector({
                 <span className="block truncate text-sm font-medium text-vdu-fg">
                   {describeDraftSourcePrimary(draft, projected, t)}
                 </span>
-                <span className="block truncate text-xs text-vdu-fg-muted">
+                <span className="block truncate text-[13px] text-vdu-fg-muted">
                   {describeDraftSourceSecondary(draft, t)}
                 </span>
               </span>
@@ -439,7 +474,7 @@ export function AppAppearanceInspector({
                 onChange={(foregroundColor) => patch({ foregroundColor })}
               />
             ) : (
-              <p className="text-xs leading-relaxed text-vdu-fg-muted">
+              <p className="text-[13px] leading-relaxed text-vdu-fg-muted">
                 {draft.source === "upload"
                   ? t("visualEditor.upload.originalColorNote")
                   : t("visualEditor.originalColorNote")}
@@ -454,7 +489,7 @@ export function AppAppearanceInspector({
           </section>
 
           {error !== null ? (
-            <p className="text-xs text-vdu-danger" role="alert">
+            <p className="text-[13px] text-vdu-danger" role="alert">
               {error}
             </p>
           ) : null}
@@ -473,17 +508,19 @@ export function AppAppearanceInspector({
         </footer>
       </DialogContent>
 
-      {pickerOpen ? (
-        <AppearanceIconPickerDialog
-          draft={draft}
-          projected={projected}
-          onDraftChange={onDraftChange}
-          pendingUpload={pendingUpload}
-          onPendingUploadChange={setPendingUpload}
-          fileInputRef={fileInputRef}
-          onClose={() => setPickerOpen(false)}
-        />
-      ) : null}
+      {/* t171: the window stays MOUNTED through its exit — presence inside
+          DialogContent holds the portal until the close animation finishes,
+          and a reopen mid-exit retargets the same surface. */}
+      <AppearanceIconPickerDialog
+        open={pickerOpen}
+        draft={draft}
+        projected={projected}
+        onDraftChange={onDraftChange}
+        pendingUpload={pendingUpload}
+        onPendingUploadChange={setPendingUpload}
+        fileInputRef={fileInputRef}
+        onClose={() => setPickerOpen(false)}
+      />
     </Dialog>
   );
 }
@@ -497,6 +534,7 @@ export function AppAppearanceInspector({
  * appearance/decoration controls are duplicated here.
  */
 function AppearanceIconPickerDialog({
+  open,
   draft,
   projected,
   onDraftChange,
@@ -505,6 +543,8 @@ function AppearanceIconPickerDialog({
   fileInputRef,
   onClose,
 }: {
+  /** Requested visibility; the window stays mounted through its exit (t171). */
+  readonly open: boolean;
   readonly draft: AppVisualDraft;
   readonly projected: AppShortcut;
   readonly onDraftChange: (draft: AppVisualDraft) => void;
@@ -516,6 +556,65 @@ function AppearanceIconPickerDialog({
   const { t } = useI18n();
   const [uploadIssue, setUploadIssue] = useState<UploadValidationIssue | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
+  // Open-driven reset (022): each OPEN transition gets the fresh transient
+  // state a remount used to produce — the window now persists through exits.
+  const previousOpenRef = useRef(open);
+  useEffect(() => {
+    const wasOpen = previousOpenRef.current;
+    previousOpenRef.current = open;
+    if (open && !wasOpen) {
+      setUploadIssue(null);
+      setUploadBusy(false);
+    }
+  }, [open]);
+  // t171: the editing window keeps ONE fixed size (560 × min(80dvh, 720))
+  // on desktop viewports; narrow viewports get the full-screen bottom
+  // sheet instead (no scale — it slides).
+  // The desktop shell exists from 768px up (below that the mobile shell
+  // has no appearance editor), so the sheet band is the NARROW DESKTOP
+  // range where a centered 560px window would feel cramped.
+  const sheet = useVdMediaQuery("(max-width: 899px)");
+  // t171: the header gains a shadow once the content region below it has
+  // scrolled. A passive CAPTURE listener on the region hears whichever
+  // owned scroller is mounted (the picker grid, the upload/text areas) and
+  // writes the header attribute directly — scroll frames never re-render
+  // the window (the 021-A scroll-state contract).
+  const dialogHeaderRef = useRef<HTMLElement | null>(null);
+  const contentRegionRef = useRef<HTMLDivElement | null>(null);
+  const syncHeaderShadow = useCallback(() => {
+    const region = contentRegionRef.current;
+    const header = dialogHeaderRef.current;
+    if (region === null || header === null) {
+      return;
+    }
+    const scrolled = Array.from(region.querySelectorAll("[data-vd-scroll]")).some(
+      (scroller) => scroller instanceof HTMLElement && scroller.scrollTop > 0
+    );
+    header.setAttribute("data-scrolled", scrolled ? "true" : "false");
+  }, []);
+  useEffect(() => {
+    const region = contentRegionRef.current;
+    if (region === null) {
+      return;
+    }
+    region.addEventListener("scroll", syncHeaderShadow, { capture: true, passive: true });
+    // A fresh panel starts at the top of its scroll range.
+    syncHeaderShadow();
+    return () => {
+      region.removeEventListener("scroll", syncHeaderShadow, { capture: true });
+    };
+    // The content region remounts per source tab — rebind each switch.
+  }, [draft.source, syncHeaderShadow]);
+  // Tab-switch travel direction for the content crossfade (t171 motion),
+  // read against the tab order before the state carries the new source.
+  const sourceOrder = ["library", "text", "upload"] as const;
+  const [previousSource, setPreviousSource] = useState(draft.source);
+  let direction: 1 | -1 = 1;
+  if (previousSource !== draft.source) {
+    direction =
+      sourceOrder.indexOf(draft.source) > sourceOrder.indexOf(previousSource) ? 1 : -1;
+    setPreviousSource(draft.source);
+  }
 
   function patch(next: { readonly [K in keyof AppVisualDraft]?: AppVisualDraft[K] | undefined }) {
     onDraftChange({ ...draft, ...next } as AppVisualDraft);
@@ -573,21 +672,34 @@ function AppearanceIconPickerDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+    <Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogContent
         showCloseButton
-        motionPreset="picker"
+        // t171: the editing-window motion band (rise from scale 0.96 +
+        // 8px, leave toward 0.98) and, on narrow viewports, the slide-in
+        // bottom-sheet placement. The window paints the OPAQUE token —
+        // no frosting under the picker text.
+        motionPreset="editor"
+        sheet={sheet}
+        surfaceTone="solid"
         aria-describedby={undefined}
-        className="h-[560px] max-h-[calc(100dvh-32px)] w-[600px] max-w-[calc(100vw-32px)]"
+        className={cn(
+          sheet
+            ? "w-full"
+            : "h-[min(80dvh,720px)] max-h-[calc(100dvh-32px)] w-[560px] max-w-[calc(100vw-32px)]",
+        )}
         data-vd-wheel-scope="local"
       >
-        <header className="flex h-[54px] shrink-0 items-center border-b border-vdu-border px-5">
+        <header
+          ref={dialogHeaderRef}
+          className="vela-editor-header flex h-[54px] shrink-0 items-center border-b border-vdu-border px-5"
+        >
           <DialogTitle className="truncate text-base">
             {t("visualEditor.changeIcon")}
           </DialogTitle>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div ref={contentRegionRef} className="flex min-h-0 flex-1 flex-col">
           {/* Source mode — a designed segmented control, never a native
               select. */}
           <div className="shrink-0 px-5 pt-4">
@@ -608,6 +720,15 @@ function AppearanceIconPickerDialog({
             </ToggleButtonGroup>
           </div>
 
+          {/* t171: the window NEVER resizes on a tab switch — only this
+              content region crossfades (12px directional travel, 200ms;
+              the library grid's cells stagger in). Every branch is its
+              own scroll container, so wheeling stays inside the window. */}
+          <VdTabCrossfade
+            tabKey={draft.source}
+            direction={direction}
+            staggerSelector={draft.source === "library" ? ".vela-icon-picker__cell" : undefined}
+          >
           {draft.source === "library" ? (
             <div className="vela-visual-editor__picker-bound flex min-h-0 flex-1 flex-col">
               <IconPicker
@@ -621,7 +742,7 @@ function AppearanceIconPickerDialog({
           ) : draft.source === "upload" ? (
             <VdScrollArea
               axis="y"
-              className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-4"
+              className="flex min-h-0 flex-1 flex-col gap-3 overscroll-contain px-5 py-4"
             >
               <div
                 className="vela-upload-dropzone"
@@ -668,22 +789,23 @@ function AppearanceIconPickerDialog({
                 tabIndex={-1}
               />
               {uploadIssue !== null ? (
-                <p className="text-xs text-vdu-danger" role="alert">
+                <p className="text-[13px] text-vdu-danger" role="alert">
                   {describeUploadIssue(uploadIssue, t)}
                 </p>
               ) : null}
-              <p className="text-xs leading-relaxed text-vdu-fg-muted">
+              <p className="text-[13px] leading-relaxed text-vdu-fg-muted">
                 {t("visualEditor.upload.hint")}
               </p>
             </VdScrollArea>
           ) : (
             <VdScrollArea
               axis="y"
-              className="flex min-h-0 flex-1 flex-col px-5 py-4"
+              className="flex min-h-0 flex-1 flex-col overscroll-contain px-5 py-4"
             >
               <GeneratedTextControls draft={draft} autoText={autoGeneratedText(projected)} patch={patch} withHints />
             </VdScrollArea>
           )}
+          </VdTabCrossfade>
         </div>
       </DialogContent>
     </Dialog>
@@ -750,13 +872,13 @@ function GeneratedTextControls({
             />
           </TextField>
           {withHints ? (
-            <p className="text-xs leading-relaxed text-vdu-fg-muted">
+            <p className="text-[13px] leading-relaxed text-vdu-fg-muted">
               {t("visualEditor.customTextHint")}
             </p>
           ) : null}
         </>
       ) : withHints ? (
-        <p className="text-xs leading-relaxed text-vdu-fg-muted">
+        <p className="text-[13px] leading-relaxed text-vdu-fg-muted">
           {t("visualEditor.textAutoHint", { text: autoText })}
         </p>
       ) : null}

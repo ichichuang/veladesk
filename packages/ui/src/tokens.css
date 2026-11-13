@@ -64,6 +64,13 @@
    */
   --vd-color-bg-window: oklch(0.27 0.03 255 / var(--vd-window-alpha, 1));
   /*
+   * The OPAQUE window ground (t171 legibility spec): the surface under
+   * long-form text in editing overlays (the appearance inspector, the
+   * visual editor dialog). Never tinted by the interface-style alpha —
+   * muted text over a bright wallpaper must keep its ≥4.5:1 pair.
+   */
+  --vd-color-bg-window-solid: oklch(0.27 0.03 255);
+  /*
    * The overlay POPUP surface (Select listboxes, HeroUI popovers). Option
    * text must stay readable over ANY backdrop — wallpaper OR busy window
    * content — so the window alpha is floored at 0.96 (021-R1; 0.9 still
@@ -202,6 +209,7 @@
   --vdu-bg-hover: var(--vd-color-bg-well-hover);
   --vdu-bg-active: var(--vd-color-bg-well-active);
   --vdu-window: var(--vd-color-bg-window);
+  --vdu-window-solid: var(--vd-color-bg-window-solid);
   --vdu-window-blur: var(--vd-window-blur, 0px);
   --vdu-overlay: var(--vd-color-bg-overlay);
 
@@ -354,6 +362,7 @@
   --vd-color-bg-well-hover: oklch(0.895 0.012 250);
   --vd-color-bg-well-active: oklch(0.87 0.014 250);
   --vd-color-bg-window: oklch(1 0 0 / var(--vd-window-alpha, 1));
+  --vd-color-bg-window-solid: oklch(1 0 0);
   --vd-color-bg-overlay: oklch(1 0 0 / clamp(0.96, var(--vd-window-alpha, 1), 1));
 
   --vd-color-fg-primary: oklch(0.22 0.03 255);

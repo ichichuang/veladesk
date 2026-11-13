@@ -73,7 +73,14 @@ describe("appearance drawer interaction", () => {
     fireEvent.click(view.getByRole("button", { name: "更换图标" }));
     expect(view.getAllByRole("dialog", { hidden: true })).toHaveLength(2);
     fireEvent.click(view.getByText("Beta tile"));
-    await waitFor(() => expect(view.getAllByRole("dialog")).toHaveLength(1));
+    // t171: the picker now plays a 160ms EXIT before unmounting (the
+    // window stays mounted through its close animation) — wait until the
+    // panel is the one remaining dialog and shows the new app.
+    await waitFor(() => {
+      const dialogs = view.getAllByRole("dialog", { hidden: true });
+      expect(dialogs).toHaveLength(1);
+      expect(dialogs[0]!.textContent).toContain("Beta");
+    });
     expect(view.getByRole("dialog")).toBe(panel);
     expect(panel.textContent).toContain("Beta");
   });
