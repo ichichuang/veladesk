@@ -7,6 +7,7 @@ import {
   gridReflowPreviewPlacement,
   isCanvasDragNoop,
   previewCanvasDrag,
+  resolveGridDragPlacement,
   settledGridDropPlacement,
 } from "./canvas-drag";
 import type { CanvasPixelMetrics } from "./canvas-metrics";
@@ -385,5 +386,130 @@ describe("grid drag reflow — the t129 Apple-style live yield", () => {
         pitchPx: 100,
       }),
     ).toBe(floating);
+  });
+});
+
+describe("grid drag resolution — the t163 stability contract", () => {
+  function overlaps(p: PagePlacement): string[] {
+    const bad: string[] = [];
+    const items = p.items as GridCanvasItem[];
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i]!;
+        const b = items[j]!;
+        if (
+          a.column < b.column + b.columnSpan &&
+          b.column < a.column + a.columnSpan &&
+          a.row < b.row + b.rowSpan &&
+          b.row < a.row + a.rowSpan
+        ) {
+          bad.push(`${a.id}*${b.id}`);
+        }
+      }
+    }
+    return bad;
+  }
+
+  it("keeps the resolved slot through boundary jitter (hysteresis)", () => {
+    // Pitch 100: the 0→1 boundary sits at 50px. Once the drag resolves to 1,
+    // pointer jitter back across 50 must NOT flip the slot home — only a
+    // crossing below 50 − hysteresis (35px) switches back.
+    const floating = grid([{ id: "solo", column: 3, row: 4, columnSpan: 1, rowSpan: 1 }]);
+    const resolve = (deltaX: number, session: Parameters<typeof resolveGridDragPlacement>[1]) =>
+      resolveGridDragPlacement(
+        { placement: floating, itemIds: ["solo"], deltaX, deltaY: 0, metrics, pitchPx: 100 },
+        session,
+      );
+    const first = resolve(100, null);
+    expect(first.columnDelta).toBe(1);
+    for (const jitterPx of [50.4, 35.1, 49.9, 36, 50.49]) {
+      const frame = resolve(jitterPx, first.session);
+      expect(frame.columnDelta, `jitter ${jitterPx}px`).toBe(1);
+    }
+    // Past the hysteresis margin the slot does switch home.
+    expect(resolve(34.9, first.session).columnDelta).toBe(0);
+  });
+
+  it("refuses an impossible target instead of scrambling (rubber-band)", () => {
+    // Two packed rows around "b": row a(2x2)+c(1x1)+d(2x1) and below it
+    // e(2x1)+f(2x1). Dragging "b" past "d" has no local yield for the
+    // 2-wide tile — the old cascade threw "a" across the page. The
+    // resolution must keep the drag on the LAST feasible cell and stay
+    // legal.
+    const dense = grid([
+      { id: "a", column: 0, row: 0, columnSpan: 2, rowSpan: 2 },
+      { id: "b", column: 2, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "c", column: 3, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "d", column: 4, row: 0, columnSpan: 2, rowSpan: 1 },
+      { id: "e", column: 2, row: 1, columnSpan: 2, rowSpan: 1 },
+      { id: "f", column: 4, row: 1, columnSpan: 2, rowSpan: 1 },
+    ]);
+    const resolution = resolveGridDragPlacement(
+      { placement: dense, itemIds: ["b"], deltaX: 200, deltaY: 0, metrics, pitchPx: 100 },
+      null,
+    );
+    // Feasible at +1 ("c" slides into the vacated cell), not +2.
+    expect(resolution.columnDelta).toBe(1);
+    expect(overlaps(resolution.placement)).toEqual([]);
+    const byId = new Map(resolution.placement.items.map((item) => [item.id, item]));
+    expect(byId.get("a")).toMatchObject({ column: 0, row: 0 });
+    expect(byId.get("c")).toMatchObject({ column: 2, row: 0 });
+  });
+
+  it("is legal (no overlap, in bounds) across a dense mixed-size sweep", () => {
+    const dense = grid([
+      { id: "a", column: 0, row: 0, columnSpan: 2, rowSpan: 2 },
+      { id: "b", column: 2, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "c", column: 3, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "d", column: 4, row: 0, columnSpan: 2, rowSpan: 1 },
+      { id: "e", column: 2, row: 1, columnSpan: 2, rowSpan: 1 },
+      { id: "f", column: 4, row: 1, columnSpan: 2, rowSpan: 1 },
+      { id: "g", column: 0, row: 2, columnSpan: 1, rowSpan: 1 },
+      { id: "h", column: 1, row: 2, columnSpan: 1, rowSpan: 1 },
+      { id: "i", column: 2, row: 2, columnSpan: 2, rowSpan: 2 },
+    ]);
+    for (let dc = -2; dc <= 3; dc += 1) {
+      for (let dr = -1; dr <= 3; dr += 1) {
+        const resolution = resolveGridDragPlacement(
+          {
+            placement: dense,
+            itemIds: ["b"],
+            deltaX: dc * 100,
+            deltaY: dr * 100,
+            metrics,
+            pitchPx: 100,
+          },
+          null,
+        );
+        expect(overlaps(resolution.placement), `delta(${dc},${dr})`).toEqual([]);
+        for (const item of resolution.placement.items as GridCanvasItem[]) {
+          expect(item.column, `delta(${dc},${dr}) ${item.id}`).toBeGreaterThanOrEqual(0);
+          expect(item.column + item.columnSpan, `delta(${dc},${dr}) ${item.id}`).toBeLessThanOrEqual(6);
+          expect(item.row, `delta(${dc},${dr}) ${item.id}`).toBeGreaterThanOrEqual(0);
+        }
+      }
+    }
+  });
+
+  it("commits exactly the placement the session previewed", () => {
+    const start = grid([
+      { id: "a", column: 0, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "b", column: 1, row: 0, columnSpan: 1, rowSpan: 1 },
+      { id: "c", column: 2, row: 0, columnSpan: 1, rowSpan: 1 },
+    ]);
+    const args = {
+      placement: start,
+      itemIds: ["a"],
+      deltaX: 200,
+      deltaY: 0,
+      metrics,
+      pitchPx: 100,
+    } as const;
+    // The live session resolves with its sticky state…
+    const resolution = resolveGridDragPlacement(args, null);
+    // …and the release commit, handed the same session, lands it verbatim.
+    const committed = commitCanvasDrag(args, resolution.session);
+    expect(committed).not.toBeNull();
+    expect(committed).toEqual(resolution.placement);
   });
 });

@@ -302,11 +302,11 @@ export function displaceGridOverlaps(
 
 /**
  * The push vector of an Apple-style live reflow (t129): while a Grid drag
- * holds its resolved target, every bystander it covers shifts ONE cell at a
- * time in `direction` along `axis` — the direction is OPPOSITE the drag's
- * dominant delta, so the wave of yielding tiles travels toward the vacated
- * cells and the gap follows the pointer. Null when the resolved delta is
- * zero (nothing to reflow).
+ * holds its resolved target, every bystander the sweep crosses shifts toward
+ * the vacated cells in `direction` along `axis` — the direction is OPPOSITE
+ * the drag's dominant delta, so the yielding tiles travel toward the hole and
+ * the gap follows the pointer. Null when the resolved delta is zero (nothing
+ * to reflow).
  */
 export interface GridReflowPush {
   readonly axis: "column" | "row";
@@ -315,13 +315,33 @@ export interface GridReflowPush {
 
 /**
  * Derives the reflow push from the resolved whole-cell drag delta. Pure.
+ *
+ * `axisHint` (t163) is the axis the PREVIOUS frame used. Near a diagonal the
+ * raw dominant axis flips on every crossing — |cd| and |rd| trading the lead
+ * — which used to swap the whole yield packing back and forth (the "乱跳"
+ * report). The hint keeps the current axis until the other axis leads by a
+ * FULL CELL beyond the tie, so wiggling around a diagonal never flips the
+ * policy.
  */
 export function gridReflowPushOf(
   columnDelta: number,
   rowDelta: number,
+  axisHint?: "column" | "row" | null,
 ): GridReflowPush | null {
   if (columnDelta === 0 && rowDelta === 0) {
     return null;
+  }
+  if (columnDelta === 0) {
+    return { axis: "row", direction: rowDelta > 0 ? -1 : 1 };
+  }
+  if (rowDelta === 0) {
+    return { axis: "column", direction: columnDelta > 0 ? -1 : 1 };
+  }
+  if (axisHint === "column" && Math.abs(columnDelta) + 1 > Math.abs(rowDelta)) {
+    return { axis: "column", direction: columnDelta > 0 ? -1 : 1 };
+  }
+  if (axisHint === "row" && Math.abs(rowDelta) + 1 > Math.abs(columnDelta)) {
+    return { axis: "row", direction: rowDelta > 0 ? -1 : 1 };
   }
   if (Math.abs(columnDelta) >= Math.abs(rowDelta)) {
     return { axis: "column", direction: columnDelta > 0 ? -1 : 1 };
@@ -329,166 +349,239 @@ export function gridReflowPushOf(
   return { axis: "row", direction: rowDelta > 0 ? -1 : 1 };
 }
 
-/** The next cell of a one-step reflow push, or null at the backward edge. */
-function reflowStepOf(
-  item: Omit<GridCanvasItem, "id">,
-  push: GridReflowPush,
-  columns: number,
-): { readonly column: number; readonly row: number } | null {
-  if (push.axis === "column") {
-    const column = item.column + push.direction;
-    if (column >= 0 && column + item.columnSpan <= columns) {
-      return { column, row: item.row };
-    }
-    if (push.direction > 0) {
-      // Pushed past the right edge: flow to the next row's start (reading
-      // order keeps increasing, so the wave always terminates).
-      return { column: 0, row: item.row + 1 };
-    }
-    // Pushed past the left edge: flow to the previous row's end. Above row 0
-    // there is no further backward room — the settle fallback owns it.
-    const row = item.row - 1;
-    return row >= 0
-      ? { column: Math.max(0, columns - item.columnSpan), row }
-      : null;
-  }
-  const row = item.row + push.direction;
-  // Rows are unbounded downward; upward stops at row 0 (fallback).
-  return row >= 0 ? { column: item.column, row } : null;
+/** Axis-aligned box in cell coordinates (placement candidates, overlap). */
+type GridCellBox = {
+  column: number;
+  row: number;
+  columnSpan: number;
+  rowSpan: number;
+};
+
+function boxOverlaps(a: GridCellBox, b: GridCellBox): boolean {
+  return (
+    a.column < b.column + b.columnSpan &&
+    b.column < a.column + a.columnSpan &&
+    a.row < b.row + b.rowSpan &&
+    b.row < a.row + a.rowSpan
+  );
+}
+
+function boxInBounds(box: GridCellBox, columns: number): boolean {
+  return box.column >= 0 && box.column + box.columnSpan <= columns && box.row >= 0;
+}
+
+/** The result of a feasible grid drag resolution (t163). */
+export interface GridDragYield {
+  /** The dragged items at their resolved cells, bystanders yielded — legal. */
+  readonly layout: GridCanvasLayoutV2;
+  /** The push the bystanders yielded along (null when nothing reflowed). */
+  readonly push: GridReflowPush | null;
 }
 
 /**
- * The Apple-style live reflow settle (t129): given a layout whose DRAGGED
- * items already sit at their resolved target cells, every bystander they
- * cover yields by cascading ONE CELL at a time along `push` — the tile
- * under the dragged footprint steps aside, whatever it lands on steps aside
- * in turn, and the wave keeps travelling until it falls into the cells the
- * dragged set vacated. Same-row neighbours slide toward the hole while the
- * gap follows the pointer, instead of the Helm r2 "displace the bystander
- * downward" scan. Untouched items NEVER move, so intentional saved gaps
- * survive a drag that never crosses them; spans are preserved; the dragged
- * set's own geometry is exactly what the caller placed.
- *
- * Deterministic: conflicts are processed from the bystanders under the
- * dragged set (array order); between two overlapping bystanders the one
- * further along the push direction yields. A generous iteration budget
- * bounds pathological packings — if it ever runs out, the remainder is
- * settled by {@link displaceGridOverlaps} so the no-stacking invariant
- * holds regardless. Pure; returns the input reference when nothing moved.
+ * How far the local fallback scan may roam from a yielding bystander's own
+ * row when it cannot shift along the push axis (t163): one row up or down,
+ * never a page-wide hop. Beyond it the drag target is refused instead — the
+ * rubber-band beats a scrambled layout.
  */
-export function reflowGridOverlaps(
+const YIELD_LOCAL_ROW_BAND = 1;
+
+/**
+ * The LOCAL Apple-style yield for a Grid drag (t129 policy, t163 retune).
+ *
+ * The dragged set translates rigidly by the already bounds-clamped integer
+ * delta; every bystander inside the SWEPT band between the origin and the
+ * target footprints (on the push axis) then yields toward the vacated cells:
+ * each one takes the FIRST free position along the push axis in its own row
+ * — one short slide into the travelling gap, like the reference drag — and,
+ * when its row is full, the nearest free position one row away. Bystanders
+ * outside the sweep NEVER move (intentional saved gaps survive), spans are
+ * preserved, and each yielding tile moves exactly once.
+ *
+ * Feasibility (t163 root cause): the old cascade pushed waves transitively
+ * through untouched tiles, wrapped rows and fell back to a page-wide
+ * first-free scan, which could teleport tiles across the canvas and even
+ * return overlapping layouts. This policy moves ONLY swept bystanders, and
+ * a bystander that cannot yield cleanly (dense mixed-size packing) makes the
+ * whole target INFEASIBLE — the caller then steps the target back toward the
+ * drag origin instead of committing a scrambled layout.
+ *
+ * Returns `null` when the delta is nonzero but infeasible; a zero delta is
+ * always the identity (feasible, nothing reflowed). Pure.
+ */
+export function yieldGridDragPlacement(
   layout: GridCanvasLayoutV2,
-  draggedIds: readonly string[],
-  push: GridReflowPush,
-): GridCanvasLayoutV2 {
-  // The working copies shed `readonly` for the in-place cascade; the result
-  // rebuilds fresh frozen-shape items from them (order preserved).
-  type WorkingItem = { -readonly [K in keyof GridCanvasItem]: GridCanvasItem[K] };
-  const dragged = new Set(draggedIds);
-  const working: WorkingItem[] = layout.items.map((item) => ({ ...item }));
-  const byId = new Map(working.map((item) => [item.id, item] as const));
-  let changed = false;
-  let pushes = 0;
-  // Each push moves one item one cell strictly along the push direction
-  // (reading order monotone), so a budget of cells-per-item bounds every
-  // realistic cascade; the cap keeps the worst case cheap.
-  const budget = Math.min(working.length * (layout.columns + 4) + 16, 2048);
+  itemIds: readonly string[],
+  columnDelta: number,
+  rowDelta: number,
+  axisHint?: "column" | "row" | null,
+): GridDragYield | null {
+  if (columnDelta === 0 && rowDelta === 0) {
+    return { layout, push: null };
+  }
 
-  const conflictsOf = (item: WorkingItem): WorkingItem[] =>
-    working.filter(
-      (other) => other.id !== item.id && cellsOverlap(item, other),
+  const dragged = new Set(itemIds);
+  const push = gridReflowPushOf(columnDelta, rowDelta, axisHint ?? null);
+  if (push === null) {
+    return { layout, push: null };
+  }
+
+  // Group bounds of the dragged set, before and after the translation — the
+  // swept band is the hull of the two footprints.
+  let originMinColumn = Number.POSITIVE_INFINITY;
+  let originMaxColumn = Number.NEGATIVE_INFINITY;
+  let originMinRow = Number.POSITIVE_INFINITY;
+  let originMaxRow = Number.NEGATIVE_INFINITY;
+  for (const item of layout.items) {
+    if (!dragged.has(item.id)) {
+      continue;
+    }
+    originMinColumn = Math.min(originMinColumn, item.column);
+    originMaxColumn = Math.max(originMaxColumn, item.column + item.columnSpan);
+    originMinRow = Math.min(originMinRow, item.row);
+    originMaxRow = Math.max(originMaxRow, item.row + item.rowSpan);
+  }
+  if (originMinColumn === Number.POSITIVE_INFINITY) {
+    return { layout, push: null };
+  }
+
+  const translated = translateGridItems(layout, itemIds, columnDelta, rowDelta);
+
+  // The swept band: hull of the origin and target footprints on BOTH axes (a
+  // monotone drag sweeps exactly this region).
+  const band = {
+    minColumn: Math.min(originMinColumn, originMinColumn + columnDelta),
+    maxColumn: Math.max(originMaxColumn, originMaxColumn + columnDelta),
+    minRow: Math.min(originMinRow, originMinRow + rowDelta),
+    maxRow: Math.max(originMaxRow, originMaxRow + rowDelta),
+  };
+
+  // Bystanders the sweep crosses, nearest the vacated cells first — the
+  // closest tile steps into the gap, the next takes its vacated cell, and
+  // the wave stays a queue of one-cell slides instead of a cascade.
+  const axisOf = (item: Omit<GridCanvasItem, "id">) =>
+    push.axis === "column" ? item.column : item.row;
+  const swept: GridCanvasItem[] = layout.items.filter((item) => {
+    if (dragged.has(item.id)) {
+      return false;
+    }
+    return (
+      item.column < band.maxColumn &&
+      item.column + item.columnSpan > band.minColumn &&
+      item.row < band.maxRow &&
+      item.row + item.rowSpan > band.minRow
     );
+  });
+  swept.sort((a, b) =>
+    push.direction < 0
+      ? axisOf(a) - axisOf(b) || a.id.localeCompare(b.id)
+      : axisOf(b) - axisOf(a) || a.id.localeCompare(b.id),
+  );
 
-  const applyPush = (item: WorkingItem): boolean => {
-    const step = reflowStepOf(item, push, layout.columns);
-    let next = step;
-    if (next === null) {
-      // Backward edge exhausted: nearest free cell from its own origin (the
-      // Helm r2 scan) — if that is where it already sits, this item cannot
-      // progress and the caller's settle fallback takes over.
-      const without = working.filter((candidate) => candidate.id !== item.id);
-      next = firstFreeGridPlacement(
-        { ...layout, items: without },
-        { columnSpan: item.columnSpan, rowSpan: item.rowSpan },
-        { column: item.column, row: item.row },
-      );
-      if (next.column === item.column && next.row === item.row) {
+  /**
+   * True when `box` overlaps nothing in the working placement. The item
+   * `selfId` is excluded: it vacates its own cells when it moves, so its
+   * CURRENT box never blocks a candidate that overlaps it (a 2-wide tile
+   * sliding one cell overlaps its own old column — legal).
+   */
+  const isFree = (
+    box: GridCellBox,
+    moved: Map<string, GridCellBox>,
+    selfId: string,
+  ): boolean => {
+    if (!boxInBounds(box, layout.columns)) {
+      return false;
+    }
+    for (const item of translated.items) {
+      if (item.id === selfId) {
+        continue;
+      }
+      const working = moved.get(item.id) ?? item;
+      if (boxOverlaps(box, working)) {
         return false;
       }
     }
-    item.column = next.column;
-    item.row = next.row;
-    changed = true;
-    pushes += 1;
     return true;
   };
 
-  // Seeds: the bystanders a dragged tile currently covers, array order.
-  const stack: WorkingItem[] = [];
-  for (const item of working) {
-    if (!dragged.has(item.id) && conflictsOf(item).some((other) => dragged.has(other.id))) {
-      stack.push(item);
+  const moved = new Map<string, GridCellBox>();
+  for (const item of swept) {
+    const start: GridCellBox = {
+      column: item.column,
+      row: item.row,
+      columnSpan: item.columnSpan,
+      rowSpan: item.rowSpan,
+    };
+    // 1) Slide along the push axis in its own row — the first free stop
+    //    (the travelling gap) wins; minimal motion, maximal predictability.
+    let next: GridCellBox | null = null;
+    for (let step = 1; step <= layout.columns; step += 1) {
+      const candidate: GridCellBox = {
+        ...start,
+        column: push.axis === "column" ? start.column + push.direction * step : start.column,
+        row: push.axis === "row" ? start.row + push.direction * step : start.row,
+      };
+      if (!boxInBounds(candidate, layout.columns)) {
+        break;
+      }
+      if (isFree(candidate, moved, item.id)) {
+        next = candidate;
+        break;
+      }
     }
+    // 2) Local fallback: nearest free position one row away (both sides),
+    //    same row hops first. Anything further refuses the whole target.
+    if (next === null) {
+      let best: GridCellBox | null = null;
+      let bestCost = Number.POSITIVE_INFINITY;
+      for (let rowOffset = -YIELD_LOCAL_ROW_BAND; rowOffset <= YIELD_LOCAL_ROW_BAND; rowOffset += 1) {
+        for (let column = 0; column + start.columnSpan <= layout.columns; column += 1) {
+          const candidate: GridCellBox = {
+            ...start,
+            column,
+            row: start.row + rowOffset,
+          };
+          if (candidate.row < 0) {
+            continue;
+          }
+          if (!isFree(candidate, moved, item.id)) {
+            continue;
+          }
+          // Same-row hops are cheap; leaving the row costs heavily so a
+          // lateral hop always wins over a vertical one.
+          const cost = Math.abs(rowOffset) * 3 + Math.abs(column - start.column);
+          if (cost < bestCost) {
+            bestCost = cost;
+            best = candidate;
+          }
+        }
+      }
+      next = best;
+    }
+    if (next === null) {
+      // A swept bystander cannot yield locally: the target is refused —
+      // the caller steps the drag back instead of scrambling the page.
+      return null;
+    }
+    moved.set(item.id, next);
   }
 
-  while (stack.length > 0) {
-    if (pushes > budget) {
-      // Pathological packing: settle whatever is left with the older
-      // displacement pass so two tiles can never share a cell.
-      return displaceGridOverlaps(
-        { ...layout, items: working },
-        draggedIds,
-      );
-    }
-    const current = stack[stack.length - 1] as WorkingItem;
-    const conflicts = conflictsOf(current);
-    if (conflicts.length === 0) {
-      stack.pop();
-      continue;
-    }
-    // Under a dragged tile, the bystander itself moves. Otherwise the tile
-    // it just landed on yields — the one furthest along the push direction,
-    // so the wave travels toward the vacated cells.
-    if (conflicts.some((other) => dragged.has(other.id))) {
-      if (!applyPush(current)) {
-        stack.pop();
-      }
-      continue;
-    }
-    const along = (item: WorkingItem): number =>
-      push.axis === "column" ? item.column : item.row;
-    let obstacle = conflicts[0] as WorkingItem;
-    for (const candidate of conflicts) {
-      const better =
-        push.direction < 0
-          ? along(candidate) < along(obstacle)
-          : along(candidate) > along(obstacle);
-      if (better) {
-        obstacle = candidate;
-      }
-    }
-    if (!applyPush(obstacle)) {
-      // The obstacle cannot yield further; move the current aside instead.
-      if (!applyPush(current)) {
-        stack.pop();
-      }
-      continue;
-    }
-    stack.push(obstacle);
-  }
-
-  if (!changed) {
-    return layout;
+  if (moved.size === 0) {
+    return { layout: translated, push };
   }
   return {
-    ...layout,
-    items: layout.items.map((item) => {
-      const moved = byId.get(item.id);
-      return moved === undefined ? item : { ...moved };
-    }),
+    layout: {
+      ...translated,
+      items: translated.items.map((item) => {
+        const position = moved.get(item.id);
+        return position === undefined
+          ? item
+          : { ...item, column: position.column, row: position.row };
+      }),
+    },
+    push,
   };
 }
-
 /** The rigid delta a group drag may apply, after bounds clamping. */
 export function clampGridTranslation(
   layout: GridCanvasLayoutV2,

@@ -32,6 +32,8 @@ export type {
   RectCanvasLayout,
 } from "./types";
 
+export type { GridDragYield, GridReflowPush } from "./grid";
+
 export {
   canvasRectFromEdges,
   canvasRectsEqual,
@@ -83,7 +85,7 @@ export {
   isFreeformCanvasLayout,
   isGridCanvasLayout,
   maxOccupiedRow,
-  reflowGridOverlaps,
+  yieldGridDragPlacement,
   replaceGridItem,
   resizeGridItem,
   translateGridItems,

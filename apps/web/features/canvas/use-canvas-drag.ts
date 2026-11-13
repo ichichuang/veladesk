@@ -7,11 +7,8 @@ import type { PagePlacement } from "@veladesk/domain";
 import type { LayoutItemId } from "@veladesk/desktop-engine";
 
 import type { CanvasPixelMetrics } from "./canvas-metrics";
-import {
-  commitCanvasDrag,
-  gridReflowPreviewPlacement,
-  gridTranslationOf,
-} from "./canvas-drag";
+import { commitCanvasDrag, resolveGridDragPlacement } from "./canvas-drag";
+import type { GridDragSessionState } from "./canvas-drag";
 import type { GridItemGeometry } from "./canvas-resize";
 
 /** Custom property the item body moves with during a drag preview. */
@@ -36,6 +33,13 @@ interface ActiveCanvasDragSession {
   readonly metricsAtStart: CanvasPixelMetrics | null;
   /** Grid: the cell pitch at start. Freeform: null. */
   readonly pitchAtStart: number | null;
+  /**
+   * The sticky grid resolution state (t163): last feasible deltas + the push
+   * axis. Mutable on purpose — each frame's resolution updates it in place,
+   * and the release commit reuses the final state so the drop lands exactly
+   * what the preview showed.
+   */
+  gridState: GridDragSessionState | null;
   /** The section scroller this drag can scroll (t63), or null. */
   readonly scroller: HTMLElement | null;
   /** scroller.scrollTop when the session started. */
@@ -316,18 +320,19 @@ export function useCanvasDrag({
 
   /**
    * Target-slot feedback: the resolved boxes of the moving items at the
-   * current integer delta. Reported only when the delta actually crossed a
-   * cell boundary — a setState per crossing, never per pointer frame. The
-   * same crossing also recomputes the Apple-style reflow preview (t129):
-   * the bystanders' live placement, deduped structurally against the last
-   * report so an unchanged reflow never re-renders the tile layer.
+   * current feasible integer delta (t163 — the hysteresis/feasibility
+   * resolution, not the raw pointer rounding). Reported only when the delta
+   * actually crossed a cell boundary — a setState per crossing, never per
+   * pointer frame. The same crossing also reports the Apple-style reflow
+   * preview (t129): the bystanders' live placement, deduped structurally
+   * against the last report so an unchanged reflow never re-renders the
+   * tile layer.
    */
   function reportGridTargets(
     session: ActiveCanvasDragSession,
     columnDelta: number,
     rowDelta: number,
-    deltaX: number,
-    effectiveDeltaY: number,
+    preview: PagePlacement,
   ): void {
     const callback = onGridTargetChangeRef.current;
     const reflowCallback = onGridReflowChangeRef.current;
@@ -346,27 +351,21 @@ export function useCanvasDrag({
         rowSpan: item.rowSpan,
       }));
     const key = JSON.stringify(boxes);
-    if (key !== lastTargetKeyRef.current && callback !== undefined) {
-      callback(boxes);
-    }
-    if (key !== lastTargetKeyRef.current && reflowCallback !== undefined) {
-      const preview = gridReflowPreviewPlacement({
-        placement: session.placementAtStart,
-        itemIds: session.itemIds,
-        deltaX,
-        deltaY: effectiveDeltaY,
-        metrics: session.metricsAtStart ?? { width: 1, height: 1 },
-        pitchPx: session.pitchAtStart ?? 1,
-      });
-      if (
-        lastReflowRef.current === null ||
-        !areCanvasLayoutsEqual(preview, lastReflowRef.current)
-      ) {
-        lastReflowRef.current = preview;
-        reflowCallback(preview);
+    if (key !== lastTargetKeyRef.current) {
+      if (callback !== undefined) {
+        callback(boxes);
       }
+      if (reflowCallback !== undefined) {
+        if (
+          lastReflowRef.current === null ||
+          !areCanvasLayoutsEqual(preview, lastReflowRef.current)
+        ) {
+          lastReflowRef.current = preview;
+          reflowCallback(preview);
+        }
+      }
+      lastTargetKeyRef.current = key;
     }
-    lastTargetKeyRef.current = key;
   }
 
   /** Clears both feedback channels (idempotent). */
@@ -437,6 +436,7 @@ export function useCanvasDrag({
       placementAtStart: currentPlacement,
       metricsAtStart: currentMetrics,
       pitchAtStart: currentPitch,
+      gridState: null,
       scroller,
       scrollTopAtStart,
       sourceBottomInContentAtStart,
@@ -471,18 +471,29 @@ export function useCanvasDrag({
       writePreview(id, `translate3d(${deltaX}px, ${effectiveDeltaY}px, 0)`);
     }
     if (session.placementAtStart.mode === "grid") {
-      // The resolved whole-cell delta drives the drop placeholder, the
-      // bystander reflow preview and the commit below — the dragged tiles
-      // themselves ride the raw delta under the pointer.
-      const { columnDelta, rowDelta } = gridTranslationOf({
-        placement: session.placementAtStart,
-        itemIds: session.itemIds,
-        deltaX,
-        deltaY: effectiveDeltaY,
-        metrics: session.metricsAtStart ?? { width: 1, height: 1 },
-        pitchPx: session.pitchAtStart ?? 1,
-      });
-      reportGridTargets(session, columnDelta, rowDelta, deltaX, effectiveDeltaY);
+      // The t163 resolution drives everything but the pointer-follow source:
+      // sticky hysteresis kills boundary chatter, the feasibility walk keeps
+      // the target on cells the bystanders can yield to cleanly, and the
+      // session carries the sticky state so the release commits exactly the
+      // placement this preview showed.
+      const resolution = resolveGridDragPlacement(
+        {
+          placement: session.placementAtStart,
+          itemIds: session.itemIds,
+          deltaX,
+          deltaY: effectiveDeltaY,
+          metrics: session.metricsAtStart ?? { width: 1, height: 1 },
+          pitchPx: session.pitchAtStart ?? 1,
+        },
+        session.gridState,
+      );
+      session.gridState = resolution.session;
+      reportGridTargets(
+        session,
+        resolution.columnDelta,
+        resolution.rowDelta,
+        resolution.previewPlacement,
+      );
     }
     updateRunway(session, effectiveDeltaY);
   }
@@ -677,15 +688,21 @@ export function useCanvasDrag({
         : event.operation.position.current.y - event.operation.position.initial.y;
     // t63: the pointer stayed in client space while the scroller traveled —
     // the canvas-space drop is where the pointer aimed PLUS that travel.
+    // Grid commits ride the session's sticky resolution state (t163): the
+    // drop lands exactly the last legal preview, never a fresh rounding of
+    // the release delta.
     const scrollDelta = scrollDeltaOf(session);
-    const moved = commitCanvasDrag({
-      placement: session.placementAtStart,
-      itemIds: session.itemIds,
-      deltaX,
-      deltaY: deltaY + scrollDelta,
-      metrics: session.metricsAtStart ?? { width: 1, height: 1 },
-      pitchPx: session.pitchAtStart ?? 1,
-    });
+    const moved = commitCanvasDrag(
+      {
+        placement: session.placementAtStart,
+        itemIds: session.itemIds,
+        deltaX,
+        deltaY: deltaY + scrollDelta,
+        metrics: session.metricsAtStart ?? { width: 1, height: 1 },
+        pitchPx: session.pitchAtStart ?? 1,
+      },
+      session.gridState,
+    );
 
     tearDownScrollTracking(session);
     setDragging(false);
