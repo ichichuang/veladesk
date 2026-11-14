@@ -1,9 +1,14 @@
-import { getAssetRepository, getAssetUploadGuard } from "../../../../../server/runtime";
+import {
+  getAssetRepository,
+  getAssetUploadGuard,
+  getEngineeringAuth,
+} from "../../../../../server/runtime";
 import {
   handleGetAsset,
   handleHeadAsset,
   handlePutAsset,
 } from "../../../../../server/api/asset-handlers";
+import { requireEngineeringSession } from "../../../../../server/api/engineering-guard";
 
 export const runtime = "nodejs";
 
@@ -12,6 +17,11 @@ interface AssetRouteContext {
 }
 
 export async function PUT(request: Request, context: AssetRouteContext): Promise<Response> {
+  // t181: uploads only happen while editing; Use mode gets no asset writes.
+  const denied = requireEngineeringSession(getEngineeringAuth(), request);
+  if (denied !== null) {
+    return denied;
+  }
   const { assetId } = await context.params;
   return handlePutAsset(getAssetRepository(), request, assetId, getAssetUploadGuard());
 }

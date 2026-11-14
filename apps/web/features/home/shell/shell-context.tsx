@@ -109,6 +109,13 @@ export interface UseShellContextValueInput {
   readonly activeSectionId: DesktopPageId | null;
   readonly mode: DesktopMode;
   readonly reducedMotion: boolean;
+  /**
+   * t181: false (Use mode) makes every EDITING command inert at this, the
+   * deepest dispatch seam — open-dialog, toggle-mode, open-settings and
+   * sync are dropped even if a lower layer still dispatches them.
+   * Defaults to true (Engineering mode / standalone test renders).
+   */
+  readonly editsAllowed?: boolean;
   /** Command implementations, composed by the shell from its layers. */
   readonly switchSection: (
     pageId: DesktopPageId,
@@ -136,6 +143,7 @@ export function useShellContextValue(input: UseShellContextValueInput): ShellCon
     activeSectionId,
     mode,
     reducedMotion,
+    editsAllowed = true,
     switchSection,
     switchMode,
     openDialog,
@@ -153,6 +161,17 @@ export function useShellContextValue(input: UseShellContextValueInput): ShellCon
   }, []);
   useEffect(() => {
     dispatchRef.current = (command) => {
+      // t181 Use mode: editing commands die at the seam. A stale deep-layer
+      // dispatch (plugin tile, warm layer) is dropped, not deferred.
+      if (!editsAllowed) {
+        switch (command.kind) {
+          case "open-dialog":
+          case "toggle-mode":
+          case "open-settings":
+          case "sync":
+            return;
+        }
+      }
       switch (command.kind) {
         case "switch-section":
           switchSection(

@@ -9,6 +9,7 @@ import { UiLocaleProvider } from "../i18n/ui-locale-provider";
 import { useI18n } from "../i18n/use-i18n";
 import { WorkspaceManagerProvider } from "./workspace-manager";
 import { ResponsiveWorkspaceShell } from "./responsive-workspace-shell";
+import { EngineeringModeGate } from "../engineering/engineering-mode-gate";
 import { OnboardingScreen } from "./onboarding";
 import { StartupScreen } from "./startup-screen";
 import { WorkspacePickerScreen } from "./workspace-picker";
@@ -29,12 +30,14 @@ import { MotionToast } from "./motion-toast";
 export function VelaHome() {
   return (
     <UiLocaleProvider>
-      <WorkspaceRuntimeProvider
-        loadingFallback={<StartupScreen />}
-        errorFallback={(error) => <HomeRecoveryScreen error={error} />}
-      >
-        <HomeScreen />
-      </WorkspaceRuntimeProvider>
+      <EngineeringModeGate>
+        <WorkspaceRuntimeProvider
+          loadingFallback={<StartupScreen />}
+          errorFallback={(error) => <HomeRecoveryScreen error={error} />}
+        >
+          <HomeScreen />
+        </WorkspaceRuntimeProvider>
+      </EngineeringModeGate>
     </UiLocaleProvider>
   );
 }

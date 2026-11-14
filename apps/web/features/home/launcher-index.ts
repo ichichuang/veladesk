@@ -46,6 +46,13 @@ export interface BuildLauncherEntriesInput {
    * desktop launcher contract).
    */
   readonly includeCommands?: boolean;
+  /**
+   * t181 Use mode (false): management commands (new workspace, add app,
+   * new section, settings, mode toggle, sync) never enter the index —
+   * workspace SWITCH commands stay (switching is navigation, not editing).
+   * Default true (Engineering).
+   */
+  readonly engineering?: boolean;
   readonly workspaceCandidates?: readonly { readonly id: string; readonly name: string }[];
 }
 
@@ -71,6 +78,7 @@ export function buildLauncherEntries(
 ): readonly LauncherEntry[] {
   const { workspace, activePageId, mode, syncState, locale } = input;
   const includeCommands = input.includeCommands !== false;
+  const engineering = input.engineering !== false;
 
   const drafts: EntryDraft[] = [];
   const seen = new Set<string>();
@@ -160,54 +168,60 @@ export function buildLauncherEntries(
   //    block: management commands never appear there, not even disabled.
   if (includeCommands) {
     if (input.workspaceCandidates !== undefined) {
-      pushCommand("new-workspace", translate(locale, "workspace.createTitle"), ["workspace", "工作区"]);
+      if (engineering) {
+        pushCommand("new-workspace", translate(locale, "workspace.createTitle"), ["workspace", "工作区"]);
+      }
       for (const candidate of input.workspaceCandidates) {
         pushCommand(`workspace:${candidate.id}`, translate(locale, "workspace.switchCommand", { name: candidate.name }), ["workspace", "工作区", candidate.name]);
       }
     }
-    pushCommand("add-app", translate(locale, "launcher.command.addApp"), [
-      "add app",
-      "new shortcut",
-      "create app",
-      "添加应用",
-      "新建快捷方式",
-    ]);
-    pushCommand("new-section", translate(locale, "launcher.command.newSection"), [
-      "new section",
-      "create section",
-      "new page",
-      "新建分区",
-      "创建分区",
-      "新建页面",
-    ]);
-    pushCommand("open-settings", translate(locale, "launcher.command.openSettings"), [
-      "settings",
-      "preferences",
-      "appearance",
-      "theme",
-      "desktop",
-      "设置",
-      "偏好",
-      "外观",
-      "主题",
-      "桌面",
-    ]);
-    pushCommand(
-      "toggle-mode",
-      translate(locale, MODE_COMMAND_LABEL[mode]),
-      MODE_COMMAND_SECONDARY[mode],
-    );
-    if (syncState === "dirty") {
-      pushCommand("sync-current", translate(locale, "launcher.command.syncNow"), [
-        "sync",
-        "save",
-        "upload",
-        "server",
-        "同步",
-        "保存",
-        "上传",
-        "服务器",
+    // Use mode (t181): the management commands below are invisible — not
+    // even disabled. Workspace SWITCHING (above) stays: it is navigation.
+    if (engineering) {
+      pushCommand("add-app", translate(locale, "launcher.command.addApp"), [
+        "add app",
+        "new shortcut",
+        "create app",
+        "添加应用",
+        "新建快捷方式",
       ]);
+      pushCommand("new-section", translate(locale, "launcher.command.newSection"), [
+        "new section",
+        "create section",
+        "new page",
+        "新建分区",
+        "创建分区",
+        "新建页面",
+      ]);
+      pushCommand("open-settings", translate(locale, "launcher.command.openSettings"), [
+        "settings",
+        "preferences",
+        "appearance",
+        "theme",
+        "desktop",
+        "设置",
+        "偏好",
+        "外观",
+        "主题",
+        "桌面",
+      ]);
+      pushCommand(
+        "toggle-mode",
+        translate(locale, MODE_COMMAND_LABEL[mode]),
+        MODE_COMMAND_SECONDARY[mode],
+      );
+      if (syncState === "dirty") {
+        pushCommand("sync-current", translate(locale, "launcher.command.syncNow"), [
+          "sync",
+          "save",
+          "upload",
+          "server",
+          "同步",
+          "保存",
+          "上传",
+          "服务器",
+        ]);
+      }
     }
   }
   // 2. Dock pins, strictly in dock order.

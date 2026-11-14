@@ -26,12 +26,15 @@ export function MobileMenuSheet({
   open,
   onOpenChange,
   workspace,
+  engineering,
   onAddApp,
   onManageSections,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly workspace: LocalWorkspaceRecord;
+  /** t181: false (Use mode) hides the edit actions block entirely. */
+  readonly engineering: boolean;
   /** Opens the shared Add-app dialog targeted at the active section (UX-12). */
   readonly onAddApp: () => void;
   /** Opens the mobile section manager (UX-12). */
@@ -44,6 +47,7 @@ export function MobileMenuSheet({
         <h2 className="vela-mobile-sheet__title">{t("mobile.menu.title")}</h2>
       </div>
       <div className="vela-mobile-menu__body">
+        {engineering ? (
         <div className="vela-mobile-menu__actions">
           <button
             type="button"
@@ -68,6 +72,7 @@ export function MobileMenuSheet({
             <span>{t("mobile.sections.manage")}</span>
           </button>
         </div>
+        ) : null}
         <WorkspaceMenuInline beforeAction={() => onOpenChange(false)} />
         <div className="vela-mobile-menu__row">
           <span className="vela-mobile-menu__row-label">{t("mobile.menu.workspaceLabel")}</span>

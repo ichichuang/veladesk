@@ -13,6 +13,9 @@ import { createAssetUploadGuard } from "./assets/upload-guard";
 import { createFilesystemAssetRepository } from "./assets/repository";
 import type { AssetRepository } from "./assets/repository";
 import type { AssetUploadGuard } from "./api/write-guard";
+import type { EngineeringHandlersInput } from "./api/engineering-handlers";
+import { createEngineeringCredentialStore } from "./engineering/auth-store";
+import { createEngineeringSessionRegistry } from "./engineering/sessions";
 import { resolveServerConfig } from "./config";
 import { LIMITS } from "./limits";
 import { createDataDirSizeGuard } from "./storage-guard";
@@ -165,4 +168,29 @@ export function getAssetUploadGuard(): AssetUploadGuard {
   });
   globalThisWithGuards.__veladeskAssetUploadGuard = guard;
   return guard;
+}
+
+interface VelaDeskEngineeringGlobalThis {
+  __veladeskEngineeringAuth?: EngineeringHandlersInput;
+}
+
+/**
+ * Lazily created Engineering-mode auth singleton (t181): the file-backed
+ * credential store (`<dataDir>/engineering.json`) plus the in-memory
+ * session registry. Same globalThis survival pattern as the runtime above
+ * — one registry per process, created only when a request needs it.
+ */
+export function getEngineeringAuth(): EngineeringHandlersInput {
+  const globalThisWithEngineering = globalThis as VelaDeskEngineeringGlobalThis;
+  const existing = globalThisWithEngineering.__veladeskEngineeringAuth;
+  if (existing !== undefined) {
+    return existing;
+  }
+  const config = resolveServerConfig(process.env, process.cwd());
+  const auth: EngineeringHandlersInput = {
+    credentials: createEngineeringCredentialStore(config.dataDir),
+    sessions: createEngineeringSessionRegistry(),
+  };
+  globalThisWithEngineering.__veladeskEngineeringAuth = auth;
+  return auth;
 }

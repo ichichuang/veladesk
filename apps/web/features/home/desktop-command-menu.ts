@@ -48,6 +48,11 @@ export interface DesktopCommandInput {
   readonly t: TranslateFn;
   /** True while the arrange session is active. */
   readonly arrange: boolean;
+  /**
+   * t181 Use mode (false): every editing entry disappears — only 搜索 and
+   * the workspace-switch submenu remain. Defaults to true (Engineering).
+   */
+  readonly engineering?: boolean;
   /** Placement mode of the ACTIVE section (persisted per section). */
   readonly placementMode: PagePlacementMode;
   /** Why the Freeform switch is refused (lossy conversion), if it is. */
@@ -82,6 +87,20 @@ export function buildDesktopCommandEntries(
   input: DesktopCommandInput
 ): readonly DesktopMenuEntry[] {
   const { t, arrange, placementMode, freeformBlockedReason, canUndo, canRedo, syncState, callbacks } = input;
+  const engineering = input.engineering ?? true;
+
+  // Use mode (t181): the command menu is consumption-only — search plus
+  // workspace switching. No editing entry is merely disabled; none of it
+  // renders, so nothing about the editing surface is discoverable.
+  if (!engineering) {
+    const useEntries: DesktopMenuEntry[] = [
+      { kind: "action", id: "search", label: t("menu.search"), onSelect: callbacks.onSearch },
+    ];
+    if (input.workspaceMenu !== undefined) {
+      useEntries.push({ kind: "separator" }, input.workspaceMenu);
+    }
+    return useEntries;
+  }
 
   const entries: DesktopMenuEntry[] = [
     { kind: "action", id: "add-app", label: t("menu.addApp"), onSelect: callbacks.onAddApp },
@@ -147,6 +166,8 @@ export interface AppMenuInput {
   readonly t: TranslateFn;
   /** Whether the app is dock-pinned (decides pin vs unpin). */
   readonly pinned: boolean;
+  /** t181 Use mode (false): the menu offers 打开 only. Defaults to true. */
+  readonly engineering?: boolean;
   /**
    * Explicit size controls (Helm r3), present only in arrange mode: the
    * designed size steps for Grid sections (checked on the current step),
@@ -192,6 +213,13 @@ export function buildAppMenuEntries(input: AppMenuInput): readonly DesktopMenuEn
   const { t, pinned, sizeControls, callbacks } = input;
   const entries: DesktopMenuEntry[] = [
     { kind: "action", id: "open", label: t("menu.open"), onSelect: callbacks.onOpen },
+  ];
+  // Use mode (t181): launching is the whole menu — no edit, appearance,
+  // move, pin or delete entries render at all.
+  if ((input.engineering ?? true) === false) {
+    return entries;
+  }
+  entries.push(
     { kind: "action", id: "edit", label: t("menu.edit"), onSelect: callbacks.onEdit },
     {
       kind: "action",
@@ -199,7 +227,7 @@ export function buildAppMenuEntries(input: AppMenuInput): readonly DesktopMenuEn
       label: t("menu.editAppearance"),
       onSelect: callbacks.onEditAppearance,
     },
-  ];
+  );
   if (sizeControls !== undefined) {
     const sizeEntries: DesktopMenuEntry[] =
       sizeControls.kind === "grid"
@@ -298,6 +326,8 @@ export function buildSectionMenuEntries(input: SectionMenuInput): readonly Deskt
 export interface FolderMenuInput {
   readonly t: TranslateFn;
   readonly pinned: boolean;
+  /** t181 Use mode (false): the menu offers 打开 only. Defaults to true. */
+  readonly engineering?: boolean;
   readonly callbacks: {
     readonly onOpen: () => void;
     readonly onRename: () => void;
@@ -309,10 +339,16 @@ export interface FolderMenuInput {
 /**
  * Legacy folder menu (task 015 policy): folders stay openable, renamable,
  * pinnable and dissolvable into the current section — creation and
- * move-into are retired from the primary UI, never the data.
+ * move-into are retired from the primary UI, never the data. In Use mode
+ * (t181) only 打开 remains.
  */
 export function buildFolderMenuEntries(input: FolderMenuInput): readonly DesktopMenuEntry[] {
   const { t, pinned, callbacks } = input;
+  if ((input.engineering ?? true) === false) {
+    return [
+      { kind: "action", id: "open", label: t("menu.open"), onSelect: callbacks.onOpen },
+    ];
+  }
   return [
     { kind: "action", id: "open", label: t("menu.open"), onSelect: callbacks.onOpen },
     { kind: "separator" },

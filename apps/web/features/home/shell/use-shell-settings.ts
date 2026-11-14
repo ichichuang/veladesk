@@ -34,6 +34,11 @@ export interface UseShellSettingsInput {
   readonly setSettingsOpen: (open: boolean | ((current: boolean) => boolean)) => void;
   /** Whether Settings is already open (entry guards keep a live session). */
   readonly settingsOpen: boolean;
+  /**
+   * t181 Use mode (false): Settings never opens — every entry point is
+   * hidden, and a stale dispatch is refused here rather than deferred.
+   */
+  readonly engineering: boolean;
   readonly setPendingGapPx: (gapPx: number | null) => void;
 }
 
@@ -61,6 +66,7 @@ export function useShellSettings(input: UseShellSettingsInput) {
     setSettingsBackgroundSection,
     setSettingsOpen,
     settingsOpen,
+    engineering,
     setPendingGapPx,
   } = input;
 
@@ -72,6 +78,9 @@ export function useShellSettings(input: UseShellSettingsInput) {
    * (the draft and its desktop preview belong to the user mid-edit).
    */
   function openSettings() {
+    if (!engineering) {
+      return;
+    }
     setContextMenu(null);
     if (settingsOpen) {
       return;
@@ -90,6 +99,9 @@ export function useShellSettings(input: UseShellSettingsInput) {
    * entry-scope effect) without touching the live draft session.
    */
   function openSectionBackgroundSettings(pageId: DesktopPageId) {
+    if (!engineering) {
+      return;
+    }
     setContextMenu(null);
     setSettingsBackgroundSection(pageId);
     if (settingsOpen) {

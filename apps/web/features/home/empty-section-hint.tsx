@@ -3,6 +3,7 @@
 import type { DesktopPageId } from "@veladesk/domain";
 
 import { useI18n } from "../i18n/use-i18n";
+import { useEngineeringMode } from "../engineering/engineering-mode-context";
 import { useShellContext } from "./shell/shell-context";
 import "./home-shell.css";
 
@@ -35,7 +36,15 @@ export function EmptySectionHint({
   readonly variant: "grid" | "freeform";
 }) {
   const { t } = useI18n();
+  const { engineering } = useEngineeringMode();
   const { dispatch } = useShellContext();
+
+  // t181 Use mode: the hint (and its 「添加应用」 action) is an editing
+  // affordance — it does not render at all. The section is empty by
+  // definition, so its absence cannot shift any other element.
+  if (!engineering) {
+    return null;
+  }
 
   return (
     <div

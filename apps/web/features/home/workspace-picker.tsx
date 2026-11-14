@@ -50,7 +50,7 @@ export function WorkspacePickerScreen({ candidates }: WorkspacePickerScreenProps
     <main className="vela-screen">
       <div className="vela-screen__ambient" aria-hidden="true" />
       <section className="vela-screen__panel">
-        <h1 className="vela-wordmark">VelaDesk</h1>
+        <h1 className="vela-wordmark" data-vd-eng-entry="">VelaDesk</h1>
         <p className="vela-screen__lead">{t("picker.lead")}</p>
 
         <ul className="vela-picker">

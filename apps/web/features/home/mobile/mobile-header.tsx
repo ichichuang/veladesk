@@ -43,7 +43,11 @@ export function MobileHeader({
 
   return (
     <header className="vela-mobile-header">
-      <span className="vela-mobile-header__name">{workspace.snapshot.name}</span>
+      {/* data-vd-eng-entry (t181): the workspace title is one of the two
+          sanctioned Engineering-mode entry gesture targets. */}
+      <span className="vela-mobile-header__name" data-vd-eng-entry="">
+        {workspace.snapshot.name}
+      </span>
       {status !== null && statusLabel !== null ? (
         <span className="vela-mobile-header__sync" data-state={status} role="status">
           <span className="vela-mobile-header__sync-dot" aria-hidden="true" />

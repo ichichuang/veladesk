@@ -142,7 +142,7 @@ export function OnboardingScreen({ remoteUnavailable = false, onSampleCreated }:
     <main ref={scrollRef} data-vd-scroll="y" className="vela-screen vela-onboarding">
       <div className="vela-screen__ambient" aria-hidden="true" />
       <section ref={panelRef} className="vela-screen__panel vela-onboarding__panel" aria-labelledby="vela-onboarding-title">
-        <h1 id="vela-onboarding-title" className="vela-wordmark">VelaDesk</h1>
+        <h1 id="vela-onboarding-title" className="vela-wordmark" data-vd-eng-entry="">VelaDesk</h1>
         <p className="vela-screen__lead">{t("onboarding.lead")}</p>
 
         {remoteUnavailable ? (

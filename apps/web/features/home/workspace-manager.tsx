@@ -9,6 +9,7 @@ import { useSystemPrefersLight } from "./use-system-prefers-light";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
 import { useI18n } from "../i18n/use-i18n";
+import { useEngineeringMode } from "../engineering/engineering-mode-context";
 import type { DesktopMenuEntry } from "./desktop-command-menu";
 import { ConfirmDialog } from "./confirm-dialog";
 import { WorkspaceDialog, describeWorkspaceFailure } from "./workspace-dialog";
@@ -101,26 +102,36 @@ export function WorkspaceManagerProvider({ workspace, children, notice }: { read
     })();
   }
   function create() { rememberFocus(); setClosing(false); setError(null); setDialog({ kind: "create" }); }
+  // t181: in Use mode the workspace menu is SWITCH-ONLY — no rename/delete
+  // tools, no 新增工作区. Switching workspaces stays (navigation, not edit).
+  const { engineering } = useEngineeringMode();
   const menu: DesktopMenuEntry = {
     kind: "submenu", id: "workspaces", label: t("workspace.menu"), entries: [
       ...candidates.map((candidate): DesktopMenuEntry => ({
         kind: "action", id: `workspace:${candidate.id}`, label: candidate.name, checked: candidate.id === workspace.id, disabled: busy,
         keepOpen: true,
-        onRename: async name => {
-          const result = await run(() => runtime.renameWorkspace(candidate.id, name), t("workspace.renamed", { name }));
-          return result.ok ? null : describeWorkspaceFailure(result, t);
-        },
-        onSelect: () => select(candidate.id), tools: [
-          { icon: "rename", label: t("workspace.renameItem", { name: candidate.name }), disabled: busy,
-            onSelect: () => { rememberFocus(); setClosing(false); setError(null); setDialog({ kind: "rename", workspace: candidate }); } },
-          { icon: "delete", label: t("workspace.deleteItem", { name: candidate.name }), disabled: busy || candidates.length <= 1,
-            ...(candidates.length <= 1 ? { reason: t("workspace.last") } : {}),
-            onSelect: () => { rememberFocus(); setClosing(false); setError(null); setDialog({ kind: "delete", workspace: candidate }); } },
-        ],
+        ...(engineering ? {
+          onRename: async name => {
+            const result = await run(() => runtime.renameWorkspace(candidate.id, name), t("workspace.renamed", { name }));
+            return result.ok ? null : describeWorkspaceFailure(result, t);
+          },
+        } : {}),
+        onSelect: () => select(candidate.id),
+        ...(engineering ? {
+          tools: [
+            { icon: "rename", label: t("workspace.renameItem", { name: candidate.name }), disabled: busy,
+              onSelect: () => { rememberFocus(); setClosing(false); setError(null); setDialog({ kind: "rename", workspace: candidate }); } },
+            { icon: "delete", label: t("workspace.deleteItem", { name: candidate.name }), disabled: busy || candidates.length <= 1,
+              ...(candidates.length <= 1 ? { reason: t("workspace.last") } : {}),
+              onSelect: () => { rememberFocus(); setClosing(false); setError(null); setDialog({ kind: "delete", workspace: candidate }); } },
+          ],
+        } : {}),
       })),
-      { kind: "separator" },
-      { kind: "action", id: "create-workspace", label: t("workspace.create"), disabled: busy || candidates.length >= 10,
-        ...(candidates.length >= 10 ? { reason: t("workspace.limit") } : {}), onSelect: create },
+      ...(engineering ? [
+        { kind: "separator" } as DesktopMenuEntry,
+        { kind: "action", id: "create-workspace", label: t("workspace.create"), disabled: busy || candidates.length >= 10,
+          ...(candidates.length >= 10 ? { reason: t("workspace.limit") } : {}), onSelect: create } as DesktopMenuEntry,
+      ] : []),
     ],
   };
   // Stable enough for consumers; operation closures always see the current catalog.

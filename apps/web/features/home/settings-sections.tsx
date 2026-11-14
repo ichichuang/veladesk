@@ -34,6 +34,7 @@ import { copyTextToClipboard } from "../import-json/clipboard";
 import { downloadVelaDeskImportTemplate } from "../import-json/template";
 import { prepareWorkspaceRecipe, type PreparedRecipeExport, downloadWorkspaceRecipe } from "../import-json/recipe-file";
 import { ImportJsonDialog } from "../import-json/import-json-dialog";
+import { EngineeringChangePasswordDialog } from "../engineering/engineering-change-password-dialog";
 import {
   COLOR_MODE_OPTIONS,
   INTERFACE_STYLE_HINT_KEY,
@@ -344,6 +345,9 @@ export function GeneralSection({
 }) {
   const { t } = useI18n();
   const [importOpen, setImportOpen] = useState(false);
+  /** t181: the 修改密码 dialog (Engineering-mode password). */
+  const [passwordChangeOpen, setPasswordChangeOpen] = useState(false);
+  const [passwordChanged, setPasswordChanged] = useState(false);
   const [promptStatus, setPromptStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [embedWallpapers, setEmbedWallpapers] = useState(false);
   const [preparedExport, setPreparedExport] = useState<{ workspace: WorkspaceSnapshot; file: PreparedRecipeExport }>();
@@ -473,7 +477,42 @@ export function GeneralSection({
         </span>
       </SettingsRow>
 
+      {/* t181: the Engineering-mode password lives behind Settings (which
+          only Engineering mode can open). Changing it requires the current
+          password, re-verified server-side. */}
+      <SettingsRow
+        title={t("engineering.settings.rowTitle")}
+        hint={t("engineering.settings.rowHint")}
+      >
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onPress={() => {
+              setPasswordChanged(false);
+              setPasswordChangeOpen(true);
+            }}
+            data-engineering-change-password=""
+          >
+            {t("engineering.settings.changeAction")}
+          </Button>
+        </div>
+      </SettingsRow>
+      <p className="text-xs text-vdu-fg-muted" aria-live="polite">
+        {passwordChanged ? t("engineering.password.changed") : ""}
+      </p>
+
       {importOpen ? <ImportJsonDialog workspace={workspace} onClose={closeImport} /> : null}
+      {passwordChangeOpen ? (
+        <EngineeringChangePasswordDialog
+          open
+          onClose={() => setPasswordChangeOpen(false)}
+          onSaved={() => {
+            setPasswordChangeOpen(false);
+            setPasswordChanged(true);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -678,6 +678,33 @@ const zhCNCatalog = {
   /* Mobile minimal edit path (UX-12). */
   "mobile.tileMenu.label": "「{name}」的操作",
   "mobile.sections.manage": "管理分区",
+
+  // --- Engineering mode (t181) ---------------------------------------------
+  "engineering.badge": "工程模式",
+  "engineering.badge.exitHint": "退出工程模式",
+  "engineering.dialog.title": "工程模式",
+  "engineering.dialog.description": "输入 6 位密码以进入工程模式。",
+  "engineering.dialog.passwordLabel": "密码",
+  "engineering.dialog.submit": "解锁",
+  "engineering.dialog.busy": "验证中…",
+  "engineering.dialog.cancel": "取消",
+  "engineering.dialog.wrong": "密码不正确",
+  "engineering.dialog.cooldown": "尝试次数过多，请 {seconds} 秒后重试",
+  "engineering.dialog.network": "暂时无法连接服务器，请稍后重试。",
+  "engineering.password.title": "修改工程模式密码",
+  "engineering.password.description": "设置新的 6 位数字密码。",
+  "engineering.password.current": "当前密码",
+  "engineering.password.next": "新密码",
+  "engineering.password.confirm": "确认新密码",
+  "engineering.password.submit": "修改密码",
+  "engineering.password.busy": "保存中…",
+  "engineering.password.mismatch": "两次输入的新密码不一致。",
+  "engineering.password.invalid": "新密码必须是 6 位数字。",
+  "engineering.password.wrong": "当前密码不正确。",
+  "engineering.password.changed": "工程模式密码已修改。",
+  "engineering.settings.rowTitle": "工程模式密码",
+  "engineering.settings.rowHint": "进入工程模式所需的 6 位数字密码。",
+  "engineering.settings.changeAction": "修改密码…",
 } as const;
 
 export type TranslationKey = keyof typeof zhCNCatalog;
@@ -1329,6 +1356,33 @@ export const enUS: MessageCatalog = {
   /* Mobile minimal edit path (UX-12). */
   "mobile.tileMenu.label": "Actions for {name}",
   "mobile.sections.manage": "Manage sections",
+
+  // --- Engineering mode (t181) ---------------------------------------------
+  "engineering.badge": "Engineering",
+  "engineering.badge.exitHint": "Exit engineering mode",
+  "engineering.dialog.title": "Engineering mode",
+  "engineering.dialog.description": "Enter the 6-digit password to unlock engineering mode.",
+  "engineering.dialog.passwordLabel": "Password",
+  "engineering.dialog.submit": "Unlock",
+  "engineering.dialog.busy": "Verifying…",
+  "engineering.dialog.cancel": "Cancel",
+  "engineering.dialog.wrong": "Incorrect password",
+  "engineering.dialog.cooldown": "Too many attempts — retry in {seconds}s",
+  "engineering.dialog.network": "Cannot reach the server right now; please retry later.",
+  "engineering.password.title": "Change engineering password",
+  "engineering.password.description": "Set a new 6-digit password.",
+  "engineering.password.current": "Current password",
+  "engineering.password.next": "New password",
+  "engineering.password.confirm": "Confirm new password",
+  "engineering.password.submit": "Change password",
+  "engineering.password.busy": "Saving…",
+  "engineering.password.mismatch": "The two new passwords do not match.",
+  "engineering.password.invalid": "The new password must be 6 digits.",
+  "engineering.password.wrong": "The current password is incorrect.",
+  "engineering.password.changed": "Engineering-mode password changed.",
+  "engineering.settings.rowTitle": "Engineering-mode password",
+  "engineering.settings.rowHint": "The 6-digit password required to enter engineering mode.",
+  "engineering.settings.changeAction": "Change password…",
 };
 
 export type { MessageParams };

@@ -64,6 +64,12 @@ export interface UseDesktopMenusInput {
   readonly snapshot: WorkspaceSnapshot;
   readonly arrange: boolean;
   readonly mode: DesktopMode;
+  /**
+   * t181 Use mode (false): every menu is consumption-only — the command
+   * menu keeps 搜索 + workspace switching, entity menus keep 打开, and the
+   * section menu (all-edit) never opens. Defaults to true (Engineering).
+   */
+  readonly engineering: boolean;
   readonly activePage: DesktopPage | undefined;
   readonly effectiveActivePageId: DesktopPageId | null;
   readonly workspaceManager: ReturnType<typeof useWorkspaceManager>;
@@ -109,6 +115,7 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
     snapshot,
     arrange,
     mode,
+    engineering,
     activePage,
     effectiveActivePageId,
     workspaceManager,
@@ -153,6 +160,7 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
       entries: buildDesktopCommandEntries({
         t,
         arrange,
+        engineering,
         placementMode: activePage === undefined ? "grid" : resolvePagePlacement(activePage).mode,
         freeformBlockedReason,
         canUndo:
@@ -270,6 +278,7 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
         entries: buildAppMenuEntries({
           t,
           pinned,
+          engineering,
           sizeControls: sizeControlsOf(entity.id),
           callbacks: {
             onOpen: () => launchApp(entity),
@@ -302,6 +311,7 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
         entries: buildFolderMenuEntries({
           t,
           pinned,
+          engineering,
           callbacks: {
             onOpen: () => openFolderOverlay(entity.id),
             onRename: () => openDialog({ kind: "rename-folder", folderId: entity.id }),
@@ -326,6 +336,11 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
   }
 
   function openSectionMenu(pageId: DesktopPageId, x: number, y: number) {
+    // Use mode (t181): every section-menu entry is an edit (rename,
+    // background, default, reorder, delete) — the menu never opens.
+    if (!engineering) {
+      return;
+    }
     const page = findDesktopPage(snapshot, pageId);
     if (page === undefined) {
       return;
@@ -388,6 +403,11 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
 
   function activateLauncherCommand(commandId: LauncherCommandId) {
     if (commandId.startsWith("workspace:")) { workspaceManager?.select(commandId.slice("workspace:".length)); return; }
+    // Use mode (t181): every non-switch command is an edit; the launcher
+    // never lists them, and a stale entry activating here is refused.
+    if (!engineering) {
+      return;
+    }
     switch (commandId) {
       case "new-workspace":
         workspaceManager?.create();

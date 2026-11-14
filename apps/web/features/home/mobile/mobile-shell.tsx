@@ -33,6 +33,8 @@ import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
 import { useWorkspaceRuntimeInstance } from "../../workspace-runtime/use-workspace-runtime";
+import { useEngineeringMode } from "../../engineering/engineering-mode-context";
+import { EngineeringSurfaces } from "../../engineering/engineering-surfaces";
 import { useWallpaperAssetUrl } from "../desktop-wallpaper";
 import { SceneBackdrop } from "../scene/scene-backdrop";
 import { buildAppearanceTheme, resolveEffectiveColorMode } from "../appearance-theme";
@@ -110,6 +112,11 @@ export function MobileShell({
 }) {
   const snapshot = workspace.snapshot;
   const runtime = useWorkspaceRuntimeInstance();
+  // t181: Use mode (the default) is consumption-only on mobile too — the
+  // long-press tile menu, the drawer's 添加应用 / 管理分区 and the
+  // empty-section add button never render; the engineering surfaces
+  // (badge + unlock dialog) mount from this themed root.
+  const { engineering } = useEngineeringMode();
   const reducedMotion = useVdReducedMotion();
   const scrollRef = useRef<HTMLElement | null>(null);
   useVdScrollbar(scrollRef, "y");
@@ -121,6 +128,11 @@ export function MobileShell({
   useEffect(() => {
     workspaceRef.current = workspace;
   }, [workspace]);
+  /** Latest-value mirror of the engineering flag for stable callbacks. */
+  const engineeringRef = useRef(engineering);
+  useEffect(() => {
+    engineeringRef.current = engineering;
+  }, [engineering]);
 
   // --- Theme (shared resolver, no mobile preview state — §49) --------------
   const resolvedAppearance = useMemo(
@@ -201,7 +213,21 @@ export function MobileShell({
     setSurfaceError(null);
   }
 
+  // t181: leaving Engineering mode closes any open mobile edit surface
+  // (render-phase state adjustment — the sanctioned pattern).
+  const [seenEngineering, setSeenEngineering] = useState(engineering);
+  if (seenEngineering !== engineering) {
+    setSeenEngineering(engineering);
+    if (!engineering) {
+      setSurface(null);
+      setSurfaceError(null);
+    }
+  }
+
   const openAddApp = useCallback(() => {
+    if (!engineeringRef.current) {
+      return;
+    }
     setSurface({ kind: "add-app" });
   }, []);
 
@@ -342,9 +368,14 @@ export function MobileShell({
               workspace={snapshot}
               onOpenApp={openApp}
               onOpenFolder={setFolderId}
-              onOpenAppMenu={(app) => setSurface({ kind: "tile-menu", appId: app.id })}
+              // t181 Use mode: a long-press opens nothing (edit-only menu).
+              onOpenAppMenu={(app) => {
+                if (engineering) {
+                  setSurface({ kind: "tile-menu", appId: app.id });
+                }
+              }}
               onDismissAppMenu={() => setSurface(null)}
-              onAddApp={pageId === activePageId ? openAddApp : undefined}
+              onAddApp={engineering && pageId === activePageId ? openAddApp : undefined}
             />
           )}
         />
@@ -376,6 +407,7 @@ export function MobileShell({
         open={menuOpen}
         onOpenChange={setMenuOpen}
         workspace={workspace}
+        engineering={engineering}
         onAddApp={openAddApp}
         onManageSections={() => setSurface({ kind: "manage-sections" })}
       />
@@ -506,6 +538,10 @@ export function MobileShell({
           </MotionToast>
         ) : null}
       </MotionToastStack>
+
+      {/* t181: the Engineering-mode overlays (badge / unlock dialog),
+          mounted from this themed root like the desktop shell does. */}
+      <EngineeringSurfaces />
     </div>
     <div
       ref={setPortalRoot}

@@ -19,6 +19,8 @@ import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
 import { useWorkspaceRuntimeInstance } from "../../workspace-runtime/use-workspace-runtime";
+import { useEngineeringMode } from "../../engineering/engineering-mode-context";
+import { EngineeringSurfaces } from "../../engineering/engineering-surfaces";
 import { Dock } from "../dock";
 import { SectionPill } from "../section-pill";
 import { HelmHeader } from "./helm-header";
@@ -96,6 +98,7 @@ interface DesktopShellProps {
 export function DesktopShell({ workspace, lastRemoteResult, activeSection: externalActiveSection }: DesktopShellProps) {
   const runtime = useWorkspaceRuntimeInstance();
   const workspaceManager = useWorkspaceManager();
+  const { engineering } = useEngineeringMode();
   const { locale, t } = useI18n();
   const snapshot = workspace.snapshot;
 
@@ -250,6 +253,28 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
 
   const inspectorOpen = dialog !== null && dialog.kind === "edit-visual";
   /**
+   * t181 exiting Engineering mode: close every editing surface the moment
+   * the mode flips (render-phase state adjustment — the sanctioned
+   * pattern, no effect-driven cascade). Closing the inspector dialog here
+   * is what FLUSHES its pending autosave (t138 — the flush rides the
+   * dialog's open-state effect and unmount), and the gate delays the
+   * server-side session revoke behind exactly that flush, so nothing is
+   * lost. The Settings preview hygiene mirrors `closeSettings` (previews
+   * die with the surface; nothing was staged before Save).
+   */
+  const [seenEngineering, setSeenEngineering] = useState(engineering);
+  if (seenEngineering !== engineering) {
+    setSeenEngineering(engineering);
+    if (!engineering) {
+      setDialog(null);
+      setContextMenu(null);
+      setSettingsOpen(false);
+      setAppearancePreview(null);
+      setSettingsDraftPreview(null);
+      setSettingsBackgroundSection(null);
+    }
+  }
+  /**
    * t176 (director decision, overriding part of t159): the side inspector
    * alone no longer freezes the desktop — the section scroller keeps
    * scrolling normally (wheel, keyboard, touch, Lenis) while the 340px
@@ -335,7 +360,12 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     settingsGapPreview ??
     (pendingGapPx !== null && pendingGapPx !== persistedGapPx ? pendingGapPx : persistedGapPx);
 
-  const arrange = mode === "arrange";
+  // t181 Use mode: the arrange session itself is unreachable — drag,
+  // resize, marquee, nudge, undo/redo and the arrange toolbar all live
+  // behind `arrange`, which can never be true while `engineering` is
+  // false. Engineering mode (the default context) keeps today's UI
+  // exactly, with layoutLocked's own semantics untouched.
+  const arrange = engineering && mode === "arrange";
 
   // --- The three layers ------------------------------------------------------
   // Tile host first (the scene reads its resize lock); the scene next
@@ -389,6 +419,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     mode,
     syncState: workspace.syncState,
     locale,
+    engineering,
     workspaceCandidates: workspaceManager === null ? null : workspaceManager.candidates,
   });
 
@@ -403,6 +434,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     setSettingsBackgroundSection,
     setSettingsOpen,
     settingsOpen,
+    engineering,
     setPendingGapPx,
   });
 
@@ -414,6 +446,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     snapshot,
     arrange,
     mode,
+    engineering,
     activePage,
     effectiveActivePageId,
     workspaceManager,
@@ -460,6 +493,11 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
   }
 
   function switchMode(next: DesktopMode) {
+    // Use mode (t181): the arrange session cannot be entered (or exited)
+    // through any leftover path — the toggle entries are hidden anyway.
+    if (!engineering) {
+      return;
+    }
     // A pending handoff means the display canvas outruns the durable
     // snapshot — mode changes wait the few ms until the stage lands. A live
     // resize owns the desktop entirely.
@@ -562,6 +600,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     activeSectionId: effectiveActivePageId,
     mode,
     reducedMotion: scene.reducedMotion,
+    editsAllowed: engineering,
     switchSection: scene.switchSection,
     switchMode,
     openDialog,
@@ -703,6 +742,13 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         onSectionContextMenu={(pageId, x, y) => menus.openContextMenu({ kind: "section", pageId, x, y })}
         navigationLocked={railNavigationLocked}
       />
+
+      {/*
+        t181: the Engineering-mode surfaces (「工程模式」 indicator while
+        unlocked, the password dialog while unlocking) — FIXED overlays
+        inside this themed root; nothing here can affect layout.
+      */}
+      <EngineeringSurfaces />
 
       <ShellSurfaces
         dialogs={dialogs}

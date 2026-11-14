@@ -1,0 +1,74 @@
+/*
+ * Engineering-mode overlays (t181).
+ *
+ * Two surfaces only — the 「工程模式」 indicator badge and the unlock
+ * dialog's inner field treatment. Both are FIXED overlays: Chris's
+ * binding rule says nothing that appears or disappears with the mode may
+ * affect layout, so the badge floats above the shell (top-right, under
+ * the toast stack) and never reserves space in any flow.
+ *
+ * All values come from the token layers (`--vd-*` semantic + alias names
+ * from @veladesk/ui tokens.css); no literal colors, sizes or durations
+ * live here.
+ */
+
+.vela-engineering-badge {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  right: 16px;
+  /* Above every shell chrome (pill 40, dock 50); below toasts (100) and
+     open menus (110) so transient surfaces always cover it. */
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--vd-surface-border);
+  border-radius: 999px;
+  background: var(--vd-surface-strong);
+  color: var(--vd-text-muted);
+  font-family: var(--vd-font);
+  font-size: var(--vd-type-xs);
+  letter-spacing: 0.02em;
+  box-shadow: var(--vd-shadow-tile);
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(var(--vd-blur));
+  backdrop-filter: blur(var(--vd-blur));
+  transition:
+    color var(--vd-motion-fast) var(--vd-motion-ease),
+    border-color var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+.vela-engineering-badge:hover {
+  color: var(--vd-text);
+  border-color: var(--vd-accent);
+}
+
+.vela-engineering-badge:focus-visible {
+  outline: 2px solid var(--vd-color-focus);
+  outline-offset: 2px;
+}
+
+.vela-engineering-badge__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vd-accent);
+  box-shadow: 0 0 8px color-mix(in oklab, var(--vd-accent) 60%, transparent);
+}
+
+/* The unlock dialog's 6-digit field: larger, monospaced digits centered
+   under the tracking the component applies. Token surface + radius. */
+.vela-engineering-password-input {
+  height: 44px;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--vd-radius);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vela-engineering-badge {
+    transition: none;
+  }
+}

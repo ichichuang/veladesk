@@ -26,6 +26,7 @@ export function useLauncherModel({
   mode,
   syncState,
   locale,
+  engineering,
   workspaceCandidates,
 }: {
   readonly snapshot: WorkspaceSnapshot;
@@ -33,6 +34,8 @@ export function useLauncherModel({
   readonly mode: DesktopMode;
   readonly syncState: LocalWorkspaceSyncState;
   readonly locale: UiLocale;
+  /** t181: false keeps management commands out of the launcher (Use mode). */
+  readonly engineering: boolean;
   readonly workspaceCandidates: readonly { readonly id: string; readonly name: string }[] | null;
 }) {
   // The launcher index follows the live snapshot: a sync or edit landing
@@ -45,9 +48,10 @@ export function useLauncherModel({
         mode,
         syncState,
         locale,
+        engineering,
         ...(workspaceCandidates === null ? {} : { workspaceCandidates }),
       }),
-    [snapshot, effectiveActivePageId, mode, syncState, locale, workspaceCandidates],
+    [snapshot, effectiveActivePageId, mode, syncState, locale, engineering, workspaceCandidates],
   );
 
   // The launcher renders app icons through the SHARED renderer, so it needs
