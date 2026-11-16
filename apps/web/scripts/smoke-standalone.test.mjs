@@ -182,6 +182,13 @@ function makeFakeFetch({ packageFixture, log } = {}) {
       const id = decodeURIComponent(parsed.pathname.slice("/api/v1/assets/".length));
       const method = init?.method ?? "GET";
       if (method === "PUT") {
+        // t181: asset PUTs are gated — prove the smoke's session cookie is
+        // actually attached, or the probe would pass while the REAL server
+        // 401s at release time.
+        const cookie = init?.headers?.Cookie ?? "";
+        if (!cookie.startsWith("veladesk_engineering=")) {
+          return new FakeResponse({ status: 401, json: { error: { code: "engineering-session-required" } } });
+        }
         const count = (assetPutCounts.get(id) ?? 0) + 1;
         assetPutCounts.set(id, count);
         if (id === "asset-sha256-not-a-real-id") {
@@ -303,6 +310,53 @@ describe("runStandaloneSmoke — the real suite over fake seams", () => {
     expect(routes.some((route) => route.startsWith("/api/v1/workspaces/smoke-workspace"))).toBe(true);
     expect(routes.filter((route) => route.startsWith("/api/v1/icons/")).length).toBeGreaterThan(10);
     expect(routes.some((route) => route === "/")).toBe(true);
+  });
+
+  it("fails at the unlock step with the error envelope when the default password is rejected", async () => {
+    const { targets } = makeDevTargets();
+    await expect(
+      runStandaloneSmoke({
+        targets,
+        startServerImpl: () => makeFakeServer(makeFakeChild()),
+        fetchImpl: async (url) => {
+          const parsed = new URL(url);
+          if (parsed.pathname === "/api/v1/workspaces") {
+            return new FakeResponse({ headers: { "cache-control": "no-store" }, json: { workspaces: [] } });
+          }
+          if (parsed.pathname === "/api/v1/engineering/unlock") {
+            const body = JSON.stringify({ error: { code: "engineering-password-wrong" } });
+            return new FakeResponse({ status: 401, json: body, text: body });
+          }
+          throw new Error(`unexpected route ${parsed.pathname}`);
+        },
+        sleepImpl: instantSleep,
+        now: fixedNow,
+        getFreePortImpl: fakePort,
+      }),
+    ).rejects.toThrow(/engineering unlock expected 200, got 401.*engineering-password-wrong/s);
+  });
+
+  it("fails when the unlock response carries no session cookie", async () => {
+    const { targets } = makeDevTargets();
+    await expect(
+      runStandaloneSmoke({
+        targets,
+        startServerImpl: () => makeFakeServer(makeFakeChild()),
+        fetchImpl: async (url) => {
+          const parsed = new URL(url);
+          if (parsed.pathname === "/api/v1/workspaces") {
+            return new FakeResponse({ headers: { "cache-control": "no-store" }, json: { workspaces: [] } });
+          }
+          if (parsed.pathname === "/api/v1/engineering/unlock") {
+            return new FakeResponse({ status: 200, json: { active: true } });
+          }
+          throw new Error(`unexpected route ${parsed.pathname}`);
+        },
+        sleepImpl: instantSleep,
+        now: fixedNow,
+        getFreePortImpl: fakePort,
+      }),
+    ).rejects.toThrow(/missing the veladesk_engineering session cookie/);
   });
 
   it("completes package mode with launcher boots, packaged assets and containment probes", async () => {

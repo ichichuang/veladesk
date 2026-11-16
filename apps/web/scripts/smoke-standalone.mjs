@@ -352,10 +352,19 @@ async function unlockAndBuildAuthedFetch(base, { fetchImpl }) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password: "123456" }),
   });
-  assert(unlock.status === 200, `engineering unlock expected 200, got ${unlock.status}`);
+  // Surface the error envelope body (e.g. engineering-password-wrong) — a
+  // bare status code would send the operator hunting for the wrong contract.
+  const unlockBody = await unlock.text().catch(() => "");
+  assert(
+    unlock.status === 200,
+    `engineering unlock expected 200, got ${unlock.status} ${unlockBody.slice(0, 200)}`,
+  );
   const setCookie = unlock.headers.get("set-cookie") ?? "";
   const session = /veladesk_engineering=[^;]*/.exec(setCookie);
-  assert(session !== null, "unlock response missing the veladesk_engineering session cookie");
+  assert(
+    session !== null && session[0].length > "veladesk_engineering=".length,
+    "unlock response missing the veladesk_engineering session cookie",
+  );
   const cookie = session[0];
   return (url, init) => fetchImpl(url, { ...init, headers: { ...init?.headers, Cookie: cookie } });
 }

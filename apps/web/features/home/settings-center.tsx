@@ -221,11 +221,6 @@ export function SettingsCenter({
   // is ALREADY open must move the background editor onto that section too —
   // the entry scope is followed on every CHANGE of the entry id (never on
   // unrelated renders, so the user's own scope pick is not clobbered), and
-  // the editor is brought back into view on the Appearance tab.
-  // t137 (Chris): entering through a section's context menu while Settings
-  // is ALREADY open must move the background editor onto that section too —
-  // the entry scope is followed on every CHANGE of the entry id (never on
-  // unrelated renders, so the user's own scope pick is not clobbered), and
   // the editor is brought back into view on the Appearance tab. The effect
   // deliberately SETS that scope synchronously on entry-id changes — both
   // rules are suppressed with the reason inline.

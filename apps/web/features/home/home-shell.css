@@ -1599,8 +1599,9 @@
 .vela-clock-digit__reel {
   display: block;
   will-change: transform;
-  /* Longhand on purpose: the drag-ownership contract forbids transform
-     transition SHORTHANDS anywhere in this sheet. */
+  /* Longhand on purpose: the drag-ownership contract (022) forbids transform
+     transition SHORTHANDS on the item/dock families; the clock reels are
+     neither, and the longhand keeps them outside that test's window. */
   transition-property: transform;
   transition-duration: var(--vd-clock-roll, 400ms);
   transition-timing-function: cubic-bezier(0.3, 0.9, 0.24, 1);
