@@ -47,6 +47,7 @@ import { useShellDialogs } from "./use-shell-dialogs";
 import { useShellSettings } from "./use-shell-settings";
 import { useDesktopMenus } from "./use-desktop-menus";
 import { useShellTheme } from "./use-shell-theme";
+import { helmClockThemeVars } from "../appearance-theme";
 import { useBeforeWorkspaceChangeGuard } from "./use-before-change-guard";
 import { useLauncherModel } from "./use-launcher-model";
 import { useAppearanceProjection } from "./use-appearance-projection";
@@ -330,6 +331,24 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     appearancePreview: previewAppearanceOverride,
     preferences: previewThemePreferences,
   });
+  // task 028: the clock/date presentation binds to the VISIBLE section —
+  // the same rendered snapshot the scene sees (Settings page patches
+  // included), resolved field-by-field against the workspace appearance
+  // and emitted as extra CSS variables on the desktop root. No section
+  // override and no workspace fields ⇒ an empty bag; the CSS fluid
+  // defaults keep ruling untouched.
+  const desktopThemeStyle = useMemo(() => {
+    const page =
+      effectiveActivePageId === null
+        ? undefined
+        : settingsProjectedSnapshot.pages.find(
+            (candidate) => candidate.id === effectiveActivePageId
+          );
+    const clockVars = helmClockThemeVars(resolvedAppearance, page?.helmClock);
+    return Object.keys(clockVars).length === 0
+      ? theme.style
+      : { ...theme.style, ...clockVars };
+  }, [theme.style, resolvedAppearance, settingsProjectedSnapshot.pages, effectiveActivePageId]);
   // The overlay portal root's theme: the Settings draft while a preview is
   // live, otherwise the same persisted theme — so the Settings window (and
   // only portalled surfaces) previews the draft in place.
@@ -661,7 +680,7 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       data-vd-material={theme.materialTier}
       data-vd-wallpaper={theme.wallpaperPreset}
       data-has-dock={hasDock ? "true" : "false"}
-      style={theme.style as CSSProperties}
+      style={desktopThemeStyle as CSSProperties}
     >
       <SceneBackdrop
         wallpaper={scene.effectiveWallpaper}

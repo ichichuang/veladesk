@@ -252,6 +252,9 @@ importers:
       '@iconify-json/fluent-color':
         specifier: 1.2.21
         version: 1.2.21
+      '@iconify-json/logos':
+        specifier: 1.2.20
+        version: 1.2.20
       '@iconify-json/lucide':
         specifier: 1.2.134
         version: 1.2.134
@@ -262,8 +265,8 @@ importers:
         specifier: 1.2.2
         version: 1.2.2
       '@iconify-json/simple-icons':
-        specifier: 1.2.96
-        version: 1.2.96
+        specifier: 1.2.102
+        version: 1.2.102
       '@iconify-json/tabler':
         specifier: 1.2.38
         version: 1.2.38
@@ -1050,6 +1053,9 @@ packages:
   '@iconify-json/fluent-color@1.2.21':
     resolution: {integrity: sha512-VETjGx7BMpVsCR3HV5g5t6oBGZ92XKzIRClS5xUvDn1YHAkQTF9OyF/aFdtxYOC8JROoI1SNO/Ql6jZeK7mroA==}
 
+  '@iconify-json/logos@1.2.20':
+    resolution: {integrity: sha512-HDSte2/+sgGNn9i/eYMiIRDbdigWxZe6EFauQGtxfRG/4sUtUBFgLIdxotKQysKNsFJlLYDFzPILOs3mh9viRQ==}
+
   '@iconify-json/lucide@1.2.134':
     resolution: {integrity: sha512-MXzwT7H8Ii/aGN6NLtMbMLDaxLYsOxCKEdW0F5h3MemNUaUBqAxr9nz0mPlXzozd/piQyrdSiUyk0t5b5ErADg==}
 
@@ -1059,8 +1065,8 @@ packages:
   '@iconify-json/ph@1.2.2':
     resolution: {integrity: sha512-PgkEZNtqa8hBGjHXQa4pMwZa93hmfu8FUSjs/nv4oUU6yLsgv+gh9nu28Kqi8Fz9CCVu4hj1MZs9/60J57IzFw==}
 
-  '@iconify-json/simple-icons@1.2.96':
-    resolution: {integrity: sha512-/FmCYo/H5rIywTLV/P6OYsr0rg/31vuc8jYq0QnkOZl6m7PWIs+h5oAnSTT2cqRhOsMaKqbXcdkka6tnZ1WiUA==}
+  '@iconify-json/simple-icons@1.2.102':
+    resolution: {integrity: sha512-IwbAj1ZI6LBy+qU7sVYxB1wgbSSIDKjY9I0BnnpjfIdlqfXoYnBb80UvYA0WkodUFWfQyL4AjaKMg48fqX8sIw==}
 
   '@iconify-json/tabler@1.2.38':
     resolution: {integrity: sha512-9v6ooRU/bKOK/Whv4w2aiK5gBnfCV9Ei+uD1iDDeLu2b+EnF3G3ZKkRKWEOOLG8bJyfKn6XEia6gUQ9oO7cF+Q==}
@@ -5199,6 +5205,10 @@ snapshots:
     dependencies:
       '@iconify/types': 2.0.0
 
+  '@iconify-json/logos@1.2.20':
+    dependencies:
+      '@iconify/types': 2.0.0
+
   '@iconify-json/lucide@1.2.134':
     dependencies:
       '@iconify/types': 2.0.0
@@ -5211,7 +5221,7 @@ snapshots:
     dependencies:
       '@iconify/types': 2.0.0
 
-  '@iconify-json/simple-icons@1.2.96':
+  '@iconify-json/simple-icons@1.2.102':
     dependencies:
       '@iconify/types': 2.0.0
 

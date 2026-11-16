@@ -8,7 +8,8 @@ import { isWallpaperConfig } from "../wallpaper";
 import type { WallpaperConfig } from "../wallpaper";
 
 import { findDesktopPage } from "../lookup";
-import { validateWorkspaceAppearance } from "../appearance";
+import { validatePageHelmClockOverride, validateWorkspaceAppearance } from "../appearance";
+import type { PageHelmClockOverride } from "../types";
 import { isValidGridGapPx } from "../preferences";
 import {
   materializePagePlacement,
@@ -165,6 +166,44 @@ export function replacePageWallpaper(
           return cleared;
         }
         return { ...page, wallpaper };
+      }),
+    },
+  };
+}
+
+/**
+ * Sets or clears ONE page's clock/date presentation override (task 028),
+ * immutably. `null` REMOVES the override — the section follows the
+ * workspace appearance fields (which may themselves be absent = the CSS
+ * defaults). Structural legality is enforced here, semantic ranges flow
+ * through the colocated validator; both refuse loudly, never half-write.
+ */
+export function replacePageHelmClock(
+  workspace: WorkspaceSnapshot,
+  pageId: DesktopPageId,
+  override: PageHelmClockOverride | null
+): WorkspaceEditResult {
+  const page = findDesktopPage(workspace, pageId);
+  if (page === undefined) {
+    return { ok: false, reason: "page-not-found" };
+  }
+  if (override !== null && validatePageHelmClockOverride(override).length > 0) {
+    return { ok: false, reason: "invalid-appearance" };
+  }
+  return {
+    ok: true,
+    workspace: {
+      ...workspace,
+      pages: workspace.pages.map((candidate) => {
+        if (candidate !== page) {
+          return candidate;
+        }
+        if (override === null) {
+          const { helmClock: removed, ...cleared } = page;
+          void removed;
+          return cleared;
+        }
+        return { ...page, helmClock: override };
       }),
     },
   };

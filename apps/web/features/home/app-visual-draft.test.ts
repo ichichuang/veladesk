@@ -101,9 +101,17 @@ describe("draftFromApp", () => {
 
     expect(draft.source).toBe("text");
     expect(draft.textMode).toBe("custom");
-    // Legacy multi-character text opens as the one glyph the tile shows,
-    // so the untouched icon is still savable.
-    expect(draft.customText).toBe("A");
+    // Custom text renders verbatim now (task 028) — two characters open
+    // as two, and the untouched icon is still savable.
+    expect(draft.customText).toBe("AI");
+    expect(isDraftSavable(draft)).toBe(true);
+  });
+
+  it("cuts legacy custom text longer than twelve characters on open", () => {
+    const draft = draftFromApp(
+      makeApp({ icon: { kind: "generated", text: "一二三四五六七八九十11 1234", source: "custom" } })
+    );
+    expect(draft.customText).toBe("一二三四五六七八九十11");
     expect(isDraftSavable(draft)).toBe(true);
   });
 
@@ -136,8 +144,8 @@ describe("draftFromApp", () => {
 });
 
 describe("validateIconText", () => {
-  it("accepts exactly one character across scripts and emoji", () => {
-    for (const text of ["A", "a", "家", "7", "🤖", " a ", "\u00e9", "👨‍👩‍👧", "🇯🇵", "👍🏽"]) {
+  it("accepts up to twelve characters across scripts and emoji", () => {
+    for (const text of ["A", "a", "家", "7", "🤖", " a ", "\u00e9", "👨‍👩‍👧", "🇯🇵", "👍🏽", "AI", "微信", "Hello World"]) {
       expect(validateIconText(text)).toBeUndefined();
     }
   });
@@ -146,21 +154,21 @@ describe("validateIconText", () => {
     // 👍 is 2 UTF-16 code units but 1 code point — it is exactly one glyph;
     // the family emoji is 5 code points but still ONE grapheme.
     expect(validateIconText("👍")).toBeUndefined();
-    expect(validateIconText("👍👍")).toBe("too-long");
-    expect(validateIconText("👨‍👩‍👧x")).toBe("too-long");
+    expect(validateIconText("👍👍")).toBeUndefined();
+    expect(validateIconText("👨‍👩‍👧x")).toBeUndefined();
+    // Thirteen graphemes are over budget.
+    expect(validateIconText("一二三四五六七八九十11 12")).toBe("too-long");
   });
 
-  it("rejects blank and multi-character text", () => {
+  it("rejects blank and over-budget text", () => {
     expect(validateIconText("")).toBe("empty");
     expect(validateIconText("   ")).toBe("empty");
-    expect(validateIconText("AI")).toBe("too-long");
-    expect(validateIconText("AB")).toBe("too-long");
-    expect(validateIconText("微信")).toBe("too-long");
-    expect(validateIconText("家家人人人")).toBe("too-long");
+    expect(validateIconText("一二三四五六七八九十11 123")).toBe("too-long");
+    expect(validateIconText("a".repeat(13))).toBe("too-long");
   });
 
-  it("clamps to a one-character budget", () => {
-    expect(APP_ICON_TEXT_MAX_GRAPHEMES).toBe(1);
+  it("clamps to a twelve-character budget", () => {
+    expect(APP_ICON_TEXT_MAX_GRAPHEMES).toBe(12);
   });
 });
 
@@ -248,6 +256,29 @@ describe("buildDraftVisual", () => {
     // Hidden label persists explicitly.
     const hidden = buildDraftVisual({ ...draftFromApp(app), labelVisible: false });
     expect(hidden).toEqual({ decorationStyle: "gradient", labelVisible: false });
+  });
+
+  it("persists a valid corner radius and omits the default state (task 028)", () => {
+    const app = makeApp();
+    // Absent stays absent — the CSS defaults rule.
+    expect("iconCornerRadius" in buildDraftVisual(draftFromApp(app))).toBe(false);
+
+    const rounded = buildDraftVisual({ ...draftFromApp(app), iconCornerRadius: 12 });
+    expect(rounded).toEqual({ decorationStyle: "gradient", iconCornerRadius: 12 });
+
+    // Out-of-range drafts degrade to the default state, never persist junk.
+    expect(
+      "iconCornerRadius" in buildDraftVisual({ ...draftFromApp(app), iconCornerRadius: 99 })
+    ).toBe(false);
+  });
+
+  it("draftEquals compares the clamped corner radius", () => {
+    const app = makeApp();
+    const base = draftFromApp(app);
+    expect(draftEquals(base, { ...base, iconCornerRadius: 12 })).toBe(false);
+    expect(draftEquals({ ...base, iconCornerRadius: 12 }, { ...base, iconCornerRadius: 12 })).toBe(true);
+    // Junk on either side clamps to the same default state.
+    expect(draftEquals({ ...base, iconCornerRadius: 99 }, { ...base, iconCornerRadius: -3 })).toBe(true);
   });
 
   it("normalizes deprecated legacy scale fields away on save (019-B)", () => {
@@ -382,7 +413,7 @@ describe("isDraftSavable", () => {
     expect(isDraftSavable(draft)).toBe(false);
     expect(isDraftSavable({ ...draft, customText: 'A' })).toBe(true);
     expect(isDraftSavable({ ...draft, customText: '家' })).toBe(true);
-    expect(isDraftSavable({ ...draft, customText: 'TOOLONG' })).toBe(false);
+    expect(isDraftSavable({ ...draft, customText: 'TOOLONGTEXT13' })).toBe(false);
   });
 
   it("always allows auto text mode", () => {

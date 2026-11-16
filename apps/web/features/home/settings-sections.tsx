@@ -6,13 +6,18 @@ import { Minus, Plus } from "lucide-react";
 import { HexColorPicker } from "react-colorful";
 import {
   MAX_GRID_GAP_PX,
+  MAX_HELM_CLOCK_SIZE_PX,
+  MAX_HELM_DATE_SIZE_PX,
   MIN_GRID_GAP_PX,
+  MIN_HELM_CLOCK_SIZE_PX,
+  MIN_HELM_DATE_SIZE_PX,
   GRID_GAP_STEP_PX,
   INTERFACE_STYLES,
   inferInterfaceStyle,
 } from "@veladesk/domain";
 import type {
   DesktopPageId,
+  PageHelmClockOverride,
   WorkspaceAppearancePreferences,
   WorkspaceColorMode,
   WorkspaceInterfaceStyle,
@@ -28,6 +33,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@components/ui/popover"
 import { BackgroundSection, type BackgroundLayer } from "./settings-background";
 import type { PreparedWallpaperImage } from "./wallpaper-prep";
 import { VdSwitch } from "@components/vd/switch";
+import { ColorField } from "@components/vd/color-popover";
 import { VELADESK_VERSION } from "../../lib/app-version";
 import { buildImportAiPrompt } from "../import-json/ai-prompt";
 import { copyTextToClipboard } from "../import-json/clipboard";
@@ -48,6 +54,9 @@ export function AppearanceSection({
   updateAppearance,
   workspace,
   activeSectionId,
+  helmClockScope,
+  onHelmClockScopeChange,
+  updateHelmClockPage,
   backgroundScope,
   backgroundLayer,
   onBackgroundScopeChange,
@@ -65,6 +74,9 @@ export function AppearanceSection({
   readonly updateAppearance: (patch: Partial<WorkspaceAppearancePreferences>) => void;
   readonly workspace: WorkspaceSnapshot;
   readonly activeSectionId: DesktopPageId | null;
+  readonly helmClockScope: "workspace" | DesktopPageId;
+  readonly onHelmClockScopeChange: (scope: "workspace" | DesktopPageId) => void;
+  readonly updateHelmClockPage: (pageId: DesktopPageId, override: PageHelmClockOverride | null) => void;
   readonly backgroundScope: "workspace" | DesktopPageId;
   readonly backgroundLayer: BackgroundLayer;
   readonly onBackgroundScopeChange: (scope: "workspace" | DesktopPageId) => void;
@@ -85,6 +97,9 @@ export function AppearanceSection({
   // type stays optional because legacy snapshots have none persisted.
   const selectedStyle: WorkspaceInterfaceStyle =
     draft.appearance.interfaceStyle ?? inferInterfaceStyle(draft.appearance);
+  // task 028: the custom accent dot is "active" exactly while the full
+  // color override rules — no more guessing from the hue alone.
+  const customSelected = draft.appearance.accentColor !== undefined;
 
   return (
     <div className="flex flex-col gap-7">
@@ -113,7 +128,11 @@ export function AppearanceSection({
       <SettingsRow title={t("settings.accentColor")} hint={t("settings.accentColor.hint")}>
         <div className="flex items-center gap-2">
           {ACCENT_SWATCH_HUES.map((hue) => {
-            const selected = draft.appearance.accentHue === hue;
+            // task 028: a curated swatch is "selected" only while the
+            // custom override is clear — otherwise it would light up
+            // while a user-picked color is showing.
+            const selected =
+              draft.appearance.accentHue === hue && draft.appearance.accentColor === undefined;
             return (
               <button
                 key={hue}
@@ -128,7 +147,13 @@ export function AppearanceSection({
                     : "ring-1 ring-vdu-border-strong",
                 ].join(" ")}
                 style={{ background: `oklch(0.72 0.14 ${hue})` }}
-                onClick={() => updateAppearance({ accentHue: hue })}
+                onClick={() => {
+                  // exactOptionalPropertyTypes: CLEAR the custom override
+                  // by rebuilding the appearance without the key.
+                  const { accentColor: _drop, ...rest } = draft.appearance;
+                  void _drop;
+                  updateAppearance({ ...rest, accentHue: hue });
+                }}
               />
             );
           })}
@@ -137,8 +162,10 @@ export function AppearanceSection({
             onOpenChange={(open) => {
               setCustomOpen(open);
               if (open) {
-                // Seed the picker from the currently selected hue.
-                setCustomHex(hexFromHue(draft.appearance.accentHue));
+                // Seed from the persisted custom color, else the hue tone.
+                setCustomHex(
+                  draft.appearance.accentColor ?? hexFromHue(draft.appearance.accentHue)
+                );
               }
             }}
           >
@@ -146,16 +173,21 @@ export function AppearanceSection({
               <button
                 type="button"
                 aria-label={t("settings.accent.custom")}
-                aria-pressed={!ACCENT_SWATCH_HUES.includes(draft.appearance.accentHue)}
+                aria-pressed={customSelected}
                 className={[
                   "grid size-8 shrink-0 place-items-center rounded-full outline-none",
                   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vdu-focus)]",
-                  ACCENT_SWATCH_HUES.includes(draft.appearance.accentHue)
-                    ? "ring-1 ring-vdu-border-strong"
-                    : "ring-2 ring-vdu-fg ring-offset-2 ring-offset-vdu-bg",
+                  customSelected
+                    ? "ring-2 ring-vdu-fg ring-offset-2 ring-offset-vdu-bg"
+                    : "ring-1 ring-vdu-border-strong",
                 ].join(" ")}
                 style={{
-                  background: `conic-gradient(oklch(0.72 0.14 0), oklch(0.72 0.14 60), oklch(0.72 0.14 120), oklch(0.72 0.14 180), oklch(0.72 0.14 240), oklch(0.72 0.14 300), oklch(0.72 0.14 360))`,
+                  // task 028: while a custom color rules, the dot shows IT
+                  // (what you see is what you picked); otherwise the hue
+                  // wheel hints the picker.
+                  background: customSelected
+                    ? (draft.appearance.accentColor ?? "#888888")
+                    : `conic-gradient(oklch(0.72 0.14 0), oklch(0.72 0.14 60), oklch(0.72 0.14 120), oklch(0.72 0.14 180), oklch(0.72 0.14 240), oklch(0.72 0.14 300), oklch(0.72 0.14 360))`,
                 }}
               >
                 <span className="size-4 rounded-full bg-vdu-bg" />
@@ -167,10 +199,14 @@ export function AppearanceSection({
                   color={customHex}
                   onChange={(hex) => {
                     setCustomHex(hex);
+                    // task 028: the FULL picked color applies (accentColor
+                    // override); the hue stays in sync so the curated
+                    // swatch row and the conic dot keep a sensible base.
                     const hue = hueFromHex(hex);
-                    if (hue !== undefined) {
-                      updateAppearance({ accentHue: hue });
-                    }
+                    updateAppearance({
+                      accentHue: hue ?? draft.appearance.accentHue,
+                      accentColor: hex.toLowerCase(),
+                    });
                   }}
                 />
               </div>
@@ -224,7 +260,256 @@ export function AppearanceSection({
         error={backgroundError}
         onErrorChange={onBackgroundErrorChange}
       />
+
+      <HelmClockSection
+        workspace={workspace}
+        draft={draft}
+        updateAppearance={updateAppearance}
+        scope={helmClockScope}
+        onScopeChange={onHelmClockScopeChange}
+        updatePage={updateHelmClockPage}
+      />
     </div>
+  );
+}
+
+/**
+ * The clock/date presentation block (task 028): the workspace fields are
+ * plain appearance controls; switching the scope to a section edits that
+ * section's override instead (absent fields follow the workspace, the
+ * explicit "follow global" action removes the whole override). The live
+ * desktop preview resolves the VISIBLE section's effective values, so
+ * every drag shows immediately on the real clock.
+ */
+function HelmClockSection({
+  workspace,
+  draft,
+  updateAppearance,
+  scope,
+  onScopeChange,
+  updatePage,
+}: {
+  readonly workspace: WorkspaceSnapshot;
+  readonly draft: WorkspaceSettingsDraft;
+  readonly updateAppearance: (patch: Partial<WorkspaceAppearancePreferences>) => void;
+  readonly scope: "workspace" | DesktopPageId;
+  readonly onScopeChange: (scope: "workspace" | DesktopPageId) => void;
+  readonly updatePage: (pageId: DesktopPageId, override: PageHelmClockOverride | null) => void;
+}) {
+  const { t } = useI18n();
+  const pagePatch =
+    scope === "workspace" ? undefined : draft.helmClock.pages[scope];
+
+  function setClockSize(value: number) {
+    if (scope === "workspace") {
+      updateAppearance({ helmClockSizePx: value });
+    } else {
+      updatePage(scope, { ...(pagePatch ?? {}), clockSizePx: value });
+    }
+  }
+  function setClockColor(value: string | undefined) {
+    if (scope === "workspace") {
+      // exactOptionalPropertyTypes: explicit undefined CLEARs the field.
+      if (value === undefined) {
+        const { helmClockColor: _drop, ...rest } = draft.appearance;
+        void _drop;
+        updateAppearance(rest);
+      } else {
+        updateAppearance({ helmClockColor: value });
+      }
+    } else {
+      updatePage(scope, withPageField(pagePatch, "clockColor", value));
+    }
+  }
+  function setDateSize(value: number) {
+    if (scope === "workspace") {
+      updateAppearance({ helmDateSizePx: value });
+    } else {
+      updatePage(scope, { ...(pagePatch ?? {}), dateSizePx: value });
+    }
+  }
+  function setDateColor(value: string | undefined) {
+    if (scope === "workspace") {
+      if (value === undefined) {
+        const { helmDateColor: _drop, ...rest } = draft.appearance;
+        void _drop;
+        updateAppearance(rest);
+      } else {
+        updateAppearance({ helmDateColor: value });
+      }
+    } else {
+      updatePage(scope, withPageField(pagePatch, "dateColor", value));
+    }
+  }
+
+  const clockSize = scope === "workspace" ? draft.appearance.helmClockSizePx : pagePatch?.clockSizePx;
+  const clockColor = scope === "workspace" ? draft.appearance.helmClockColor : pagePatch?.clockColor;
+  const dateSize = scope === "workspace" ? draft.appearance.helmDateSizePx : pagePatch?.dateSizePx;
+  const dateColor = scope === "workspace" ? draft.appearance.helmDateColor : pagePatch?.dateColor;
+
+  return (
+    <div className="flex flex-col gap-5" data-settings-helm-clock="">
+      <SettingsRow title={t("settings.helmClock.title")} hint={t("settings.helmClock.title.hint")}>
+        <Select
+          value={scope === "workspace" ? "workspace" : scope}
+          onChange={(value) => {
+            if (value === "workspace" || typeof value === "string") {
+              onScopeChange(value === "workspace" ? "workspace" : (value as DesktopPageId));
+            }
+          }}
+          aria-label={t("settings.helmClock.scope")}
+          variant="secondary"
+          className="w-[220px]"
+        >
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              <ListBox.Item id="workspace" textValue={t("settings.helmClock.scope.workspace")}>
+                {t("settings.helmClock.scope.workspace")}
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+              {workspace.pages.map((page) => (
+                <ListBox.Item key={page.id} id={page.id} textValue={page.name}>
+                  {page.name}
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+      </SettingsRow>
+
+      {scope !== "workspace" && pagePatch === null ? (
+        <p className="-mt-3 text-xs leading-relaxed text-vdu-fg-muted" aria-live="polite">
+          {t("settings.helmClock.followGlobal")}
+        </p>
+      ) : null}
+
+      <div className="flex flex-col gap-4">
+        <HelmClockSizeRow
+          label={t("settings.helmClock.clockSize")}
+          value={clockSize}
+          fallback={60}
+          min={MIN_HELM_CLOCK_SIZE_PX}
+          max={MAX_HELM_CLOCK_SIZE_PX}
+          ariaLabel={t("settings.helmClock.clockSize")}
+          autoLabel={t("settings.helmClock.auto")}
+          onChange={setClockSize}
+          onAuto={() => {
+            if (scope === "workspace") {
+              const { helmClockSizePx: _drop, ...rest } = draft.appearance;
+              void _drop;
+              updateAppearance(rest);
+            } else {
+              updatePage(scope, withPageField(pagePatch, "clockSizePx", undefined));
+            }
+          }}
+        />
+        <SettingsRow title={t("settings.helmClock.clockColor")}>
+          <ColorField
+            label={t("settings.helmClock.clockColor")}
+            autoLabel={t("settings.helmClock.auto")}
+            swatchAriaLabel={clockColor ?? t("settings.helmClock.auto")}
+            value={clockColor}
+            onChange={setClockColor}
+            className="min-w-0 flex-1"
+          />
+        </SettingsRow>
+        <HelmClockSizeRow
+          label={t("settings.helmClock.dateSize")}
+          value={dateSize}
+          fallback={14}
+          min={MIN_HELM_DATE_SIZE_PX}
+          max={MAX_HELM_DATE_SIZE_PX}
+          ariaLabel={t("settings.helmClock.dateSize")}
+          autoLabel={t("settings.helmClock.auto")}
+          onChange={setDateSize}
+          onAuto={() => {
+            if (scope === "workspace") {
+              const { helmDateSizePx: _drop, ...rest } = draft.appearance;
+              void _drop;
+              updateAppearance(rest);
+            } else {
+              updatePage(scope, withPageField(pagePatch, "dateSizePx", undefined));
+            }
+          }}
+        />
+        <SettingsRow title={t("settings.helmClock.dateColor")}>
+          <ColorField
+            label={t("settings.helmClock.dateColor")}
+            autoLabel={t("settings.helmClock.auto")}
+            swatchAriaLabel={dateColor ?? t("settings.helmClock.auto")}
+            value={dateColor}
+            onChange={setDateColor}
+            className="min-w-0 flex-1"
+          />
+        </SettingsRow>
+      </div>
+    </div>
+  );
+}
+
+/** One size row: − / slider / + with an Auto reset, px output (task 028). */
+function HelmClockSizeRow({
+  label,
+  value,
+  fallback,
+  min,
+  max,
+  ariaLabel,
+  autoLabel,
+  onChange,
+  onAuto,
+}: {
+  readonly label: string;
+  readonly value: number | undefined;
+  readonly fallback: number;
+  readonly min: number;
+  readonly max: number;
+  readonly ariaLabel: string;
+  readonly autoLabel: string;
+  readonly onChange: (value: number) => void;
+  readonly onAuto: () => void;
+}) {
+  const shown = value ?? fallback;
+  return (
+    <SettingsRow title={label}>
+      <div className="flex w-full items-center gap-3">
+        <button
+          type="button"
+          className="rounded-vdu px-2 py-1 text-xs font-medium text-vdu-fg-muted outline-none hover:bg-vdu-bg-hover hover:text-vdu-fg disabled:pointer-events-none disabled:opacity-50"
+          disabled={value === undefined}
+          onClick={onAuto}
+        >
+          {autoLabel}
+        </button>
+        <Slider
+          aria-label={ariaLabel}
+          minValue={min}
+          maxValue={max}
+          step={1}
+          value={shown}
+          onChange={(next) => {
+            const resolved = Array.isArray(next) ? next[0] : next;
+            if (resolved !== undefined) {
+              onChange(resolved);
+            }
+          }}
+          className="flex-1"
+        >
+          <Slider.Track>
+            <Slider.Fill />
+            <Slider.Thumb />
+          </Slider.Track>
+        </Slider>
+        <output className="w-12 text-right font-mono text-xs text-vdu-fg-muted">
+          {shown}px
+        </output>
+      </div>
+    </SettingsRow>
   );
 }
 
@@ -515,4 +800,23 @@ export function GeneralSection({
       ) : null}
     </div>
   );
+}
+
+/**
+ * exactOptionalPropertyTypes bridge (task 028): builds the next page
+ * override with ONE field set — `undefined` REMOVES the field (it then
+ * follows the workspace) instead of writing an explicit undefined key.
+ */
+function withPageField(
+  base: PageHelmClockOverride | null | undefined,
+  field: "clockSizePx" | "clockColor" | "dateSizePx" | "dateColor",
+  value: number | string | undefined
+): PageHelmClockOverride {
+  const next: Record<string, number | string | undefined> = { ...(base ?? {}) };
+  if (value === undefined) {
+    delete next[field];
+  } else {
+    next[field] = value;
+  }
+  return next as PageHelmClockOverride;
 }

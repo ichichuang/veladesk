@@ -38,6 +38,14 @@ export const DEFAULT_APP_LABEL_SCALE = 1;
 /** Absent `labelVisible` resolves to shown (legacy apps keep their label). */
 export const DEFAULT_APP_LABEL_VISIBLE = true;
 
+/**
+ * Semantic range of `iconCornerRadius` (task 028): a PERCENT of the icon
+ * box. 0 = square corners, 50 = fully round; absent resolves to the CSS
+ * per-context defaults (≈26% slots, the fluid desktop clamp).
+ */
+export const MIN_ICON_CORNER_RADIUS = 0;
+export const MAX_ICON_CORNER_RADIUS = 50;
+
 /** Exact `#RRGGBB` hex (uppercase or lowercase digits, both fine). */
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
@@ -62,6 +70,9 @@ export type AppVisualValidationIssue =
     }
   | {
       readonly type: "invalid-decoration-color";
+    }
+  | {
+      readonly type: "invalid-icon-corner-radius";
     };
 
 /**
@@ -113,6 +124,14 @@ export function validateAppVisualStyle(
     !isValidAppHexColor(style.decorationColor)
   ) {
     issues.push({ type: "invalid-decoration-color" });
+  }
+  if (
+    style.iconCornerRadius !== undefined &&
+    (!Number.isInteger(style.iconCornerRadius) ||
+      style.iconCornerRadius < MIN_ICON_CORNER_RADIUS ||
+      style.iconCornerRadius > MAX_ICON_CORNER_RADIUS)
+  ) {
+    issues.push({ type: "invalid-icon-corner-radius" });
   }
 
   return issues;

@@ -1,5 +1,6 @@
-import { inferInterfaceStyle, resolveInterfaceStyle } from "@veladesk/domain";
+import { inferInterfaceStyle, resolveHelmClockPresentation, resolveInterfaceStyle } from "@veladesk/domain";
 import type {
+  PageHelmClockOverride,
   WorkspaceAppearancePreferences,
   WorkspaceColorMode,
   WorkspaceInterfaceStyle,
@@ -123,6 +124,17 @@ export function buildAppearanceTheme(
     "--vd-surface-border-strength": formatUnitless(surface.borderStrength),
     "--vd-icon-size": `${ICON_SIZE_PX[appearance.iconSize]}px`,
   };
+  // task 028: an EXACT custom accent overrides the token layer's
+  // hue-derived oklch policy. Emitted as the token variable itself on the
+  // themed root, so every derived mix (washes, glows, scrollbar, the
+  // --vdu-* bridge) follows the user-picked color in BOTH color modes.
+  // Validation guarantees exact #RRGGBB — emitted verbatim.
+  if (
+    appearance.accentColor !== undefined &&
+    /^#[0-9a-fA-F]{6}$/.test(appearance.accentColor)
+  ) {
+    style["--vd-color-accent"] = appearance.accentColor.toLowerCase();
+  }
   if (styled) {
     style["--vd-surface-shadow"] = SURFACE_SHADOWS[surface.shadowPreset];
     // The OVERLAY layer (settings window, dialogs, popovers) follows the
@@ -139,4 +151,35 @@ export function buildAppearanceTheme(
     materialTier: inferInterfaceStyle(appearance),
     style,
   };
+}
+
+/**
+ * The per-VISIBLE-SECTION clock/date presentation as CSS variables (task
+ * 028). Everything absent resolves to undefined here and stays absent from
+ * the returned bag, so the CSS fluid defaults keep ruling untouched — the
+ * bag only ever ADDS overrides on top of `buildAppearanceTheme`'s style.
+ *
+ * `page` is the VISIBLE section (the shell resolves it the same way the
+ * wallpaper does): its override wins field by field, the workspace
+ * appearance fills the rest. Pure.
+ */
+export function helmClockThemeVars(
+  appearance: WorkspaceAppearancePreferences,
+  page?: PageHelmClockOverride | undefined
+): Readonly<Record<string, string>> {
+  const presentation = resolveHelmClockPresentation(appearance, page);
+  const vars: Record<string, string> = {};
+  if (presentation.clockSizePx !== undefined) {
+    vars["--vd-helm-clock-size"] = `${presentation.clockSizePx}px`;
+  }
+  if (presentation.clockColor !== undefined) {
+    vars["--vd-helm-clock-color"] = presentation.clockColor;
+  }
+  if (presentation.dateSizePx !== undefined) {
+    vars["--vd-helm-date-size"] = `${presentation.dateSizePx}px`;
+  }
+  if (presentation.dateColor !== undefined) {
+    vars["--vd-helm-date-color"] = presentation.dateColor;
+  }
+  return vars;
 }

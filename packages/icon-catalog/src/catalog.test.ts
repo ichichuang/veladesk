@@ -7,6 +7,7 @@ import type { IconCollectionId, IconSearchResult } from "./types";
 
 const ALL_COLLECTION_IDS: readonly IconCollectionId[] = [
   "simple-icons",
+  "logos",
   "lucide",
   "tabler",
   "ph",
@@ -22,10 +23,10 @@ function idsOf(icons: readonly IconSearchResult[]): string[] {
 }
 
 describe("collections", () => {
-  it("exposes exactly the nine bundled collections in catalog order", () => {
+  it("exposes exactly the bundled collections in catalog order", () => {
     expect(ICON_COLLECTIONS.map((collection) => collection.id)).toEqual(ALL_COLLECTION_IDS);
     expect(ICON_COLLECTIONS.map((collection) => collection.order)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7, 8,
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
     ]);
   });
 
@@ -34,6 +35,7 @@ describe("collections", () => {
       ICON_COLLECTIONS.map((c) => [c.id, c.category, c.palette] as const),
     ).toEqual([
       ["simple-icons", "brand", "monochrome"],
+      ["logos", "brand", "multicolor"],
       ["lucide", "general", "monochrome"],
       ["tabler", "general", "monochrome"],
       ["ph", "general", "monochrome"],
@@ -59,12 +61,13 @@ describe("collections", () => {
         expect(Object.keys(set.icons).length, info.id).toBeGreaterThan(0);
       }
     },
-    // Nine collections of IconifyJSON — noto alone carries ~3.8k icons.
+    // Ten collections of IconifyJSON — noto alone carries ~3.8k icons.
     60_000
   );
 
   it("resolves one known icon in each newly added collection", async () => {
     for (const [collection, name] of [
+      ["logos", "grok"],
       ["fluent-color", "mail-24"],
       ["devicon", "docker"],
       ["vscode-icons", "file-type-reactjs"],
@@ -274,11 +277,23 @@ describe("search: scopes", () => {
       return;
     }
     const ids = idsOf(outcome.icons);
-    expect(ids[0]).toBe("simple-icons:github");
+    // The curated page opens with the modern AI assistant row.
+    expect(ids[0]).toBe("logos:grok");
     expect(outcome.total).toBe(ids.length);
     expect(outcome.nextOffset).toBeNull();
-    // Spec'd coverage: brands, general tools, development and emoji — mixed.
+    // Spec'd coverage: modern AI brands, general tools, development and
+    // emoji — mixed.
     for (const id of [
+      "logos:grok",
+      "logos:midjourney",
+      "simple-icons:googlegemini",
+      "simple-icons:deepseek",
+      "simple-icons:kimi",
+      "simple-icons:qwen",
+      "simple-icons:claude",
+      "logos:openai",
+      "simple-icons:perplexity",
+      "simple-icons:cursor",
       "simple-icons:github",
       "simple-icons:youtube",
       "simple-icons:spotify",
@@ -330,7 +345,7 @@ describe("search: scopes", () => {
     expect(outcome.icons.length).toBe(120);
     for (const icon of outcome.icons) {
       expect(icon.palette).toBe("multicolor");
-      expect(["fluent-color", "devicon", "vscode-icons", "catppuccin", "noto"]).toContain(
+      expect(["logos", "fluent-color", "devicon", "vscode-icons", "catppuccin", "noto"]).toContain(
         icon.collection,
       );
     }

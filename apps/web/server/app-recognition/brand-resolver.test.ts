@@ -64,11 +64,21 @@ describe("brand alias table invariants", () => {
     }
   });
 
-  it("every icon key exists in the bundled simple-icons collection", async () => {
-    const iconSet = await loadIconSet("simple-icons");
+  it("every icon key exists in the bundled brand collections", async () => {
+    // The bundled brand collections only — the seed table never references
+    // a collection outside the catalog.
+    const sets = new Map<string, Awaited<ReturnType<typeof loadIconSet>>>();
     for (const iconKey of brandAliasIconKeys()) {
-      const name = iconKey.slice("simple-icons:".length);
-      const present = iconSet.icons[name] !== undefined || iconSet.aliases?.[name] !== undefined;
+      const separator = iconKey.indexOf(":");
+      const collection = iconKey.slice(0, separator);
+      const name = iconKey.slice(separator + 1);
+      expect(collection === "simple-icons" || collection === "logos", iconKey).toBe(true);
+      let set = sets.get(collection);
+      if (set === undefined) {
+        set = await loadIconSet(collection as "simple-icons" | "logos");
+        sets.set(collection, set);
+      }
+      const present = set.icons[name] !== undefined || set.aliases?.[name] !== undefined;
       expect(present, iconKey).toBe(true);
     }
   });

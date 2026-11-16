@@ -10,8 +10,9 @@ import type { IconCategory, IconCollectionId, IconPalette } from "./types";
  * import `@veladesk/icon-catalog/meta` without pulling a single icon body
  * into its bundle.
  *
- * Display order puts brands first (`simple-icons`), then the general-
- * purpose outline sets, then the colored development sets, then emoji.
+ * Display order puts brands first (`simple-icons`, then the colored
+ * `logos` brand set), then the general-purpose outline sets, then the
+ * colored development sets, then emoji.
  */
 
 // The vocabulary a client needs travels with the metadata so one subpath
@@ -35,20 +36,27 @@ export interface IconCollectionInfo {
 
 export const ICON_COLLECTIONS: readonly IconCollectionInfo[] = [
   { id: "simple-icons", label: "Brands", order: 0, category: "brand", palette: "monochrome" },
-  { id: "lucide", label: "Lucide", order: 1, category: "general", palette: "monochrome" },
-  { id: "tabler", label: "Tabler", order: 2, category: "general", palette: "monochrome" },
-  { id: "ph", label: "Phosphor", order: 3, category: "general", palette: "monochrome" },
-  { id: "fluent-color", label: "Fluent Color", order: 4, category: "general", palette: "multicolor" },
-  { id: "devicon", label: "Devicon", order: 5, category: "development", palette: "multicolor" },
+  {
+    id: "logos",
+    label: "Logos",
+    order: 1,
+    category: "brand",
+    palette: "multicolor",
+  },
+  { id: "lucide", label: "Lucide", order: 2, category: "general", palette: "monochrome" },
+  { id: "tabler", label: "Tabler", order: 3, category: "general", palette: "monochrome" },
+  { id: "ph", label: "Phosphor", order: 4, category: "general", palette: "monochrome" },
+  { id: "fluent-color", label: "Fluent Color", order: 5, category: "general", palette: "multicolor" },
+  { id: "devicon", label: "Devicon", order: 6, category: "development", palette: "multicolor" },
   {
     id: "vscode-icons",
     label: "VSCode Icons",
-    order: 6,
+    order: 7,
     category: "development",
     palette: "multicolor",
   },
-  { id: "catppuccin", label: "Catppuccin", order: 7, category: "development", palette: "multicolor" },
-  { id: "noto", label: "Noto Emoji", order: 8, category: "emoji", palette: "multicolor" },
+  { id: "catppuccin", label: "Catppuccin", order: 8, category: "development", palette: "multicolor" },
+  { id: "noto", label: "Noto Emoji", order: 9, category: "emoji", palette: "multicolor" },
 ];
 
 const COLLECTIONS_BY_ID: ReadonlyMap<string, IconCollectionInfo> = new Map(
@@ -60,7 +68,7 @@ export function findIconCollection(id: string): IconCollectionInfo | undefined {
   return COLLECTIONS_BY_ID.get(id);
 }
 
-/** Whether `value` is one of the nine bundled collection ids. */
+/** Whether `value` is one of the bundled collection ids. */
 export function isIconCollectionId(value: unknown): value is IconCollectionId {
   return typeof value === "string" && COLLECTIONS_BY_ID.has(value);
 }

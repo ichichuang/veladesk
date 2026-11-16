@@ -63,21 +63,28 @@ describe("picker scopes", () => {
 });
 
 describe("collectionsForScope", () => {
-  it("offers all nine collections for the recommended and all scopes", () => {
+  it("offers all bundled collections for the recommended and all scopes", () => {
     for (const scope of ["recommended", "all"] as const) {
-      expect(collectionsForScope(scope)).toHaveLength(9);
+      expect(collectionsForScope(scope)).toHaveLength(10);
       expect(collectionsForScope(scope)[0]?.id).toBe("simple-icons");
-      expect(collectionsForScope(scope)[8]?.id).toBe("noto");
+      expect(collectionsForScope(scope)[9]?.id).toBe("noto");
     }
   });
 
   it("offers only multicolor collections for the color scope", () => {
     const ids = collectionsForScope("color").map((collection) => collection.id);
-    expect(ids).toEqual(["fluent-color", "devicon", "vscode-icons", "catppuccin", "noto"]);
+    expect(ids).toEqual([
+      "logos",
+      "fluent-color",
+      "devicon",
+      "vscode-icons",
+      "catppuccin",
+      "noto",
+    ]);
   });
 
   it("offers the category's collections for a category scope", () => {
-    expect(collectionsForScope("brand").map((c) => c.id)).toEqual(["simple-icons"]);
+    expect(collectionsForScope("brand").map((c) => c.id)).toEqual(["simple-icons", "logos"]);
     expect(collectionsForScope("general").map((c) => c.id)).toEqual([
       "lucide",
       "tabler",

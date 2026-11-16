@@ -116,10 +116,11 @@ describe("validateWorkspaceAppearance", () => {
     }
   });
 
-  it("reports every defect in the fixed order hue, opacity, blur, radius", () => {
+  it("reports every defect in the fixed order hue, accentColor, opacity, blur, radius", () => {
     const issues = validateWorkspaceAppearance({
       colorMode: "dark",
       accentHue: 999,
+      accentColor: "red",
       wallpaperPreset: "dawn",
       surfaceOpacity: 5,
       blurPx: -3,
@@ -129,10 +130,25 @@ describe("validateWorkspaceAppearance", () => {
 
     expect(issues).toEqual([
       { type: "invalid-accent-hue" },
+      { type: "invalid-accent-color" },
       { type: "invalid-surface-opacity" },
       { type: "invalid-blur-px" },
       { type: "invalid-radius-px" },
     ]);
+  });
+
+  it("accepts the exact custom accent color or its absence (task 028)", () => {
+    for (const accentColor of ["#FF0000", "#00ff7f"]) {
+      expect(
+        validateWorkspaceAppearance({ ...DEFAULT_WORKSPACE_APPEARANCE, accentColor })
+      ).toEqual([]);
+    }
+    expect(validateWorkspaceAppearance(DEFAULT_WORKSPACE_APPEARANCE)).toEqual([]);
+    for (const accentColor of ["red", "#F0A", "#FF00AABB", "var(--x)", ""]) {
+      expect(
+        validateWorkspaceAppearance({ ...DEFAULT_WORKSPACE_APPEARANCE, accentColor })
+      ).toEqual([{ type: "invalid-accent-color" }]);
+    }
   });
 });
 

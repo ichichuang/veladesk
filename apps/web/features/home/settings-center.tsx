@@ -5,6 +5,7 @@ import { Button, CloseButton } from "@heroui/react";
 
 import type {
   DesktopPageId,
+  PageHelmClockOverride,
   WallpaperConfig,
 } from "@veladesk/domain";
 
@@ -29,7 +30,41 @@ import { VdScrollArea } from "@components/vd/scroll-area";
 import { gsap } from "@components/vd/gsap";
 import { VD_MOTION_EASE, VD_MOTION } from "@components/vd/motion-tokens";
 import { useVdReducedMotion } from "@components/vd/reduced-motion";
+import { createLocalMemory } from "./local-memory";
 import "./home-shell.css";
+
+/**
+ * exactOptionalPropertyTypes bridge: the OPTIONAL override fields accept
+ * explicit undefined (clearing them); the required fields stay strict.
+ */
+type AppearancePreferencesPatch = Partial<
+  Omit<
+    import("@veladesk/domain").WorkspaceAppearancePreferences,
+    "accentColor" | "helmClockSizePx" | "helmClockColor" | "helmDateSizePx" | "helmDateColor"
+  >
+> & {
+  accentColor?: string | undefined;
+  helmClockSizePx?: number | undefined;
+  helmClockColor?: string | undefined;
+  helmDateSizePx?: number | undefined;
+  helmDateColor?: string | undefined;
+};
+
+/**
+ * task 028: the Settings Center reopens on the tab the user LEFT it on
+ * (global, not per-workspace — the surface is one window). A section
+ * context-menu entry still forces the Appearance tab (see the entry
+ * effect), which is exactly the directed-entry behavior.
+ */
+const SETTINGS_SECTIONS_ALL: readonly string[] = ["appearance", "layout", "general"];
+const SETTINGS_SECTION_MEMORY = createLocalMemory<SettingsSection>(
+  "veladesk:settings-section:v1",
+  1,
+  (value) =>
+    typeof value === "string" && SETTINGS_SECTIONS_ALL.includes(value)
+      ? (value as SettingsSection)
+      : undefined,
+);
 
 export type SettingsSaveResult =
   | { readonly ok: true }
@@ -148,6 +183,7 @@ export function SettingsCenter({
   // each OPEN transition therefore re-initializes the draft — the same
   // fresh state a remount used to produce. While open, the draft is owned
   // by the user (a snapshot landing mid-session never resets it).
+  const [helmClockScope, setHelmClockScope] = useState<"workspace" | DesktopPageId>("workspace");
   const [backgroundScope, setBackgroundScope] = useState<"workspace" | DesktopPageId>(
     backgroundEntrySectionId ?? "workspace",
   );
@@ -202,7 +238,13 @@ export function SettingsCenter({
     previousOpenRef.current = open;
     if (open && !wasOpen) {
       setDraft(createWorkspaceSettingsDraft(workspace));
-      setActiveSection("appearance");
+      // task 028: reopen on the LAST tab — except a directed section
+      // entry, which the entry-id effect below forces to Appearance.
+      setActiveSection(
+        backgroundEntrySectionId == null
+          ? (SETTINGS_SECTION_MEMORY.read() ?? "appearance")
+          : "appearance"
+      );
       directionRef.current = 1;
       setBusy(false);
       setError(null);
@@ -213,6 +255,7 @@ export function SettingsCenter({
       setBackgroundBusy(false);
       setBackgroundScope(backgroundEntrySectionId ?? "workspace");
       setBackgroundLayer("general");
+      setHelmClockScope("workspace");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open-transition lifecycle only
   }, [open, workspace]);
@@ -238,10 +281,21 @@ export function SettingsCenter({
   const initialDraft = useMemo(() => createWorkspaceSettingsDraft(workspace), [workspace]);
   const dirty = !areWorkspaceSettingsDraftsEqual(draft, initialDraft);
 
-  function updateAppearance(patch: Partial<import("@veladesk/domain").WorkspaceAppearancePreferences>) {
+  function updateAppearance(patch: AppearancePreferencesPatch) {
+    // exactOptionalPropertyTypes: an explicit undefined key CLEARs that
+    // optional field (same semantics as the inspector's patch()).
+    const appearance: import("@veladesk/domain").WorkspaceAppearancePreferences = { ...draft.appearance };
+    const mutable = appearance as unknown as Record<string, unknown>;
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) {
+        delete mutable[key];
+      } else {
+        mutable[key] = value;
+      }
+    }
     const next: WorkspaceSettingsDraft = {
       ...draft,
-      appearance: { ...draft.appearance, ...patch },
+      appearance,
     };
     setDraft(next);
     setError(null);
@@ -304,6 +358,24 @@ export function SettingsCenter({
     setError(null);
   }
 
+  /**
+   * task 028: per-section clock/date patches stream to the desktop through
+   * the SAME draft projection a Save uses. `null` = follow the workspace
+   * (the override is removed); a value = the section override; per-field
+   * `undefined` inside a value = that field follows the workspace.
+   */
+  function updateHelmClockPage(pageId: DesktopPageId, override: PageHelmClockOverride | null) {
+    const next: WorkspaceSettingsDraft = {
+      ...draft,
+      helmClock: {
+        pages: { ...draft.helmClock.pages, [pageId]: override },
+      },
+    };
+    setDraft(next);
+    onDraftChange(next);
+    setError(null);
+  }
+
   /** Immediate locale switch — browser preference, never part of the draft. */
   function updateLocale(next: UiLocale) {
     if (next !== locale) {
@@ -339,6 +411,7 @@ export function SettingsCenter({
 
   /** Direction of the section switch: +1 forward, −1 back (§13 motion). */
   function selectSection(next: SettingsSection) {
+    SETTINGS_SECTION_MEMORY.write(next);
     if (next === activeSection) {
       return;
     }
@@ -503,6 +576,8 @@ export function SettingsCenter({
                     aria-selected={active}
                     className={[
                       "flex h-9 w-full items-center justify-center rounded-vdu text-sm font-medium",
+                      // task 028: hover/selected state easing.
+                      "transition-colors duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
                       "outline-none",
                       "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vdu-focus)]",
                       active
@@ -543,6 +618,9 @@ export function SettingsCenter({
                   updateAppearance={updateAppearance}
                   workspace={workspace}
                   activeSectionId={activeSectionId}
+                  helmClockScope={helmClockScope}
+                  onHelmClockScopeChange={setHelmClockScope}
+                  updateHelmClockPage={updateHelmClockPage}
                   backgroundScope={backgroundScope}
                   backgroundLayer={backgroundLayer}
                   onBackgroundScopeChange={setBackgroundScope}

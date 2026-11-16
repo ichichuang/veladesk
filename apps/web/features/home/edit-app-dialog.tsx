@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { AppOpenMode, AppShortcut, WorkspaceSnapshot } from "@veladesk/domain";
 
 import { replaceApp } from "@veladesk/domain";
@@ -10,6 +10,7 @@ import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-
 import { useI18n } from "../i18n/use-i18n";
 import type { TranslateFn } from "../i18n/use-i18n";
 import { generatedIconFollowsName } from "./app-icon";
+import { createSessionMemory } from "./local-memory";
 import { generatedIconText } from "./generated-icon";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
 import { validateAppUrlInput } from "./app-url-validation";
@@ -47,13 +48,45 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
   const existing = workspace.entities.find(
     (entity): entity is AppShortcut => entity.kind === "app" && entity.id === appId
   );
-  const [name, setName] = useState(existing?.name ?? "");
-  const [url, setUrl] = useState(existing?.url ?? "");
+  // task 028: the half-typed edit survives a close/reopen within the same
+  // browser tab, PER APP. Cleared on a successful save; never restored
+  // when it exactly equals the persisted values (nothing to remember).
+  const draftMemory = createSessionMemory<{ name: string; url: string }>(
+    `veladesk:edit-app-draft:v1:${appId}`,
+    1,
+    (value) =>
+      typeof value === "object" && value !== null &&
+      typeof (value as Record<string, unknown>).name === "string" &&
+      typeof (value as Record<string, unknown>).url === "string"
+        ? {
+            name: (value as Record<string, unknown>).name as string,
+            url: (value as Record<string, unknown>).url as string,
+          }
+        : undefined,
+  );
+  const savedDraft = draftMemory.read();
+  const [name, setName] = useState(() =>
+    savedDraft !== undefined && savedDraft.name !== (existing?.name ?? "")
+      ? savedDraft.name
+      : (existing?.name ?? "")
+  );
+  const [url, setUrl] = useState(() =>
+    savedDraft !== undefined && savedDraft.url !== (existing?.url ?? "")
+      ? savedDraft.url
+      : (existing?.url ?? "")
+  );
   const [openMode, setOpenMode] = useState<AppOpenMode>(existing?.openMode ?? "new-tab");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
+
+  useEffect(() => {
+    draftMemory.write({ name, url });
+    // The memory is keyed per dialog instance (appId); the two fields are
+    // the whole remembered shape.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- write-through per edit
+  }, [name, url]);
 
   if (existing === undefined) {
     return null;
@@ -107,6 +140,7 @@ export function EditAppDialog({ workspace, appId, onClose }: EditAppDialogProps)
         setBusy(false);
         return;
       }
+      draftMemory.clear();
       onClose();
     } catch (dialogError: unknown) {
       setError(

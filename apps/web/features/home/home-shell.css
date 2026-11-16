@@ -76,11 +76,22 @@
   font-family: var(--vd-font);
   font-size: 13.5px;
   cursor: pointer;
+  /* task 028: state-color easing on the shared CSS button (the designed
+     ui/Button keeps its GSAP press; this class only eases color) — the
+     reduce-motion gate below zeroes it. */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-button:hover:not(:disabled) {
   background: var(--vd-surface-strong);
   border-color: var(--vd-color-border-highlight);
+}
+
+.vela-button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .vela-button:focus-visible {
@@ -323,6 +334,10 @@
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+  /* task 028: hover state easing. */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    border-color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-picker__item:hover:not(:disabled) {
@@ -1556,7 +1571,9 @@
   font-weight: 220;
   letter-spacing: 0.03em;
   line-height: 1;
-  color: var(--vd-text);
+  /* task 028: a workspace/section clock color override wins; absent keeps
+     the theme foreground. */
+  color: var(--vd-helm-clock-color, var(--vd-text));
   /* t61 live clock: the label shadow for readability plus a whisper of
      accent glow, so the large thin numerals read as lit rather than
      printed — the same light logic as the horizon band below them. */
@@ -1619,7 +1636,8 @@
 .vela-helm-clock__seconds {
   display: inline-flex;
   align-items: center;
-  color: color-mix(in oklab, var(--vd-text) 74%, transparent);
+  /* task 028: follows the clock color override when one is set. */
+  color: color-mix(in oklab, var(--vd-helm-clock-color, var(--vd-text)) 74%, transparent);
 }
 
 /* The colon breathes on a slow sine (never under reduced motion): the
@@ -1655,7 +1673,8 @@
   font-size: var(--vd-helm-date-size);
   letter-spacing: 0.12em;
   line-height: var(--vd-helm-date-line);
-  color: var(--vd-text-muted);
+  /* task 028: a workspace/section date color override wins. */
+  color: var(--vd-helm-date-color, var(--vd-text-muted));
   text-shadow: var(--vd-label-shadow);
 }
 
@@ -2334,6 +2353,10 @@
   font-size: 12.5px;
   line-height: 1.2;
   cursor: pointer;
+  /* task 028: hover/selected state easing. */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-segmented__option:hover:not(:disabled) {
@@ -2419,6 +2442,10 @@
   background: transparent;
   color: var(--vd-text-muted);
   cursor: pointer;
+  /* task 028: hover state easing. */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-arrange-bar__history svg {
@@ -2647,7 +2674,9 @@ button.vela-sync-status:focus-visible {
      stays in lockstep with the responsive shrink. */
   width: var(--vd-slot-icon-size);
   height: var(--vd-slot-icon-size);
-  border-radius: calc(var(--vd-slot-icon-size) * 0.26);
+  /* task 028: a per-app --vd-app-icon-radius (0–50%) wins; absent keeps
+     the Helm baseline 26% of the slot. */
+  border-radius: var(--vd-app-icon-radius, calc(var(--vd-slot-icon-size) * 0.26));
   background: linear-gradient(
     150deg,
     color-mix(in oklab, var(--vd-color-dawn-3) 46%, var(--vd-color-bg-deep)),
@@ -2775,7 +2804,7 @@ button.vela-sync-status:focus-visible {
   flex-shrink: 0;
   width: var(--vd-slot-icon-size);
   height: var(--vd-slot-icon-size);
-  border-radius: calc(var(--vd-slot-icon-size) * 0.26);
+  border-radius: var(--vd-app-icon-radius, calc(var(--vd-slot-icon-size) * 0.26));
   font-size: calc(var(--vd-slot-icon-size) * 0.34);
   color: var(--vd-app-icon-fg, oklch(0.97 0.01 260));
 }
@@ -2860,7 +2889,9 @@ button.vela-sync-status:focus-visible {
   inset: 0;
   width: auto;
   height: auto;
-  border-radius: clamp(8px, 22cqmin, 26px);
+  /* task 028: the per-app corner radius (0–50%) wins; absent keeps the
+     fluid Helm clamp. */
+  border-radius: var(--vd-app-icon-radius, clamp(8px, 22cqmin, 26px));
 }
 
 .vela-canvas .vela-app-icon--surface[data-decoration="gradient"],
@@ -2970,7 +3001,8 @@ button.vela-sync-status:focus-visible {
  */
 .vela-canvas .vela-app-content__icon,
 .vela-grid-host .vela-app-content__icon {
-  border-radius: 30%;
+  /* task 028: the plate follows the same per-app radius. */
+  border-radius: var(--vd-app-icon-radius, 30%);
   transition:
     background-color var(--vd-motion-fast) var(--vd-motion-ease),
     box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
@@ -3028,7 +3060,8 @@ button.vela-sync-status:focus-visible {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: clamp(8px, 22cqmin, 26px);
+  /* task 028: the pointer reflection follows the tile radius. */
+  border-radius: var(--vd-app-icon-radius, clamp(8px, 22cqmin, 26px));
   pointer-events: none;
   opacity: 0;
   background: radial-gradient(
@@ -3078,8 +3111,9 @@ button.vela-sync-status:focus-visible {
   height: max(82%, calc(100% - 12px));
 }
 
-/* Generated text: the resolver's optical size (code-point aware). The
-   fallback also sizes a library icon's initials fallback sensibly. */
+/* Generated text: the resolver's optical size (code-point aware; the
+   resolver receives the REAL custom-text grapheme count since task 028).
+   The fallback also sizes a library icon's initials fallback sensibly. */
 .vela-app-content__icon .vela-app-icon__text {
   font-size: var(--vd-app-generated-text-size, calc(var(--vd-app-icon-box, 48px) * 0.3));
   line-height: 1;
@@ -3109,18 +3143,61 @@ button.vela-sync-status:focus-visible {
   pointer-events: none;
 }
 
-/* Icon text is ONE character (IconText) on a single line box. Fixed-slot
-   tiles draw it at --vd-icon-initial-scale × the tile's base text size
-   (0.34 × slot, dock 15px) — the old 2-letter size was too small for a
-   lone character. letter-spacing is zeroed: trailing tracking after a
-   single glyph would push it off centre. The adaptive desktop rule above
-   (.vela-app-content__icon …) sets its own resolver size and wins on
-   specificity. */
+/* Icon text is ONE character by default (auto initials) on a single line
+   box. Fixed-slot tiles draw it at --vd-icon-initial-scale × the tile's
+   base text size (0.34 × slot, dock 15px) — the old 2-letter size was too
+   small for a lone character. letter-spacing is zeroed: trailing tracking
+   after a single glyph would push it off centre. The adaptive desktop rule
+   above (.vela-app-content__icon …) sets its own resolver size and wins on
+   specificity.
+   task 028: CUSTOM text may hold up to 12 characters. The span carries
+   [data-text-fit] (single | short ≤4 | medium ≤8 | long ≤12); the fit
+   factor shrinks the glyph run so it stays inside the tile — "single"
+   resolves to 1 and keeps the exact pre-028 look. */
 .vela-app-icon__text {
-  font-size: calc(1em * var(--vd-icon-initial-scale, 1.4));
+  font-size: calc(1em * var(--vd-icon-initial-scale, 1.4) * var(--vd-app-text-fit, 1));
   line-height: 1;
   letter-spacing: 0;
   white-space: nowrap;
+}
+
+.vela-app-icon__text[data-text-fit="short"] {
+  --vd-app-text-fit: 0.6;
+}
+
+.vela-app-icon__text[data-text-fit="medium"] {
+  --vd-app-text-fit: 0.42;
+  white-space: normal;
+  text-align: center;
+  overflow: hidden;
+  line-height: 1.15;
+  padding: 0 2px;
+}
+
+.vela-app-icon__text[data-text-fit="long"] {
+  --vd-app-text-fit: 0.3;
+  white-space: normal;
+  text-align: center;
+  overflow: hidden;
+  line-height: 1.15;
+  padding: 0 2px;
+}
+
+/* The adaptive desktop context sizes from the resolver's pixel value — the
+   fit tiers there apply as a multiplier on the emitted size too, so a
+   12-character run cannot overflow a multi-cell box either. */
+.vela-app-content__icon .vela-app-icon__text[data-text-fit="short"],
+.vela-app-content__icon .vela-app-icon__text[data-text-fit="medium"],
+.vela-app-content__icon .vela-app-icon__text[data-text-fit="long"] {
+  font-size: calc(
+    var(--vd-app-generated-text-size, calc(var(--vd-app-icon-box, 48px) * 0.3)) *
+      var(--vd-app-text-fit, 1)
+  );
+  white-space: normal;
+  text-align: center;
+  overflow: hidden;
+  line-height: 1.15;
+  padding: 0 2px;
 }
 /* Dock: the button itself is the plate — same decoration contract, with the
    Auto fallbacks keyed to the quiet well above (a user-chosen
@@ -3470,6 +3547,10 @@ button.vela-sync-status:focus-visible {
   font-size: 13.5px;
   text-align: left;
   cursor: pointer;
+  /* task 028: row-hover easing (the menu's own entrance is GSAP). */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 /* Check gutter of a mutually exclusive choice (placement mode). */
@@ -4054,6 +4135,13 @@ button.vela-sync-status:focus-visible {
   overflow: hidden;
 }
 
+/* task 028 keep-alive: the panel stays MOUNTED through source-tab
+   switches and hides via the [hidden] attribute — this unlayered rule
+   must beat the Tailwind `flex` utility on the same element. */
+.vela-visual-editor__picker-bound[hidden] {
+  display: none;
+}
+
 /* Picker (019-D §10): HeroUI owns the search, scope tabs and source
    select; the styles below are only the layout scaffolding and the icon
    grid itself. The search area is sticky at the top, and the grid is a
@@ -4245,6 +4333,10 @@ header.vela-inspector__subject {
   background: transparent;
   color: var(--vd-text);
   cursor: pointer;
+  /* task 028: hover/selected easing (the entry stagger stays GSAP). */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    border-color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-icon-picker__cell:hover {

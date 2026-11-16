@@ -1,8 +1,10 @@
 import type {
+  PageHelmClockOverride,
   WorkspaceAppearancePreferences,
   WorkspaceInterfaceStyle,
   WorkspacePreferences,
 } from "./types";
+export type { PageHelmClockOverride };
 
 /**
  * Appearance defaults, resolution and semantic validation.
@@ -125,10 +127,77 @@ export function resolveWorkspaceAppearance(
   return preferences.appearance ?? DEFAULT_WORKSPACE_APPEARANCE;
 }
 
+/** The resolved clock/date presentation for one context (task 028). */
+export interface HelmClockPresentation {
+  readonly clockSizePx: number | undefined;
+  readonly clockColor: string | undefined;
+  readonly dateSizePx: number | undefined;
+  readonly dateColor: string | undefined;
+}
+
+/**
+ * The ONE clock/date presentation resolver (task 028): the visible
+ * section's override wins FIELD BY FIELD, the workspace appearance fills
+ * the rest, and anything still absent resolves to undefined (= the CSS
+ * fluid defaults). Mirrors `resolveModeAwareWallpaper`'s page → workspace
+ * inheritance. Pure — no mutation.
+ */
+export function resolveHelmClockPresentation(
+  appearance: WorkspaceAppearancePreferences,
+  page?: PageHelmClockOverride | undefined
+): HelmClockPresentation {
+  const clampSize = (value: number | undefined, min: number, max: number) =>
+    value !== undefined && Number.isInteger(value) && value >= min && value <= max
+      ? value
+      : undefined;
+  const exactHex = (value: string | undefined) =>
+    value !== undefined && ACCENT_COLOR_PATTERN.test(value) ? value.toLowerCase() : undefined;
+  return {
+    clockSizePx:
+      clampSize(page?.clockSizePx, MIN_HELM_CLOCK_SIZE_PX, MAX_HELM_CLOCK_SIZE_PX) ??
+      clampSize(appearance.helmClockSizePx, MIN_HELM_CLOCK_SIZE_PX, MAX_HELM_CLOCK_SIZE_PX),
+    clockColor:
+      exactHex(page?.clockColor) ?? exactHex(appearance.helmClockColor),
+    dateSizePx:
+      clampSize(page?.dateSizePx, MIN_HELM_DATE_SIZE_PX, MAX_HELM_DATE_SIZE_PX) ??
+      clampSize(appearance.helmDateSizePx, MIN_HELM_DATE_SIZE_PX, MAX_HELM_DATE_SIZE_PX),
+    dateColor:
+      exactHex(page?.dateColor) ?? exactHex(appearance.helmDateColor),
+  };
+}
+
+/** Exact `#RRGGBB` hex (either case) — the accentColor persistence gate. */
+const ACCENT_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
+/**
+ * Semantic ranges of the helm clock/date presentation (task 028). The
+ * clock must stay readable at the smallest desktop tile band (24px) yet
+ * never crowd the whole header (160px); the date is a quiet caption.
+ */
+export const MIN_HELM_CLOCK_SIZE_PX = 24;
+export const MAX_HELM_CLOCK_SIZE_PX = 160;
+export const MIN_HELM_DATE_SIZE_PX = 10;
+export const MAX_HELM_DATE_SIZE_PX = 36;
+
 /** One semantic defect of an appearance value. Enum legality is structural. */
 export type WorkspaceAppearanceValidationIssue =
   | {
       readonly type: "invalid-accent-hue";
+    }
+  | {
+      readonly type: "invalid-accent-color";
+    }
+  | {
+      readonly type: "invalid-helm-clock-size";
+    }
+  | {
+      readonly type: "invalid-helm-clock-color";
+    }
+  | {
+      readonly type: "invalid-helm-date-size";
+    }
+  | {
+      readonly type: "invalid-helm-date-color";
     }
   | {
       readonly type: "invalid-surface-opacity";
@@ -140,10 +209,42 @@ export type WorkspaceAppearanceValidationIssue =
       readonly type: "invalid-radius-px";
     };
 
+/** Semantic validation of one per-section clock/date override block. */
+export function validatePageHelmClockOverride(
+  override: PageHelmClockOverride
+): readonly WorkspaceAppearanceValidationIssue[] {
+  const issues: WorkspaceAppearanceValidationIssue[] = [];
+  const clockSize = override.clockSizePx;
+  if (
+    clockSize !== undefined &&
+    (!Number.isInteger(clockSize) ||
+      clockSize < MIN_HELM_CLOCK_SIZE_PX ||
+      clockSize > MAX_HELM_CLOCK_SIZE_PX)
+  ) {
+    issues.push({ type: "invalid-helm-clock-size" });
+  }
+  if (override.clockColor !== undefined && !ACCENT_COLOR_PATTERN.test(override.clockColor)) {
+    issues.push({ type: "invalid-helm-clock-color" });
+  }
+  const dateSize = override.dateSizePx;
+  if (
+    dateSize !== undefined &&
+    (!Number.isInteger(dateSize) ||
+      dateSize < MIN_HELM_DATE_SIZE_PX ||
+      dateSize > MAX_HELM_DATE_SIZE_PX)
+  ) {
+    issues.push({ type: "invalid-helm-date-size" });
+  }
+  if (override.dateColor !== undefined && !ACCENT_COLOR_PATTERN.test(override.dateColor)) {
+    issues.push({ type: "invalid-helm-date-color" });
+  }
+  return issues;
+}
+
 /**
  * Semantic validation of appearance values (structurally decoded data is
- * still in range). Deterministic issue order: accentHue, surfaceOpacity,
- * blurPx, radiusPx. Never throws, never mutates.
+ * still in range). Deterministic issue order: accentHue, accentColor,
+ * surfaceOpacity, blurPx, radiusPx. Never throws, never mutates.
  */
 export function validateWorkspaceAppearance(
   appearance: WorkspaceAppearancePreferences
@@ -152,6 +253,36 @@ export function validateWorkspaceAppearance(
 
   if (!Number.isInteger(appearance.accentHue) || appearance.accentHue < 0 || appearance.accentHue > 359) {
     issues.push({ type: "invalid-accent-hue" });
+  }
+  if (
+    appearance.accentColor !== undefined &&
+    !ACCENT_COLOR_PATTERN.test(appearance.accentColor)
+  ) {
+    issues.push({ type: "invalid-accent-color" });
+  }
+  const clockSize = appearance.helmClockSizePx;
+  if (
+    clockSize !== undefined &&
+    (!Number.isInteger(clockSize) ||
+      clockSize < MIN_HELM_CLOCK_SIZE_PX ||
+      clockSize > MAX_HELM_CLOCK_SIZE_PX)
+  ) {
+    issues.push({ type: "invalid-helm-clock-size" });
+  }
+  if (appearance.helmClockColor !== undefined && !ACCENT_COLOR_PATTERN.test(appearance.helmClockColor)) {
+    issues.push({ type: "invalid-helm-clock-color" });
+  }
+  const dateSize = appearance.helmDateSizePx;
+  if (
+    dateSize !== undefined &&
+    (!Number.isInteger(dateSize) ||
+      dateSize < MIN_HELM_DATE_SIZE_PX ||
+      dateSize > MAX_HELM_DATE_SIZE_PX)
+  ) {
+    issues.push({ type: "invalid-helm-date-size" });
+  }
+  if (appearance.helmDateColor !== undefined && !ACCENT_COLOR_PATTERN.test(appearance.helmDateColor)) {
+    issues.push({ type: "invalid-helm-date-color" });
   }
   if (
     !Number.isFinite(appearance.surfaceOpacity) ||

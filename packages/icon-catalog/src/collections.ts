@@ -28,6 +28,7 @@ export type { IconCollectionInfo } from "./meta";
  */
 const ICON_SET_LOADERS: Record<IconCollectionId, () => Promise<{ default: IconSet }>> = {
   "simple-icons": () => import("@iconify-json/simple-icons/icons.json"),
+  logos: () => import("@iconify-json/logos/icons.json"),
   lucide: () => import("@iconify-json/lucide/icons.json"),
   tabler: () => import("@iconify-json/tabler/icons.json"),
   ph: () => import("@iconify-json/ph/icons.json"),

@@ -1,5 +1,7 @@
 import type { AppShortcut } from "@veladesk/domain";
 
+import { clampGraphemes, graphemes } from "./generated-icon";
+
 /**
  * Adaptive app content layout (task 019-B) — the ONE pure resolver that
  * decides how an app's icon and title are composed INSIDE the outer box
@@ -136,7 +138,20 @@ export function generatedIconOpticalScale(codePoints: number): number {
   if (codePoints === 4) {
     return 0.56;
   }
-  return 0.48;
+  // task 028 multi-character tiers (5–12 graphemes): each step keeps the
+  // whole text inside the icon box — a 12-character text converges on the
+  // favicon glyph's optical weight, exactly like the legacy ≥5 tier did
+  // for it before custom text had length.
+  if (codePoints <= 6) {
+    return 0.44;
+  }
+  if (codePoints <= 8) {
+    return 0.36;
+  }
+  if (codePoints <= 10) {
+    return 0.3;
+  }
+  return 0.26;
 }
 
 /**
@@ -275,10 +290,24 @@ export function resolveAppContentLayoutForApp(
     labelVisible: visual?.labelVisible ?? true,
     iconKind: appContentIconKind(app),
     ...(app.icon.kind === "generated"
-      ? // Icon text always renders ONE character (IconText).
-        { generatedTextLength: 1 }
+      ? // AUTO text renders ONE character; CUSTOM text may hold up to
+        // twelve (task 028) and shrinks through the optical scale below.
+        { generatedTextLength: generatedIconGraphemeCount(app) }
       : {}),
   });
+}
+
+/**
+ * The grapheme count the generated tile will actually render: one for the
+ * auto initial, up to twelve for custom text (clamped the same way the
+ * renderer clamps). Lives on generated-icon's leaf helpers so this module
+ * stays free of the app-icon import cycle.
+ */
+function generatedIconGraphemeCount(app: AppShortcut): number {
+  if (app.icon.kind === "generated" && app.icon.source === "custom") {
+    return Math.max(1, graphemes(clampGraphemes(app.icon.text)).length);
+  }
+  return 1;
 }
 
 /**

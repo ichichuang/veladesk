@@ -231,26 +231,29 @@ describe("adaptive app content layout (019-B)", () => {
   });
 });
 
-describe("generated-text optical sizing (019-B §7)", () => {
-  it("decreases monotonically with code-point count, floored beyond 4", () => {
-    const scales = [1, 2, 3, 4, 5, 9].map((count) => generatedIconOpticalScale(count));
-    // Strict decrease across the supported 1–4 range…
-    for (let index = 1; index <= 4; index += 1) {
+describe("generated-text optical sizing (019-B §7, 12-char tiers task 028)", () => {
+  it("decreases monotonically with grapheme count, tiered through twelve", () => {
+    const scales = [1, 2, 3, 4, 6, 8, 10, 12].map((count) => generatedIconOpticalScale(count));
+    // Strict decrease across the whole 1–12 supported range…
+    for (let index = 1; index < scales.length; index += 1) {
       expect(scales[index]!).toBeLessThan(scales[index - 1]!);
     }
-    // …and a readable floor for longer custom text (never keeps shrinking).
-    expect(scales[4]!).toBe(scales[5]!);
     expect(generatedIconOpticalScale(1)).toBe(1);
+    // …and the smallest tier is the documented 12-character anchor.
+    expect(generatedIconOpticalScale(12)).toBe(0.26);
   });
 
   it("sizes generated text from the icon box and stays inside it", () => {
     const box = 240;
     const one = generated(box, box, 1);
     const four = generated(box, box, 4);
+    const twelve = generated(box, box, 12);
     expect(one.generatedTextSize).toBeDefined();
     expect(four.generatedTextSize).toBeDefined();
+    expect(twelve.generatedTextSize).toBeDefined();
     expect(one.generatedTextSize!).toBeGreaterThan(four.generatedTextSize!);
-    for (const layout of [one, four]) {
+    expect(four.generatedTextSize!).toBeGreaterThan(twelve.generatedTextSize!);
+    for (const layout of [one, four, twelve]) {
       expect(layout.generatedTextSize!).toBeLessThanOrEqual(layout.iconBoxSize);
       expect(layout.generatedTextSize!).toBeGreaterThan(0);
     }
@@ -349,14 +352,18 @@ describe("legacy scale compatibility (019-B §20)", () => {
     expect(hidden.mode).toBe("solo");
   });
 
-  it("sizes every generated icon for its ONE rendered character", () => {
+  it("sizes a generated icon for its REAL rendered length (task 028)", () => {
     const oneChar = resolveAppContentLayoutForApp(baseApp, 120, 120);
-    // Legacy 4-character custom text still renders a single character.
+    // Custom text now renders verbatim: 4 characters shrink optically.
     const fourChar = resolveAppContentLayoutForApp(
       { ...baseApp, icon: { kind: "generated", text: "ABCD", source: "custom" } } as unknown as AppShortcut,
       120,
       120,
     );
-    expect(fourChar.generatedTextSize).toBe(oneChar.generatedTextSize);
+    expect(fourChar.generatedTextSize).toBeLessThan(oneChar.generatedTextSize!);
+    // AUTO text stays a single initial at the full optical size.
+    expect(oneChar.generatedTextSize).toBe(
+      resolveAppContentLayout({ width: 120, height: 120, labelVisible: true, iconKind: "generated", generatedTextLength: 1 }).generatedTextSize,
+    );
   });
 });

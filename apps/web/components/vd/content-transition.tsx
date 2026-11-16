@@ -124,7 +124,12 @@ export function VdTabCrossfade({
 
   return (
     <div className={cn("relative flex min-h-0 flex-1 flex-col overflow-hidden", className)}>
-      <div key={tabKey} ref={liveRef} className="flex min-h-0 flex-1 flex-col">
+      {/* NO key on the live layer (task 028): a key change would remount the
+          children on every tab switch, which is exactly what keep-alive
+          panels (the icon picker's scope/search/paging/scroll) must not do.
+          The GSAP fromTo above already resets the layer's inline state, and
+          the leaving snapshot below carries the outgoing visuals. */}
+      <div ref={liveRef} className="flex min-h-0 flex-1 flex-col">
         {children}
       </div>
       {leaving !== null ? (

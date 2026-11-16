@@ -27,6 +27,12 @@ import {
   scopeMessageKey,
 } from "./icon-picker-model";
 import type { IconPickerEntry } from "./icon-picker-model";
+import {
+  readCachedIconPage,
+  readIconPickerSession,
+  writeCachedIconPage,
+  writeIconPickerSession,
+} from "./icon-picker-session";
 import { iconifyGlyphModel } from "./app-icon";
 import { glyphMaskStyle } from "./app-icon-renderer";
 import "./home-shell.css";
@@ -45,6 +51,13 @@ import "./home-shell.css";
  * null. Every request carries a generation token, so a slow response from an
  * abandoned query can never overwrite the current grid; a failed page keeps
  * the results already on screen and offers a retry.
+ *
+ * Persistence (task 028): the bundled catalog is pinned data, so every
+ * decoded page is cached under its URL (`icon-picker-session`) — revisiting
+ * a scope/collection/query renders INSTANTLY with no request and no loading
+ * flash. The browse context (scope / source / query) persists in
+ * localStorage and is restored on mount, so reopening the picker continues
+ * where the last session left off.
  */
 
 interface IconPickerProps {
@@ -74,10 +87,16 @@ interface AppendProgress {
 
 export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
   const { t } = useI18n();
-  const [scope, setScope] = useState<IconSearchScope>("recommended");
-  const [collection, setCollection] = useState<IconCollectionId | null>(null);
-  const [rawQuery, setRawQuery] = useState("");
-  const [query, setQuery] = useState("");
+  // The browse context restores from localStorage ONCE per mount (lazy
+  // initializer) — the picker continues where the last session (this
+  // dialog, the other picker, a previous reload) left off.
+  const [restored] = useState(readIconPickerSession);
+  const [scope, setScope] = useState<IconSearchScope>(restored?.scope ?? "recommended");
+  const [collection, setCollection] = useState<IconCollectionId | null>(
+    restored?.collection ?? null
+  );
+  const [rawQuery, setRawQuery] = useState(restored?.query ?? "");
+  const [query, setQuery] = useState(restored?.query ?? "");
   const [results, setResults] = useState<PickerResults | null>(null);
   const [append, setAppend] = useState<AppendProgress | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -100,7 +119,19 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
     [query, scope, collection]
   );
 
+  // The browse context writes through on every settled change — a reload
+  // (or the other picker's next mount) restores exactly this state.
   useEffect(() => {
+    writeIconPickerSession({ scope, collection, query: rawQuery });
+  }, [scope, collection, rawQuery]);
+
+  useEffect(() => {
+    // Pinned catalog content: a URL seen before decodes to the same page.
+    // A cache HIT renders through render-time derivation below (no
+    // setState inside effects); only a genuine miss touches the network.
+    if (readCachedIconPage(baseUrl) !== undefined) {
+      return;
+    }
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     let cancelled = false;
@@ -117,6 +148,9 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
           return;
         }
         const decoded = decodeIconSearchPage(body);
+        if (decoded !== undefined) {
+          writeCachedIconPage(baseUrl, decoded);
+        }
         setResults(
           decoded === undefined
             ? { key: baseUrl, entries: [], total: 0, nextOffset: null, failed: true }
@@ -135,8 +169,18 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
   }, [baseUrl]);
 
   // Results and append progress only apply to the URL currently requested —
-  // a leftover from an abandoned query is invisible by derivation.
-  const current = results !== null && results.key === baseUrl ? results : null;
+  // a leftover from an abandoned query is invisible by derivation. A cached
+  // page (pinned catalog ⇒ immutable per URL) renders immediately here.
+  // Memoized so the object identity is stable for the loadMore callback.
+  const cachedPage = readCachedIconPage(baseUrl);
+  const current = useMemo(() => {
+    if (results !== null && results.key === baseUrl) {
+      return results;
+    }
+    return cachedPage !== undefined
+      ? { key: baseUrl, ...cachedPage, failed: false }
+      : null;
+  }, [results, baseUrl, cachedPage]);
   const entries = current?.entries ?? [];
   const failed = current?.failed === true;
   const nextOffset = current?.nextOffset ?? null;
@@ -147,10 +191,13 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
   const appendFailed = appendState?.failed === true;
 
   const loadMore = useCallback(() => {
-    const offset = results !== null && results.key === baseUrl ? results.nextOffset : null;
+    const offset = current !== null && current.key === baseUrl ? current.nextOffset : null;
     if (offset === null || appending) {
       return;
     }
+    // The entries the NEXT page appends onto — the derived view (cache
+    // hits never enter state) is the single source of truth here.
+    const baseEntries = current.entries;
     const generation = generationRef.current;
     setAppend({ key: baseUrl, busy: true, failed: false });
     window
@@ -170,16 +217,17 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
           setAppend({ key: baseUrl, busy: false, failed: true });
           return;
         }
-        setResults((previous) =>
-          previous === null || previous.key !== baseUrl
-            ? previous
-            : {
-                ...previous,
-                entries: appendIconPickerPage(previous.entries, decoded.entries),
-                total: decoded.total,
-                nextOffset: decoded.nextOffset,
-              }
+        writeCachedIconPage(
+          buildIconSearchUrl({ query, scope, collection, offset }),
+          decoded
         );
+        setResults({
+          key: baseUrl,
+          entries: appendIconPickerPage(baseEntries, decoded.entries),
+          total: decoded.total,
+          nextOffset: decoded.nextOffset,
+          failed: false,
+        });
         setAppend({ key: baseUrl, busy: false, failed: false });
       })
       .catch(() => {
@@ -187,7 +235,7 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
           setAppend({ key: baseUrl, busy: false, failed: true });
         }
       });
-  }, [appending, baseUrl, collection, query, results, scope]);
+  }, [appending, baseUrl, collection, current, query, scope]);
 
   function chooseScope(next: IconSearchScope) {
     setScope(next);

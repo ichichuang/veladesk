@@ -11,8 +11,8 @@ import type {
 } from "./types";
 
 /**
- * Deterministic catalog search and paginated browsing over the nine
- * bundled collections.
+ * Deterministic catalog search and paginated browsing over the bundled
+ * collections.
  *
  * The whole index lives in memory: every collection is parsed once per
  * process (lazy singleton in `collections.ts`), normalized into a flat
@@ -47,18 +47,51 @@ const ICON_SEARCH_SCOPES: readonly IconSearchScope[] = [
 
 /**
  * The curated front page: a hand-picked mix of monochrome outlines and
- * full-color glyphs across all nine collections, shown when the picker
+ * full-color glyphs across the bundled collections, shown when the picker
  * opens (scope=recommended, empty query). Everything is a REAL icon name —
  * an entry that stops resolving is skipped, never rendered as a blank.
  */
 const RECOMMENDED_ICONS: readonly { collection: IconCollectionId; name: string }[] = [
+  // Modern AI assistants first (2026-11 request): every entry is a REAL
+  // bundled name — entries that stop resolving are skipped, never blank.
+  { collection: "logos", name: "grok" },
+  { collection: "simple-icons", name: "googlegemini" },
+  { collection: "logos", name: "google-gemini" },
+  { collection: "simple-icons", name: "deepseek" },
+  { collection: "logos", name: "deepseek" },
+  { collection: "simple-icons", name: "kimi" },
+  { collection: "logos", name: "kimi" },
+  { collection: "simple-icons", name: "qwen" },
+  { collection: "logos", name: "qwen" },
+  { collection: "simple-icons", name: "claude" },
+  { collection: "logos", name: "claude" },
+  // NOTE: simple-icons marks `openai` hidden upstream (search/browse skip
+  // hidden names; the SVG route still serves it), so the curated page
+  // offers the logos set's OpenAI glyph instead.
+  { collection: "logos", name: "openai" },
+  { collection: "logos", name: "midjourney" },
+  { collection: "simple-icons", name: "perplexity" },
+  { collection: "logos", name: "perplexity" },
+  { collection: "simple-icons", name: "cursor" },
+  { collection: "simple-icons", name: "anthropic" },
+  { collection: "simple-icons", name: "mistralai" },
+  { collection: "simple-icons", name: "moonshotai" },
+  { collection: "logos", name: "moonshot-ai" },
+  { collection: "simple-icons", name: "huggingface" },
+  { collection: "simple-icons", name: "ollama" },
+  { collection: "simple-icons", name: "githubcopilot" },
+  { collection: "logos", name: "github-copilot" },
+  { collection: "simple-icons", name: "notion" },
+  { collection: "simple-icons", name: "figma" },
+  // Everyday brand staples.
   { collection: "simple-icons", name: "github" },
   { collection: "simple-icons", name: "youtube" },
   { collection: "simple-icons", name: "spotify" },
-  { collection: "simple-icons", name: "figma" },
   { collection: "simple-icons", name: "googlechrome" },
   { collection: "simple-icons", name: "discord" },
-  { collection: "simple-icons", name: "notion" },
+  { collection: "logos", name: "telegram" },
+  { collection: "logos", name: "whatsapp" },
+  // General-purpose outline tools.
   { collection: "lucide", name: "house" },
   { collection: "lucide", name: "search" },
   { collection: "lucide", name: "settings" },
@@ -76,6 +109,7 @@ const RECOMMENDED_ICONS: readonly { collection: IconCollectionId; name: string }
   { collection: "ph", name: "envelope" },
   { collection: "ph", name: "camera" },
   { collection: "ph", name: "gear" },
+  // Full-color glyphs.
   { collection: "fluent-color", name: "mail-24" },
   { collection: "fluent-color", name: "calendar-24" },
   { collection: "fluent-color", name: "cloud-24" },

@@ -249,19 +249,27 @@ describe("buildAppIconStyleVars", () => {
 });
 
 describe("appIconDisplayText", () => {
-  it("shows ONE character: the custom text's first, else the name's initial", () => {
+  it("renders custom text verbatim up to twelve characters (task 028)", () => {
     expect(appIconDisplayText(makeApp({ icon: { kind: "generated", text: "GI" } }))).toBe("G");
-    expect(
-      appIconDisplayText(makeApp({ icon: { kind: "generated", text: "AI", source: "custom" } }))
-    ).toBe("A");
-    // Legacy 2–4 character custom text is cut at render time (no migration).
+    expect(appIconDisplayText(makeApp({ icon: { kind: "generated", text: "AI", source: "custom" } }))).toBe(
+      "AI",
+    );
+    // Custom text renders verbatim up to the twelve-grapheme bound.
     expect(
       appIconDisplayText(makeApp({ icon: { kind: "generated", text: "飞书文档", source: "custom" } }))
-    ).toBe("飞");
+    ).toBe("飞书文档");
     // Auto text always follows the CURRENT name, even if stale data says otherwise.
     expect(
       appIconDisplayText(makeApp({ name: "微信", icon: { kind: "generated", text: "OL", source: "auto" } }))
     ).toBe("微");
+  });
+
+  it("cuts legacy custom text beyond twelve graphemes at render time", () => {
+    expect(
+      appIconDisplayText(
+        makeApp({ icon: { kind: "generated", text: "一二三四五六七八九十11 1234", source: "custom" } })
+      )
+    ).toBe("一二三四五六七八九十11");
   });
 
   it("falls back to derived initials for blank generated text", () => {

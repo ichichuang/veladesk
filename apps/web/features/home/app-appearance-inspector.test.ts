@@ -228,8 +228,10 @@ describe("inspector information architecture (019-C §8/§9)", () => {
     expect(inspectorSource).toMatch(/vela-visual-label-visible/);
     expect(inspectorSource).toMatch(/vela-appearance-inspector__decoration\b/);
     expect(inspectorSource).toMatch(/visualEditor\.changeIcon/);
-    // No sizing controls, no sliders (019-B stays intact).
-    expect(inspectorSource).not.toMatch(/Slider/);
+    // 019-B still holds: the deprecated per-app sizing multipliers never
+    // return. task 028 adds EXACTLY ONE slider — the tile corner radius —
+    // wired through its own i18n label.
+    expect(inspectorSource).toMatch(/visualEditor\.iconCornerRadius/);
     expect(inspectorSource).not.toMatch(/iconScale|labelScale/);
   });
 

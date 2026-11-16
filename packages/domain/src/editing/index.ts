@@ -42,6 +42,7 @@ export {
   addPage,
   renamePage,
   replacePageWallpaper,
+  replacePageHelmClock,
   replacePageModeWallpaper,
   movePage,
   setDefaultPage,

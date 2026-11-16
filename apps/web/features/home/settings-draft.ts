@@ -1,5 +1,6 @@
 import {
   inferInterfaceStyle,
+  replacePageHelmClock,
   replacePageModeWallpaper,
   replacePageWallpaper,
   replaceWorkspacePreferences,
@@ -9,6 +10,7 @@ import {
 } from "@veladesk/domain";
 import type {
   DesktopPageId,
+  PageHelmClockOverride,
   WallpaperConfig,
   WorkspaceEditResult,
   WorkspaceAppearancePreferences,
@@ -59,6 +61,16 @@ export interface WorkspaceBackgroundPatches {
   readonly pages: Readonly<Record<DesktopPageId, PageBackgroundPatch>>;
 }
 
+/**
+ * Scoped clock/date patches (task 028): the WORKSPACE fields live inside
+ * the appearance (updateAppearance writes them); this record holds the
+ * per-section overrides. `undefined` = untouched; `null` = follow the
+ * workspace (the override is removed); a value = the section override.
+ */
+export interface WorkspaceHelmClockPatches {
+  readonly pages: Readonly<Record<DesktopPageId, PageHelmClockOverride | null | undefined>>;
+}
+
 export interface WorkspaceSettingsDraft {
   readonly appearance: WorkspaceAppearancePreferences;
 
@@ -77,6 +89,8 @@ export interface WorkspaceSettingsDraft {
   readonly motion?: WorkspaceMotionPreferences | undefined;
 
   readonly background: WorkspaceBackgroundPatches;
+
+  readonly helmClock: WorkspaceHelmClockPatches;
 }
 
 /**
@@ -98,6 +112,7 @@ export function createWorkspaceSettingsDraft(
     gridGapPx: resolveGridGapPx(workspace.preferences),
     motion: workspace.preferences.motion,
     background: { workspace: undefined, pages: {} },
+    helmClock: { pages: {} },
   };
 }
 
@@ -151,6 +166,34 @@ function backgroundPatchesEqual(
   );
 }
 
+/** Field-by-field equality of one page's clock/date override (or null). */
+function pageHelmClockOverrideEqual(
+  a: PageHelmClockOverride | null | undefined,
+  b: PageHelmClockOverride | null | undefined
+): boolean {
+  if (a === undefined || b === undefined || a === null || b === null) {
+    return a === b;
+  }
+  return (
+    a.clockSizePx === b.clockSizePx &&
+    a.clockColor === b.clockColor &&
+    a.dateSizePx === b.dateSizePx &&
+    a.dateColor === b.dateColor
+  );
+}
+
+/** Structural equality for the scoped clock/date patches (stable keys). */
+function helmClockPatchesEqual(a: WorkspaceHelmClockPatches, b: WorkspaceHelmClockPatches): boolean {
+  const aKeys = Object.keys(a.pages).sort();
+  const bKeys = Object.keys(b.pages).sort();
+  if (aKeys.length !== bKeys.length || aKeys.some((key, index) => key !== bKeys[index])) {
+    return false;
+  }
+  return aKeys.every((key) =>
+    pageHelmClockOverrideEqual(a.pages[key as DesktopPageId], b.pages[key as DesktopPageId])
+  );
+}
+
 /** Structural equality of one page's patch (layer by layer). */
 function pageBackgroundPatchesEqual(
   a: PageBackgroundPatch | undefined,
@@ -184,6 +227,7 @@ export function areWorkspaceSettingsDraftsEqual(
     a.gridGapPx === b.gridGapPx &&
     a.appearance.colorMode === b.appearance.colorMode &&
     a.appearance.accentHue === b.appearance.accentHue &&
+    a.appearance.accentColor === b.appearance.accentColor &&
     a.appearance.wallpaperPreset === b.appearance.wallpaperPreset &&
     a.appearance.interfaceStyle === b.appearance.interfaceStyle &&
     // The raw surface fields stay part of equality: an external change to
@@ -195,8 +239,15 @@ export function areWorkspaceSettingsDraftsEqual(
     // iconSize has no control in V2 but stays part of equality: an external
     // change to it still counts as a different draft.
     a.appearance.iconSize === b.appearance.iconSize &&
+    // Helm clock/date presentation (task 028): the workspace fields are
+    // plain optional strings/numbers — compare them exactly.
+    a.appearance.helmClockSizePx === b.appearance.helmClockSizePx &&
+    a.appearance.helmClockColor === b.appearance.helmClockColor &&
+    a.appearance.helmDateSizePx === b.appearance.helmDateSizePx &&
+    a.appearance.helmDateColor === b.appearance.helmDateColor &&
     motionPreferencesEqual(a.motion, b.motion) &&
-    backgroundPatchesEqual(a.background, b.background)
+    backgroundPatchesEqual(a.background, b.background) &&
+    helmClockPatchesEqual(a.helmClock, b.helmClock)
   );
 }
 
@@ -233,10 +284,39 @@ export function applySettingsDraftToSnapshot(
   if (!replaced.ok) {
     return replaced;
   }
-  return applyBackgroundPatchesToSnapshot(replaced.workspace, {
+  const withBackground = applyBackgroundPatchesToSnapshot(replaced.workspace, {
     workspace: undefined,
     pages: draft.background.pages,
   });
+  if (!withBackground.ok) {
+    return withBackground;
+  }
+  return applyHelmClockPatchesToSnapshot(withBackground.workspace, draft.helmClock);
+}
+
+/**
+ * Applies the draft's scoped clock/date patches through the SAME domain op
+ * a Save uses (task 028): `null` removes the section override (follow the
+ * workspace), a value writes it. Stops at the FIRST refusal — Save and
+ * preview can never disagree.
+ */
+export function applyHelmClockPatchesToSnapshot(
+  base: WorkspaceSnapshot,
+  helmClock: WorkspaceHelmClockPatches
+): WorkspaceEditResult {
+  let result: WorkspaceEditResult = { ok: true, workspace: base };
+  for (const [pageId, patch] of Object.entries(helmClock.pages)) {
+    if (patch === undefined) {
+      continue;
+    }
+    const current: WorkspaceSnapshot = result.ok ? result.workspace : base;
+    const next = replacePageHelmClock(current, pageId as DesktopPageId, patch);
+    if (!next.ok) {
+      return next;
+    }
+    result = next;
+  }
+  return result;
 }
 
 /**

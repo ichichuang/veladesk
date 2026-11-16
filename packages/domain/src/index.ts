@@ -11,12 +11,23 @@ export type { CreateEmptyWorkspaceArgs } from "./workspace";
 export {
   DEFAULT_WORKSPACE_APPEARANCE,
   INTERFACE_STYLES,
+  MAX_HELM_CLOCK_SIZE_PX,
+  MAX_HELM_DATE_SIZE_PX,
+  MIN_HELM_CLOCK_SIZE_PX,
+  MIN_HELM_DATE_SIZE_PX,
   inferInterfaceStyle,
+  resolveHelmClockPresentation,
   resolveInterfaceStyle,
   resolveWorkspaceAppearance,
+  validatePageHelmClockOverride,
   validateWorkspaceAppearance,
 } from "./appearance";
-export type { InterfaceStyleParameters, WorkspaceAppearanceValidationIssue } from "./appearance";
+export type {
+  HelmClockPresentation,
+  InterfaceStyleParameters,
+  PageHelmClockOverride,
+  WorkspaceAppearanceValidationIssue,
+} from "./appearance";
 
 export {
   DEFAULT_GRID_GAP_PX,
@@ -40,8 +51,10 @@ export {
   DEFAULT_APP_LABEL_VISIBLE,
   DEFAULT_APP_VISUAL_STYLE,
   MAX_APP_LABEL_SCALE,
+  MAX_ICON_CORNER_RADIUS,
   MAX_ICON_SCALE,
   MIN_APP_LABEL_SCALE,
+  MIN_ICON_CORNER_RADIUS,
   MIN_ICON_SCALE,
   isValidAppHexColor,
   resolveAppVisualStyle,
@@ -193,4 +206,4 @@ export type {
   WallpaperProvenance,
   WorkspaceWallpaperDraft,
 } from "./wallpaper";
-export { replacePageWallpaper } from "./editing";
+export { replacePageHelmClock, replacePageWallpaper } from "./editing";

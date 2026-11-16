@@ -112,6 +112,15 @@ export interface AppVisualStyle {
   readonly foregroundColor?: string;
 
   readonly decorationColor?: string;
+
+  /**
+   * The icon tile's corner radius as a PERCENT of the icon box (task 028):
+   * integer 0–50 (0 = square corners, 50 = fully round). Absent means the
+   * per-context CSS default (≈26% slots, the fluid clamp on desktop
+   * surfaces) — never a duplicated literal. Optional for backward
+   * compatibility: pre-028 snapshots stay valid forever.
+   */
+  readonly iconCornerRadius?: number;
 }
 
 /**
@@ -234,6 +243,15 @@ export interface DesktopPage {
   readonly canvas?: CanvasLayout;
 
   /**
+   * Per-section clock/date presentation override (task 028). Absent means
+   * the section FOLLOWS the workspace appearance fields (which may
+   * themselves be absent = the CSS defaults) — the exact inheritance
+   * pattern of `wallpaper` above, field by field. Optional for backward
+   * compatibility: pre-028 snapshots stay valid forever.
+   */
+  readonly helmClock?: PageHelmClockOverride;
+
+  /**
    * The RETAINED geometry of the placement mode the page is NOT in (P1):
    * the freeform rects kept while the page renders in Grid, or the Grid
    * spans kept while it renders in Freeform. Switching modes swaps the
@@ -246,6 +264,20 @@ export interface DesktopPage {
    * like they always did.
    */
   readonly retainedCanvas?: CanvasLayout;
+}
+
+/**
+ * Per-section clock/date presentation override (task 028). Every field is
+ * optional: absent means "follow the workspace appearance" for THAT field,
+ * so a section can override only its clock color while sizes inherit.
+ * Ranges are semantic (`validateWorkspaceAppearance`): sizes are integers
+ * in px, colors exact `#RRGGBB`.
+ */
+export interface PageHelmClockOverride {
+  readonly clockSizePx?: number;
+  readonly clockColor?: string;
+  readonly dateSizePx?: number;
+  readonly dateColor?: string;
 }
 
 /**
@@ -297,6 +329,16 @@ export interface WorkspaceAppearancePreferences {
 
   readonly accentHue: number;
 
+  /**
+   * The EXACT custom accent color (task 028): exact `#RRGGBB` hex that
+   * overrides the hue-derived token policy when present. Absent means the
+   * accent renders from `accentHue` through the token layer's oklch
+   * policy — the classic curated look. Curated swatches always clear this
+   * field; only the custom picker writes it. Optional for backward
+   * compatibility: pre-028 snapshots stay valid forever.
+   */
+  readonly accentColor?: string;
+
   readonly wallpaperPreset: WorkspaceWallpaperPreset;
 
   /**
@@ -320,6 +362,18 @@ export interface WorkspaceAppearancePreferences {
   readonly interfaceStyle?: WorkspaceInterfaceStyle;
 
   readonly iconSize: WorkspaceIconSize;
+
+  /**
+   * Workspace-wide helm clock/date presentation (task 028). All fields are
+   * optional: absent resolves to the CSS fluid defaults. Per-section
+   * overrides live on `DesktopPage.helmClock` and win field by field.
+   * Ranges: clock 24–160px, date 10–36px (integers); colors exact
+   * `#RRGGBB`. Optional as a whole for backward compatibility.
+   */
+  readonly helmClockSizePx?: number;
+  readonly helmClockColor?: string;
+  readonly helmDateSizePx?: number;
+  readonly helmDateColor?: string;
 }
 
 /** How strictly the workspace honors `prefers-reduced-motion`. */

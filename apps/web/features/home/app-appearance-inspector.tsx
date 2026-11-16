@@ -10,10 +10,23 @@ import type {
   ClipboardEvent as ReactClipboardEvent,
 } from "react";
 import type { AppShortcut, WorkspaceSnapshot } from "@veladesk/domain";
-import { replaceApp } from "@veladesk/domain";
+import {
+  MAX_ICON_CORNER_RADIUS,
+  MIN_ICON_CORNER_RADIUS,
+  replaceApp,
+} from "@veladesk/domain";
 import type { WorkspaceEditFailureReason } from "@veladesk/domain";
 import type { PreparedAsset } from "@veladesk/assets/core";
-import { Button, CloseButton, Input, Label, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import {
+  Button,
+  CloseButton,
+  Input,
+  Label,
+  Slider,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+} from "@heroui/react";
 import { ChevronRight } from "lucide-react";
 
 import { cn } from "@components/ui/cn";
@@ -352,6 +365,10 @@ export function AppAppearanceInspector({
 
   const showForegroundControl = appGlyphColorModel(projected) === "tinted";
 
+  // task 028: the slider needs a concrete value; the CSS-default state
+  // displays as the slot baseline (26%) until the user actually moves it.
+  const radiusValue = draft.iconCornerRadius ?? 26;
+
   return (
     <Dialog modal={false} open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogContent
@@ -508,6 +525,58 @@ export function AppAppearanceInspector({
               value={draft.decorationColor}
               onChange={(decorationColor) => patch({ decorationColor })}
             />
+
+            {/* task 028: the tile corner radius, 0 (square) — 50% (round).
+                Absent resolves to the CSS per-context default (≈26%). The
+                −/+ steppers flank the slider exactly like the Settings gap
+                control; every drag is one draft patch, autosaved as usual. */}
+            <div className="flex min-h-9 items-center gap-3">
+              <span className="text-sm font-medium text-vdu-fg">
+                {t("visualEditor.iconCornerRadius")}
+              </span>
+              <div className="flex w-full items-center gap-3">
+                <Button
+                  variant="secondary"
+                  aria-label={`${t("visualEditor.iconCornerRadius")} −1`}
+                  isDisabled={radiusValue - 1 < MIN_ICON_CORNER_RADIUS}
+                  className="size-8 min-w-0 shrink-0 px-0"
+                  onPress={() => patch({ iconCornerRadius: Math.max(MIN_ICON_CORNER_RADIUS, radiusValue - 1) })}
+                >
+                  −
+                </Button>
+                <Slider
+                  aria-label={t("visualEditor.iconCornerRadius")}
+                  minValue={MIN_ICON_CORNER_RADIUS}
+                  maxValue={MAX_ICON_CORNER_RADIUS}
+                  step={1}
+                  value={radiusValue}
+                  onChange={(value) => {
+                    const next = Array.isArray(value) ? value[0] : value;
+                    if (next !== undefined) {
+                      patch({ iconCornerRadius: next });
+                    }
+                  }}
+                  className="flex-1"
+                >
+                  <Slider.Track>
+                    <Slider.Fill />
+                    <Slider.Thumb />
+                  </Slider.Track>
+                </Slider>
+                <Button
+                  variant="secondary"
+                  aria-label={`${t("visualEditor.iconCornerRadius")} +1`}
+                  isDisabled={radiusValue + 1 > MAX_ICON_CORNER_RADIUS}
+                  className="size-8 min-w-0 shrink-0 px-0"
+                  onPress={() => patch({ iconCornerRadius: Math.min(MAX_ICON_CORNER_RADIUS, radiusValue + 1) })}
+                >
+                  +
+                </Button>
+                <output className="w-10 text-right font-mono text-[13px] text-vdu-fg-muted">
+                  {radiusValue}%
+                </output>
+              </div>
+            </div>
           </section>
 
           {error !== null ? (
@@ -609,8 +678,14 @@ function AppearanceIconPickerDialog({
     if (region === null || header === null) {
       return;
     }
+    // Keep-alive (task 028): the hidden library panel keeps its own
+    // scroller mounted — it must not hold the header shadow while an
+    // unscrolled sibling tab is visible.
     const scrolled = Array.from(region.querySelectorAll("[data-vd-scroll]")).some(
-      (scroller) => scroller instanceof HTMLElement && scroller.scrollTop > 0
+      (scroller) =>
+        scroller instanceof HTMLElement &&
+        scroller.scrollTop > 0 &&
+        scroller.offsetParent !== null
     );
     header.setAttribute("data-scrolled", scrolled ? "true" : "false");
   }, []);
@@ -745,14 +820,21 @@ function AppearanceIconPickerDialog({
           {/* t171: the window NEVER resizes on a tab switch — only this
               content region crossfades (12px directional travel, 200ms;
               the library grid's cells stagger in). Every branch is its
-              own scroll container, so wheeling stays inside the window. */}
+              own scroll container, so wheeling stays inside the window.
+              task 028 keep-alive: the LIBRARY panel stays mounted through
+              tab switches (hidden, not unmounted) so its scope/source/
+              search/paging/scroll survive Library ↔ Text ↔ Upload round
+              trips; the module page cache makes even a fresh mount
+              instant. */}
           <VdTabCrossfade
             tabKey={draft.source}
             direction={direction}
             staggerSelector={draft.source === "library" ? ".vela-icon-picker__cell" : undefined}
           >
-          {draft.source === "library" ? (
-            <div className="vela-visual-editor__picker-bound flex min-h-0 flex-1 flex-col">
+            <div
+              className="vela-visual-editor__picker-bound flex min-h-0 flex-1 flex-col"
+              hidden={draft.source !== "library" ? true : undefined}
+            >
               <IconPicker
                 selectedId={draft.libraryIcon.length > 0 ? draft.libraryIcon : null}
                 onSelect={(iconId) => {
@@ -761,72 +843,73 @@ function AppearanceIconPickerDialog({
                 }}
               />
             </div>
-          ) : draft.source === "upload" ? (
-            <VdScrollArea
-              axis="y"
-              className="flex min-h-0 flex-1 flex-col gap-3 overscroll-contain px-5 py-4"
-            >
-              <div
-                className="vela-upload-dropzone"
-                data-busy={uploadBusy ? "true" : undefined}
-                tabIndex={0}
-                role="button"
-                aria-label={t("visualEditor.upload.dropHere")}
-                onClick={() => fileInputRef.current?.click()}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    fileInputRef.current?.click();
-                  }
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={handleDrop}
-                onPaste={handlePaste}
+            {draft.source === "upload" ? (
+              <VdScrollArea
+                axis="y"
+                className="flex min-h-0 flex-1 flex-col gap-3 overscroll-contain px-5 py-4"
               >
-                {pendingUpload !== null ? (
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element -- local object URL, not an optimizable remote image */}
-                    <img
-                      className="vela-upload-dropzone__preview"
-                      src={pendingUpload.previewUrl}
-                      alt=""
-                      draggable={false}
-                    />
-                  </>
-                ) : (
-                  <span className="vela-upload-dropzone__hint">
-                    {draft.assetId.length > 0
-                      ? t("visualEditor.upload.replaceHint")
-                      : t("visualEditor.upload.dropHere")}
-                  </span>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="vela-upload-input"
-                accept=".png,.jpg,.jpeg,.webp,.avif,image/png,image/jpeg,image/webp,image/avif"
-                onChange={handleFileChange}
-                aria-hidden="true"
-                tabIndex={-1}
-              />
-              {uploadIssue !== null ? (
-                <p className="text-[13px] text-vdu-danger" role="alert">
-                  {describeUploadIssue(uploadIssue, t)}
+                <div
+                  className="vela-upload-dropzone"
+                  data-busy={uploadBusy ? "true" : undefined}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={t("visualEditor.upload.dropHere")}
+                  onClick={() => fileInputRef.current?.click()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={handleDrop}
+                  onPaste={handlePaste}
+                >
+                  {pendingUpload !== null ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element -- local object URL, not an optimizable remote image */}
+                      <img
+                        className="vela-upload-dropzone__preview"
+                        src={pendingUpload.previewUrl}
+                        alt=""
+                        draggable={false}
+                      />
+                    </>
+                  ) : (
+                    <span className="vela-upload-dropzone__hint">
+                      {draft.assetId.length > 0
+                        ? t("visualEditor.upload.replaceHint")
+                        : t("visualEditor.upload.dropHere")}
+                    </span>
+                  )}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="vela-upload-input"
+                  accept=".png,.jpg,.jpeg,.webp,.avif,image/png,image/jpeg,image/webp,image/avif"
+                  onChange={handleFileChange}
+                  aria-hidden="true"
+                  tabIndex={-1}
+                />
+                {uploadIssue !== null ? (
+                  <p className="text-[13px] text-vdu-danger" role="alert">
+                    {describeUploadIssue(uploadIssue, t)}
+                  </p>
+                ) : null}
+                <p className="text-[13px] leading-relaxed text-vdu-fg-muted">
+                  {t("visualEditor.upload.hint")}
                 </p>
-              ) : null}
-              <p className="text-[13px] leading-relaxed text-vdu-fg-muted">
-                {t("visualEditor.upload.hint")}
-              </p>
-            </VdScrollArea>
-          ) : (
-            <VdScrollArea
-              axis="y"
-              className="flex min-h-0 flex-1 flex-col overscroll-contain px-5 py-4"
-            >
-              <GeneratedTextControls draft={draft} autoText={autoGeneratedText(projected)} patch={patch} withHints />
-            </VdScrollArea>
-          )}
+              </VdScrollArea>
+            ) : null}
+            {draft.source === "text" ? (
+              <VdScrollArea
+                axis="y"
+                className="flex min-h-0 flex-1 flex-col overscroll-contain px-5 py-4"
+              >
+                <GeneratedTextControls draft={draft} autoText={autoGeneratedText(projected)} patch={patch} withHints />
+              </VdScrollArea>
+            ) : null}
           </VdTabCrossfade>
         </div>
       </DialogContent>

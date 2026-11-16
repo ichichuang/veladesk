@@ -39,6 +39,19 @@ describe("buildAppearanceTheme", () => {
     });
   });
 
+  it("emits the exact custom accent color, lowercased, only when present (task 028)", () => {
+    const themed = buildAppearanceTheme(appearanceWith({ accentColor: "#FF00AA" }));
+    expect(themed.style["--vd-color-accent"]).toBe("#ff00aa");
+    // Absent = the hue policy stays authoritative — no override key.
+    expect(buildAppearanceTheme(DEFAULT_WORKSPACE_APPEARANCE).style["--vd-color-accent"]).toBeUndefined();
+    // A structurally-decoded junk string never reaches CSS.
+    expect(
+      buildAppearanceTheme(appearanceWith({ accentColor: "crimson" as unknown as string })).style[
+        "--vd-color-accent"
+      ],
+    ).toBeUndefined();
+  });
+
   it("resolves the material tier from the persisted interfaceStyle, or infers the nearest preset (P1)", () => {
     // Persisted style wins verbatim.
     expect(buildAppearanceTheme(appearanceWith({ interfaceStyle: "glass" })).materialTier).toBe("glass");

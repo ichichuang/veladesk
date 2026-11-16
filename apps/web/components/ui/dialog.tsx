@@ -250,6 +250,8 @@ export function DialogContent({
                 className={cn(
                   "absolute right-3.5 top-3.5 flex size-8 items-center justify-center",
                   "rounded-[6px] text-vdu-fg-muted",
+                  // task 028: hover easing.
+                  "transition-colors duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
                   "hover:bg-vdu-bg-hover hover:text-vdu-fg",
                   "outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vdu-focus)]",
                 )}

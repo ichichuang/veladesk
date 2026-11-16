@@ -1,7 +1,7 @@
 /**
  * Contracts of the bundled icon catalog.
  *
- * The catalog is server-side pure data: it reads the nine IconifyJSON
+ * The catalog is server-side pure data: it reads the bundled IconifyJSON
  * collections shipped in `node_modules` and never talks to the network.
  * Icon identity matches the domain's `AppIcon { kind: "iconify" }` exactly:
  * the string form `<prefix>:<name>`.
@@ -10,6 +10,7 @@
 /** A bundled icon collection. Prefix equals the Iconify prefix. */
 export type IconCollectionId =
   | "simple-icons"
+  | "logos"
   | "lucide"
   | "tabler"
   | "ph"

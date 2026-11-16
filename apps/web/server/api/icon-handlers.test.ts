@@ -7,7 +7,7 @@ function searchRequest(query: string): Request {
 }
 
 /**
- * Touching scope=all parses all nine bundled IconifyJSON sets on first use
+ * Touching scope=all parses all bundled IconifyJSON sets on first use
  * (~46 MB across the process), which vitest's JSON transform makes far
  * slower than the runtime's own parse. Those tests get a wider budget.
  */
@@ -107,7 +107,8 @@ describe("handleIconSearch", () => {
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as { icons: { id: string }[] };
-    expect(body.icons[0]?.id).toBe("simple-icons:github");
+    // task 028: the curated page now opens with the modern AI row.
+    expect(body.icons[0]?.id).toBe("logos:grok");
   });
 
   it("maps an over-long query to 400 invalid-query", async () => {

@@ -100,7 +100,8 @@ function isAppVisualStyle(value: unknown): boolean {
     (value.labelVisible === undefined || typeof value.labelVisible === "boolean") &&
     (value.labelScale === undefined || typeof value.labelScale === "number") &&
     (value.foregroundColor === undefined || typeof value.foregroundColor === "string") &&
-    (value.decorationColor === undefined || typeof value.decorationColor === "string")
+    (value.decorationColor === undefined || typeof value.decorationColor === "string") &&
+    (value.iconCornerRadius === undefined || typeof value.iconCornerRadius === "number")
   );
 }
 
@@ -234,7 +235,21 @@ function isDesktopPage(value: unknown): boolean {
     // Optional per-COLOR-MODE overrides (P1): absent modes follow the
     // mode-agnostic `wallpaper`; only structurally valid configs are
     // accepted.
-    (value.wallpaperByMode === undefined || isModeWallpaperMap(value.wallpaperByMode))
+    (value.wallpaperByMode === undefined || isModeWallpaperMap(value.wallpaperByMode)) &&
+    // Optional per-section clock/date override (task 028): absent means
+    // follow-the-workspace; only a structurally valid block is accepted.
+    (value.helmClock === undefined || isPageHelmClockOverride(value.helmClock))
+  );
+}
+
+/** Structural shape of `PageHelmClockOverride` only (task 028). */
+function isPageHelmClockOverride(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.clockSizePx === undefined || typeof value.clockSizePx === "number") &&
+    (value.clockColor === undefined || typeof value.clockColor === "string") &&
+    (value.dateSizePx === undefined || typeof value.dateSizePx === "number") &&
+    (value.dateColor === undefined || typeof value.dateColor === "string")
   );
 }
 
@@ -263,6 +278,14 @@ function isAppearancePreferences(value: unknown): boolean {
     isRecord(value) &&
     COLOR_MODES.includes(value.colorMode as string) &&
     typeof value.accentHue === "number" &&
+    // Optional exact accent override (task 028); absent = hue policy color.
+    (value.accentColor === undefined || typeof value.accentColor === "string") &&
+    // Optional helm clock/date presentation (task 028); absent fields
+    // resolve to the CSS fluid defaults.
+    (value.helmClockSizePx === undefined || typeof value.helmClockSizePx === "number") &&
+    (value.helmClockColor === undefined || typeof value.helmClockColor === "string") &&
+    (value.helmDateSizePx === undefined || typeof value.helmDateSizePx === "number") &&
+    (value.helmDateColor === undefined || typeof value.helmDateColor === "string") &&
     WALLPAPER_PRESETS.includes(value.wallpaperPreset as string) &&
     typeof value.surfaceOpacity === "number" &&
     typeof value.blurPx === "number" &&

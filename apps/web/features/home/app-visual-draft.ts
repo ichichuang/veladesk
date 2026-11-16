@@ -2,11 +2,21 @@ import type { AppDecorationStyle, AppIcon, AppShortcut, AppVisualStyle } from "@
 import { DEFAULT_APP_LABEL_VISIBLE } from "@veladesk/domain";
 
 import { normalizeAppHexColor } from "./app-icon";
-import { generatedIconText, graphemes, iconInitial } from "./generated-icon";
+import {
+  APP_ICON_TEXT_MAX_GRAPHEMES,
+  clampGraphemes,
+  generatedIconText,
+  graphemes,
+} from "./generated-icon";
+
+// The bound lives in the leaf `generated-icon` module (both the draft and
+// the renderer clamp through it); re-exported here as the draft's public
+// surface for compatibility.
+export { APP_ICON_TEXT_MAX_GRAPHEMES };
 
 /**
  * Pure draft model of the App Visual Editor (task 016-A, sizing controls
- * removed in 019-B).
+ * removed in 019-B, custom text lengthened to 12 graphemes in task 028).
  *
  * The editor edits a DRAFT; only Save touches the workspace (via
  * `replaceApp`). These helpers build the draft from an app, turn a draft
@@ -17,16 +27,6 @@ import { generatedIconText, graphemes, iconInitial } from "./generated-icon";
  * an editor Save normalizes deprecated legacy scale fields away (they
  * simply stop being written).
  */
-
-/**
- * Custom icon text is ONE user-visible character: the tile renders a single
- * glyph (`IconText` → `iconInitial`), so the editor must not accept more.
- * Counted in grapheme clusters, so 中文 / 字母 / 数字 / emoji — including
- * multi-code-point emoji (ZWJ families, flags, skin tones) — each count as 1.
- * Legacy data with several characters still RENDERS as its first glyph and
- * opens in the editor clamped to that glyph — see `draftFromApp`.
- */
-export const APP_ICON_TEXT_MAX_GRAPHEMES = 1;
 
 /** Where the icon comes from — the editor's icon-source tabs. */
 export type AppVisualDraftSource = "library" | "text" | "upload";
@@ -55,6 +55,11 @@ export interface AppVisualDraft {
   /** undefined = Auto (no persisted color). */
   readonly foregroundColor?: string | undefined;
   readonly decorationColor?: string | undefined;
+  /**
+   * The tile corner radius as a percent of the icon box, 0–50 (task 028);
+   * undefined = the per-context CSS defaults (≈26% slots / fluid clamp).
+   */
+  readonly iconCornerRadius?: number | undefined;
 }
 
 const DECORATION_STYLES: readonly AppDecorationStyle[] = [
@@ -84,10 +89,10 @@ export function draftFromApp(app: AppShortcut): AppVisualDraft {
     assetId = icon.assetId;
   } else if (icon.kind === "generated" && icon.source === "custom") {
     textMode = "custom";
-    // Legacy multi-character text opens as the one glyph the tile shows,
-    // so an untouched legacy icon stays savable.
-    // (Same rule as the input clamp: `clampIconText` === `iconInitial`.)
-    customText = iconInitial(icon.text);
+    // Legacy text longer than the bound opens clamped to what the tile
+    // shows, so an untouched legacy icon stays savable.
+    // (Same rule as the input clamp: `clampIconText` === `clampGraphemes`.)
+    customText = clampGraphemes(icon.text);
   }
   return {
     source,
@@ -99,16 +104,29 @@ export function draftFromApp(app: AppShortcut): AppVisualDraft {
     decorationStyle: visual?.decorationStyle ?? "gradient",
     foregroundColor: normalizeAppHexColor(visual?.foregroundColor),
     decorationColor: normalizeAppHexColor(visual?.decorationColor),
+    iconCornerRadius: clampIconCornerRadiusDraft(visual?.iconCornerRadius),
   };
+}
+
+/**
+ * The draft only ever carries the semantic 0–50 integer (anything else
+ * degrades to the CSS defaults), so equality and the slider stay exact.
+ */
+function clampIconCornerRadiusDraft(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isInteger(value) || value < 0 || value > 50) {
+    return undefined;
+  }
+  return value;
 }
 
 /** Why a custom icon text is not savable. */
 export type IconTextIssue = "empty" | "too-long";
 
 /**
- * Validates custom icon text: exactly ONE user-visible character (grapheme
- * cluster), not blank after trimming. 中文/英文/emoji/数字 all count as one,
- * and so does a multi-code-point emoji such as 👨‍👩‍👧 or 🇨🇳.
+ * Validates custom icon text: at most TWELVE user-visible characters
+ * (grapheme clusters), not blank after trimming. 中文/英文/emoji/数字 all
+ * count as one each, and so does a multi-code-point emoji such as 👨‍👩‍👧 or
+ * 🇨🇳.
  */
 export function validateIconText(text: string): IconTextIssue | undefined {
   const trimmed = text.trim();
@@ -155,11 +173,13 @@ export function buildDraftIcon(app: AppShortcut, draft: AppVisualDraft): AppIcon
 export function buildDraftVisual(draft: AppVisualDraft): AppVisualStyle {
   const foreground = normalizeAppHexColor(draft.foregroundColor);
   const decoration = normalizeAppHexColor(draft.decorationColor);
+  const cornerRadius = clampIconCornerRadiusDraft(draft.iconCornerRadius);
   return {
     decorationStyle: draft.decorationStyle,
     ...(draft.labelVisible ? {} : { labelVisible: false }),
     ...(foreground !== undefined ? { foregroundColor: foreground } : {}),
     ...(decoration !== undefined ? { decorationColor: decoration } : {}),
+    ...(cornerRadius !== undefined ? { iconCornerRadius: cornerRadius } : {}),
   };
 }
 
@@ -186,7 +206,9 @@ export function draftEquals(a: AppVisualDraft, b: AppVisualDraft): boolean {
     a.labelVisible === b.labelVisible &&
     a.decorationStyle === b.decorationStyle &&
     normalizeAppHexColor(a.foregroundColor) === normalizeAppHexColor(b.foregroundColor) &&
-    normalizeAppHexColor(a.decorationColor) === normalizeAppHexColor(b.decorationColor)
+    normalizeAppHexColor(a.decorationColor) === normalizeAppHexColor(b.decorationColor) &&
+    clampIconCornerRadiusDraft(a.iconCornerRadius) ===
+      clampIconCornerRadiusDraft(b.iconCornerRadius)
   );
 }
 

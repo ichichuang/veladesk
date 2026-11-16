@@ -19,6 +19,24 @@ import { Popover, PopoverContent, PopoverTrigger } from "@components/ui/popover"
 
 const HEX_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
+/**
+ * Normalizes a committed hex to the persisted `#rrggbb` form, expanding
+ * 3-digit shorthand (`#abc` → `#aabbcc`); undefined when unparsable —
+ * partial typing never fires onChange. Pure.
+ */
+function normalizeCommittedHex(next: string): string | undefined {
+  const trimmed = next.trim();
+  const match = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(trimmed);
+  if (match === null) {
+    return undefined;
+  }
+  let digits = trimmed.slice(1);
+  if (digits.length === 3) {
+    digits = [...digits].map((c) => c + c).join("");
+  }
+  return `#${digits.toLowerCase()}`;
+}
+
 /** Preset swatches — the palette the app visual editor has always offered. */
 const PRESET_SWATCHES: readonly string[] = [
   "#5b8def",
@@ -49,6 +67,14 @@ export function ColorField({
 }) {
   const [open, setOpen] = useState(false);
   const [hexDraft, setHexDraft] = useState<string>(value ?? "");
+  // task 028: the hex draft FOLLOWS the external value — picking a preset
+  // swatch used to leave the input showing the stale text. Derived DURING
+  // RENDER (the react-hooks rule: no setState inside effects).
+  const [lastExternal, setLastExternal] = useState<string>(value ?? "");
+  if ((value ?? "") !== lastExternal) {
+    setLastExternal(value ?? "");
+    setHexDraft(value ?? "");
+  }
   const inputId = useId();
 
   const effective = value ?? "#888888";
@@ -56,8 +82,13 @@ export function ColorField({
 
   function commitHex(next: string) {
     setHexDraft(next);
-    if (HEX_PATTERN.test(next)) {
-      onChange(next.toLowerCase());
+    const normalized = normalizeCommittedHex(next);
+    if (normalized !== undefined) {
+      // task 028: 3-digit shorthand expands to the 6-digit form BEFORE the
+      // domain gate — `#abc` used to pass this input, reach the draft, and
+      // be silently dropped by the persisted-format gate (normalize never
+      // saw a valid 6-digit color), so a pick could end in "no change".
+      onChange(normalized);
     }
   }
 
@@ -95,12 +126,16 @@ export function ColorField({
                 type="button"
                 aria-label={swatch}
                 className={cn(
-                  "size-5 rounded-[5px] border",
+                  "size-5 rounded-[5px] border transition-colors duration-[180ms]",
                   value === swatch ? "border-vdu-fg" : "border-vdu-border",
                   "outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vdu-focus)]",
                 )}
                 style={{ background: swatch }}
-                onClick={() => onChange(swatch)}
+                onClick={() => {
+                  // task 028: keep the input in step with the pick.
+                  setHexDraft(swatch);
+                  onChange(swatch);
+                }}
               />
             ))}
           </div>

@@ -1,12 +1,14 @@
 import type { AppDecorationStyle, AppShortcut, AppVisualStyle } from "@veladesk/domain";
 import {
   DEFAULT_APP_LABEL_VISIBLE,
+  MAX_ICON_CORNER_RADIUS,
+  MIN_ICON_CORNER_RADIUS,
   isValidAppHexColor,
   resolveAppVisualStyle,
 } from "@veladesk/domain";
 import { findIconCollection, isIconCollectionId } from "@veladesk/icon-catalog/meta";
 
-import { generatedIconText, iconInitial } from "./generated-icon";
+import { clampGraphemes, generatedIconText, iconInitial } from "./generated-icon";
 
 /**
  * The label presentation an app renders with (019-B): just the visible
@@ -208,6 +210,16 @@ export function buildAppIconStyleVars(style: AppVisualStyle): Readonly<Record<st
   ) {
     vars["--vd-app-icon-fg"] = style.foregroundColor.toLowerCase();
   }
+  if (
+    style.iconCornerRadius !== undefined &&
+    Number.isInteger(style.iconCornerRadius) &&
+    style.iconCornerRadius >= MIN_ICON_CORNER_RADIUS &&
+    style.iconCornerRadius <= MAX_ICON_CORNER_RADIUS
+  ) {
+    // task 028: the tile corner radius as a border-radius percent — it
+    // scales with ANY tile size and needs no px math in the CSS.
+    vars["--vd-app-icon-radius"] = `${style.iconCornerRadius}%`;
+  }
   return vars;
 }
 
@@ -231,15 +243,15 @@ export function decorationBackground(
 }
 
 /**
- * The single character a generated/fallback icon shows. `source: "custom"`
- * text is user-owned: its first character is shown (older data may hold up
- * to four — no migration, it is cut at render time). Everything else
- * derives the initial from the app name (blank custom text degrades to the
- * name's initial too).
+ * The text a generated/fallback icon shows. `source: "custom"` text is
+ * user-owned: up to twelve user-visible characters render verbatim (task
+ * 028; legacy longer data is cut at render time — no migration). AUTO text
+ * derives the single initial from the app name (blank custom text degrades
+ * to the name's initial too).
  */
 export function appIconDisplayText(app: AppShortcut): string {
   if (app.icon.kind === "generated" && app.icon.source === "custom") {
-    const custom = iconInitial(app.icon.text);
+    const custom = clampGraphemes(app.icon.text);
     if (custom.length > 0) {
       return custom;
     }

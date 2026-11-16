@@ -59,6 +59,7 @@ describe("createWorkspaceSettingsDraft", () => {
       layoutLocked: true,
       gridGapPx: 16,
       background: { workspace: undefined, pages: {} },
+      helmClock: { pages: {} },
     });
   });
 
@@ -81,6 +82,7 @@ describe("createWorkspaceSettingsDraft", () => {
       layoutLocked: false,
       gridGapPx: 16,
       background: { workspace: undefined, pages: {} },
+      helmClock: { pages: {} },
     });
   });
 });
@@ -101,6 +103,7 @@ describe("preferencesFromSettingsDraft", () => {
       layoutLocked: false,
       gridGapPx: 24,
       background: { workspace: undefined, pages: {} },
+      helmClock: { pages: {} },
     };
 
     const preferences = preferencesFromSettingsDraft(draft);
@@ -130,6 +133,7 @@ describe("preferencesFromSettingsDraft", () => {
       layoutLocked: true,
       gridGapPx: 16,
       background: { workspace: undefined, pages: {} },
+      helmClock: { pages: {} },
     };
 
     const preferences = preferencesFromSettingsDraft(draft);
@@ -173,6 +177,7 @@ describe("areWorkspaceSettingsDraftsEqual", () => {
     layoutLocked: true,
     gridGapPx: 16,
     background: { workspace: undefined, pages: {} },
+    helmClock: { pages: {} },
   };
 
   it("treats identical drafts as equal", () => {

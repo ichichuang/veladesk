@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { resolveAppContentLayout } from "./app-content-layout";
 import { APP_ICON_TEXT_MAX_GRAPHEMES } from "./app-visual-draft";
-import { generatedIconText, iconInitial } from "./generated-icon";
+import { clampGraphemes, generatedIconText, iconInitial, iconTextFit } from "./generated-icon";
 import { IconText, clampIconText } from "./icon-text";
 
 /*
@@ -63,8 +63,20 @@ describe("icon tile centers its glyph on every surface", () => {
     expect(rule).toMatch(/white-space:\s*nowrap/);
     expect(rule).toMatch(/line-height:\s*1\b/);
     expect(rule).toMatch(/letter-spacing:\s*0\b/);
-    expect(rule).toMatch(/font-size:\s*calc\(1em \* var\(--vd-icon-initial-scale, [\d.]+\)\)/);
-    expect(homeCss).not.toMatch(/--vd-icon-text-fit/);
+    expect(rule).toMatch(
+      /font-size:\s*calc\(1em \* var\(--vd-icon-initial-scale, [\d.]+\) \* var\(--vd-app-text-fit, 1\)\)/,
+    );
+  });
+
+  it("multi-character fit tiers shrink the run and allow wrapping (task 028)", () => {
+    const short = ruleBlock(homeCss, '.vela-app-icon__text[data-text-fit="short"]');
+    expect(short).toMatch(/--vd-app-text-fit:\s*0\.6/);
+    const medium = ruleBlock(homeCss, '.vela-app-icon__text[data-text-fit="medium"]');
+    expect(medium).toMatch(/--vd-app-text-fit:\s*0\.42/);
+    expect(medium).toMatch(/white-space:\s*normal/);
+    const long = ruleBlock(homeCss, '.vela-app-icon__text[data-text-fit="long"]');
+    expect(long).toMatch(/--vd-app-text-fit:\s*0\.3/);
+    expect(long).toMatch(/overflow:\s*hidden/);
   });
 
   it("the launcher and mobile search tiles have a slot size", () => {
@@ -121,41 +133,70 @@ describe("icon initial: one user-visible character", () => {
     expect(generatedIconText("ChatGPT")).toBe("C");
   });
 
-  it("<IconText> renders only the first character, with no fit variable", () => {
+  it("<IconText> renders up to twelve characters with a fit tier (task 028)", () => {
     const { container } = render(
       <>
         <IconText text="微信" />
         <IconText text="飞书文档" />
         <IconText text="NOTN" />
         <IconText text="🚀" />
+        <IconText text="一二三四五六七八九十11 12" />
       </>,
     );
     const spans = Array.from(container.querySelectorAll<HTMLElement>(".vela-app-icon__text"));
-    expect(spans.map((span) => span.textContent)).toEqual(["微", "飞", "N", "🚀"]);
-    for (const span of spans) {
-      expect(span.getAttribute("style")).toBeNull();
-    }
+    expect(spans.map((span) => span.textContent)).toEqual([
+      "微信",
+      "飞书文档",
+      "NOTN",
+      "🚀",
+      "一二三四五六七八九十11",
+    ]);
+    expect(spans.map((span) => span.getAttribute("data-text-fit"))).toEqual([
+      "short",
+      "short",
+      "short",
+      "single",
+      "long",
+    ]);
+  });
+
+  it("fit buckets: 1 single, 2–4 short, 5–8 medium, 9–12 long", () => {
+    expect(iconTextFit("微")).toBe("single");
+    expect(iconTextFit("微信")).toBe("short");
+    expect(iconTextFit("飞书文档")).toBe("short");
+    expect(iconTextFit("NOTN")).toBe("short");
+    expect(iconTextFit("飞书文档工具集")).toBe("medium");
+    expect(iconTextFit("一二三四五六七八九")).toBe("long");
+    expect(iconTextFit("一二三四五六七八九十11 12")).toBe("long");
+  });
+
+  it("clampGraphemes cuts at twelve graphemes, keeping emoji whole", () => {
+    expect(clampGraphemes("微信")).toBe("微信");
+    expect(clampGraphemes("一二三四五六七八九十11 1234")).toBe("一二三四五六七八九十11");
+    expect(clampGraphemes("👨‍👩‍👧x")).toBe("👨‍👩‍👧x");
+    expect(clampGraphemes("a".repeat(20))).toBe("a".repeat(12));
   });
 });
 
-describe("custom icon text input keeps one character", () => {
-  it("clamps typed or pasted text to the first grapheme the tile would show", () => {
-    expect(clampIconText("微信")).toBe("微");
-    expect(clampIconText("AI")).toBe("A");
-    expect(clampIconText("GitHub")).toBe("G");
+describe("custom icon text input keeps up to twelve characters", () => {
+  it("clamps typed or pasted text to the twelve characters the tile would show", () => {
+    expect(clampIconText("微信")).toBe("微信");
+    expect(clampIconText("AI")).toBe("AI");
+    expect(clampIconText("GitHub")).toBe("GitHub");
     expect(clampIconText("7")).toBe("7");
-    expect(clampIconText("🚀🚀")).toBe("🚀");
+    expect(clampIconText("🚀🚀")).toBe("🚀🚀");
     // One grapheme, several code points — kept whole.
-    expect(clampIconText("👨‍👩‍👧x")).toBe("👨‍👩‍👧");
-    expect(clampIconText("🇨🇳x")).toBe("🇨🇳");
-    expect(clampIconText("👍🏽x")).toBe("👍🏽");
+    expect(clampIconText("👨‍👩‍👧x")).toBe("👨‍👩‍👧x");
+    expect(clampIconText("🇨🇳x")).toBe("🇨🇳x");
+    expect(clampIconText("👍🏽x")).toBe("👍🏽x");
     expect(clampIconText("家")).toBe("家");
     expect(clampIconText("")).toBe("");
+    expect(clampIconText("一二三四五六七八九十11 1234")).toBe("一二三四五六七八九十11");
   });
 
   it("it is exactly what <IconText> renders, so input and tile agree", () => {
     for (const text of ["微信", "NOTN", "🚀 Launch", "  家 "]) {
-      expect(clampIconText(text)).toBe(iconInitial(text));
+      expect(clampIconText(text)).toBe(clampGraphemes(text));
     }
   });
 
@@ -167,7 +208,7 @@ describe("custom icon text input keeps one character", () => {
       // maxLength counts UTF-16 units: it would cut 😀 / 👨‍👩‍👧 in half.
       expect(source, file).not.toMatch(/maxLength=/);
     }
-    expect(APP_ICON_TEXT_MAX_GRAPHEMES).toBe(1);
+    expect(APP_ICON_TEXT_MAX_GRAPHEMES).toBe(12);
   });
 });
 

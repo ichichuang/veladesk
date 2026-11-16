@@ -181,6 +181,25 @@ describe("validateAppVisualStyle: colors", () => {
   });
 });
 
+describe("validateAppVisualStyle: iconCornerRadius (task 028)", () => {
+  it("accepts the 0–50 integer range and absence", () => {
+    for (const value of [0, 1, 26, 49, 50]) {
+      expect(
+        validateAppVisualStyle({ decorationStyle: "gradient", iconCornerRadius: value })
+      ).toEqual([]);
+    }
+    expect(validateAppVisualStyle({ decorationStyle: "gradient" })).toEqual([]);
+  });
+
+  it("reports non-integers and out-of-range percents", () => {
+    for (const value of [-1, 51, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        validateAppVisualStyle({ decorationStyle: "gradient", iconCornerRadius: value })
+      ).toEqual([{ type: "invalid-icon-corner-radius" }]);
+    }
+  });
+});
+
 describe("validateAppVisualStyle: label presentation (017-C)", () => {
   it("accepts legacy styles without the label fields", () => {
     expect(validateAppVisualStyle({ iconScale: 1, decorationStyle: "gradient" })).toEqual([]);

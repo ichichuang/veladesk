@@ -32,6 +32,7 @@ import { IconText } from "./icon-text";
 import { humanizeIconName } from "./app-icon";
 import { IconPreview } from "./icon-picker";
 import { stageWorkspaceAndTrySync } from "./workspace-commit";
+import { createSessionMemory } from "./local-memory";
 import { AddAppIconPickerDialog } from "./add-app-icon-picker";
 import { VdFormDialog } from "@components/vd/form-dialog";
 import { Button } from "@components/ui/button";
@@ -68,10 +69,38 @@ interface AddAppDialogProps {
  * auto-completed to https://, custom protocols stay verbatim, anything
  * else is refused inline. Custom protocols never trigger recognition.
  */
+/**
+ * task 028: the half-typed form survives a close/reopen within the same
+ * browser tab (sessionStorage). Only the two USER fields travel — name and
+ * URL; recognition state, icon pick and errors stay ephemeral. Cleared on
+ * a successful Add so a completed flow never resurrects.
+ */
+const ADD_APP_DRAFT_MEMORY = createSessionMemory<{ name: string; url: string }>(
+  "veladesk:add-app-draft:v1",
+  1,
+  (value) =>
+    typeof value === "object" && value !== null &&
+    typeof (value as Record<string, unknown>).name === "string" &&
+    typeof (value as Record<string, unknown>).url === "string"
+      ? { name: (value as Record<string, unknown>).name as string, url: (value as Record<string, unknown>).url as string }
+      : undefined,
+);
+
 export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogProps) {
   const runtime = useWorkspaceRuntimeInstance();
   const { t } = useI18n();
-  const [state, dispatch] = useReducer(smartAddReducer, undefined, initialSmartAddState);
+  const [state, dispatch] = useReducer(smartAddReducer, undefined, () => {
+    const initial = initialSmartAddState();
+    const draft = ADD_APP_DRAFT_MEMORY.read();
+    if (draft === undefined) {
+      return initial;
+    }
+    return {
+      ...initial,
+      urlInput: draft.url,
+      name: draft.name.length > 0 ? { value: draft.name, owner: "user" as const } : initial.name,
+    };
+  });
   const { recognizeAgain } = useAppRecognition(state.urlInput, dispatch);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -91,6 +120,12 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
       }
     };
   }, [iconValue]);
+
+  // task 028: the draft writes through on every change; a successful Add
+  // clears it below so the finished flow never reopens half-filled.
+  useEffect(() => {
+    ADD_APP_DRAFT_MEMORY.write({ name: state.name.value, url: state.urlInput });
+  }, [state.name.value, state.urlInput]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -152,6 +187,7 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
         return;
       }
       // Icon is visible immediately (local stage); sync is follow-up.
+      ADD_APP_DRAFT_MEMORY.clear();
       onClose();
     } catch (dialogError: unknown) {
       setError(

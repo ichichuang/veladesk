@@ -167,6 +167,13 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* task 028: press feedback easing. */
+.vela-mobile-icon-button {
+  transition:
+    background-color var(--vd-motion-fast, 180ms) var(--vd-motion-ease, ease),
+    color var(--vd-motion-fast, 180ms) var(--vd-motion-ease, ease);
+}
+
 .vela-mobile-icon-button:active {
   background: color-mix(in oklab, currentColor 12%, transparent);
 }
@@ -247,6 +254,8 @@
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  /* task 028: selected text-color easing (the indicator glide is GSAP). */
+  transition: color var(--vd-motion-fast, 180ms) var(--vd-motion-ease, ease);
 }
 
 .vela-mobile-tabs__tab[aria-selected="true"] {
@@ -513,7 +522,8 @@
   justify-content: center;
   width: var(--vd-slot-icon-size);
   height: var(--vd-slot-icon-size);
-  border-radius: calc(var(--vd-slot-icon-size) * 0.26);
+  /* task 028: per-app radius override (0-50%). */
+  border-radius: var(--vd-app-icon-radius, calc(var(--vd-slot-icon-size) * 0.26));
   background: color-mix(in oklab, var(--vd-accent) 26%, transparent);
   color: var(--vd-text, inherit);
 }
