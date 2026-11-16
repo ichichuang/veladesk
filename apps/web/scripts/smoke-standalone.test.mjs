@@ -327,6 +327,9 @@ describe("runStandaloneSmoke — the real suite over fake seams", () => {
             const body = JSON.stringify({ error: { code: "engineering-password-wrong" } });
             return new FakeResponse({ status: 401, json: body, text: body });
           }
+          if (parsed.pathname.startsWith("/api/v1/assets/")) {
+            return new FakeResponse({ status: 401, json: { error: { code: "engineering-session-required" } } });
+          }
           throw new Error(`unexpected route ${parsed.pathname}`);
         },
         sleepImpl: instantSleep,
@@ -349,6 +352,9 @@ describe("runStandaloneSmoke — the real suite over fake seams", () => {
           }
           if (parsed.pathname === "/api/v1/engineering/unlock") {
             return new FakeResponse({ status: 200, json: { active: true } });
+          }
+          if (parsed.pathname.startsWith("/api/v1/assets/")) {
+            return new FakeResponse({ status: 401, json: { error: { code: "engineering-session-required" } } });
           }
           throw new Error(`unexpected route ${parsed.pathname}`);
         },

@@ -366,7 +366,15 @@ async function unlockAndBuildAuthedFetch(base, { fetchImpl }) {
     "unlock response missing the veladesk_engineering session cookie",
   );
   const cookie = session[0];
-  return (url, init) => fetchImpl(url, { ...init, headers: { ...init?.headers, Cookie: cookie } });
+  return (url, init) => {
+    // Spread of a Headers INSTANCE yields {} (not enumerable) — normalize so
+    // a future caller passing Headers never silently loses its headers.
+    let headers = init?.headers;
+    if (typeof Headers !== "undefined" && headers instanceof Headers) {
+      headers = Object.fromEntries(headers.entries());
+    }
+    return fetchImpl(url, { ...init, headers: { ...headers, Cookie: cookie } });
+  };
 }
 
 /**
@@ -424,6 +432,18 @@ export async function runStandaloneSmoke(options) {
 
     const port = await boot();
     const base = `http://127.0.0.1:${port}`;
+
+    // t181 gate, proven end to end: BEFORE unlocking, a mutating request
+    // must be rejected with 401 (the guard runs before validation — this is
+    // the exact failure the pre-t181 smoke used to hit). One probe suffices;
+    // boots 2/3 run the same server image.
+    const gate = await fetchImpl(`${base}/api/v1/assets/asset-sha256-gate-probe`, {
+      method: "PUT",
+      body: new Uint8Array(0),
+    });
+    assert(gate.status === 401, `unauthenticated asset PUT expected the 401 gate, got ${gate.status}`);
+    log("engineering 401 gate enforced on mutating routes (pre-unlock probe)");
+
     const send = await unlockAndBuildAuthedFetch(base, { fetchImpl });
     log("engineering session unlocked (fresh data dir, default password)");
 

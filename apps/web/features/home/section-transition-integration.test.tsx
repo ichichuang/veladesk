@@ -142,13 +142,24 @@ function yOf(element: HTMLElement): number {
  * jsdom ticker may not have rendered the young timeline yet (isActive()
  * needs a first tick), so "live" = not yet completed.
  */
-function livePairTimeline(): gsap.core.Timeline {
+/** The current live pair timelines (see {@link livePairTimeline}). */
+function livePairTimelines(): gsap.core.Timeline[] {
   const timelines = gsap.globalTimeline.getChildren(false, false, true);
-  const live = timelines.filter((timeline) => timeline.progress() < 1);
+  return timelines.filter((timeline) => timeline.progress() < 1) as gsap.core.Timeline[];
+}
+
+/**
+ * The ONE live pair timeline (animation-time seam): the coordinator builds
+ * it on gsap.globalTimeline; everything else GSAP runs here is a tween. A
+ * jsdom ticker may not have rendered the young timeline yet (isActive()
+ * needs a first tick), so "live" = not yet completed.
+ */
+function livePairTimeline(): gsap.core.Timeline {
+  const live = livePairTimelines();
   if (live.length !== 1) {
     throw new Error(`expected exactly one live pair timeline, found ${live.length}`);
   }
-  return live[0] as gsap.core.Timeline;
+  return live[0]!;
 }
 
 /**
@@ -159,13 +170,12 @@ function livePairTimeline(): gsap.core.Timeline {
  * pair remains a genuine machine bug.
  */
 function completePairTimeline(): void {
-  const timelines = gsap.globalTimeline.getChildren(false, false, true);
-  const live = timelines.filter((timeline) => timeline.progress() < 1);
+  const live = livePairTimelines();
   if (live.length > 1) {
     throw new Error(`expected at most one live pair timeline, found ${live.length}`);
   }
-  if (live.length === 1) {
-    (live[0] as gsap.core.Timeline).progress(1);
+  for (const timeline of live) {
+    timeline.progress(1);
   }
 }
 

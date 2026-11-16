@@ -50,6 +50,13 @@ class FileEngineeringCredentialStore implements EngineeringCredentialStore {
     try {
       parsed = JSON.parse(text);
     } catch {
+      // Security-relevant degradation, not a quiet one: the server just
+      // reverted to the PUBLIC default password — the operator must know.
+      console.warn(
+        `[veladesk] ${this.filePath} is not valid JSON — falling back to the ` +
+          "default Engineering password. Fix or delete the file, then set a " +
+          "new password in Settings.",
+      );
       return null;
     }
     if (typeof parsed !== "object" || parsed === null) {
