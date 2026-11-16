@@ -382,11 +382,10 @@ function HelmClockSection({
         </Select>
       </SettingsRow>
 
-      {scope !== "workspace" && pagePatch === null ? (
-        <p className="-mt-3 text-xs leading-relaxed text-vdu-fg-muted" aria-live="polite">
-          {t("settings.helmClock.followGlobal")}
-        </p>
-      ) : null}
+      {/* friendly-ui stability contract: follow-vs-override state reads from
+          the CONTROLS themselves (every field showing 自动 = following) — a
+          conditional status line here would appear/disappear and shift the
+          rows below. */}
 
       <div className="flex flex-col gap-4">
         <HelmClockSizeRow
