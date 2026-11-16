@@ -191,8 +191,11 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
   const appendFailed = appendState?.failed === true;
 
   const loadMore = useCallback(() => {
-    const offset = current !== null && current.key === baseUrl ? current.nextOffset : null;
-    if (offset === null || appending) {
+    if (current === null || current.key !== baseUrl || appending) {
+      return;
+    }
+    const offset = current.nextOffset;
+    if (offset === null) {
       return;
     }
     // The entries the NEXT page appends onto — the derived view (cache
