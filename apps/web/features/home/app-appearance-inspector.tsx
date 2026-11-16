@@ -679,13 +679,15 @@ function AppearanceIconPickerDialog({
       return;
     }
     // Keep-alive (task 028): the hidden library panel keeps its own
-    // scroller mounted — it must not hold the header shadow while an
-    // unscrolled sibling tab is visible.
+    // scroller mounted (absolute + visibility — layout intact, so
+    // offsetParent stays non-null) — exclude it by its [hidden] owner so
+    // it cannot hold the header shadow while an unscrolled sibling tab is
+    // visible.
     const scrolled = Array.from(region.querySelectorAll("[data-vd-scroll]")).some(
       (scroller) =>
         scroller instanceof HTMLElement &&
         scroller.scrollTop > 0 &&
-        scroller.offsetParent !== null
+        scroller.closest("[hidden]") === null
     );
     header.setAttribute("data-scrolled", scrolled ? "true" : "false");
   }, []);

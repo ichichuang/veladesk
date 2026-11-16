@@ -28,6 +28,7 @@ import {
   renameFolder,
   replaceApp,
   replacePageCanvas,
+  replacePageHelmClock,
   replaceWorkspacePreferences,
   unpinEntityFromDock,
 } from "./editing";
@@ -1625,3 +1626,42 @@ describe("deleteApp undo (capture + restore, UX-09)", () => {
   });
 });
 import { captureDeletedAppEntry, restoreDeletedApp } from "./editing";
+
+describe("replacePageHelmClock (task 028)", () => {
+  it("writes a valid override and removes on null", () => {
+    const base = baseWorkspace();
+    const written = replacePageHelmClock(base, "page-1", { clockColor: "#3366FF" });
+    expect(written.ok).toBe(true);
+    if (!written.ok) return;
+    const page = written.workspace.pages[0]!;
+    // Stored verbatim (case preserved); the resolver lowercases at CSS emission.
+    expect(page.helmClock).toEqual({ clockColor: "#3366FF" });
+
+    const cleared = replacePageHelmClock(written.workspace, "page-1", null);
+    expect(cleared.ok).toBe(true);
+    if (!cleared.ok) return;
+    expect("helmClock" in cleared.workspace.pages[0]!).toBe(false);
+  });
+
+  it("treats a fieldless empty override as removal — no empty block persists", () => {
+    const base = baseWorkspace();
+    const seeded = replacePageHelmClock(base, "page-1", { clockColor: "#3366FF" });
+    expect(seeded.ok).toBe(true);
+    if (!seeded.ok) return;
+    // The editor produces {} when every field goes back to Auto.
+    const emptied = replacePageHelmClock(seeded.workspace, "page-1", {});
+    expect(emptied.ok).toBe(true);
+    if (!emptied.ok) return;
+    expect("helmClock" in emptied.workspace.pages[0]!).toBe(false);
+  });
+
+  it("refuses out-of-range fields and unknown pages", () => {
+    const base = baseWorkspace();
+    expect(
+      replacePageHelmClock(base, "page-1", { clockSizePx: 999 })
+    ).toEqual({ ok: false, reason: "invalid-appearance" });
+    expect(
+      replacePageHelmClock(base, "page-x", { clockColor: "#3366FF" })
+    ).toEqual({ ok: false, reason: "page-not-found" });
+  });
+});

@@ -220,10 +220,9 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
           setAppend({ key: baseUrl, busy: false, failed: true });
           return;
         }
-        writeCachedIconPage(
-          buildIconSearchUrl({ query, scope, collection, offset }),
-          decoded
-        );
+        // NOT cached: offset pages are only ever read through the merged
+        // results state — caching them would just evict useful first pages
+        // from the LRU (review P2-3).
         setResults({
           key: baseUrl,
           entries: appendIconPickerPage(baseEntries, decoded.entries),

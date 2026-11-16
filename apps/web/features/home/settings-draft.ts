@@ -112,7 +112,19 @@ export function createWorkspaceSettingsDraft(
     gridGapPx: resolveGridGapPx(workspace.preferences),
     motion: workspace.preferences.motion,
     background: { workspace: undefined, pages: {} },
-    helmClock: { pages: {} },
+    // task 028: pages with a PERSISTED clock/date override seed their patch
+    // with it — the controls must show the saved values (a patch is the
+    // whole block: editing one field without the seed would silently drop
+    // the persisted siblings on the next save, because
+    // `replacePageHelmClock` replaces the block wholesale). Seeding is
+    // deterministic, so draft equality (dirty tracking) is unaffected.
+    helmClock: {
+      pages: Object.fromEntries(
+        workspace.pages
+          .filter((page) => page.helmClock !== undefined)
+          .map((page) => [page.id, page.helmClock]),
+      ),
+    },
   };
 }
 

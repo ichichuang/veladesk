@@ -3183,16 +3183,14 @@ button.vela-sync-status:focus-visible {
   padding: 0 2px;
 }
 
-/* The adaptive desktop context sizes from the resolver's pixel value — the
-   fit tiers there apply as a multiplier on the emitted size too, so a
-   12-character run cannot overflow a multi-cell box either. */
+/* The adaptive desktop context sizes from the RESOLVER's pixel value ONLY —
+   the resolver already shrinks by the real grapheme count
+   (generatedIconOpticalScale), so multiplying by the slot-context fit tier
+   here would double-shrink (12 characters landed at ~8% of base). This rule
+   only adds the wrap/centering behavior multi-character runs need. */
 .vela-app-content__icon .vela-app-icon__text[data-text-fit="short"],
 .vela-app-content__icon .vela-app-icon__text[data-text-fit="medium"],
 .vela-app-content__icon .vela-app-icon__text[data-text-fit="long"] {
-  font-size: calc(
-    var(--vd-app-generated-text-size, calc(var(--vd-app-icon-box, 48px) * 0.3)) *
-      var(--vd-app-text-fit, 1)
-  );
   white-space: normal;
   text-align: center;
   overflow: hidden;
@@ -4136,10 +4134,19 @@ button.vela-sync-status:focus-visible {
 }
 
 /* task 028 keep-alive: the panel stays MOUNTED through source-tab
-   switches and hides via the [hidden] attribute — this unlayered rule
-   must beat the Tailwind `flex` utility on the same element. */
+   switches and hides via the [hidden] attribute. Visibility — NOT
+   display:none — is deliberate: the warm-section contract (the
+   section-layer rules above) established that display:none destroys the
+   scroll position, and the keep-alive promise is scope/source/search/
+   paging/scroll ALL survive. Absolute + visibility keeps the layout box
+   (and its scrollTop) while taking the panel out of the flex flow, so
+   the sibling tabs neither move nor overlap; this unlayered rule must
+   beat the Tailwind `flex` utility on the same element. */
 .vela-visual-editor__picker-bound[hidden] {
-  display: none;
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* Picker (019-D §10): HeroUI owns the search, scope tabs and source

@@ -173,10 +173,12 @@ export function replacePageWallpaper(
 
 /**
  * Sets or clears ONE page's clock/date presentation override (task 028),
- * immutably. `null` REMOVES the override — the section follows the
- * workspace appearance fields (which may themselves be absent = the CSS
- * defaults). Structural legality is enforced here, semantic ranges flow
- * through the colocated validator; both refuse loudly, never half-write.
+ * immutably. `null` — and a fieldless `{}` block, which the settings editor
+ * produces by "Auto"-ing every field — REMOVES the override so the section
+ * follows the workspace appearance fields (which may themselves be absent
+ * = the CSS defaults); an empty block never persists as junk. Structural
+ * legality is enforced here, semantic ranges flow through the colocated
+ * validator; both refuse loudly, never half-write.
  */
 export function replacePageHelmClock(
   workspace: WorkspaceSnapshot,
@@ -187,7 +189,25 @@ export function replacePageHelmClock(
   if (page === undefined) {
     return { ok: false, reason: "page-not-found" };
   }
-  if (override !== null && validatePageHelmClockOverride(override).length > 0) {
+  if (override === null || Object.keys(override).length === 0) {
+    // Removal (explicit null, or the editor's all-fields-Auto empty block):
+    // the section follows the workspace again — no empty block ever persists.
+    return {
+      ok: true,
+      workspace: {
+        ...workspace,
+        pages: workspace.pages.map((candidate) => {
+          if (candidate !== page) {
+            return candidate;
+          }
+          const { helmClock: removed, ...cleared } = page;
+          void removed;
+          return cleared;
+        }),
+      },
+    };
+  }
+  if (validatePageHelmClockOverride(override).length > 0) {
     return { ok: false, reason: "invalid-appearance" };
   }
   return {
@@ -197,11 +217,6 @@ export function replacePageHelmClock(
       pages: workspace.pages.map((candidate) => {
         if (candidate !== page) {
           return candidate;
-        }
-        if (override === null) {
-          const { helmClock: removed, ...cleared } = page;
-          void removed;
-          return cleared;
         }
         return { ...page, helmClock: override };
       }),

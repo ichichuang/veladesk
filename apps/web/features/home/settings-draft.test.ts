@@ -63,6 +63,28 @@ describe("createWorkspaceSettingsDraft", () => {
     });
   });
 
+  it("seeds persisted per-page clock overrides into the draft (review P0-1)", () => {
+    // A saved section override must SHOW in the controls and survive a
+    // single-field edit — unseeded drafts used to render the controls as
+    // Auto and silently drop the persisted block on the next save.
+    const snapshot = workspaceWith(true);
+    const withOverride: WorkspaceSnapshot = {
+      ...snapshot,
+      pages: snapshot.pages.map((page, index) =>
+        index === 1 ? { ...page, helmClock: { clockColor: "#3366ff" } } : page
+      ),
+    };
+    const draft = createWorkspaceSettingsDraft(withOverride);
+    expect(draft.helmClock.pages).toEqual({
+      "page-2": { clockColor: "#3366ff" },
+    });
+    // Seeding is deterministic: two drafts from the same snapshot are equal
+    // (dirty tracking unaffected).
+    expect(areWorkspaceSettingsDraftsEqual(draft, createWorkspaceSettingsDraft(withOverride))).toBe(true);
+    // Pages without an override stay untouched (untouched = undefined).
+    expect("page-1" in draft.helmClock.pages).toBe(false);
+  });
+
   it("keeps a persisted interface style and the desktop preferences", () => {
     const snapshot = workspaceWith(true);
     const appearance = {

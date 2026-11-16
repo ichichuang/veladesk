@@ -78,8 +78,8 @@ export interface AppContentLayoutInput {
   /** The icon source kind — generated text gets optical sizing. */
   readonly iconKind: "generated" | "library" | "image";
   /**
-   * Code-point count of the generated text (1–4 supported; longer custom
-   * text is still rendered, optically floored). Only read for
+   * Grapheme count of the generated text (task 028: 1–12 — one for the
+   * auto initial, the clamped custom length otherwise). Only read for
    * `iconKind: "generated"`.
    */
   readonly generatedTextLength?: number;

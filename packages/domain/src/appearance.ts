@@ -243,8 +243,9 @@ export function validatePageHelmClockOverride(
 
 /**
  * Semantic validation of appearance values (structurally decoded data is
- * still in range). Deterministic issue order: accentHue, accentColor,
- * surfaceOpacity, blurPx, radiusPx. Never throws, never mutates.
+ * still in range). Deterministic issue order: accentHue, accentColor, the
+ * four helm clock/date fields, surfaceOpacity, blurPx, radiusPx. Never
+ * throws, never mutates.
  */
 export function validateWorkspaceAppearance(
   appearance: WorkspaceAppearancePreferences
