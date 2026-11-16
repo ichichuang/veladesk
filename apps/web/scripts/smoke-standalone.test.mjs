@@ -150,7 +150,16 @@ function makeFakeFetch({ packageFixture, log } = {}) {
       const scope = parsed.searchParams.get("scope") ?? "recommended";
       if (scope === "recommended") {
         return new FakeResponse({
-          json: { icons: [{ id: "simple-icons:github", palette: "monochrome" }], nextOffset: null, total: 1 },
+          // task 028: the curated page opens with logos:grok and still
+          // carries the everyday staples the script asserts on.
+          json: {
+            icons: [
+              { id: "logos:grok", palette: "multicolor" },
+              { id: "simple-icons:github", palette: "monochrome" },
+            ],
+            nextOffset: null,
+            total: 2,
+          },
         });
       }
       if (scope === "all") {

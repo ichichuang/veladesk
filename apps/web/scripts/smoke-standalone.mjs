@@ -486,7 +486,12 @@ export async function runStandaloneSmoke(options) {
     const recommended = await send2(`${iconBase}/api/v1/icons/search`);
     assert(recommended.status === 200, `recommended search expected 200, got ${recommended.status}`);
     const recommendedBody = await recommended.json();
-    assert(recommendedBody.icons[0]?.id === "simple-icons:github", "recommended page must lead with a real brand icon");
+    // task 028: the curated page opens with the modern-AI brand row.
+    assert(recommendedBody.icons[0]?.id === "logos:grok", "recommended page must lead with a real brand icon");
+    assert(
+      recommendedBody.icons.some((icon) => icon.id === "simple-icons:github"),
+      "recommended page must still carry the everyday brand staples",
+    );
     assert(recommendedBody.nextOffset === null, "the curated page must fit in one page");
     log(`icon search (recommended) -> ${recommendedBody.icons.length} curated icons`);
 
