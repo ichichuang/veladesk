@@ -6,6 +6,9 @@
 #
 # 数据（SQLite 数据库、上传的图片、工程模式凭据）全部存在 named volume
 # `veladesk-data`（容器内 /data）。备份 = 备份这个 volume，见 docs/DEPLOYMENT.md。
+# name 固定项目名，volume 实名恒为 veladesk_veladesk-data，与克隆目录名无关。
+
+name: veladesk
 
 services:
   veladesk:

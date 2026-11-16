@@ -48,7 +48,9 @@ fi
 
 echo "[update] 有新版本：${LOCAL} → ${REMOTE}"
 echo "[update] 更新内容："
-git --no-pager log --oneline "$LOCAL..$REMOTE" | head -20
+# sed 从管道读完再退出；用 head 在 pipefail 下会在 30+ 条提交时触发
+# git 的 SIGPIPE（exit 141）直接杀死脚本，落后越多越必死
+git --no-pager log --oneline "$LOCAL..$REMOTE" | sed -n '1,20p'
 
 if [ "$MODE" = "check" ]; then
   echo "[update] --check 模式：以上仅为报告，未做任何改动"
@@ -64,8 +66,11 @@ fi
 OLD="$LOCAL"
 git pull --ff-only origin main
 
-# 只有依赖清单变化时才重装（pnpm install 较慢，没必要每次跑）
-if git diff --name-only "$OLD" HEAD | grep -qE '(^|/)package\.json$|pnpm-lock\.yaml$'; then
+# 只有依赖清单变化时才重装（pnpm install 较慢，没必要每次跑）。
+# 先完整捕获再判空：`grep -q` 命中即退出会让 git 撞 SIGPIPE，在 pipefail
+# 下把 if 条件翻成假，静默跳过本该执行的 install
+CHANGED="$(git diff --name-only "$OLD" HEAD | grep -E '(^|/)package\.json$|pnpm-lock\.yaml$' || true)"
+if [ -n "${CHANGED}" ]; then
   echo "[update] 依赖有变化，执行 pnpm install …"
   pnpm install
 fi

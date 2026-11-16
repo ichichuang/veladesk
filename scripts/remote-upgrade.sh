@@ -32,12 +32,26 @@ DO_RESTART=0
 INSTALL_DIR="."
 
 # ---------- 参数 ----------
+print_help() {
+  cat <<'EOF'
+remote-upgrade.sh — 原地升级已安装的 VelaDesk 发布程序包（无需重新部署）
+
+用法:
+  scripts/remote-upgrade.sh <安装目录>               升级到最新正式版
+  scripts/remote-upgrade.sh <安装目录> v1.2.3        升级/回退到指定版本
+  scripts/remote-upgrade.sh <安装目录> --restart     完成后停止旧进程并启动新包
+  scripts/remote-upgrade.sh --check [安装目录]       只比较本地与最新版本
+
+说明见文件头注释与 docs/DEPLOYMENT.md。
+EOF
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) MODE="check"; shift ;;
     --restart) DO_RESTART=1; shift ;;
-    -h|--help) grep '^#' "$0" | grep -v '^#!' | sed 's/^# \{0,1\}//'; exit 0 ;;
-    v*) TARGET_VERSION="${1#v}"; shift ;;
+    -h|--help) print_help; exit 0 ;;
+    v[0-9]*) TARGET_VERSION="${1#v}"; shift ;;
     *) INSTALL_DIR="$1"; shift ;;
   esac
 done
@@ -46,6 +60,10 @@ done
 for tool in curl tar node; do
   command -v "${tool}" >/dev/null 2>&1 || { echo "[upgrade] 缺少 ${tool}" >&2; exit 1; }
 done
+if [ "${DO_RESTART}" = "1" ] && ! command -v lsof >/dev/null 2>&1; then
+  echo "[upgrade] --restart 需要 lsof（用于停止旧进程）；未安装则请手动重启" >&2
+  exit 1
+fi
 if command -v sha256sum >/dev/null 2>&1; then
   SHA_TOOL="sha256sum"
 elif command -v shasum >/dev/null 2>&1; then
@@ -96,9 +114,10 @@ fi
 
 current_version() {
   # 目录名形如 VelaDesk-v1.0.0-macos-arm64；认不出就返回 unknown（照样可以升级）
-  local base
+  local base detected
   base="$(basename "${INSTALL_DIR}")"
-  printf '%s' "${base}" | sed -n 's/^VelaDesk-v\([0-9.]*\)-.*/\1/p' || true
+  detected="$(printf '%s' "${base}" | sed -n 's/^VelaDesk-v\([0-9.]*\)-.*/\1/p' || true)"
+  printf '%s' "${detected:-unknown}"
 }
 
 # ---------- 查询远端版本 ----------
@@ -121,6 +140,12 @@ fi
 # ---------- 确定目标版本 ----------
 LATEST="$(remote_version)"
 VERSION="${TARGET_VERSION:-${LATEST}}"
+case "${VERSION}" in
+  *[!0-9A-Za-z.-]*|"")
+    echo "[upgrade] 版本号不合法：${VERSION}（应形如 1.2.3 或 v1.2.3）" >&2
+    exit 1
+    ;;
+esac
 echo "[upgrade] 安装目录：${INSTALL_DIR}"
 echo "[upgrade] 当前版本：$(current_version)"
 echo "[upgrade] 目标版本：${VERSION}（最新：${LATEST}）"
@@ -144,10 +169,12 @@ curl -fsSL --max-time 600 -o "${WORK_DIR}/${ASSET_NAME}" \
 echo "[upgrade] 校验 SHA256 …"
 curl -fsSL --max-time 60 -o "${WORK_DIR}/SHA256SUMS.txt" \
   "https://github.com/${REPO}/releases/download/v${VERSION}/SHA256SUMS.txt"
-EXPECT="$(grep "${ASSET_NAME}" "${WORK_DIR}/SHA256SUMS.txt" | awk '{print $1}')"
+# 锚定整行匹配 + `|| true`：grep 无匹配会以 exit 1 触发 pipefail 直接杀脚本，
+# 让下面的友好报错变成永远走不到的死分支
+EXPECT="$(grep -E "^[0-9a-f]{64}[[:space:]]+${ASSET_NAME}\$" "${WORK_DIR}/SHA256SUMS.txt" | awk '{print $1}' || true)"
 ACTUAL="$(cd "${WORK_DIR}" && ${SHA_TOOL} "${ASSET_NAME}" | awk '{print $1}')"
 if [ -z "${EXPECT}" ] || [ "${EXPECT}" != "${ACTUAL}" ]; then
-  echo "[upgrade] SHA256 校验失败（期望 ${EXPECT}，实际 ${ACTUAL}），已中止，未改动安装目录。" >&2
+  echo "[upgrade] SHA256 校验失败（期望 ${EXPECT:-在 SHA256SUMS.txt 中未找到 ${ASSET_NAME}}，实际 ${ACTUAL}），已中止，未改动安装目录。" >&2
   exit 1
 fi
 
@@ -185,8 +212,14 @@ fi
 echo "[upgrade] 换装：旧目录 → $(basename "${BACKUP_DIR}")，新目录 → $(basename "${INSTALL_DIR}")"
 mv "${INSTALL_DIR}" "${BACKUP_DIR}"
 if ! mv "${NEW_DIR}" "${INSTALL_DIR}"; then
+  # 跨文件系统 mv 是"复制+删除"，可能留下半成品 INSTALL_DIR；
+  # 旧版本安全地在 BACKUP_DIR 里，先清掉残骸再回滚
   echo "[upgrade] 换入失败，回滚 …" >&2
-  mv "${BACKUP_DIR}" "${INSTALL_DIR}"
+  rm -rf "${INSTALL_DIR}"
+  if ! mv "${BACKUP_DIR}" "${INSTALL_DIR}"; then
+    echo "[upgrade] 回滚也失败了！旧版本完整保留在 ${BACKUP_DIR}，请手动改名恢复。" >&2
+    exit 1
+  fi
   exit 1
 fi
 
@@ -196,11 +229,20 @@ echo "[upgrade] 旧版本保留在 ${BACKUP_DIR}（确认正常后可删除它�
 if [ "${DO_RESTART}" = "1" ]; then
   echo "[upgrade] 启动新版本 …"
   (cd "${INSTALL_DIR}" && nohup ./start-veladesk.sh > "${INSTALL_DIR}/upgrade-restart.log" 2>&1 &)
-  sleep 5
-  if lsof -ti "tcp:${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+  # 轮询 30 秒等端口上线（首次启动可能要跑迁移），失败时以非零退出供自动化识别
+  UP=0
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    sleep 2
+    if lsof -ti "tcp:${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+      UP=1
+      break
+    fi
+  done
+  if [ "${UP}" = "1" ]; then
     echo "[upgrade] 已在端口 ${PORT} 重新上线（日志：${INSTALL_DIR}/upgrade-restart.log）"
   else
-    echo "[upgrade] 未检测到端口监听，请查看 ${INSTALL_DIR}/upgrade-restart.log 或手动启动。" >&2
+    echo "[upgrade] 30 秒内未检测到端口监听，升级本身已完成；请查看 ${INSTALL_DIR}/upgrade-restart.log 或手动启动。" >&2
+    exit 1
   fi
 else
   echo "[upgrade] 按原方式重启即可生效（关掉旧启动窗口，再运行 start-veladesk）。"

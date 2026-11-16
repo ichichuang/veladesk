@@ -16,8 +16,10 @@ backend, no external database, and no message queue.
   (`apps/web/server/config.ts`). Point migrations at
   `<repo>/packages/database/drizzle`.
 - The server binds `HOSTNAME` / `PORT` (Next.js convention). `VELADESK_HOST` /
-  `VELADESK_PORT` are read ONLY by the release-package launcher scripts, not
-  by `next start` or Docker.
+  `VELADESK_PORT` are read ONLY by the release-package launcher and upgrade
+  scripts (the launchers map them to HOSTNAME/PORT; the upgrade scripts use
+  VELADESK_PORT to find/stop the running instance), not by `next start` or
+  Docker.
 - Toolchain: Node ≥ 24 (`.nvmrc`: 24.21.0), pnpm `11.17.0` (root
   `packageManager`), pnpm workspace + Turborepo. `better-sqlite3` is a native
   module (prebuilt binary when the ABI matches; python3/make/g++ as fallback).

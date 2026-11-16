@@ -232,11 +232,13 @@ WantedBy=timers.target
   | 平台 | 一条命令（把安装目录换成你的实际路径） |
   | --- | --- |
   | macOS / Linux | `curl -fsSL https://raw.githubusercontent.com/ichichuang/veladesk/main/scripts/remote-upgrade.sh \| bash -s -- ~/Downloads/VelaDesk-v1.0.0-macos-arm64` |
-  | Windows | `powershell -ExecutionPolicy Bypass -Command "iwr https://raw.githubusercontent.com/ichichuang/veladesk/main/scripts/remote-upgrade.ps1 -OutFile %TEMP%\veladesk-upgrade.ps1; & %TEMP%\veladesk-upgrade.ps1 'C:\VelaDesk-v1.0.0-windows-x64'"` |
+  | Windows | `powershell -ExecutionPolicy Bypass -Command "iwr https://raw.githubusercontent.com/ichichuang/veladesk/main/scripts/remote-upgrade.ps1 -OutFile $env:TEMP\veladesk-upgrade.ps1; & $env:TEMP\veladesk-upgrade.ps1 'C:\VelaDesk-v1.0.0-windows-x64'"` |
 
   - 升级后按原方式重启（双击 start-veladesk.cmd / 运行 start-veladesk.sh）即生效；
     加 `--restart`（或 `-Restart`）参数脚本会代劳停旧起新。
   - 想固定/回退版本：脚本第二个参数给版本号（如 `v1.2.3` / `-Version 1.2.3`）。
+  - 放进定时任务/无人值守场景时，建议锁定脚本版本（把 URL 里的 `main` 换成
+    具体版本标签如 `v1.1.0`），避免脚本行为随主干漂移。
   - 数据目录位置（升级前后一致，全程不动）：
 
     | 系统 | 数据目录 |

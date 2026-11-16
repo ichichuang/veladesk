@@ -54,6 +54,8 @@ if ($Check) {
 
 $latest = Get-RemoteVersion
 $target = if ($Version) { $Version } else { $latest }
+# 允许 -Version v1.2.3 / 1.2.3 两种写法（与 sh 版一致）
+$target = $target -replace '^v', ''
 Write-Host "[upgrade] 安装目录：$InstallDir"
 Write-Host "[upgrade] 当前版本：$(Get-CurrentVersion)"
 Write-Host "[upgrade] 目标版本：$target（最新：$latest）"
@@ -110,7 +112,9 @@ try {
       $oldPid = $conn.OwningProcess
       if ($oldPid -and $oldPid -ne $PID) {
         Write-Host "[upgrade] 停止旧进程（端口 $port，pid $oldPid）…"
-        taskkill /PID $oldPid /T /F 2>$null | Out-Null
+        # 不用 `taskkill ... 2>$null`：PowerShell 5.1 在 EAP=Stop 下会把原生
+        # stderr 当 terminating error（良性竞态"进程不存在"也会中止整个升级）
+        cmd /c "taskkill /PID $oldPid /T /F >nul 2>nul"
       }
     }
   }
@@ -121,17 +125,41 @@ try {
     Move-Item -LiteralPath $newDir -Destination $InstallDir
   } catch {
     Write-Host "[upgrade] 换入失败，回滚 …" -ForegroundColor Red
-    Rename-Item -LiteralPath "${InstallDir}.backup-$(Get-CurrentVersion)" -NewName (Split-Path $InstallDir -Leaf)
-    throw
+    # 跨卷 Move-Item 可能留下半成品目录：先清掉残骸再回滚；回滚自身失败时
+    # 不吞掉原始异常（保存后重抛）
+    $moveError = $_
+    try {
+      if (Test-Path -LiteralPath $InstallDir) {
+        Remove-Item -LiteralPath $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+      }
+      Rename-Item -LiteralPath "${InstallDir}.backup-$(Get-CurrentVersion)" -NewName (Split-Path $InstallDir -Leaf)
+    } catch {
+      Write-Host "[upgrade] 回滚也失败了！旧版本完整保留在 ${InstallDir}.backup-*，请手动改名恢复。" -ForegroundColor Red
+    }
+    throw $moveError
   }
 
   Write-Host "[upgrade] 完成：$InstallDir 现在是 v$target"
   Write-Host "[upgrade] 旧版本保留在 $backupDir（确认正常后可删除）"
 
   if ($Restart) {
+    $port = if ($env:VELADESK_PORT) { [int]$env:VELADESK_PORT } else { $DefaultPort }
     Write-Host "[upgrade] 启动新版本 …"
     Start-Process -FilePath (Join-Path $InstallDir "start-veladesk.cmd") -WorkingDirectory $InstallDir
-    Write-Host "[upgrade] 启动窗口已打开（保持窗口开启 = 保持 VelaDesk 运行）"
+    Write-Host "[upgrade] 启动窗口已打开（保持窗口开启 = 保持 VelaDesk 运行）；等待端口上线 …"
+    $up = $false
+    for ($i = 0; $i -lt 15; $i++) {
+      Start-Sleep -Seconds 2
+      if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
+        $up = $true
+        break
+      }
+    }
+    if ($up) {
+      Write-Host "[upgrade] 已在端口 $port 重新上线"
+    } else {
+      Write-Warning "[upgrade] 30 秒内未检测到端口监听，升级本身已完成；请查看启动窗口的报错或手动重启"
+    }
   } else {
     Write-Host "[upgrade] 按原方式重启即可生效（关掉旧启动窗口，再双击 start-veladesk.cmd），或下次加 -Restart 让脚本代劳"
   }
