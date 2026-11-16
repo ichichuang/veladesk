@@ -340,6 +340,27 @@ function minimalSnapshot() {
 }
 
 /**
+ * t181: every mutating route requires an engineering session (fresh installs
+ * keep only the zero-workspace POST ungated for onboarding). The smoke runs
+ * on a FRESH data dir, so the documented DEFAULT password unlocks; the
+ * in-memory session store dies with each server boot, so unlock once per
+ * boot and attach the cookie to every later request.
+ */
+async function unlockAndBuildAuthedFetch(base, { fetchImpl }) {
+  const unlock = await fetchImpl(`${base}/api/v1/engineering/unlock`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: "123456" }),
+  });
+  assert(unlock.status === 200, `engineering unlock expected 200, got ${unlock.status}`);
+  const setCookie = unlock.headers.get("set-cookie") ?? "";
+  const session = /veladesk_engineering=[^;]*/.exec(setCookie);
+  assert(session !== null, "unlock response missing the veladesk_engineering session cookie");
+  const cookie = session[0];
+  return (url, init) => fetchImpl(url, { ...init, headers: { ...init?.headers, Cookie: cookie } });
+}
+
+/**
  * The full smoke orchestration. Every effect is a seam: tests drive this
  * with fake children/fetch/clock; the CLI drives the real ones.
  *
@@ -394,12 +415,14 @@ export async function runStandaloneSmoke(options) {
 
     const port = await boot();
     const base = `http://127.0.0.1:${port}`;
+    const send = await unlockAndBuildAuthedFetch(base, { fetchImpl });
+    log("engineering session unlocked (fresh data dir, default password)");
 
-    const list = await fetchImpl(`${base}/api/v1/workspaces`);
+    const list = await send(`${base}/api/v1/workspaces`);
     assert(list.headers.get("cache-control") === "no-store", "list response missing Cache-Control: no-store");
     log("boot 1: GET /api/v1/workspaces -> 200");
 
-    const created = await fetchImpl(`${base}/api/v1/workspaces`, {
+    const created = await send(`${base}/api/v1/workspaces`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ snapshot: minimalSnapshot() }),
@@ -409,7 +432,7 @@ export async function runStandaloneSmoke(options) {
     assert(createdBody.workspace.revision === 1, `expected revision 1, got ${createdBody.workspace.revision}`);
     log("POST workspace -> 201 (revision 1)");
 
-    const fetched = await fetchImpl(`${base}/api/v1/workspaces/smoke-workspace`);
+    const fetched = await send(`${base}/api/v1/workspaces/smoke-workspace`);
     assert(fetched.status === 200, `GET workspace expected 200, got ${fetched.status}`);
     const fetchedBody = await fetched.json();
     assert(fetchedBody.workspace.revision === 1, `expected revision 1, got ${fetchedBody.workspace.revision}`);
@@ -422,7 +445,8 @@ export async function runStandaloneSmoke(options) {
     // ---- boot 2: SQLite persistence across a real restart ----------------
     const restartPort = await boot();
     const restartBase = `http://127.0.0.1:${restartPort}`;
-    const persisted = await fetchImpl(`${restartBase}/api/v1/workspaces/smoke-workspace`);
+    const send2 = await unlockAndBuildAuthedFetch(restartBase, { fetchImpl });
+    const persisted = await send2(`${restartBase}/api/v1/workspaces/smoke-workspace`);
     assert(persisted.status === 200, `workspace lost after restart (status ${persisted.status})`);
     const persistedBody = await persisted.json();
     assert(persistedBody.workspace.revision === 1, `expected revision 1 after restart, got ${persistedBody.workspace.revision}`);
@@ -430,27 +454,27 @@ export async function runStandaloneSmoke(options) {
 
     // --- Bundled icon catalog (tasks 016-A / 016-C) -----------------------
     const iconBase = restartBase;
-    const recommended = await fetchImpl(`${iconBase}/api/v1/icons/search`);
+    const recommended = await send2(`${iconBase}/api/v1/icons/search`);
     assert(recommended.status === 200, `recommended search expected 200, got ${recommended.status}`);
     const recommendedBody = await recommended.json();
     assert(recommendedBody.icons[0]?.id === "simple-icons:github", "recommended page must lead with a real brand icon");
     assert(recommendedBody.nextOffset === null, "the curated page must fit in one page");
     log(`icon search (recommended) -> ${recommendedBody.icons.length} curated icons`);
 
-    const all = await fetchImpl(`${iconBase}/api/v1/icons/search?scope=all&limit=96`);
+    const all = await send2(`${iconBase}/api/v1/icons/search?scope=all&limit=96`);
     assert(all.status === 200, `scope=all expected 200, got ${all.status}`);
     const allBody = await all.json();
     assert(allBody.icons.length === 96, `expected 96 icons, got ${allBody.icons.length}`);
     assert(allBody.total > 300, `expected the real catalog, total=${allBody.total}`);
     assert(allBody.nextOffset === 96, `expected nextOffset 96, got ${allBody.nextOffset}`);
-    const page3 = await fetchImpl(`${iconBase}/api/v1/icons/search?scope=all&limit=96&offset=192`);
+    const page3 = await send2(`${iconBase}/api/v1/icons/search?scope=all&limit=96&offset=192`);
     const page3Body = await page3.json();
     const page1Ids = new Set(allBody.icons.map((icon) => icon.id));
     assert(page3Body.icons.every((icon) => !page1Ids.has(icon.id)), "paged results must not repeat an earlier page");
     assert(page3Body.total === allBody.total, "total must be page-independent");
     log(`icon search scope=all -> 3 pages of 96 out of ${allBody.total}`);
 
-    const color = await fetchImpl(`${iconBase}/api/v1/icons/search?scope=color&limit=120`);
+    const color = await send2(`${iconBase}/api/v1/icons/search?scope=color&limit=120`);
     const colorBody = await color.json();
     assert(colorBody.icons.every((icon) => icon.palette === "multicolor"), "scope=color must only return multicolor palettes");
 
@@ -466,7 +490,7 @@ export async function runStandaloneSmoke(options) {
       ["noto", "robot", "multicolor"],
     ];
     for (const [collection, name, palette] of samples) {
-      const response = await fetchImpl(`${iconBase}/api/v1/icons/${collection}/${name}.svg`);
+      const response = await send2(`${iconBase}/api/v1/icons/${collection}/${name}.svg`);
       assert(response.status === 200, `${collection}:${name} expected 200, got ${response.status}`);
       assert(
         response.headers.get("content-type") === "image/svg+xml; charset=utf-8",
@@ -487,28 +511,28 @@ export async function runStandaloneSmoke(options) {
     const png = makePngBytes();
     const assetId = `asset-sha256-${createHash("sha256").update(png).digest("hex")}`;
 
-    const badId = await fetchImpl(`${restartBase}/api/v1/assets/asset-sha256-not-a-real-id`, { method: "PUT", body: png });
+    const badId = await send2(`${restartBase}/api/v1/assets/asset-sha256-not-a-real-id`, { method: "PUT", body: png });
     assert(badId.status === 400, `PUT with a path-shaped id expected 400, got ${badId.status}`);
 
-    const mismatch = await fetchImpl(`${restartBase}/api/v1/assets/asset-sha256-${"0".repeat(64)}`, { method: "PUT", body: png });
+    const mismatch = await send2(`${restartBase}/api/v1/assets/asset-sha256-${"0".repeat(64)}`, { method: "PUT", body: png });
     assert(mismatch.status === 422, `PUT with a foreign id expected 422, got ${mismatch.status}`);
 
-    const created2 = await fetchImpl(`${restartBase}/api/v1/assets/${assetId}`, { method: "PUT", body: png });
+    const created2 = await send2(`${restartBase}/api/v1/assets/${assetId}`, { method: "PUT", body: png });
     assert(created2.status === 201, `first asset PUT expected 201, got ${created2.status}`);
     const created2Body = await created2.json();
     assert(created2Body.asset.id === assetId && created2Body.asset.mediaType === "image/png", "asset envelope mismatch");
     log("asset PUT -> 201 stored");
 
-    const duplicate = await fetchImpl(`${restartBase}/api/v1/assets/${assetId}`, { method: "PUT", body: png });
+    const duplicate = await send2(`${restartBase}/api/v1/assets/${assetId}`, { method: "PUT", body: png });
     assert(duplicate.status === 200, `duplicate asset PUT expected 200, got ${duplicate.status}`);
     log("asset PUT -> 200 already existed");
 
     const oversized = new Uint8Array(4 * 1024 * 1024 + 1);
     oversized.set(png);
-    const tooLarge = await fetchImpl(`${restartBase}/api/v1/assets/${assetId}`, { method: "PUT", body: oversized });
+    const tooLarge = await send2(`${restartBase}/api/v1/assets/${assetId}`, { method: "PUT", body: oversized });
     assert(tooLarge.status === 413, `oversized asset PUT expected 413, got ${tooLarge.status}`);
 
-    const readBack = await fetchImpl(`${restartBase}/api/v1/assets/${assetId}`);
+    const readBack = await send2(`${restartBase}/api/v1/assets/${assetId}`);
     assert(readBack.status === 200, `asset GET expected 200, got ${readBack.status}`);
     assert(readBack.headers.get("content-type") === "image/png", "asset GET content-type mismatch");
     assert(
@@ -520,7 +544,7 @@ export async function runStandaloneSmoke(options) {
     assert(bytesEqual(readBytes, png), "asset GET bytes differ from the PUT body");
     log("asset GET -> exact bytes, type, immutable cache, etag");
 
-    const head = await fetchImpl(`${restartBase}/api/v1/assets/${assetId}`, { method: "HEAD" });
+    const head = await send2(`${restartBase}/api/v1/assets/${assetId}`, { method: "HEAD" });
     assert(head.status === 200, "asset HEAD expected 200");
     assert(head.headers.get("content-length") === String(png.byteLength), "asset HEAD content-length mismatch");
     assert((await head.arrayBuffer()).byteLength === 0, "asset HEAD must have no body");
@@ -532,16 +556,17 @@ export async function runStandaloneSmoke(options) {
 
     const restartPort2 = await boot();
     const base3 = `http://127.0.0.1:${restartPort2}`;
-    const readAfterRestart = await fetchImpl(`${base3}/api/v1/assets/${assetId}`);
+    const send3 = await unlockAndBuildAuthedFetch(base3, { fetchImpl });
+    const readAfterRestart = await send3(`${base3}/api/v1/assets/${assetId}`);
     assert(readAfterRestart.status === 200, `asset GET after restart expected 200, got ${readAfterRestart.status}`);
     const bytesAfterRestart = new Uint8Array(await readAfterRestart.arrayBuffer());
     assert(bytesEqual(bytesAfterRestart, png), "asset bytes lost across restart");
-    const headAfterRestart = await fetchImpl(`${base3}/api/v1/assets/${assetId}`, { method: "HEAD" });
+    const headAfterRestart = await send3(`${base3}/api/v1/assets/${assetId}`, { method: "HEAD" });
     assert(headAfterRestart.status === 200, "asset HEAD after restart expected 200");
     log("boot 3: asset persisted across restart (VELADESK_DATA_DIR/assets)");
 
     // --- Home page: server-rendered HTML (every mode) ---------------------
-    const home = await fetchImpl(`${base3}/`);
+    const home = await send3(`${base3}/`);
     assert(home.status === 200, `GET / expected 200, got ${home.status}`);
     assert((home.headers.get("content-type") ?? "").includes("text/html"), "home page content-type must be text/html");
     const homeHtml = await home.text();

@@ -425,7 +425,17 @@ describe("wallpaper crossfade cleanup", () => {
   const wallpaper = (presetId: "mist" | "dawn") => ({ config: { kind: "preset" as const, presetId }, provenance: "workspace" as const });
   it.each([false, true])("crossfade settles directly or kills on unmount (reduced=%s)", async reduced => {
     preference.reduced = reduced;
-    const fromTo = vi.spyOn(gsap, "fromTo");
+    // Load flake: on a contended runner the crossfade tween can complete and
+    // be auto-removed before the getTweensOf assertion below, reporting an
+    // empty list. Pause each produced tween at birth — the assertion is about
+    // existence, not wall-clock progress, and kill-on-unmount still works on
+    // a paused tween.
+    const realFromTo = gsap.fromTo.bind(gsap);
+    const fromTo = vi.spyOn(gsap, "fromTo").mockImplementation(((...args: Parameters<typeof realFromTo>) => {
+      const tween = realFromTo(...args);
+      tween.pause();
+      return tween;
+    }) as typeof gsap.fromTo);
     const view = render(<WorkspaceWallpaperLayers wallpaper={wallpaper("mist")} assetUrl={null} />);
     view.rerender(<WorkspaceWallpaperLayers wallpaper={wallpaper("dawn")} assetUrl={null} />);
     const incoming = view.container.querySelector<HTMLElement>(".vela-desktop__wallpaper-incoming")!;

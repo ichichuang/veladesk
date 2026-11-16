@@ -62,6 +62,18 @@ async function expectRevokedSoon(url: string): Promise<void> {
   expect(URL.revokeObjectURL).toHaveBeenCalledWith(url);
 }
 
+/**
+ * t137 live preview superseded UX-07 for PICKED images: the URL is retained
+ * into the shared wallpaper asset cache the moment it is picked (the desktop
+ * paints it before Save), so no session path may ever revoke it — revoking
+ * would poison the content-addressed cache entry and black the wallpaper
+ * out. Wait past the old release window and assert the absence.
+ */
+async function expectRetainedForever(url: string): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, WALLPAPER_PREVIEW_RELEASE_DELAY_MS + 250));
+  expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(url);
+}
+
 describe("saved background thumbnail", () => {
   it.each(["workspace", "page-1"] as const)("loads the saved %s image with its fit and a loading skeleton", async scope => {
     const view = settings(scope);
@@ -72,7 +84,7 @@ describe("saved background thumbnail", () => {
     fireEvent.load(image);
     expect(view.queryByRole("status", { name: "Loading image" })).toBeNull();
   });
-  it("switches to the pending image, updates fit, removes it and releases both URLs", async () => {
+  it("switches to the pending image, updates fit, removes it and retains the URL", async () => {
     const view = settings();
     await savedImage(view);
     await choose(view);
@@ -83,9 +95,9 @@ describe("saved background thumbnail", () => {
     fireEvent.click(view.getByRole("button", { name: "Remove image" }));
     expect(view.getByText("No image set")).toBeTruthy();
     expect(view.queryByAltText("Background image preview")).toBeNull();
-    // The never-saved URL is released DELAYED (UX-07): a surface may still
-    // be painting it — the immediate revoke contract is gone by design.
-    await expectRevokedSoon("blob:new");
+    // The picked URL was RETAINED at pick (t137 live preview): the cache
+    // owns it for the tab session, so remove must NOT revoke it.
+    await expectRetainedForever("blob:new");
   });
   it.each(["cancel", "escape"])("restores the saved image after %s and reopening", async method => {
     const view = settings();
@@ -94,7 +106,7 @@ describe("saved background thumbnail", () => {
     if (method === "cancel") fireEvent.click(view.getByRole("button", { name: "Cancel" }));
     else fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(view.close).toHaveBeenCalled());
-    await expectRevokedSoon("blob:new");
+    await expectRetainedForever("blob:new");
     view.reopen();
     await savedImage(view);
     expect(view.queryByText("Unsaved")).toBeNull();
@@ -113,11 +125,11 @@ describe("saved background thumbnail", () => {
     await waitFor(() => expect(view.getByText("Unable to load image")).toBeTruthy());
     expect(URL.createObjectURL).not.toHaveBeenCalled();
   });
-  it("releases a pending URL on unmount (delayed, UX-07)", async () => {
+  it("retains a pending URL on unmount — the cache owns it (t137)", async () => {
     const view = settings();
     await choose(view);
     view.unmount();
-    await expectRevokedSoon("blob:new");
+    await expectRetainedForever("blob:new");
   });
   it("releases an image whose preparation finishes after cancellation", async () => {
     let resolve!: (value: unknown) => void;

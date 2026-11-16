@@ -151,6 +151,24 @@ function livePairTimeline(): gsap.core.Timeline {
   return live[0] as gsap.core.Timeline;
 }
 
+/**
+ * Choreography helper for "drive the in-flight pair to completion" steps.
+ * When the pair has ALREADY completed and been auto-removed (slow-runner
+ * load), the settled state the completion would produce is already on
+ * screen, so the right behavior is a no-op, not a throw. More than one live
+ * pair remains a genuine machine bug.
+ */
+function completePairTimeline(): void {
+  const timelines = gsap.globalTimeline.getChildren(false, false, true);
+  const live = timelines.filter((timeline) => timeline.progress() < 1);
+  if (live.length > 1) {
+    throw new Error(`expected at most one live pair timeline, found ${live.length}`);
+  }
+  if (live.length === 1) {
+    (live[0] as gsap.core.Timeline).progress(1);
+  }
+}
+
 /** Makes a jsdom element report a layout dimension (the dimensions seam). */
 function stubBox(element: HTMLElement, props: Record<string, number>): void {
   for (const [key, value] of Object.entries(props)) {
@@ -201,7 +219,7 @@ describe("A→B completion boundary (022-R2 rollback)", () => {
     (layerB.querySelector(".vela-section-scroller") as HTMLElement).scrollTop = 700;
 
     await act(async () => {
-      livePairTimeline().progress(1);
+      completePairTimeline();
       // The window a browser paints between the final timeline update and
       // React's idle commit: A must STILL be outside the viewport here.
       expect(yOf(layerA)).toBe(-W);
@@ -228,14 +246,14 @@ describe("A→B completion boundary (022-R2 rollback)", () => {
 
     await navigateTo("Beta");
     await act(async () => {
-      livePairTimeline().progress(1);
+      completePairTimeline();
     });
 
     const layerA = layerOf("page-a");
     const layerB = layerOf("page-b");
     await navigateTo("Alpha");
     await act(async () => {
-      livePairTimeline().progress(1);
+      completePairTimeline();
       // "prev" slides the outgoing page DOWN: B must stay at +H here.
       expect(yOf(layerB)).toBe(W);
       expect(layerB.dataset.phase).toBe("exit");
@@ -253,7 +271,7 @@ describe("A→B completion boundary (022-R2 rollback)", () => {
     const layerABefore = layerOf("page-a");
     await navigateTo("Beta");
     await act(async () => {
-      livePairTimeline().progress(1);
+      completePairTimeline();
     });
     // A survived the settle mounted (warm cache around B keeps it).
     expect(layerOf("page-a")).toBe(layerABefore);
@@ -268,7 +286,7 @@ describe("A→B completion boundary (022-R2 rollback)", () => {
 
     await navigateTo("Gamma");
     await act(async () => {
-      livePairTimeline().progress(1);
+      completePairTimeline();
     });
 
     expect(layerOf("page-b")).toBe(layerB); // same node through the hop
@@ -331,7 +349,7 @@ describe("initial pill selection through the workspace-entry policy (022-R2, pil
     ).toBe("page-b");
 
     await act(async () => {
-      livePairTimeline().progress(1);
+      completePairTimeline();
     });
     expect(layerOf("page-b").dataset.phase).toBe("active");
   });
@@ -352,7 +370,7 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
 
     await navigateTo("Alpha"); // reversal: A is the outgoing page of the running pair
     await act(async () => {
-      livePairTimeline().progress(1);
+      completePairTimeline();
       // B is the abandoned target mid-exit at the completion boundary: it
       // must still hold its exit pose (outside the viewport), not be rested
       // into view while its phase still says "exit".
@@ -553,7 +571,7 @@ describe("interruption policies at the real boundaries (022-R2)", () => {
     await navigateTo("Beta");
     const layerA = layerOf("page-a");
     await act(async () => {
-      livePairTimeline().progress(1);
+      completePairTimeline();
       expect(yOf(layerA)).toBe(-W);
     });
     expect(layerOf("page-b").dataset.phase).toBe("active");

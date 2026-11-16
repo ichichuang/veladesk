@@ -131,6 +131,15 @@ function makeFakeFetch({ packageFixture, log } = {}) {
     if (parsed.pathname === "/api/v1/workspaces" && (init?.method ?? "GET") === "GET") {
       return new FakeResponse({ headers: { "cache-control": "no-store" }, json: { workspaces: [] } });
     }
+    if (parsed.pathname === "/api/v1/engineering/unlock" && init?.method === "POST") {
+      // t181: the smoke unlocks with the default password on a fresh data
+      // dir; the session cookie rides every later request.
+      return new FakeResponse({
+        status: 200,
+        headers: { "set-cookie": "veladesk_engineering=fake-session-token; Path=/; HttpOnly; SameSite=Strict" },
+        json: { active: true },
+      });
+    }
     if (parsed.pathname === "/api/v1/workspaces" && init?.method === "POST") {
       return new FakeResponse({ status: 201, json: { workspace: { revision: 1 } } });
     }

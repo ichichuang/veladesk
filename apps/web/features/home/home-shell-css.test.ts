@@ -43,11 +43,15 @@ describe("home-shell.css transform ownership", () => {
     expect(base![1]!).not.toMatch(/transition:\s*transform/);
   });
 
-  it("the hover lift is GSAP-owned — no CSS transform easing remains (022)", () => {
+  it("the hover lift is GSAP-owned — no CSS transform easing on items/dock (022)", () => {
     // The stylesheet hover-lift rules are gone; the shared useVdHoverLift
-    // hook owns the interpolation on the INNER body node, so the CSS never
-    // eases or places a hover transform again.
-    expect(css).not.toMatch(/transition:\s*transform/);
+    // hook owns the interpolation on the INNER body node, so the item and
+    // dock CSS never eases or places a hover transform again. (t137 later
+    // deliberately added NON-item chrome transforms eased on the motion
+    // tokens — the launcher option accent bar grow and the inspector row
+    // chevron lean — which this contract does not govern.)
+    expect(css).not.toMatch(/\.vela-item[^{]*\{[^}]*transition:\s*transform/);
+    expect(css).not.toMatch(/\.vela-dock[^{]*\{[^}]*transition:\s*transform/);
     expect(css).not.toMatch(/\.vela-item\[data-kind="app"\]:hover[^{]*\{[^}]*transform/);
     expect(css).not.toMatch(/\.vela-dock__item:hover[^{]*\{[^}]*transform/);
     const desktopItem = readSource("./desktop-item.tsx");
