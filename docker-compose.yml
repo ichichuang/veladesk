@@ -1,0 +1,28 @@
+# VelaDesk — single-service deployment.
+#
+#   docker compose up -d --build     # 首次启动 / 更新代码后
+#   docker compose logs -f           # 看日志
+#   docker compose down              # 停止（数据在 named volume 里，不会丢）
+#
+# 数据（SQLite 数据库、上传的图片、工程模式凭据）全部存在 named volume
+# `veladesk-data`（容器内 /data）。备份 = 备份这个 volume，见 docs/DEPLOYMENT.md。
+
+services:
+  veladesk:
+    # 默认用官方 GHCR 镜像（跟随最新正式版）；`docker compose pull && docker
+    # compose up -d` 即可升级。没有网/想本地构建时，`docker compose up -d
+    # --build` 会用本仓库源码构建并覆盖镜像标签。详见 docs/DEPLOYMENT.md。
+    image: ghcr.io/ichichuang/veladesk:latest
+    build: .
+    container_name: veladesk
+    restart: unless-stopped
+    ports:
+      - "${VELADESK_PORT:-3000}:3000"
+    volumes:
+      - veladesk-data:/data
+    # 需要覆盖时在这里加 environment，例如自定义端口（容器内端口不用动）：
+    # environment:
+    #   PORT: "3000"
+
+volumes:
+  veladesk-data:

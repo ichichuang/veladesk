@@ -18,6 +18,7 @@
 <p align="center">
   <a href="https://veladesk.chichuangdev.dpdns.org"><b>在线演示</b></a> ·
   <a href="https://github.com/ichichuang/veladesk/releases/latest"><b>下载</b></a> ·
+  <a href="#部署到服务器"><b>部署</b></a> ·
   <a href="#从源码运行"><b>从源码运行</b></a> ·
   <a href="./docs/DEVELOPMENT.md"><b>开发文档</b></a>
 </p>
@@ -274,6 +275,31 @@ VELADESK_PORT=8080 ./start-veladesk.sh
 
 http://127.0.0.1:8080
 
+## 部署到服务器
+
+上面说的都是"在自己电脑上跑"。想让它 7×24 常驻（VPS、NAS、内网服务器），
+用 Docker 最快：
+
+```bash
+git clone https://github.com/ichichuang/veladesk.git
+cd veladesk
+docker compose pull && docker compose up -d
+```
+
+数据存在 Docker 卷里，备份、升级、HTTPS、不用 Docker 的源码部署方式，
+都写在[部署指南](./docs/DEPLOYMENT.md)里。
+已部署的实例还能**自动跟随新版**：每个正式版发布后 CI 会把镜像推到 GHCR，
+Docker 机器加一个 Watchtower、源码机器挂 `scripts/update.sh` 定时任务，
+即可无人值守静默升级（见[部署指南](./docs/DEPLOYMENT.md)「版本更新与自动升级」）。
+
+两件事部署后要知道：
+
+- **默认是"使用模式"**（只能浏览和打开网站），编辑功能在"工程模式"里，
+  默认密码 `123456`，解锁入口和改密方法见[部署指南](./docs/DEPLOYMENT.md)。
+  公网部署务必改掉默认密码。
+- **公网或局域网非本机访问必须走 HTTPS**：浏览器安全限制，明文 HTTP 下
+  无法创建工作区和磁贴（`localhost` 不受影响）。
+
 ## 数据保存在哪里
 
 | 系统 | 数据目录 |
@@ -323,6 +349,27 @@ A：运行一次：
 chmod +x start-veladesk.sh
 ```
 
+**Q：装好以后右键没有"添加应用"、不能编辑？**
+A：当前版本默认处于"使用模式"（只能浏览和打开网站）。编辑功能在"工程模式"里：
+在品牌/标题区域或空白桌面背景上快速连点 7 次，输入默认密码 `123456` 解锁；
+然后到 设置 → 通用 → 修改密码 改掉默认密码。详见[部署指南](./docs/DEPLOYMENT.md)。
+
+**Q：部署到服务器后，手机或别的电脑打不开/不能用？**
+A：先用 `http://<服务器IP>:3000` 确认服务本身在跑；浏览/打开网站可以正常用，
+但创建工作区和磁贴需要 HTTPS（浏览器安全限制，`localhost` 除外）。
+公网部署请在反向代理上配 HTTPS，方法见[部署指南](./docs/DEPLOYMENT.md)。
+
+**Q：用老程序包（zip/tar.gz）安装的，能在线升级吗？**
+A：能，不用重新下载安装。一条命令原地升级（自动下载正式包、SHA256 校验、
+备份旧目录后换装，数据全程不动），详见[部署指南](./docs/DEPLOYMENT.md)
+「老版本部署怎么跟上」：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ichichuang/veladesk/main/scripts/remote-upgrade.sh | bash -s -- 你的VelaDesk安装目录
+```
+
+Windows 用 PowerShell 版 `scripts/remote-upgrade.ps1`，命令见部署指南。
+
 ## 从源码运行
 
 适合想体验 `main` 分支最新功能或参与开发的人。需要 Git、Node.js 24 LTS 和 pnpm 11
@@ -350,7 +397,8 @@ VELADESK_DATA_DIR=/path/to/veladesk-data pnpm dev
 | --- | --- |
 | `VELADESK_HOST` | 正式程序包监听的地址，默认 `127.0.0.1`（只有本机能访问）；设为 `0.0.0.0` 可让局域网访问 |
 | `VELADESK_PORT` | 正式程序包监听的端口，默认 `3000` |
-| `VELADESK_DATA_DIR` | 数据目录（SQLite 数据库和上传的图片）。程序包启动脚本默认使用「数据保存在哪里」一节的目录，设置它可以换位置 |
+| `VELADESK_DATA_DIR` | 数据目录（SQLite 数据库和上传的图片）。程序包启动脚本默认使用「数据保存在哪里」一节的目录，设置它可以换位置；**生产模式（`NODE_ENV=production`）下必填** |
+| `VELADESK_MIGRATIONS_DIR` | 数据库迁移 SQL 目录，生产模式下必填，指向仓库内的 `packages/database/drizzle`；程序包已内置无需设置 |
 | `VELADESK_DEV_ALLOWED_ORIGINS` | 仅开发服务器使用，局域网调试时允许的来源主机名，详见 [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md) |
 
 ## 技术栈

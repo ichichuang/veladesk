@@ -1,0 +1,27 @@
+# Keep the Docker build context slim; junk here never enters the image.
+.git
+node_modules
+**/node_modules
+.next
+**/.next
+.turbo
+**/.turbo
+.veladesk-data
+**/.veladesk-data
+
+# Local verification artifacts and editor state
+artifacts
+gui-test-screenshots
+coverage
+**/coverage
+*.log
+.DS_Store
+**/.DS_Store
+
+# Local docs and screenshots are not needed inside the image
+docs
+
+# Data that must never bake into an image layer
+*.db
+*.db-shm
+*.db-wal
