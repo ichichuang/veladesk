@@ -171,8 +171,11 @@ jobs:
         run: |
           set -eu
           node apps/web/scripts/package-release.mjs --out dist
-          # The runner is linux-x64 — exactly the production architecture.
-          mv dist/VelaDesk-v*-linux-x64.tar.gz "dist/veladesk-${SHA}.tar.gz"
+          # package-release stages the bundle directory + manifest only; the
+          # archive is created here exactly like release.yml does, from the
+          # manifest's own directory field.
+          PKG_DIR="$(node -e 'const m=JSON.parse(require("node:fs").readFileSync("dist/release-manifest.json","utf8"));console.log(m.directory)')"
+          tar -czf "dist/veladesk-${SHA}.tar.gz" -C "$(dirname "$PKG_DIR")" "$(basename "$PKG_DIR")"
           sha256sum "dist/veladesk-${SHA}.tar.gz" | cut -d' ' -f1 > "dist/veladesk-${SHA}.sha256"
           echo "bundle:"; ls -la dist/veladesk-*
 
