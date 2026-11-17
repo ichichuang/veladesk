@@ -306,11 +306,18 @@ done
 for _ in $(seq 1 15); do kill -0 "$SMOKE_BG" 2>/dev/null || break; sleep 1; done
 kill -TERM -- "-$SMOKE_BG" 2>/dev/null || true
 kill_smoke
-rm -rf "$SMOKE_DATA" "$SMOKE_LOG"
 if [ "$SMOKE_CODE" != "200" ]; then
   RESULT="FAILED-STAGE-SMOKE"
+  # Diagnostics first: the boot log is the ONLY record of why (the process
+  # is already gone). Print it here so CI captures it, and keep the file.
+  echo "---- smoke boot log (last 40 lines) ----"
+  tail -40 "$SMOKE_LOG" 2>/dev/null || echo "(no smoke log)"
+  echo "----------------------------------------"
+  mv "$SMOKE_LOG" "$UPLOAD_DIR/smoke-failed-$COMMIT.log" 2>/dev/null || true
+  rm -rf "$SMOKE_DATA"
   die "staged release failed its disposable-data smoke (HTTP $SMOKE_CODE); production untouched"
 fi
+rm -rf "$SMOKE_DATA" "$SMOKE_LOG"
 info "staged release serves /api/v1/workspaces 200 on disposable data"
 
 # ---- 4. consistent backup (verify readable before continuing) ----

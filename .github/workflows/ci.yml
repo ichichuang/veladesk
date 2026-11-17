@@ -147,36 +147,27 @@ jobs:
             exit 1
           fi
 
-      - name: Setup pnpm
-        if: steps.gate.outputs.run == 'true'
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js
-        if: steps.gate.outputs.run == 'true'
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      - name: Install dependencies
-        if: steps.gate.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile
-
-      - name: Build (the same standalone build the smoke validated)
-        if: steps.gate.outputs.run == 'true'
-        run: pnpm build
-
-      - name: Package the standalone release bundle (linux-x64)
+      # better-sqlite3 v13 ships NO prebuilds — it compiles from source at
+      # install time against the BUILD machine's glibc. A binary compiled on
+      # ubuntu-latest (glibc 2.39) fails to load on the Debian 12 production
+      # host (glibc 2.36) and every API route answers 500. So the production
+      # bundle MUST be built inside the production distro: the exact image and
+      # toolchain the Dockerfile build stage uses (node:24-bookworm-slim +
+      # python3/make/g++ + pnpm 11.17.0).
+      - name: Build and package inside the production image (Debian 12)
         if: steps.gate.outputs.run == 'true'
         run: |
           set -eu
-          node apps/web/scripts/package-release.mjs --out dist
-          # package-release stages the bundle directory + manifest only; the
-          # archive is created here exactly like release.yml does, from the
-          # manifest's own directory field.
-          PKG_DIR="$(node -e 'const m=JSON.parse(require("node:fs").readFileSync("dist/release-manifest.json","utf8"));console.log(m.directory)')"
-          tar -czf "dist/veladesk-${SHA}.tar.gz" -C "$(dirname "$PKG_DIR")" "$(basename "$PKG_DIR")"
-          sha256sum "dist/veladesk-${SHA}.tar.gz" | cut -d' ' -f1 > "dist/veladesk-${SHA}.sha256"
+          docker run --rm -e SHA -v "$PWD:/src" -w /src node:24-bookworm-slim bash -euc '
+            apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 make g++ >/dev/null &&
+            npm install --global pnpm@11.17.0 >/dev/null &&
+            pnpm install --frozen-lockfile &&
+            pnpm build &&
+            node apps/web/scripts/package-release.mjs --out dist &&
+            PKG_DIR="$(node -e "const m=JSON.parse(require(\"node:fs\").readFileSync(\"dist/release-manifest.json\",\"utf8\"));console.log(m.directory)")" &&
+            tar -czf "dist/veladesk-${SHA}.tar.gz" -C "$(dirname "$PKG_DIR")" "$(basename "$PKG_DIR")" &&
+            sha256sum "dist/veladesk-${SHA}.tar.gz" | cut -d" " -f1 > "dist/veladesk-${SHA}.sha256"
+          '
           echo "bundle:"; ls -la dist/veladesk-*
 
       - name: Stage the bundle on the VPS
@@ -188,7 +179,7 @@ jobs:
       - name: Deploy (single validated server-side entry point)
         if: steps.gate.outputs.run == 'true'
         run: |
-          set -eu
+          set -euo pipefail
           sha256="$(cat "dist/veladesk-${SHA}.sha256")"
           ssh veladesk-production \
             "sudo -n /usr/local/sbin/veladesk-deploy.sh --commit '${SHA}' --sha256 '${sha256}' --run-id '${GITHUB_RUN_ID}'" \
