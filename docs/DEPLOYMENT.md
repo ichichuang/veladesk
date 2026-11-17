@@ -272,6 +272,77 @@ WantedBy=timers.target
 （或交给 Watchtower）；源码机器跑 `scripts/update.sh`（或交给 systemd timer）。
 数据目录与代码完全分离，正常升级不需要重新建立工作区。
 
+## RackNerd 自动部署（main CI → 生产 systemd 实例）
+
+这一节描述**作者自己的生产实例**（RackNerd VPS，Debian 12，x86_64，无 Docker）：
+`veladesk.service`（systemd）运行 `/opt/veladesk/current/start-veladesk.sh`，
+`current` 是指向 `/opt/veladesk/releases/v<版本>-<短SHA>` 的原子指针，数据在
+`/var/lib/veladesk`，nginx（Cloudflare 橙云在前）反代 `127.0.0.1:3000`。
+每次 push 到 main 通过 CI 全量校验后，可把**当次通过的精确 SHA**部署上去；
+自动部署由 GitHub Environment 变量 `VELADESK_AUTO_DEPLOY` 控制，默认关闭。
+
+### 运行语义
+
+- **只部署验证过的 SHA**：deploy job `needs: quality`，并以
+  `ref: ${{ github.sha }}` 检出同一次 run 的提交；构建与
+  `package-release.mjs` 打出的 linux-x64 包（与上面 systemd 布局完全同一
+  运行时）经 SHA256 校验后上传。
+- **生产串行**：GitHub 并发组 `veladesk-deploy-production`（不可取消）+
+  主机 `flock`；排队中的旧 run 在锁内被判定 stale 拒绝，已部署的 SHA 是
+  no-op。新的 push 只会取消校验（quality job 的并发组），绝不会打断在跑的
+  部署。
+- **唯一入口**：runner 只上传一个校验和锁定的 tarball，然后调用
+  `sudo -n /usr/local/sbin/veladesk-deploy.sh --commit <sha> --sha256 <hex>
+  --run-id <run号>`——参数仅限三个已验证标识符，不接受路径或命令；脚本本体
+  root 拥有，且 CI 会先比对主机脚本与仓库
+  `scripts/deploy-racknerd.sh` 的 SHA256，不一致直接拒绝部署。
+- **部署步骤**（全部在主机上）：暂存包先用一次性数据在 3999 端口冒烟 →
+  在线 SQLite 备份（integrity_check 验证可读）+ assets + 工程凭据 →
+  记录迁移指纹 → 原子切换 `current` → 仅重启 `veladesk.service` →
+  健康检查 → 写 `/opt/veladesk/last-deploy.json`（含 SHA、上一版本、备份
+  位置、结果；只记工作区**数量**，永不记录内容）。
+- **验证**：CI 在服务端读 `/opt/veladesk/current/COMMIT` 必须等于目标 SHA
+  （HTTP 200 缓存不算证据），再经 Cloudflare 正常路径检查公网 HTTPS
+  `/` 与 `/api/v1/workspaces` 状态码（只看状态码，不记录响应体）。
+
+### 回滚边界（重要）
+
+- 新版本**健康检查失败且迁移指纹未变** → 自动切回上一 release 并重启，
+  站点恢复 200（日志与 CI 均报 `ROLLED-BACK`）。
+- 迁移已运行（指纹变化）或读不出 → **不自动回滚**（旧代码读新库不安全），
+  服务停在断点等待人工决策（`HALTED-MIGRATED`，退出码 2）。恢复三要素会
+  同时打进日志和 CI 摘要：上一 release 路径、当前 release、一致性备份目录。
+- 公网检查失败但本地服务健康：迁移已跑，同样**不自动回滚**，人工决策。
+
+### 一次性设置（已按此供给，留作重建手册）
+
+1. 主机（root）安装 sudo 并建专用部署账户：
+   `apt-get install -y sudo && useradd -m -s /bin/bash veladesk-deploy`。
+2. `/etc/sudoers.d/veladesk-deploy`（一行，仅此一条命令）：
+   `veladesk-deploy ALL=(root) NOPASSWD: /usr/local/sbin/veladesk-deploy.sh`，
+   然后 `visudo -c` 校验。
+3. 上传目录：`mkdir -p /var/tmp/veladesk-deploy && chown veladesk-deploy: /var/tmp/veladesk-deploy && chmod 700 /var/tmp/veladesk-deploy`。
+4. 部署脚本：把仓库 `scripts/deploy-racknerd.sh` 原样放到
+   `/usr/local/sbin/veladesk-deploy.sh`（root:root 0755）。**每次改动此脚本
+   都要先同步主机再推送**——CI 用 SHA256 比对，漂移即拒部署。
+5. 专用 SSH 密钥（ed25519，仅 VelaDesk 用，不与任何其他项目复用）：公钥装进
+   `veladesk-deploy` 的 `authorized_keys`，前缀加 `restrict`；私钥与
+   `ssh-keyscan -p <端口> <主机>` 得到的 host key 分别进 GitHub secrets。
+6. GitHub Environment `production-racknerd`（deployment branch 限 main）：
+   secrets `VELADESK_SSH_KEY`、`VELADESK_SSH_KNOWN_HOSTS`；variables
+   `VELADESK_DEPLOY_HOST` / `VELADESK_DEPLOY_PORT` / `VELADESK_DEPLOY_USER`、
+   `VELADESK_PUBLIC_URL`（公网 HTTPS 基址）。**不设置**
+   `VELADESK_AUTO_DEPLOY`（或留空）= 自动部署关闭。
+
+### 手动部署 / 打开自动部署
+
+- 手动部署某个 main SHA：Actions → CI → Run workflow（main 分支）→ 同一次
+  run 内 quality 全绿后 deploy 执行（workflow_dispatch 不受
+  `VELADESK_AUTO_DEPLOY` 影响）。
+- 确认首跑成功后，在 Environment `production-racknerd` 里把变量
+  `VELADESK_AUTO_DEPLOY` 设为 `true`，此后每个通过校验的 main push 自动
+  部署。随时可删掉该变量立即停用。
+
 ## 验证部署成功
 
 ```bash

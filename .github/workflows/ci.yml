@@ -5,16 +5,23 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # Manual entry for the production deploy path (deploy task): dispatching on
+  # main re-runs the full quality job and then deploys exactly this run's
+  # SHA. The dispatch itself carries no inputs of any kind.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+# NOTE (deploy task): no workflow-level concurrency any more. Validation
+# (quality) keeps the old cancel-on-new-push semantics at job level; the
+# production deploy job has its own serialized group so a new push can never
+# cancel an in-flight deploy — only validation may be cancelled.
 jobs:
   quality:
+    concurrency:
+      group: ci-quality-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -51,3 +58,173 @@ jobs:
 
       - name: Standalone API smoke
         run: pnpm --filter @veladesk/web smoke:standalone
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Production deploy — RackNerd (docs/DEPLOYMENT.md 「RackNerd 自动部署」).
+  #
+  # Invariants:
+  #   - Only this run's exact validated SHA is ever deployed: quality ran on
+  #     github.sha (version check / typecheck / lint / tests / build / smoke)
+  #     and every step below checks out that same immutable ref — never
+  #     whatever main or latest resolves to later.
+  #   - Pull requests are structurally outside this job (if + the
+  #     production-racknerd environment's main-only deployment branch).
+  #   - Automatic pushes deploy ONLY when the environment variable
+  #     VELADESK_AUTO_DEPLOY is 'true' (gate step — environment-scoped vars
+  #     are reliable at step level, not at job-if level). A manual
+  #     workflow_dispatch deploys regardless of that switch.
+  #   - Deploys serialize via the veladesk-deploy-production concurrency
+  #     group plus a host-side flock; the host rejects stale runs and treats
+  #     the already-deployed SHA as a no-op.
+  #   - The runner never sends paths or shell commands to production: it
+  #     uploads one checksummed tarball and calls the single sudo entry
+  #     /usr/local/sbin/veladesk-deploy.sh with validated identifiers only.
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: deploy (racknerd)
+    needs: quality
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production-racknerd
+    concurrency:
+      group: veladesk-deploy-production
+      cancel-in-progress: false
+    env:
+      SHA: ${{ github.sha }}
+      DEPLOY_HOST: ${{ vars.VELADESK_DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ vars.VELADESK_DEPLOY_PORT }}
+      DEPLOY_USER: ${{ vars.VELADESK_DEPLOY_USER }}
+      PUBLIC_URL: ${{ vars.VELADESK_PUBLIC_URL }}
+      VELADESK_AUTO_DEPLOY: ${{ vars.VELADESK_AUTO_DEPLOY }}
+    steps:
+      - name: Auto-deploy gate
+        id: gate
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] || [ "$VELADESK_AUTO_DEPLOY" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "deploy: proceeding (event=${GITHUB_EVENT_NAME}, VELADESK_AUTO_DEPLOY=${VELADESK_AUTO_DEPLOY:-<unset>})"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "deploy: SKIPPED (VELADESK_AUTO_DEPLOY is not 'true'; a manual workflow_dispatch deploys regardless)"
+          fi
+
+      - name: Set up SSH (dedicated deploy key, pinned host key)
+        if: steps.gate.outputs.run == 'true'
+        env:
+          SSH_KEY: ${{ secrets.VELADESK_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VELADESK_SSH_KNOWN_HOSTS }}
+        run: |
+          set -eu
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          # Strict host checking against the pinned key only — never accept-new.
+          printf '%s\n' "Host veladesk-production" "  HostName ${DEPLOY_HOST}" \
+            "  Port ${DEPLOY_PORT}" "  User ${DEPLOY_USER}" \
+            "  IdentityFile ~/.ssh/id_ed25519" \
+            "  UserKnownHostsFile ~/.ssh/known_hosts" \
+            "  StrictHostKeyChecking yes" "  BatchMode yes" > ~/.ssh/config
+
+      - name: Checkout (the exact validated SHA)
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Refuse to deploy when the host deploy script drifted
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -eu
+          expected="$(sha256sum scripts/deploy-racknerd.sh | cut -d' ' -f1)"
+          installed="$(ssh veladesk-production 'sha256sum /usr/local/sbin/veladesk-deploy.sh' | cut -d' ' -f1)"
+          echo "repo script:    $expected"
+          echo "host script:    $installed"
+          if [ "$installed" != "$expected" ]; then
+            echo "::error::/usr/local/sbin/veladesk-deploy.sh on the host is not the version from this commit. Copy scripts/deploy-racknerd.sh to the host first (docs/DEPLOYMENT.md, one-time setup step 4)."
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        if: steps.gate.outputs.run == 'true'
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (the same standalone build the smoke validated)
+        if: steps.gate.outputs.run == 'true'
+        run: pnpm build
+
+      - name: Package the standalone release bundle (linux-x64)
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -eu
+          node apps/web/scripts/package-release.mjs --out dist
+          # The runner is linux-x64 — exactly the production architecture.
+          mv dist/VelaDesk-v*-linux-x64.tar.gz "dist/veladesk-${SHA}.tar.gz"
+          sha256sum "dist/veladesk-${SHA}.tar.gz" | cut -d' ' -f1 > "dist/veladesk-${SHA}.sha256"
+          echo "bundle:"; ls -la dist/veladesk-*
+
+      - name: Stage the bundle on the VPS
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -eu
+          scp "dist/veladesk-${SHA}.tar.gz" "veladesk-production:/var/tmp/veladesk-deploy/"
+
+      - name: Deploy (single validated server-side entry point)
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -eu
+          sha256="$(cat "dist/veladesk-${SHA}.sha256")"
+          ssh veladesk-production \
+            "sudo -n /usr/local/sbin/veladesk-deploy.sh --commit '${SHA}' --sha256 '${sha256}' --run-id '${GITHUB_RUN_ID}'" \
+            | tee deploy-output.txt
+
+      - name: Verify the running release identity (server-side, read-only)
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -eu
+          deployed="$(ssh veladesk-production 'cat /opt/veladesk/current/COMMIT')"
+          echo "server /opt/veladesk/current/COMMIT: $deployed"
+          if [ "$deployed" != "$SHA" ]; then
+            echo "::error::the server is not running ${SHA} — a cached HTTP 200 would prove nothing"
+            exit 1
+          fi
+
+      - name: Verify the public HTTPS site (through Cloudflare, status only)
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -eu
+          code=000; api=000
+          for i in 1 2 3 4 5; do
+            code="$(curl -sS -o /dev/null -m 30 -w '%{http_code}' "${PUBLIC_URL}/" || true)"
+            [ "$code" = "200" ] && break
+            sleep 10
+          done
+          api="$(curl -sS -o /dev/null -m 30 -w '%{http_code}' "${PUBLIC_URL}/api/v1/workspaces" || true)"
+          echo "public ${PUBLIC_URL}/ -> ${code}; /api/v1/workspaces -> ${api}"
+          if [ "$code" != "200" ] || [ "$api" != "200" ]; then
+            echo "::error::public site check failed (${code}/${api}). The local service is healthy and migrations HAVE run — automatic rollback is disabled by design here; see docs/DEPLOYMENT.md 「回滚边界」."
+            exit 1
+          fi
+
+      - name: Job summary
+        if: always() && steps.gate.outputs.run == 'true'
+        run: |
+          {
+            echo "## VelaDesk deploy — ${SHA}"
+            echo '```'
+            cat deploy-output.txt 2>/dev/null || echo "(no deploy output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
