@@ -422,3 +422,76 @@ jobs:
             --target "${{ needs.prepare.outputs.commit_sha }}" \
             --title "VelaDesk ${{ needs.prepare.outputs.tag }}" \
             --notes-file RELEASE_NOTES.md
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Release→RackNerd handoff (deploy task v3): the tag and the formal GitHub
+  # Release exist now, so explicitly dispatch the CI workflow ON THE TAG
+  # (never on main) — its deploy job ships exactly this release. Uses the
+  # built-in github.token with actions:write granted to THIS JOB ONLY (no
+  # PAT). The fresh tag is re-resolved and must equal the commit the release
+  # pipeline validated and packaged; the dispatched run must register.
+  # ─────────────────────────────────────────────────────────────────────────
+  dispatch-deploy:
+    name: dispatch CI deploy on the release tag
+    needs: [prepare, final]
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Job-scoped: exactly what the tag dispatch needs, nothing more.
+      contents: read
+      actions: write
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_SHA: ${{ needs.prepare.outputs.commit_sha }}
+    steps:
+      - name: Checkout (history to resolve the fresh tag)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: The tag must resolve to the validated release SHA
+        run: |
+          set -eu
+          git fetch origin "refs/tags/$TAG:refs/tags/$TAG" --no-tags --force
+          RESOLVED="$(git rev-parse "$TAG^{commit}")"
+          echo "tag $TAG -> $RESOLVED (release validated $RELEASE_SHA)"
+          if [ "$RESOLVED" != "$RELEASE_SHA" ]; then
+            echo "::error::tag does not resolve to the SHA the release pipeline validated and packaged; refusing to dispatch"
+            exit 1
+          fi
+
+      - name: Dispatch CI on the tag (built-in token, never main)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh workflow run ci.yml --repo "${{ github.repository }}" --ref "$TAG"
+          echo "dispatched CI on $TAG; waiting for the run to register…"
+
+      - name: Confirm the deploy run registered
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          for i in $(seq 1 24); do
+            RUN_URL="$(TAG="$TAG" gh run list --repo "${{ github.repository }}" \
+              --workflow ci.yml --event workflow_dispatch --limit 15 \
+              --json headBranch,url --jq '.[] | select(.headBranch == env.TAG) | .url' | head -n1 || true)"
+            if [ -n "$RUN_URL" ]; then
+              echo "deploy run: $RUN_URL"
+              echo "DEPLOY_RUN_URL=$RUN_URL" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::the dispatched CI run on $TAG did not register within 120s — inspect Actions manually"
+          exit 1
+
+      - name: Summary
+        run: |
+          {
+            echo "## Release $TAG — deploy dispatched"
+            echo "- validated release SHA: $RELEASE_SHA"
+            echo "- deploy run: ${DEPLOY_RUN_URL:-<unregistered>}"
+          } >> "$GITHUB_STEP_SUMMARY"

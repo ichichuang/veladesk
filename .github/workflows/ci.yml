@@ -5,14 +5,10 @@ on:
     branches: [main]
   push:
     branches: [main]
-    # Release tags (created by release.yml AFTER quality + all platform
-    # packages pass, or by a deliberate manual tag) are the DEPLOYMENT
-    # channel: a v* tag push automatically deploys that exact tag's SHA to
-    # RackNerd. No manual dispatch involved.
-    tags: ["v*"]
-  # Manual entry for the production deploy path (deploy task): dispatching on
-  # main re-runs the full quality job and then deploys exactly this run's
-  # SHA. The dispatch itself carries no inputs of any kind.
+  # The production deploy entry (deploy task): release.yml's dispatch-deploy
+  # job dispatches THIS workflow on the freshly created release tag (after
+  # resolving it back to the validated SHA); a human may dispatch it on main
+  # or on a tag the same way. The dispatch carries no inputs of any kind.
   workflow_dispatch:
 
 permissions:
@@ -68,13 +64,14 @@ jobs:
   # Production deploy — RackNerd (docs/DEPLOYMENT.md 「RackNerd 自动部署」).
   #
   # Invariants:
-  #   - Deployment channel: RELEASE TAGS. A `v*` tag push deploys that tag's
-  #     exact SHA automatically (release.yml creates the tag only after the
-  #     full quality + 3-platform packaging pipeline passed — the tag IS the
-  #     validated release act). Plain main pushes deploy ONLY when the
-  #     environment variable VELADESK_AUTO_DEPLOY is 'true' (gate step —
-  #     environment-scoped vars are reliable at step level, not at job-if
-  #     level); a manual workflow_dispatch deploys regardless.
+  #   - Deployment channel: RELEASE TAGS VIA EXPLICIT DISPATCH. release.yml's
+  #     dispatch-deploy job resolves the fresh tag back to the validated
+  #     release SHA, then dispatches this workflow ON THE TAG (never main)
+  #     with the built-in github.token — one deterministic deploy per
+  #     release, no double-firing tag-push events. Plain main pushes deploy
+  #     ONLY when the environment variable VELADESK_AUTO_DEPLOY is 'true'
+  #     (gate step — environment-scoped vars are reliable at step level, not
+  #     at job-if level); any workflow_dispatch deploys regardless.
   #   - Only this run's exact validated SHA is ever deployed: quality ran on
   #     github.sha (version check / typecheck / lint / tests / build / smoke)
   #     and every step below checks out that same immutable ref — never

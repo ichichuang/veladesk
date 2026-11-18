@@ -279,13 +279,16 @@ WantedBy=timers.target
 `current` 是指向 `/opt/veladesk/releases/v<版本>-<短SHA>` 的原子指针，数据在
 `/var/lib/veladesk`，nginx（Cloudflare 橙云在前）反代 `127.0.0.1:3000`。
 
-**部署通道 = 发版 tag**：`release.yml` 在版本号变化时自动完成「质量校验 →
-三平台归档 → 打 `v*` tag → 发布 GitHub Release」，tag 一落地，CI 的 deploy
-job 就把**该 tag 的精确 SHA**自动部署到 RackNerd——全程无手动触发，版本归档
-（zip/tar.gz + SHA256SUMS）与部署同一条流水线产出。普通 main 推送只做校验
-不部署（如想 main 推送也部署，在 environment 里设变量
-`VELADESK_AUTO_DEPLOY=true`）；手动 `workflow_dispatch` 仍可随时部署当前
-main。
+**部署通道 = 发版 tag（显式交接）**：`release.yml` 在版本号变化时自动完成
+「质量校验 → 三平台归档 → 打 `v*` tag → 发布 GitHub Release」，随后其
+`dispatch-deploy` job 把新 tag 解析回**发布管线验证并打包的那个精确 SHA**
+（不一致即拒绝），再用**内置 github.token**（`actions: write` 仅授予该 job，
+无 PAT）显式 dispatch CI 工作流**到该 tag**（绝不在 main 上）——CI 的 deploy
+job 部署这个 tag。全程无手动触发，版本归档（zip/tar.gz + SHA256SUMS）与部署
+同一条链路。普通 main 推送只做校验不部署（如想 main 推送也部署，在
+environment 里设变量 `VELADESK_AUTO_DEPLOY=true`）；手动 `workflow_dispatch`
+可部署当前 main 或任一 tag（未经 release.yml 的手推 `v*` tag **不会**自动
+部署——Docker 镜像照常发布，部署需手动 dispatch 该 tag）。
 
 ### 运行语义
 

@@ -23,16 +23,20 @@ const script = readFileSync(
   "utf8",
 );
 
+const releaseWorkflow = readFileSync(
+  fileURLToPath(new URL("../.github/workflows/release.yml", import.meta.url)),
+  "utf8",
+);
+
 describe("CI deploy trigger (deploy task §2; tag channel)", () => {
   it("supports an input-less workflow_dispatch through the same quality job", () => {
     expect(workflow).toMatch(/^\s*workflow_dispatch:\s*$/m);
     expect(workflow).not.toMatch(/workflow_dispatch:\s*\n\s+inputs:/);
   });
 
-  it("release tags are the automatic deployment trigger", () => {
-    // (a comment block sits between the branch and tag filters)
+  it("no tag-push trigger — the release handoff dispatches explicitly (no double deploys)", () => {
     expect(workflow).toMatch(/push:\s*\n\s+branches: \[main\]/);
-    expect(workflow).toMatch(/tags: \["v\*"\]/);
+    expect(workflow).not.toMatch(/tags: \["v\*"\]/);
   });
 
   it("no workflow-level concurrency may cancel an active deploy", () => {
@@ -110,6 +114,40 @@ describe("CI deploy job invariants (deploy task §2–§4)", () => {
     expect(deployJob).toMatch(/cat \/opt\/veladesk\/current\/COMMIT/);
     expect(deployJob).toMatch(/public HTTPS site/);
     expect(deployJob).toMatch(/api\/v1\/workspaces/);
+  });
+});
+
+describe("release.yml → ci.yml handoff (deploy task v3)", () => {
+  const dispatchJob = releaseWorkflow.split("  dispatch-deploy:")[1] ?? "";
+
+  it("dispatches CI on the release tag only after the release published", () => {
+    expect(releaseWorkflow).toMatch(/dispatch-deploy:\s*\n\s+name: dispatch CI deploy on the release tag/);
+    expect(releaseWorkflow).toMatch(/needs: \[prepare, final\]/);
+    expect(dispatchJob).toMatch(/if: needs\.prepare\.outputs\.should_release == 'true'/);
+  });
+
+  it("scopes the Actions permission to the dispatch job with the built-in token", () => {
+    expect(dispatchJob).toMatch(/permissions:\s*\n\s+# Job-scoped[^\n]*\n\s+contents: read\s*\n\s+actions: write/);
+    expect(dispatchJob).toMatch(/GH_TOKEN: \$\{\{ github\.token \}\}/);
+    // No personal access token anywhere in the handoff.
+    expect(dispatchJob).not.toMatch(/secrets\.[A-Z_]*TOKEN|ghp_/);
+  });
+
+  it("dispatches on the tag, never on main", () => {
+    expect(dispatchJob).toMatch(/gh workflow run ci\.yml --repo "\$\{\{ github\.repository \}\}" --ref "\$TAG"/);
+    expect(dispatchJob).not.toMatch(/--ref main\b/);
+  });
+
+  it("resolves the fresh tag back to the validated release SHA before dispatching", () => {
+    expect(dispatchJob).toMatch(/git rev-parse "\$TAG\^\{commit\}"/);
+    expect(dispatchJob).toMatch(/RELEASE_SHA: \$\{\{ needs\.prepare\.outputs\.commit_sha \}\}/);
+    expect(dispatchJob).toMatch(/does not resolve to the SHA the release pipeline validated/);
+  });
+
+  it("confirms the dispatched run registered (bounded)", () => {
+    expect(dispatchJob).toMatch(/--event workflow_dispatch/);
+    expect(dispatchJob).toMatch(/headBranch == env\.TAG/);
+    expect(dispatchJob).toMatch(/did not register within 120s/);
   });
 });
 
