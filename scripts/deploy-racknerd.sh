@@ -289,8 +289,14 @@ log "3/7 staged smoke (port $SMOKE_PORT, disposable data)"
 if ss -tln 2>/dev/null | awk -v p=":$SMOKE_PORT " '$4 ~ p {found=1} END{exit !found}'; then
   die "smoke port $SMOKE_PORT is already in use"
 fi
-SMOKE_DATA="$UPLOAD_DIR/smoke-$$"
-SMOKE_LOG="$UPLOAD_DIR/smoke-$$.log"
+# The smoke data dir MUST live under a path the service user can traverse:
+# the CI upload dir is owned by the deploy account with mode 700, so the
+# veladesk user could never reach a child of it (EACCES → HTTP 500 on every
+# route, the exact failure of the 69ddb67 dispatch).
+SMOKE_ROOT="/var/tmp/veladesk-deploy-smoke"
+mkdir -p "$SMOKE_ROOT"; chown root:root "$SMOKE_ROOT"; chmod 755 "$SMOKE_ROOT"
+SMOKE_DATA="$SMOKE_ROOT/smoke-$$"
+SMOKE_LOG="$SMOKE_ROOT/smoke-$$.log"
 rm -rf "$SMOKE_DATA"; mkdir -p "$SMOKE_DATA"; chown "$SVC_USER" "$SMOKE_DATA"; chmod 700 "$SMOKE_DATA"
 setsid runuser -u "$SVC_USER" -- \
   env PATH="$PATH" VELADESK_PORT="$SMOKE_PORT" VELADESK_DATA_DIR="$SMOKE_DATA" \
