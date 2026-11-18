@@ -23,10 +23,16 @@ const script = readFileSync(
   "utf8",
 );
 
-describe("CI deploy trigger (deploy task §2)", () => {
+describe("CI deploy trigger (deploy task §2; tag channel)", () => {
   it("supports an input-less workflow_dispatch through the same quality job", () => {
     expect(workflow).toMatch(/^\s*workflow_dispatch:\s*$/m);
     expect(workflow).not.toMatch(/workflow_dispatch:\s*\n\s+inputs:/);
+  });
+
+  it("release tags are the automatic deployment trigger", () => {
+    // (a comment block sits between the branch and tag filters)
+    expect(workflow).toMatch(/push:\s*\n\s+branches: \[main\]/);
+    expect(workflow).toMatch(/tags: \["v\*"\]/);
   });
 
   it("no workflow-level concurrency may cancel an active deploy", () => {
@@ -50,12 +56,12 @@ describe("CI deploy trigger (deploy task §2)", () => {
 describe("CI deploy job invariants (deploy task §2–§4)", () => {
   const deployJob = workflow.split("  deploy:")[1] ?? "";
 
-  it("gates on quality and keeps pull requests outside production", () => {
+  it("gates on quality; only main pushes and v* tags reach production", () => {
     expect(workflow).toMatch(
       /deploy:\s*\n\s+name: deploy \(racknerd\)\s*\n\s+needs: quality/,
     );
     expect(deployJob).toMatch(
-      /if: github\.event_name != 'pull_request' && github\.ref == 'refs\/heads\/main'/,
+      /if: >-\s*\n\s*github\.event_name != 'pull_request' &&\s*\n\s*\(github\.ref == 'refs\/heads\/main' \|\| startsWith\(github\.ref, 'refs\/tags\/v'\)\)/,
     );
     expect(deployJob).toMatch(/environment: production-racknerd/);
   });
@@ -65,12 +71,13 @@ describe("CI deploy job invariants (deploy task §2–§4)", () => {
     expect(deployJob).not.toMatch(/ref: main\b/);
   });
 
-  it("auto-deploy is gated by the environment variable, off unless 'true'", () => {
+  it("release tags deploy unconditionally; main pushes need the variable", () => {
     // Step-level gate (environment-scoped vars are not reliable in job-if).
     expect(deployJob).toMatch(/Auto-deploy gate/);
-    expect(deployJob).toMatch(/VELADESK_AUTO_DEPLOY/);
+    expect(deployJob).toMatch(/\[\[ "\$GITHUB_REF" == refs\/tags\/v\* \]\]/);
+    expect(deployJob).toMatch(/"workflow_dispatch"/);
     expect(deployJob).toMatch(
-      /"workflow_dispatch" \] \|\| \[ "\$VELADESK_AUTO_DEPLOY" = "true" \]/,
+      /\{ \[ "\$\{GITHUB_EVENT_NAME\}" = "push" \] && \[ "\$VELADESK_AUTO_DEPLOY" = "true" \]; \}/,
     );
     // Every production-touching step sits behind the gate output.
     const steps = deployJob.split("\n      - name:").slice(1);

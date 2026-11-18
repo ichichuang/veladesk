@@ -278,15 +278,23 @@ WantedBy=timers.target
 `veladesk.service`（systemd）运行 `/opt/veladesk/current/start-veladesk.sh`，
 `current` 是指向 `/opt/veladesk/releases/v<版本>-<短SHA>` 的原子指针，数据在
 `/var/lib/veladesk`，nginx（Cloudflare 橙云在前）反代 `127.0.0.1:3000`。
-每次 push 到 main 通过 CI 全量校验后，可把**当次通过的精确 SHA**部署上去；
-自动部署由 GitHub Environment 变量 `VELADESK_AUTO_DEPLOY` 控制，默认关闭。
+
+**部署通道 = 发版 tag**：`release.yml` 在版本号变化时自动完成「质量校验 →
+三平台归档 → 打 `v*` tag → 发布 GitHub Release」，tag 一落地，CI 的 deploy
+job 就把**该 tag 的精确 SHA**自动部署到 RackNerd——全程无手动触发，版本归档
+（zip/tar.gz + SHA256SUMS）与部署同一条流水线产出。普通 main 推送只做校验
+不部署（如想 main 推送也部署，在 environment 里设变量
+`VELADESK_AUTO_DEPLOY=true`）；手动 `workflow_dispatch` 仍可随时部署当前
+main。
 
 ### 运行语义
 
 - **只部署验证过的 SHA**：deploy job `needs: quality`，并以
-  `ref: ${{ github.sha }}` 检出同一次 run 的提交；构建与
-  `package-release.mjs` 打出的 linux-x64 包（与上面 systemd 布局完全同一
-  运行时）经 SHA256 校验后上传。
+  `ref: ${{ github.sha }}` 检出同一次 run 的提交（tag 事件 = tag 指向的
+  提交）；构建在 **Debian 12 容器**（node:24-bookworm-slim）内完成——
+  better-sqlite3 v13 没有预编译产物，装机即编译，必须与生产同发行版，
+  否则 glibc 不匹配会让 API 全 500；打包出的 linux-x64 包与上面 systemd
+  布局完全同一运行时，经 SHA256 校验后上传。
 - **生产串行**：GitHub 并发组 `veladesk-deploy-production`（不可取消）+
   主机 `flock`；排队中的旧 run 在锁内被判定 stale 拒绝，已部署的 SHA 是
   no-op。新的 push 只会取消校验（quality job 的并发组），绝不会打断在跑的
@@ -328,20 +336,22 @@ WantedBy=timers.target
 5. 专用 SSH 密钥（ed25519，仅 VelaDesk 用，不与任何其他项目复用）：公钥装进
    `veladesk-deploy` 的 `authorized_keys`，前缀加 `restrict`；私钥与
    `ssh-keyscan -p <端口> <主机>` 得到的 host key 分别进 GitHub secrets。
-6. GitHub Environment `production-racknerd`（deployment branch 限 main）：
-   secrets `VELADESK_SSH_KEY`、`VELADESK_SSH_KNOWN_HOSTS`；variables
-   `VELADESK_DEPLOY_HOST` / `VELADESK_DEPLOY_PORT` / `VELADESK_DEPLOY_USER`、
-   `VELADESK_PUBLIC_URL`（公网 HTTPS 基址）。**不设置**
-   `VELADESK_AUTO_DEPLOY`（或留空）= 自动部署关闭。
+6. GitHub Environment `production-racknerd`（**不带** deployment branch/tag
+   策略——tag 引用必须能进来，ref 守门由工作流的 job-if 承担：仅 main 与
+   `v*` tag）：secrets `VELADESK_SSH_KEY`、`VELADESK_SSH_KNOWN_HOSTS`；
+   variables `VELADESK_DEPLOY_HOST` / `VELADESK_DEPLOY_PORT` /
+   `VELADESK_DEPLOY_USER`、`VELADESK_PUBLIC_URL`（公网 HTTPS 基址）。
+   变量 `VELADESK_AUTO_DEPLOY` 是**可选**的 main 推送部署开关（tag 部署
+   无条件，不受它控制）。
 
-### 手动部署 / 打开自动部署
+### 发布即部署 / 停止自动部署
 
-- 手动部署某个 main SHA：Actions → CI → Run workflow（main 分支）→ 同一次
-  run 内 quality 全绿后 deploy 执行（workflow_dispatch 不受
-  `VELADESK_AUTO_DEPLOY` 影响）。
-- 确认首跑成功后，在 Environment `production-racknerd` 里把变量
-  `VELADESK_AUTO_DEPLOY` 设为 `true`，此后每个通过校验的 main push 自动
-  部署。随时可删掉该变量立即停用。
+- **发一个版本 = 一次部署**：仓库根跑 `pnpm version:set <新版本号>` →
+  提交推送 → `release.yml` 自动归档三平台包并打 `v*` tag → tag 触发 CI 的
+  deploy job 自动部署该 SHA。不需要任何手动触发。
+- 紧急部署当前 main：Actions → CI → Run workflow（main 分支）。
+- 停止 tag 自动部署：把 ci.yml 触发器里的 `tags: ["v*"]` 删掉（或把 deploy
+  job 的 environment 换名）即可；服务器侧的部署脚本与备份/回滚机制不受影响。
 
 ## 验证部署成功
 

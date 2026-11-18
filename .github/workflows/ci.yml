@@ -5,6 +5,11 @@ on:
     branches: [main]
   push:
     branches: [main]
+    # Release tags (created by release.yml AFTER quality + all platform
+    # packages pass, or by a deliberate manual tag) are the DEPLOYMENT
+    # channel: a v* tag push automatically deploys that exact tag's SHA to
+    # RackNerd. No manual dispatch involved.
+    tags: ["v*"]
   # Manual entry for the production deploy path (deploy task): dispatching on
   # main re-runs the full quality job and then deploys exactly this run's
   # SHA. The dispatch itself carries no inputs of any kind.
@@ -63,19 +68,23 @@ jobs:
   # Production deploy — RackNerd (docs/DEPLOYMENT.md 「RackNerd 自动部署」).
   #
   # Invariants:
+  #   - Deployment channel: RELEASE TAGS. A `v*` tag push deploys that tag's
+  #     exact SHA automatically (release.yml creates the tag only after the
+  #     full quality + 3-platform packaging pipeline passed — the tag IS the
+  #     validated release act). Plain main pushes deploy ONLY when the
+  #     environment variable VELADESK_AUTO_DEPLOY is 'true' (gate step —
+  #     environment-scoped vars are reliable at step level, not at job-if
+  #     level); a manual workflow_dispatch deploys regardless.
   #   - Only this run's exact validated SHA is ever deployed: quality ran on
   #     github.sha (version check / typecheck / lint / tests / build / smoke)
   #     and every step below checks out that same immutable ref — never
   #     whatever main or latest resolves to later.
-  #   - Pull requests are structurally outside this job (if + the
-  #     production-racknerd environment's main-only deployment branch).
-  #   - Automatic pushes deploy ONLY when the environment variable
-  #     VELADESK_AUTO_DEPLOY is 'true' (gate step — environment-scoped vars
-  #     are reliable at step level, not at job-if level). A manual
-  #     workflow_dispatch deploys regardless of that switch.
+  #   - Pull requests are structurally outside this job (job-if; the
+  #     environment carries no branch policy so tag refs can deploy too).
   #   - Deploys serialize via the veladesk-deploy-production concurrency
   #     group plus a host-side flock; the host rejects stale runs and treats
-  #     the already-deployed SHA as a no-op.
+  #     the already-deployed SHA as a no-op (a main push deployed first
+  #     simply turns the later tag deploy into a verified no-op).
   #   - The runner never sends paths or shell commands to production: it
   #     uploads one checksummed tarball and calls the single sudo entry
   #     /usr/local/sbin/veladesk-deploy.sh with validated identifiers only.
@@ -83,7 +92,9 @@ jobs:
   deploy:
     name: deploy (racknerd)
     needs: quality
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production-racknerd
@@ -101,12 +112,17 @@ jobs:
       - name: Auto-deploy gate
         id: gate
         run: |
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] || [ "$VELADESK_AUTO_DEPLOY" = "true" ]; then
+          # Release tags deploy unconditionally (the tag itself is the
+          # validated release act); dispatch always deploys; plain main
+          # pushes need VELADESK_AUTO_DEPLOY == 'true'.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] \
+             || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] \
+             || { [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "$VELADESK_AUTO_DEPLOY" = "true" ]; }; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "deploy: proceeding (event=${GITHUB_EVENT_NAME}, VELADESK_AUTO_DEPLOY=${VELADESK_AUTO_DEPLOY:-<unset>})"
+            echo "deploy: proceeding (event=${GITHUB_EVENT_NAME}, ref=${GITHUB_REF}, VELADESK_AUTO_DEPLOY=${VELADESK_AUTO_DEPLOY:-<unset>})"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "deploy: SKIPPED (VELADESK_AUTO_DEPLOY is not 'true'; a manual workflow_dispatch deploys regardless)"
+            echo "deploy: SKIPPED (not a release tag; VELADESK_AUTO_DEPLOY is not 'true'; a v* tag or manual workflow_dispatch deploys)"
           fi
 
       - name: Set up SSH (dedicated deploy key, pinned host key)
