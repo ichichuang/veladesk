@@ -731,6 +731,22 @@
   transition:
     background-color var(--vd-motion-fast) var(--vd-motion-ease),
     border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+/*
+ * HeroUI ToggleButton (2026-11 settings motion audit): the library's own
+ * selected-state durations (transform 0.25s but background 0.1s) read as
+ * near-instant. One authoritative override on the .toggle-button slot:
+ * keep the transform tier, ease the state colors on the fast token.
+ */
+[data-vd-ui] .toggle-button {
+  transition:
+    transform var(--vd-motion-control) var(--vd-motion-ease),
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease),
     color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
