@@ -1,6 +1,6 @@
 {
   "name": "@veladesk/database",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "SQLite persistence core for VelaDesk: connection, Drizzle schema, migrations and the workspace snapshot repository.",
   "main": "./src/index.ts",

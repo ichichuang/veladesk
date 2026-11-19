@@ -1,6 +1,6 @@
 {
   "name": "veladesk",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
   "description": "A self-hosted, highly customizable browser start page and web desktop with free-form drag & drop, themes, animated wallpapers, widgets, plugins, and silky-smooth interactions.",

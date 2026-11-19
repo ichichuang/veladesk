@@ -1,6 +1,6 @@
 {
   "name": "@veladesk/canvas-engine",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Pure-logic continuous canvas geometry for VelaDesk desktop pages.",
   "main": "./src/index.ts",
