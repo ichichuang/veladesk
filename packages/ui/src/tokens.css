@@ -700,19 +700,49 @@
  */
 
 /*
- * VdSwitch (task 022): the thumb travel and track feedback on THIS slot
- * are GSAP-owned. HeroUI's installed styles transition the thumb's margin
- * and the control's background — on the VdSwitch slot those transitions
- * are disabled (state colors flip instantly, GSAP interpolates only the
- * thumb travel). Scoped to [data-vd-switch-gsap]; every other HeroUI
- * switch keeps the library styling.
+ * VdSwitch (task 022, revised by the 2026-11 settings motion audit): GSAP
+ * owns the thumb TRAVEL (its x/margin stay instant — the pointer or a
+ * state flip hands GSAP the from/to and it interpolates), while the state
+ * COLOR flips ease on CSS. The original 022 decision disabled every
+ * transition on this slot ("state colors flip instantly"); user acceptance
+ * flagged the instant flips as dead-feeling, so the colors now ease on the
+ * fast token and only the geometry stays GSAP-only. Scoped to
+ * [data-vd-switch-gsap]; every other HeroUI switch keeps the library
+ * styling.
  */
 [data-vd-ui] .switch[data-vd-switch-gsap] .switch__thumb {
-  transition: none;
+  transition: background-color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 [data-vd-ui] .switch[data-vd-switch-gsap] .switch__control {
-  transition: none;
+  transition: background-color var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+/*
+ * Friendly transitions for the remaining pilot controls (2026-11 settings
+ * motion audit — computed styles showed `all / 0s` on these): the SELECTED
+ * state colors of pressed toggles, the slider fill/thumb and slider hover
+ * borders ease on the fast token. Geometry is deliberately NOT transitioned
+ * anywhere: a slider thumb must track the pointer 1:1 while dragging, and
+ * toggle hit geometry never moves. Reduced motion is covered by the global
+ * [data-vd-ui] reduce gate above.
+ */
+[data-vd-ui] button[aria-pressed] {
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+[data-vd-ui] .slider .slider__fill {
+  transition: background-color var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+[data-vd-ui] .slider .slider__thumb {
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 /* Managed surfaces never reserve a native scrollbar gutter. */
