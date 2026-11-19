@@ -820,18 +820,18 @@ export function GeneralSection({
           setEmbedWallpapers(value);
         }} aria-label={t("settings.data.embedWallpapers")} />
       </SettingsRow>
-      <p className="text-xs text-vdu-fg-muted" aria-live="polite">
+      <p className="text-xs text-vdu-fg-muted min-h-4" aria-live="polite">
         {embedWallpapers ? exportFailed ? t("settings.data.exportFailed") : exportReady
           ? t("settings.data.exportSize", { size: (exportReady.byteLength / (1024 * 1024)).toFixed(2) })
           : t("settings.data.exportPreparing") : ""}
       </p>
-      <p className="text-xs text-vdu-fg-muted break-all" aria-live="polite">
+      <p className="text-xs text-vdu-fg-muted min-h-4 break-all" aria-live="polite">
         {embedWallpapers && exportReady?.skipped.length ? t("settings.data.exportSkipped", {
           assets: exportReady.skipped.map(({ id, reason }) => `${id} (${t(`settings.data.exportReason.${reason}` as TranslationKey)})`).join("; "),
         }) : ""}
       </p>
       <p className="text-xs leading-relaxed text-vdu-fg-muted">{t("settings.data.formatNote")}</p>
-      <p className="text-xs text-vdu-fg-muted" aria-live="polite">
+      <p className="text-xs text-vdu-fg-muted min-h-4" aria-live="polite">
         {promptStatus === "copied"
           ? t("settings.data.promptCopied")
           : promptStatus === "failed"
@@ -866,7 +866,7 @@ export function GeneralSection({
           </Button>
         </div>
       </SettingsRow>
-      <p className="text-xs text-vdu-fg-muted" aria-live="polite">
+      <p className="text-xs text-vdu-fg-muted min-h-4" aria-live="polite">
         {passwordChanged ? t("engineering.password.changed") : ""}
       </p>
 

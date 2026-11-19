@@ -196,21 +196,25 @@ export function BackgroundSection({
             </ListBox>
           </Select.Popover>
         </Select>
-        {!isWorkspaceScope ? (
-          <p className="text-xs leading-relaxed text-vdu-fg-muted">
-            {editingModeLayer
-              ? editedConfig === null
-                ? t("settings.background.modeFollowingGeneral")
-                : t("settings.background.modeCustom")
-              : effective.provenance === "section"
-                ? t("settings.background.customSection")
-                : t("settings.background.followingWorkspace")}
-          </p>
-        ) : activePageOverridesWorkspace ? (
-          <p className="text-xs leading-relaxed text-vdu-fg-muted">
-            {t("settings.background.sectionOverrides")}
-          </p>
-        ) : null}
+        {/* The scope hint reveals with its scope (full-check finding): the
+            line was the last bare conditional — it popped 28px on switch. */}
+        <SettingsReveal open={!isWorkspaceScope || activePageOverridesWorkspace} gapPx={8}>
+          {!isWorkspaceScope ? (
+            <p className="text-xs leading-relaxed text-vdu-fg-muted">
+              {editingModeLayer
+                ? editedConfig === null
+                  ? t("settings.background.modeFollowingGeneral")
+                  : t("settings.background.modeCustom")
+                : effective.provenance === "section"
+                  ? t("settings.background.customSection")
+                  : t("settings.background.followingWorkspace")}
+            </p>
+          ) : (
+            <p className="text-xs leading-relaxed text-vdu-fg-muted">
+              {t("settings.background.sectionOverrides")}
+            </p>
+          )}
+        </SettingsReveal>
       </div>
 
       {/* Section-only: Follow workspace (inheritance), never a copy. The
