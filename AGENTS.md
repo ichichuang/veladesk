@@ -104,6 +104,52 @@ docker ps --filter name=veladesk                             # healthy if Docker
 - Dev run: `pnpm install && pnpm dev` (port 3000); dev data defaults to
   `apps/web/.veladesk-data/`.
 
+## UI, motion & interaction conventions (AI-authored work)
+
+Distilled from post-acceptance walkthroughs (2026-11). Detailed motion
+inventory: `docs/architecture/motion.md`. When touching UI, these are
+binding unless a change explicitly supersedes them:
+
+- **Motion is dual-driver.** GSAP (`components/vd/gsap.ts`) AND
+  `motion/react` (e.g. the section pill's `layoutId` highlight) coexist,
+  plus `VdAnimatedSurface` / `useVdPresence` on dialogs and CSS transitions.
+  When auditing "does X animate", search ALL of them — a `gsap`-only scan
+  misreports covered surfaces as gaps. Durations/eases come only from
+  `motion-tokens.ts` / `--vd-motion-*`; never hardcode ms or easing.
+- **GSAP tweens must hand inline styles back.** A tween that ends on an
+  inline value (e.g. `opacity: 1`) outranks every stylesheet rule and
+  silently kills state-driven CSS (see `EngineeringBadge`'s
+  `clearProps: "opacity"`). End entrance animations with `clearProps`.
+- **Structural reserves transition.** When preferences change reserved
+  layout (block visibility → `.vela-section-scroller` padding), the layout
+  glides via `transition: padding` — never transform on item/dock/scroll
+  families (dnd-kit hard-snap + motion contracts in
+  `home-shell-css.test.ts` / `scroll-surface-contract.test.ts`).
+- **Overlays dodge what is already there.** Dock tooltips use
+  `side="right"` (the section pill sits directly above the dock); keyboard
+  context menus anchor at the element's right edge
+  (`contextMenuAnchorFromElement`), never on top of the target. Before
+  adding a floating surface, name what occupies each side of its anchor.
+- **focus-visible is per-surface.** Controls keep the shared 2px ring
+  (`[data-vd-ui] :focus-visible`); scroll hosts use the quiet 1px inset
+  rule in `packages/ui/src/tokens.css`; context-menu rows use wash fill
+  (home-shell.css `.vela-context-menu__item:focus-visible`). Never let the
+  global ring paint a full pane or fight a glass surface.
+- **Loading = skeleton, empty = centered state.** First-page loads render a
+  skeleton grid (icon picker), not a caption; empty results render centered
+  icon + copy + the obvious next action inside their owning area (see
+  `icon-picker.tsx`). New copy goes through both i18n catalogs **in the
+  same edit** — `TranslationKey` derives from zh-CN and en-US is
+  `Record<TranslationKey, string>`, so a half-paired key is a compile error.
+- **Persistent caches satisfy their readers.** Stores that can change with
+  app upgrades carry the version in their key
+  (`veladesk:icon-picker-pages:v1:${VELADESK_VERSION}`); writers must
+  produce values the strict decoder accepts (round fractional smooth-scroll
+  offsets); effects that persist state compare VALUES, never "skip first
+  run" (StrictMode double-mounts would resurrect stale writes).
+- **JSX**: never open a ternary branch with `{/* comment */}` — it parses
+  as an object literal and breaks the file. Use `//` comments there.
+
 ## Documentation map
 
 | File | Audience |
