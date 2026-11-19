@@ -16,6 +16,7 @@ import { BackgroundImageThumbnail } from "./background-image-thumbnail";
 import { WallpaperSurface } from "./desktop-wallpaper";
 import type { PreparedWallpaperImage } from "./wallpaper-prep";
 import { SettingsRow, WALLPAPER_OPTIONS } from "./settings-shared";
+import { SettingsReveal } from "./settings-reveal";
 
 /** Which layer of a section's background the editor edits (P1). */
 export type BackgroundLayer = "general" | "light" | "dark";
@@ -212,8 +213,10 @@ export function BackgroundSection({
         ) : null}
       </div>
 
-      {/* Section-only: Follow workspace (inheritance), never a copy. */}
-      {!isWorkspaceScope && !editingModeLayer ? (
+      {/* Section-only: Follow workspace (inheritance), never a copy. The
+          row REVEALS/COLLAPSES (user-report fix) — switching the wallpaper
+          layer or the scope glides the pane instead of popping it. */}
+      <SettingsReveal open={!isWorkspaceScope && !editingModeLayer}>
         <SettingsRow title={t("settings.background.sectionMode")} hint={t("settings.background.sectionModeHint")}>
           <ToggleButtonGroup
             selectionMode="single"
@@ -232,11 +235,12 @@ export function BackgroundSection({
             <ToggleButton id="custom">{t("settings.background.custom")}</ToggleButton>
           </ToggleButtonGroup>
         </SettingsRow>
-      ) : null}
+      </SettingsReveal>
 
       {/* Section-only (P1): WHICH layer the image controls below edit —
-          the shared upload, or a dedicated light/dark image. */
-      !isWorkspaceScope ? (
+          the shared upload, or a dedicated light/dark image. Reveals with
+          the section scope (user-report fix: no pop on scope switch). */}
+      <SettingsReveal open={!isWorkspaceScope}>
         <SettingsRow title={t("settings.background.layer")} hint={t("settings.background.layerHint")}>
           <ToggleButtonGroup
             selectionMode="single"
@@ -254,7 +258,7 @@ export function BackgroundSection({
             <ToggleButton id="dark">{t("settings.background.layerDark")}</ToggleButton>
           </ToggleButtonGroup>
         </SettingsRow>
-      ) : null}
+      </SettingsReveal>
 
       {/* Custom image — immediately after the scope/inheritance area, so
           the entry is discoverable WITHOUT scrolling past the presets
@@ -278,7 +282,7 @@ export function BackgroundSection({
                   : t("settings.background.changeImage")}
               </Button>
               {editedConfig?.kind === "asset" || backgroundImage !== null ? (
-                <Button variant="ghost" onPress={removeImage}>
+                <Button variant="ghost" className="vela-inline-fade-in" onPress={removeImage}>
                   {isWorkspaceScope
                     ? t("settings.background.removeImage")
                     : editingModeLayer
@@ -289,6 +293,7 @@ export function BackgroundSection({
             </div>
             {editedConfig?.kind === "asset" ? (
               <ToggleButtonGroup
+                className="vela-inline-fade-in"
                 selectionMode="single"
                 selectedKeys={new Set([editedConfig.fit])}
                 onSelectionChange={(keys) => {

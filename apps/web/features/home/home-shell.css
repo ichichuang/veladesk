@@ -3446,6 +3446,28 @@ button.vela-sync-status:focus-visible {
 
 /* --- Dock ------------------------------------------------------------------ */
 
+/* --- Settings pane --------------------------------------------------------- */
+
+/*
+ * Small inline controls that appear when a settings choice makes them
+ * relevant (the background image's Remove button / fit group): a quiet
+ * mount fade so they materialise instead of popping (user-report fix).
+ */
+.vela-inline-fade-in {
+  animation: vela-settings-fade-in var(--vd-motion-control) var(--vd-motion-ease);
+}
+
+@keyframes vela-settings-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /*
  * One dock slot (audit A10): the flex row a pinned entity lives in. The
  * entrance is CSS-owned (a mount fade + 6px rise — new pins and the boot
@@ -4222,7 +4244,8 @@ button.vela-sync-status:focus-visible {
   .vela-editor-header,
   .vela-item__icon,
   .vela-item--widget,
-  .vela-app-icon--surface {
+  .vela-app-icon--surface,
+  .vela-inline-fade-in {
     transition: none;
     animation: none;
   }
