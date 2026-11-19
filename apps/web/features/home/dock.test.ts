@@ -70,7 +70,9 @@ describe("dock.tsx static contract", () => {
   const source = readFileSync(fileURLToPath(new URL("./dock.tsx", import.meta.url)), "utf8");
 
   it("renders NO shell at all when the dock has zero entities", () => {
-    expect(source).toMatch(/if\s*\(dockEntities\.length === 0\)\s*\{\s*return null;\s*\}/);
+    // A10 edge (walkthrough): the gate reads the RETAINED rows — unpinning
+    // the LAST item still plays that item's exit fade before the unmount.
+    expect(source).toMatch(/if\s*\(rows\.length === 0\)\s*\{\s*return null;\s*\}/);
   });
 
   it("carries no utility controls: no create button, no mode toggle, no separator", () => {
