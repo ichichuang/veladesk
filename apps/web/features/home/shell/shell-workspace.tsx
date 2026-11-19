@@ -88,28 +88,26 @@ export function ShellWorkspace({
 
   return (
     <div className="vela-workspace">
-      {arrange && activePage !== undefined ? (
-        <ArrangeToolbar
-          placementMode={tiles.commits.displayPlacement?.mode ?? "grid"}
-          freeformBlockedReason={tiles.commits.freeformBlockedReason}
-          onSetPlacementMode={tiles.commits.setPlacementMode}
-          gridGapPx={displayGapPx}
-          onGridGapChange={onGridGapChange}
-          canUndo={toolbarCanUndo}
-          canRedo={toolbarCanRedo}
-          onUndo={() => {
-            if (pageIdRef.current !== null) {
-              tiles.commits.applyHistoryStep(pageIdRef.current, "undo");
-            }
-          }}
-          onRedo={() => {
-            if (pageIdRef.current !== null) {
-              tiles.commits.applyHistoryStep(pageIdRef.current, "redo");
-            }
-          }}
-        />
-      ) : null}
-
+      <ArrangeToolbar
+        open={arrange && activePage !== undefined}
+        placementMode={tiles.commits.displayPlacement?.mode ?? "grid"}
+        freeformBlockedReason={tiles.commits.freeformBlockedReason}
+        onSetPlacementMode={tiles.commits.setPlacementMode}
+        gridGapPx={displayGapPx}
+        onGridGapChange={onGridGapChange}
+        canUndo={toolbarCanUndo}
+        canRedo={toolbarCanRedo}
+        onUndo={() => {
+          if (pageIdRef.current !== null) {
+            tiles.commits.applyHistoryStep(pageIdRef.current, "undo");
+          }
+        }}
+        onRedo={() => {
+          if (pageIdRef.current !== null) {
+            tiles.commits.applyHistoryStep(pageIdRef.current, "redo");
+          }
+        }}
+      />
       {/*
         The one section viewport (018, warm-layered in 020-A2): every
         MOUNTED section renders as a stable layer keyed by its page

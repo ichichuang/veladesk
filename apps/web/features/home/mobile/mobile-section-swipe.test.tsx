@@ -303,6 +303,44 @@ describe("swiping the mobile content area", () => {
     expect(activeTabName()).toBe("办公");
   });
 
+  it("keeps each section's reading position across swipes (audit P1)", async () => {
+    render(<Host snapshot={threeSections()} />);
+    patchLayout();
+    const scroller = strip().parentElement!;
+    // jsdom has no layout: make a tall scroller so scrollTop assignments
+    // are honest, then read at a non-trivial offset on 办公.
+    Object.defineProperty(scroller, "scrollHeight", { get: () => 4000, configurable: true });
+    scroller.scrollTop = 240;
+
+    swipe({ from: { x: 320, y: 200 }, to: { x: 100, y: 200 } });
+    await settle();
+    expect(activeTabName()).toBe("AI");
+    // A first visit to the target lands at its top (nothing remembered).
+    expect(scroller.scrollTop).toBe(0);
+
+    scroller.scrollTop = 130;
+    swipe({ from: { x: 320, y: 200 }, to: { x: 100, y: 200 } });
+    await settle();
+    expect(activeTabName()).toBe("娱乐");
+    expect(scroller.scrollTop).toBe(0);
+
+    // Back to AI: its remembered position returns; the parked panes carry
+    // no leftover inline preview offsets after the commit.
+    swipe({ from: { x: 80, y: 200 }, to: { x: 320, y: 200 } });
+    await settle();
+    expect(activeTabName()).toBe("AI");
+    expect(scroller.scrollTop).toBe(130);
+    for (const pane of document.querySelectorAll<HTMLElement>(".vela-mobile-swipe-slot")) {
+      expect(pane.style.insetBlockStart).toBe("");
+    }
+
+    // And back to 办公: the very first position survives the round trip.
+    swipe({ from: { x: 80, y: 200 }, to: { x: 320, y: 200 } });
+    await settle();
+    expect(activeTabName()).toBe("办公");
+    expect(scroller.scrollTop).toBe(240);
+  });
+
   it("springs back on a short slow drag (no accidental category change)", async () => {
     render(<Host snapshot={threeSections()} />);
     patchLayout();

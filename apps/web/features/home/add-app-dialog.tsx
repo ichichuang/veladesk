@@ -18,7 +18,12 @@ import {
   useDetectedIconAvailable,
   useDetectedNameAvailable,
 } from "../app-recognition/smart-add-state";
-import type { AddAppIconDraft, SmartAddState } from "../app-recognition/smart-add-state";
+import type {
+  AddAppIconDraft,
+  PersistableIconDraft,
+  SmartAddState,
+} from "../app-recognition/smart-add-state";
+import { parsePersistableIconDraft, toPersistableIconDraft } from "../app-recognition/smart-add-state";
 import type { RecognitionIcon } from "../app-recognition/contract";
 import { useAppRecognition } from "../app-recognition/use-app-recognition";
 import { validateAppUrlInput } from "./app-url-validation";
@@ -71,19 +76,34 @@ interface AddAppDialogProps {
  */
 /**
  * task 028: the half-typed form survives a close/reopen within the same
- * browser tab (sessionStorage). Only the two USER fields travel — name and
- * URL; recognition state, icon pick and errors stay ephemeral. Cleared on
- * a successful Add so a completed flow never resurrects.
+ * browser tab (sessionStorage). The USER fields travel — name, URL and,
+ * since audit P2, a MANUALLY PICKED serializable icon (see
+ * `toPersistableIconDraft`). Cleared on a successful Add so a completed
+ * flow never resurrects.
  */
-const ADD_APP_DRAFT_MEMORY = createSessionMemory<{ name: string; url: string }>(
+const ADD_APP_DRAFT_MEMORY = createSessionMemory<{
+  name: string;
+  url: string;
+  icon?: PersistableIconDraft | undefined;
+}>(
   "veladesk:add-app-draft:v1",
   1,
-  (value) =>
-    typeof value === "object" && value !== null &&
-    typeof (value as Record<string, unknown>).name === "string" &&
-    typeof (value as Record<string, unknown>).url === "string"
-      ? { name: (value as Record<string, unknown>).name as string, url: (value as Record<string, unknown>).url as string }
-      : undefined,
+  (value) => {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      typeof (value as Record<string, unknown>).name !== "string" ||
+      typeof (value as Record<string, unknown>).url !== "string"
+    ) {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    return {
+      name: record.name as string,
+      url: record.url as string,
+      icon: parsePersistableIconDraft(record.icon),
+    };
+  },
 );
 
 export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogProps) {
@@ -99,6 +119,9 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
       ...initial,
       urlInput: draft.url,
       name: draft.name.length > 0 ? { value: draft.name, owner: "user" as const } : initial.name,
+      // Audit P2: a manually picked icon reopens as USER-owned, so a
+      // restored recognition result never overwrites it.
+      icon: draft.icon === undefined ? initial.icon : { value: draft.icon, owner: "user" as const },
     };
   });
   const { recognizeAgain } = useAppRecognition(state.urlInput, dispatch);
@@ -123,9 +146,15 @@ export function AddAppDialog({ workspace, destination, onClose }: AddAppDialogPr
 
   // task 028: the draft writes through on every change; a successful Add
   // clears it below so the finished flow never reopens half-filled.
+  // Audit P2: only a USER-owned, serializable icon pick travels.
+  const iconState = state.icon;
   useEffect(() => {
-    ADD_APP_DRAFT_MEMORY.write({ name: state.name.value, url: state.urlInput });
-  }, [state.name.value, state.urlInput]);
+    ADD_APP_DRAFT_MEMORY.write({
+      name: state.name.value,
+      url: state.urlInput,
+      icon: toPersistableIconDraft(iconState.owner, iconState.value),
+    });
+  }, [state.name.value, state.urlInput, iconState]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

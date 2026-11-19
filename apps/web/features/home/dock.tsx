@@ -3,12 +3,13 @@
 import { useVdSmoothScroll } from "@components/vd/smooth-scroll";
 import { useVdScrollbar } from "@components/vd/use-vd-scrollbar";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
   Ref,
   RefObject,
 } from "react";
@@ -22,6 +23,7 @@ import { useVdHoverLift } from "@components/vd/hover-lift";
 
 import { useI18n } from "../i18n/use-i18n";
 import { resolveDockEntities } from "./dock-model";
+import { useRetainedRows } from "./retained-list";
 import {
   contextMenuAnchorFromElement,
   isContextMenuKeyEvent,
@@ -242,6 +244,62 @@ function DockEntityButton({
   );
 }
 
+/**
+ * One dock slot (audit A10): a plain flex row that owns the slot's
+ * lifecycle motion — the CSS entrance below on mount, and a GSAP opacity
+ * fade for REMOVED entities (unpin, delete) so neighbours never snap past
+ * a vanishing icon. Opacity only: the item/dock transform contracts stay
+ * untouched (hover lift + magnetism own the transforms). Exiting rows go
+ * pointer/keyboard inert exactly like the workspace menu's exiting rows.
+ */
+function DockRow({
+  exiting,
+  release,
+  children,
+}: {
+  readonly exiting: boolean;
+  readonly release: () => void;
+  readonly children: ReactNode;
+}) {
+  const row = useRef<HTMLDivElement | null>(null);
+  const releaseRef = useRef(release);
+  const reduced = useVdReducedMotion();
+  useLayoutEffect(() => {
+    releaseRef.current = release;
+  });
+  useLayoutEffect(() => {
+    const element = row.current;
+    if (element === null || !exiting) {
+      return;
+    }
+    if (reduced) {
+      releaseRef.current();
+      return;
+    }
+    gsap.killTweensOf(element);
+    const tween = gsap.to(element, {
+      opacity: 0,
+      duration: vdMotionDuration("hoverPress"),
+      ease: VD_MOTION_EASE,
+      onComplete: () => releaseRef.current(),
+    });
+    return () => {
+      tween.kill();
+      gsap.set(element, { clearProps: "opacity" });
+    };
+  }, [exiting, reduced]);
+  return (
+    <div
+      ref={row}
+      className="vela-dock__row"
+      inert={exiting || undefined}
+      aria-hidden={exiting || undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopContextMenu, hidden = false }: DockProps) {
   const { t } = useI18n();
   const dockRef = useRef<HTMLElement | null>(null);
@@ -250,6 +308,7 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
   useDockMagnetism(dockRef);
 
   const dockEntities = useMemo(() => resolveDockEntities(workspace), [workspace]);
+  const rows = useRetainedRows(dockEntities, (entity) => entity.id);
 
   if (dockEntities.length === 0) {
     return null;
@@ -288,42 +347,44 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
           onDesktopContextMenu(event.clientX, event.clientY);
         }}
       >
-        {dockEntities.map((entity) =>
-          entity.kind === "app" ? (
-            // friendly-ui: side="right" — directly above the dock sits the
-            // section pill; a top tooltip landed ON the capsule text. The
-            // dock's sides are open space, so the tooltip reads beside the
-            // icon instead of covering the pill.
-            <VdTooltip key={entity.id} content={entity.name} side="right">
-              <DockEntityButton
-                className="vela-dock__item"
-                ariaLabel={t("dock.openApp", { name: entity.name })}
-                decoration={appIconDecorationProps(entity)}
-                data-appearance-app-id={entity.id}
-                onClick={() => launchApp(entity)}
-                onItemContextMenu={handleEntityContextMenu}
-                onItemKeyDown={handleEntityKeyDown}
-                entityId={entity.id}
-              >
-                <AppIconGlyph app={entity} />
-              </DockEntityButton>
-            </VdTooltip>
-          ) : (
-            <VdTooltip key={entity.id} content={entity.name} side="right">
-              <DockEntityButton
-                className="vela-dock__item vela-dock__item--folder"
-                ariaLabel={t("dock.openFolder", { name: entity.name })}
-                ariaHasPopup="dialog"
-                onClick={() => onOpenFolder(entity.id)}
-                onItemContextMenu={handleEntityContextMenu}
-                onItemKeyDown={handleEntityKeyDown}
-                entityId={entity.id}
-              >
-                <IconText text={generatedIconText(entity.name)} />
-              </DockEntityButton>
-            </VdTooltip>
-          )
-        )}
+        {rows.map(({ item: entity, key, exiting, release }) => (
+          <DockRow key={key} exiting={exiting} release={release}>
+            {entity.kind === "app" ? (
+              // friendly-ui: side="right" — directly above the dock sits the
+              // section pill; a top tooltip landed ON the capsule text. The
+              // dock's sides are open space, so the tooltip reads beside the
+              // icon instead of covering the pill.
+              <VdTooltip content={entity.name} side="right">
+                <DockEntityButton
+                  className="vela-dock__item"
+                  ariaLabel={t("dock.openApp", { name: entity.name })}
+                  decoration={appIconDecorationProps(entity)}
+                  data-appearance-app-id={entity.id}
+                  onClick={() => launchApp(entity)}
+                  onItemContextMenu={handleEntityContextMenu}
+                  onItemKeyDown={handleEntityKeyDown}
+                  entityId={entity.id}
+                >
+                  <AppIconGlyph app={entity} />
+                </DockEntityButton>
+              </VdTooltip>
+            ) : (
+              <VdTooltip content={entity.name} side="right">
+                <DockEntityButton
+                  className="vela-dock__item vela-dock__item--folder"
+                  ariaLabel={t("dock.openFolder", { name: entity.name })}
+                  ariaHasPopup="dialog"
+                  onClick={() => onOpenFolder(entity.id)}
+                  onItemContextMenu={handleEntityContextMenu}
+                  onItemKeyDown={handleEntityKeyDown}
+                  entityId={entity.id}
+                >
+                  <IconText text={generatedIconText(entity.name)} />
+                </DockEntityButton>
+              </VdTooltip>
+            )}
+          </DockRow>
+        ))}
       </nav>
     </VdTooltipProvider>
   );

@@ -33,6 +33,12 @@ import {
  * the panes, and the reset to 0 happens in a layout effect of that same
  * commit — so no frame ever shows the previous page again.
  *
+ * Reading positions (audit P1): every section keeps its OWN vertical
+ * offset in this hook's session memory. A neighbour is PREVIEWED from its
+ * remembered position during the drag (the parked pane's inline offset
+ * shifts by exactly that much), and the commit lands the shared scroller
+ * on the same offset — the desktop's per-section scroll recall, mirrored.
+ *
  * Reduced motion: no follow-the-finger and no settle tween — the gesture is
  * still recognised and the section swaps instantly on release.
  *
@@ -90,6 +96,8 @@ export function useSectionSwipe(options: UseSectionSwipeOptions): SectionSwipeHa
   const swipeCommitted = useRef(false);
   /** The page shown on the previous commit; null before the first one. */
   const previousPage = useRef<string | null | undefined>(undefined);
+  /** Per-section reading offsets for the session (audit P1). */
+  const scrollMemory = useRef(new Map<string, number>());
   /**
    * Armed by `finish` when a horizontal gesture ended, cleared by the very
    * next click (or a short timer): a swipe never also taps a tile.
@@ -116,6 +124,7 @@ export function useSectionSwipe(options: UseSectionSwipeOptions): SectionSwipeHa
     const element = strip.current;
     const first = previousPage.current === undefined;
     const changed = !first && previousPage.current !== activePageId;
+    const originId = previousPage.current;
     previousPage.current = activePageId;
     if (element === null) {
       return;
@@ -129,6 +138,14 @@ export function useSectionSwipe(options: UseSectionSwipeOptions): SectionSwipeHa
     const fromSwipe = swipeCommitted.current;
     swipeCommitted.current = false;
     const parent = element.parentElement;
+    // Audit P1: the ORIGIN section keeps its reading position for the
+    // return trip; the TARGET reopens where it was last left (top by
+    // default — including a first-ever tap visit, which today lands on
+    // the origin's arbitrary offset).
+    if (parent !== null && typeof originId === "string") {
+      scrollMemory.current.set(originId, parent.scrollTop);
+    }
+    const restore = activePageId !== null ? (scrollMemory.current.get(activePageId) ?? 0) : 0;
     // The strip owns EVERY horizontal pixel — the scroller never scrolls
     // sideways by user input (pan-y). But the parked neighbour panes give
     // the hidden-overflow scroller a real scrollWidth, so a programmatic
@@ -137,12 +154,12 @@ export function useSectionSwipe(options: UseSectionSwipeOptions): SectionSwipeHa
     // flush.
     if (parent !== null) {
       parent.scrollLeft = 0;
+      // A swipe previewed the target from `restore` (the parked pane was
+      // offset by exactly that much), so landing there is seam-free; a
+      // tap/search/sync restores the same memory under its entrance.
+      parent.scrollTop = restore;
     }
     if (fromSwipe) {
-      // The neighbour was shown from its top during the drag.
-      if (parent !== null) {
-        parent.scrollTop = 0;
-      }
       return;
     }
     // Tap / search / sync: the canonical short tab-content entrance.
@@ -309,7 +326,7 @@ export function useSectionSwipe(options: UseSectionSwipeOptions): SectionSwipeHa
         }
         state.phase = "horizontal";
         if (!latest.current.reducedMotion) {
-          placeNeighbours(element);
+          placeNeighbours(element, scrollMemory.current);
           setDragging(element, true);
         }
       }
@@ -383,14 +400,40 @@ function setDragging(element: HTMLElement, dragging: boolean): void {
     element.setAttribute("data-swipe-active", "true");
   } else {
     element.removeAttribute("data-swipe-active");
+    // Drop the gesture's per-neighbour preview offsets before the panes
+    // park again — every pane, because the pane that just COMMITTED was a
+    // parked neighbour a frame ago and now carries slot 0.
+    for (const pane of allPanes(element)) {
+      pane.style.insetBlockStart = "";
+    }
   }
 }
 
-/** Aligns the neighbours with the visible band of the vertical scroller. */
-function placeNeighbours(element: HTMLElement): void {
+function allPanes(element: HTMLElement): HTMLElement[] {
+  return Array.from(element.querySelectorAll<HTMLElement>(".vela-mobile-swipe-slot"));
+}
+
+/**
+ * Aligns the neighbours with the visible band of the vertical scroller.
+ * Audit P1: each neighbour is placed so its content starts at ITS OWN
+ * remembered reading offset (the drag preview and the landing frame agree),
+ * via an inline offset that outranks the shared CSS var only while the
+ * gesture owns the panes.
+ */
+function placeNeighbours(element: HTMLElement, memory: ReadonlyMap<string, number>): void {
   const parent = element.parentElement;
-  element.style.setProperty("--vela-swipe-top", `${parent?.scrollTop ?? 0}px`);
+  const scrollTop = parent?.scrollTop ?? 0;
+  element.style.setProperty("--vela-swipe-top", `${scrollTop}px`);
   element.style.setProperty("--vela-swipe-height", `${parent?.clientHeight ?? 0}px`);
+  for (const pane of allPanes(element)) {
+    const slot = pane.dataset.swipeSlot;
+    if (slot !== "-1" && slot !== "1") {
+      continue;
+    }
+    const sectionId = pane.dataset.sectionId;
+    const remembered = sectionId === undefined ? 0 : (memory.get(sectionId) ?? 0);
+    pane.style.insetBlockStart = `${scrollTop - remembered}px`;
+  }
 }
 
 /** Two looping sections share one neighbour: put it where the finger reveals. */

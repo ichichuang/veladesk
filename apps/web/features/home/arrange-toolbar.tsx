@@ -8,9 +8,17 @@ import {
 } from "@veladesk/domain";
 
 import { useI18n } from "../i18n/use-i18n";
+import { VdAnimatedSurface } from "@components/vd/animated-surface";
+import { useVdPresence } from "@components/vd/presence";
 import "./home-shell.css";
 
 interface ArrangeToolbarProps {
+  /**
+   * Requested visibility (audit A1): engineering mode AND an active page.
+   * The toolbar now ENTERS and EXITS through the popup pose instead of
+   * popping with the mode switch.
+   */
+  readonly open: boolean;
   /** Placement mode of the ACTIVE section (resolved, v2). */
   readonly placementMode: PagePlacementMode;
   /** Why the Freeform switch is refused (lossy conversion), if it is. */
@@ -38,6 +46,7 @@ interface ArrangeToolbarProps {
  * write per pointer event.
  */
 export function ArrangeToolbar({
+  open,
   placementMode,
   freeformBlockedReason,
   onSetPlacementMode,
@@ -49,9 +58,21 @@ export function ArrangeToolbar({
   onRedo,
 }: ArrangeToolbarProps) {
   const { t } = useI18n();
+  const presence = useVdPresence(open);
+  if (!presence.mounted) {
+    return null;
+  }
 
   return (
-    <div className="vela-arrange-bar" role="toolbar" aria-label={t("arrange.toolbarLabel")}>
+    <VdAnimatedSurface
+      variant="popup"
+      active={open}
+      onPresenceReleased={presence.completeExit}
+      className="vela-arrange-bar"
+      role="toolbar"
+      aria-label={t("arrange.toolbarLabel")}
+      inert={!open || undefined}
+    >
       <div
         className="vela-arrange-bar__modes"
         role="group"
@@ -150,10 +171,10 @@ export function ArrangeToolbar({
             fill="none"
             stroke="currentColor"
             strokeWidth="1.8"
-            strokeLinecap="round"
+            strokeLinejoin="round"
           />
         </svg>
       </button>
-    </div>
+    </VdAnimatedSurface>
   );
 }

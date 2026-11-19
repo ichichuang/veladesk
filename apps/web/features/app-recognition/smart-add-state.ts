@@ -135,6 +135,59 @@ export type RecognitionIconDraft = Extract<
   { readonly kind: "detected-catalog" | "detected-image" | "generated" }
 >;
 
+/**
+ * Serializable icon picks an Add-App dialog draft may remember across a
+ * close/reopen in the same tab (audit P2). Uploads (session blobs),
+ * embedded detected images (large) and the plain generated default never
+ * travel — recognition re-runs from the restored URL anyway.
+ */
+export type PersistableIconDraft =
+  | { readonly kind: "library"; readonly iconId: string }
+  | { readonly kind: "detected-catalog"; readonly iconId: string; readonly displayName: string }
+  | { readonly kind: "custom-text"; readonly text: string };
+
+/** Only a USER-owned, serializable pick is worth remembering. */
+export function toPersistableIconDraft(
+  owner: FieldOwner,
+  value: AddAppIconDraft,
+): PersistableIconDraft | undefined {
+  if (owner !== "user") {
+    return undefined;
+  }
+  switch (value.kind) {
+    case "library":
+      return { kind: "library", iconId: value.iconId };
+    case "detected-catalog":
+      return { kind: "detected-catalog", iconId: value.iconId, displayName: value.displayName };
+    case "custom-text":
+      return { kind: "custom-text", text: value.text };
+    default:
+      return undefined;
+  }
+}
+
+/** Strict structural parse for a stored icon pick; unknown = degrade. */
+export function parsePersistableIconDraft(value: unknown): PersistableIconDraft | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.kind === "library" && typeof record.iconId === "string") {
+    return { kind: "library", iconId: record.iconId };
+  }
+  if (
+    record.kind === "detected-catalog" &&
+    typeof record.iconId === "string" &&
+    typeof record.displayName === "string"
+  ) {
+    return { kind: "detected-catalog", iconId: record.iconId, displayName: record.displayName };
+  }
+  if (record.kind === "custom-text" && typeof record.text === "string") {
+    return { kind: "custom-text", text: record.text };
+  }
+  return undefined;
+}
+
 /** Maps a recognition icon suggestion onto the form's icon draft. */
 export function draftFromRecognitionIcon(icon: RecognitionIcon): RecognitionIconDraft {
   switch (icon.kind) {

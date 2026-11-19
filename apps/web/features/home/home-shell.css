@@ -1430,6 +1430,10 @@
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
+  /* Audit A5: the highlight BLOCK already glides (Motion layoutId); the
+     label's own color flip now rides the same token so text and wash
+     settle together. */
+  transition: color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-pill__item:hover {
@@ -1492,6 +1496,11 @@
   font-size: 17px;
   line-height: 1;
   cursor: pointer;
+  /* Audit A5: hover wash / disabled dim ease like the pill labels. */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease),
+    opacity var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-pill__stepper:hover:not(:disabled) {
@@ -2494,6 +2503,19 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  /* Audit A1: the stepper group rides in with a quiet fade when Grid
+     mode switches on (its disappearance with Freeform stays instant —
+     the mode switch is the primary signal). */
+  animation: vela-arrange-gap-in var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+@keyframes vela-arrange-gap-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .vela-arrange-bar__gap-label {
@@ -2512,6 +2534,12 @@
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
+  /* Audit A5: hover/limit-disabled state flips ease (matches the pill
+     stepper treatment). */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease),
+    opacity var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-arrange-bar__gap-step:hover:not(:disabled) {
@@ -2602,6 +2630,13 @@
   font-family: var(--vd-font);
   font-size: 11px;
   color: var(--vd-text-muted);
+  /* Audit A2: dirty → offline → conflict are state flips, not alarms —
+     the wash/ring/text (and the offline promotion's padding) ease on the
+     token. Absolute badge, so nothing around it reflows. */
+  transition:
+    background-color var(--vd-motion-fast) var(--vd-motion-ease),
+    color var(--vd-motion-fast) var(--vd-motion-ease),
+    padding var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 button.vela-sync-status {
@@ -2618,6 +2653,7 @@ button.vela-sync-status:focus-visible {
   height: 6px;
   border-radius: 50%;
   background: var(--vd-color-accent);
+  transition: background-color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-sync-status[data-state="offline"] .vela-sync-status__dot {
@@ -2801,6 +2837,9 @@ button.vela-sync-status:focus-visible {
   font-weight: 600;
   letter-spacing: 0.02em;
   color: oklch(0.96 0.01 250);
+  /* Audit A3: the arrange-selection ring lands on this box for
+     folder/overlay tiles — it eases like every other state flip. */
+  transition: box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-item__icon--folder {
@@ -3007,6 +3046,13 @@ button.vela-sync-status:focus-visible {
   /* task 028: the per-app corner radius (0–50%) wins; absent keeps the
      fluid Helm clamp. */
   border-radius: var(--vd-app-icon-radius, clamp(8px, 22cqmin, 26px));
+  /* Selection-ring / hover-border / live accent-color flips ease (audit
+     A3/A4): box-shadow + border-color + background-color only — never a
+     transform (the dnd/hover-lift contracts own those). */
+  transition:
+    box-shadow var(--vd-motion-fast) var(--vd-motion-ease),
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    background-color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-canvas .vela-app-icon--surface[data-decoration="gradient"],
@@ -3374,6 +3420,8 @@ button.vela-sync-status:focus-visible {
   -webkit-backdrop-filter: blur(var(--vd-blur-glass));
   box-shadow: var(--vd-surface-shadow, var(--vd-shadow-tile));
   cursor: default;
+  /* Audit A3: the widget's selection ring eases with the tile family. */
+  transition: box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-item--widget[data-dragging="true"] {
@@ -3397,6 +3445,34 @@ button.vela-sync-status:focus-visible {
 }
 
 /* --- Dock ------------------------------------------------------------------ */
+
+/*
+ * One dock slot (audit A10): the flex row a pinned entity lives in. The
+ * entrance is CSS-owned (a mount fade + 6px rise — new pins and the boot
+ * dock share it); the EXIT fade is GSAP-driven from DockRow. Opacity +
+ * the one-shot entrance transform only — never a transition on the
+ * item/dock families (the dnd + hover-lift contracts own transforms).
+ */
+.vela-dock__row {
+  display: flex;
+}
+
+@keyframes vela-dock-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .vela-dock__row {
+    animation: vela-dock-row-in var(--vd-motion-popover) var(--vd-motion-ease);
+  }
+}
 
 .vela-dock {
   position: absolute;
@@ -4108,6 +4184,7 @@ button.vela-sync-status:focus-visible {
   .vela-grid-slots,
   .vela-section-layer,
   .vela-arrange-bar__history,
+  .vela-arrange-bar__gap,
   .vela-arrange-bar__gap-step,
   .vela-item,
   .vela-dock__item,
@@ -4133,7 +4210,19 @@ button.vela-sync-status:focus-visible {
   .vela-appearance-inspector__decoration,
   .vela-inspector__row,
   .vela-inspector__row-chevron,
-  .vela-wallpaper-choice {
+  .vela-wallpaper-choice,
+  /* Audit batch: the new state-flip easings collapse under reduced motion
+     exactly like the t137 chrome above. */
+  .vela-sync-status,
+  .vela-sync-status__dot,
+  .vela-pill__item,
+  .vela-pill__stepper,
+  .vela-workspace-menu-tools button,
+  .vela-upload-dropzone,
+  .vela-editor-header,
+  .vela-item__icon,
+  .vela-item--widget,
+  .vela-app-icon--surface {
     transition: none;
     animation: none;
   }
@@ -4336,6 +4425,11 @@ button.vela-sync-status:focus-visible {
 
 /* t171: once the scroll region under a pinned header has moved, the
    header grows a light shadow so the content visibly slides UNDER it. */
+.vela-editor-header {
+  /* Audit A9: the shadow grows in and out on the token, never a pop. */
+  transition: box-shadow var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
 .vela-editor-header[data-scrolled="true"] {
   box-shadow: 0 10px 20px -12px oklch(0.16 0.03 255 / 0.4);
 }
@@ -4634,6 +4728,8 @@ header.vela-inspector__subject {
   background: var(--vd-field);
   cursor: pointer;
   text-align: center;
+  /* Audit A8: the hover/focus affordance ring eases in and out. */
+  transition: border-color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 .vela-upload-dropzone:hover,
@@ -4799,7 +4895,7 @@ header.vela-inspector__subject {
 .vela-workspace-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-workspace-menu-tools { display: flex; flex-shrink: 0; gap: 2px; padding-right: 3px; opacity: 0; }
 
-.vela-workspace-menu-tools button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--vd-text); cursor: pointer; }
+.vela-workspace-menu-tools button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--vd-text); cursor: pointer; transition: background-color var(--vd-motion-fast) var(--vd-motion-ease), color var(--vd-motion-fast) var(--vd-motion-ease), opacity var(--vd-motion-fast) var(--vd-motion-ease); }
 .vela-workspace-menu-tools button:hover { background: var(--vd-surface); }
 .vela-workspace-menu-tools button:focus-visible { outline: 2px solid var(--vd-accent); }
 .vela-workspace-menu-tools button:disabled { opacity: .4; cursor: default; }

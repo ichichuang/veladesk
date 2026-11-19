@@ -126,7 +126,7 @@ export function ColorField({
                 type="button"
                 aria-label={swatch}
                 className={cn(
-                  "size-5 rounded-[5px] border transition-colors duration-[180ms]",
+                  "size-5 rounded-[5px] border transition-colors duration-[var(--vd-motion-fast)] ease-[var(--vd-motion-ease)]",
                   value === swatch ? "border-vdu-fg" : "border-vdu-border",
                   "outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vdu-focus)]",
                 )}

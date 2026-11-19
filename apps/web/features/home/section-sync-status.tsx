@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import type { LocalWorkspaceRecord } from "@veladesk/local-store";
 import type { WorkspaceRuntimeRemoteResult } from "@veladesk/client-runtime";
 
+import { VdAnimatedSurface } from "@components/vd/animated-surface";
+import { useVdPresence } from "@components/vd/presence";
+
 import { useWorkspaceRuntimeInstance } from "../workspace-runtime/use-workspace-runtime";
 import { useI18n } from "../i18n/use-i18n";
 import "./home-shell.css";
@@ -24,6 +27,11 @@ interface SectionSyncStatusProps {
  * explanation in its accessible name), conflict → 冲突 (display only;
  * conflicts are never re-sent or auto-resolved in this stage).
  *
+ * Audit A2: the badge ENTERS and LEAVES through the popup pose (a state
+ * change is not an alarm), and the dirty/offline/conflict flips ease in
+ * CSS on the motion tokens. One element shape for all three states, so
+ * the data-state re-styling never remounts mid-life.
+ *
  * Recovering the connection hides the badge by itself (UX-11): the
  * browser's `online` event triggers ONE reconciliation attempt, and a
  * successful sync leaves the workspace clean — the badge simply never
@@ -39,8 +47,10 @@ export function SectionSyncStatus({ workspace, lastRemoteResult }: SectionSyncSt
   const offline =
     syncState === "dirty" &&
     (lastRemoteResult?.status === "network-error" || lastRemoteResult?.status === "server-error");
+  const visible = syncState !== "clean";
+  const presence = useVdPresence(visible);
 
-  if (syncState === "clean") {
+  if (!presence.mounted) {
     return null;
   }
 
@@ -57,8 +67,11 @@ export function SectionSyncStatus({ workspace, lastRemoteResult }: SectionSyncSt
       });
   }
 
+  // During the exit pass syncState is already "clean"; the quiet dirty
+  // pose is what fades out.
+  const state = offline ? "offline" : syncState === "conflict" ? "conflict" : "dirty";
   const label =
-    syncState === "conflict"
+    state === "conflict"
       ? t("sync.conflict")
       : busy
         ? t("sync.syncing")
@@ -66,28 +79,26 @@ export function SectionSyncStatus({ workspace, lastRemoteResult }: SectionSyncSt
           ? t("sync.offlineDetailed")
           : t("sync.pending");
 
-  if (syncState === "conflict") {
-    return (
-      <span className="vela-sync-status" data-state="conflict" title={t("sync.conflictTitle")}>
+  return (
+    <VdAnimatedSurface
+      variant="popup"
+      active={visible}
+      onPresenceReleased={presence.completeExit}
+      inert={!visible || undefined}
+    >
+      <button
+        type="button"
+        className="vela-sync-status"
+        data-state={state}
+        disabled={busy || state === "conflict"}
+        title={state === "conflict" ? t("sync.conflictTitle") : offline ? t("sync.offlineTitle") : t("sync.syncNowTitle")}
+        aria-label={state === "conflict" ? t("sync.conflictTitle") : offline ? t("sync.offlineTitle") : t("sync.syncNowTitle")}
+        onClick={handleActivate}
+      >
         <span className="vela-sync-status__dot" aria-hidden="true" />
         {label}
-      </span>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      className="vela-sync-status"
-      data-state={offline ? "offline" : "dirty"}
-      disabled={busy}
-      title={offline ? t("sync.offlineTitle") : t("sync.syncNowTitle")}
-      aria-label={offline ? t("sync.offlineTitle") : t("sync.syncNowTitle")}
-      onClick={handleActivate}
-    >
-      <span className="vela-sync-status__dot" aria-hidden="true" />
-      {label}
-    </button>
+      </button>
+    </VdAnimatedSurface>
   );
 }
 

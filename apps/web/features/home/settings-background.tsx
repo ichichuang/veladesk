@@ -341,8 +341,8 @@ export function BackgroundSection({
                   "vela-wallpaper-choice flex flex-col gap-1.5 rounded-vdu border p-2 text-left outline-none",
                   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vdu-focus)]",
                   // Settings motion audit: the selected border+glow eases
-                  // instead of popping.
-                  "transition-[border-color,box-shadow,background-color] duration-200 ease-[var(--vd-motion-ease)]",
+                  // instead of popping (A13: token duration, no literal).
+                  "transition-[border-color,box-shadow,background-color] duration-[var(--vd-motion-control)] ease-[var(--vd-motion-ease)]",
                   selected
                     ? "border-[var(--vdu-accent)] shadow-[0_0_0_1px_var(--vdu-accent)]"
                     : "border-vdu-border hover:border-vdu-border-strong",

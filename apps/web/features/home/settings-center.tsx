@@ -577,8 +577,8 @@ export function SettingsCenter({
                     aria-selected={active}
                     className={[
                       "flex h-9 w-full items-center justify-center rounded-vdu text-sm font-medium",
-                      // task 028: hover/selected state easing.
-                      "transition-colors duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                      // task 028: hover/selected state easing (A13: tokens).
+                      "transition-colors duration-[var(--vd-motion-fast)] ease-[var(--vd-motion-ease)]",
                       "outline-none",
                       "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vdu-focus)]",
                       active

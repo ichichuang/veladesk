@@ -5,7 +5,9 @@ import {
   detectedImagePreviewUrl,
   draftFromRecognitionIcon,
   initialSmartAddState,
+  parsePersistableIconDraft,
   smartAddReducer,
+  toPersistableIconDraft,
   useDetectedIconAvailable,
   useDetectedNameAvailable,
 } from "./smart-add-state";
@@ -187,5 +189,57 @@ describe("draftFromRecognitionIcon + previews", () => {
     ).toBe("data:image/png;base64,AAAA");
     expect(detectedImagePreviewUrl({ kind: "generated" })).toBeNull();
     expect(detectedImagePreviewUrl({ kind: "library", iconId: "simple-icons:github" })).toBeNull();
+  });
+});
+
+describe("persistable icon drafts (audit P2)", () => {
+  it("remembers only USER-owned, serializable picks", () => {
+    expect(toPersistableIconDraft("user", { kind: "library", iconId: "simple-icons:github" }))
+      .toEqual({ kind: "library", iconId: "simple-icons:github" });
+    expect(
+      toPersistableIconDraft("user", { kind: "custom-text", text: "码" })
+    ).toEqual({ kind: "custom-text", text: "码" });
+    expect(
+      toPersistableIconDraft("user", {
+        kind: "detected-catalog",
+        iconId: "simple-icons:gitlab",
+        displayName: "GitLab",
+      })
+    ).toEqual({ kind: "detected-catalog", iconId: "simple-icons:gitlab", displayName: "GitLab" });
+    // Auto-owned and non-serializable states never travel.
+    expect(
+      toPersistableIconDraft("auto", { kind: "library", iconId: "simple-icons:github" })
+    ).toBeUndefined();
+    expect(toPersistableIconDraft("user", { kind: "generated" })).toBeUndefined();
+    expect(
+      toPersistableIconDraft("user", {
+        kind: "pending-upload",
+        asset: { id: "asset-1", bytes: new Blob() } as never,
+        previewUrl: "blob:http://localhost/x",
+      })
+    ).toBeUndefined();
+  });
+
+  it("parses stored picks strictly and degrades on anything else", () => {
+    expect(parsePersistableIconDraft({ kind: "library", iconId: "simple-icons:x" }))
+      .toEqual({ kind: "library", iconId: "simple-icons:x" });
+    expect(parsePersistableIconDraft({ kind: "custom-text", text: "A" }))
+      .toEqual({ kind: "custom-text", text: "A" });
+    expect(parsePersistableIconDraft(null)).toBeUndefined();
+    expect(parsePersistableIconDraft("library")).toBeUndefined();
+    expect(parsePersistableIconDraft({ kind: "library", iconId: 7 })).toBeUndefined();
+    expect(parsePersistableIconDraft({ kind: "pending-upload", previewUrl: "blob:x" })).toBeUndefined();
+    expect(parsePersistableIconDraft({ kind: "detected-catalog", iconId: "a" })).toBeUndefined();
+  });
+
+  it("round-trips every persistable pick through JSON", () => {
+    const picks = [
+      { kind: "library", iconId: "simple-icons:github" },
+      { kind: "custom-text", text: "G" },
+      { kind: "detected-catalog", iconId: "simple-icons:x", displayName: "X" },
+    ] as const;
+    for (const pick of picks) {
+      expect(parsePersistableIconDraft(JSON.parse(JSON.stringify(pick)))).toEqual(pick);
+    }
   });
 });

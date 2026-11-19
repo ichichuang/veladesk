@@ -137,8 +137,9 @@ export function AppearanceSection({
                   "size-8 shrink-0 rounded-full outline-none",
                   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vdu-focus)]",
                   // The selection ring is a box-shadow — transition it so the
-                  // ring glides in instead of popping (settings motion audit).
-                  "transition-[box-shadow,background-color] duration-200 ease-[var(--vd-motion-ease)]",
+                  // ring glides in instead of popping (settings motion audit;
+                  // A13: the duration reads the token, never a literal).
+                  "transition-[box-shadow,background-color] duration-[var(--vd-motion-control)] ease-[var(--vd-motion-ease)]",
                   selected
                     ? "ring-2 ring-vdu-fg ring-offset-2 ring-offset-vdu-bg"
                     : "ring-1 ring-vdu-border-strong",
