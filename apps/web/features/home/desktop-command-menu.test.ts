@@ -7,6 +7,7 @@ import {
   buildDesktopCommandEntries,
   buildFolderMenuEntries,
   buildSectionMenuEntries,
+  buildSectionSwitchMenu,
 } from "./desktop-command-menu";
 import type { DesktopMenuEntry } from "./desktop-command-menu";
 
@@ -375,5 +376,59 @@ describe("buildAppMenuEntries size controls (Helm r3)", () => {
       wider.onSelect();
     }
     expect(onWider).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("buildSectionSwitchMenu", () => {
+  const t = (key: TranslationKey) => (key === "menu.switchSection" ? "切换分区" : key);
+  const pages = [
+    { id: "home" as const, name: "Home" },
+    { id: "work" as const, name: "办公" },
+    { id: "dev" as const, name: "开发" },
+  ];
+
+  it("builds a submenu of every OTHER section, in workspace order", () => {
+    const menu = buildSectionSwitchMenu({
+      t,
+      pages,
+      activePageId: "home",
+      onSelect: () => {},
+    });
+    expect(menu?.kind).toBe("submenu");
+    if (menu?.kind === "submenu") {
+      expect(menu.label).toBe("切换分区");
+      expect(menu.entries.map((entry) => (entry.kind === "action" ? entry.label : ""))).toEqual([
+        "办公",
+        "开发",
+      ]);
+    }
+  });
+
+  it("invokes onSelect with the picked section id", () => {
+    const onSelect = vi.fn();
+    const menu = buildSectionSwitchMenu({
+      t,
+      pages,
+      activePageId: "work",
+      onSelect,
+    });
+    if (menu?.kind === "submenu") {
+      const first = menu.entries.at(0);
+      if (first?.kind === "action") {
+        first.onSelect();
+      }
+    }
+    expect(onSelect).toHaveBeenCalledWith("home");
+  });
+
+  it("yields undefined for a single-section workspace", () => {
+    expect(
+      buildSectionSwitchMenu({
+        t,
+        pages: [{ id: "home", name: "Home" }],
+        activePageId: "home",
+        onSelect: () => {},
+      }),
+    ).toBeUndefined();
   });
 });

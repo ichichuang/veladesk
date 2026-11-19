@@ -182,6 +182,7 @@ const zhCNCatalog = {
   "menu.placementFreeformBlocked":
     "此分区的内容超出了自由画布范围,无法无失真切换——请先把内容移回可视区域。",
   "menu.syncNow": "立即同步",
+  "menu.switchSection": "切换分区",
   "menu.settings": "设置…",
   "menu.sectionBackground": "背景设置…",
   "menu.renameSection": "重命名分区",
@@ -893,6 +894,7 @@ export const enUS: MessageCatalog = {
   "menu.placementFreeformBlocked":
     "This section's content extends beyond the freeform canvas and cannot switch without losing geometry — move it back into view first.",
   "menu.syncNow": "Sync Now",
+  "menu.switchSection": "Switch section",
   "menu.settings": "Settings…",
   "menu.sectionBackground": "Background settings…",
   "menu.renameSection": "Rename Section",

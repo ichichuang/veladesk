@@ -1,5 +1,7 @@
 import type { PagePlacementMode } from "@veladesk/canvas-engine";
 
+import type { DesktopPageId } from "@veladesk/domain";
+
 import type { TranslateFn } from "../i18n/use-i18n";
 import type { LocalWorkspaceSyncState } from "@veladesk/local-store";
 
@@ -62,6 +64,13 @@ export interface DesktopCommandInput {
   readonly canRedo: boolean;
   readonly syncState: LocalWorkspaceSyncState;
   readonly workspaceMenu?: DesktopMenuEntry;
+  /**
+   * task 029 follow-up: the section-switch submenu. The block-visibility
+   * preference can hide the pill AND the dock AND ⌘K — this menu stays
+   * reachable through a right-click on empty desktop, so it becomes the
+   * always-present section switch when every other door is closed.
+   */
+  readonly sectionMenu?: DesktopMenuEntry;
   readonly callbacks: DesktopCommandCallbacks;
 }
 
@@ -96,6 +105,9 @@ export function buildDesktopCommandEntries(
     const useEntries: DesktopMenuEntry[] = [
       { kind: "action", id: "search", label: t("menu.search"), onSelect: callbacks.onSearch },
     ];
+    if (input.sectionMenu !== undefined) {
+      useEntries.push({ kind: "separator" }, input.sectionMenu);
+    }
     if (input.workspaceMenu !== undefined) {
       useEntries.push({ kind: "separator" }, input.workspaceMenu);
     }
@@ -148,6 +160,7 @@ export function buildDesktopCommandEntries(
   }
 
   entries.push({ kind: "separator" });
+  if (input.sectionMenu !== undefined) entries.push(input.sectionMenu);
   if (input.workspaceMenu !== undefined) entries.push(input.workspaceMenu);
   if (syncState === "dirty") {
     entries.push({ kind: "action", id: "sync", label: t("menu.syncNow"), onSelect: callbacks.onSync });
@@ -160,6 +173,43 @@ export function buildDesktopCommandEntries(
   });
 
   return entries;
+}
+
+export interface SectionSwitchInput {
+  readonly t: TranslateFn;
+  /** The CURRENT workspace's sections, in workspace order. */
+  readonly pages: readonly { readonly id: DesktopPageId; readonly name: string }[];
+  /** The section on screen — it is omitted from the switch list. */
+  readonly activePageId: DesktopPageId | null;
+  readonly onSelect: (pageId: DesktopPageId) => void;
+}
+
+/**
+ * Builds the section-switch submenu (task 029 follow-up): every OTHER
+ * section of the current workspace, in workspace order. The active section
+ * is omitted (selecting it is a no-op), and a workspace with at most one
+ * section yields undefined — the menu renders nothing rather than a dead
+ * entry. This is the switch that survives the block-visibility preference
+ * hiding the pill, the dock and ⌘K: empty-desktop right-click always works.
+ */
+export function buildSectionSwitchMenu(
+  input: SectionSwitchInput
+): DesktopMenuEntry | undefined {
+  const targets = input.pages.filter((page) => page.id !== input.activePageId);
+  if (targets.length === 0) {
+    return undefined;
+  }
+  return {
+    kind: "submenu",
+    id: "switch-section",
+    label: input.t("menu.switchSection"),
+    entries: targets.map((page) => ({
+      kind: "action" as const,
+      id: `switch-section-${page.id}`,
+      label: page.name,
+      onSelect: () => input.onSelect(page.id),
+    })),
+  };
 }
 
 export interface AppMenuInput {

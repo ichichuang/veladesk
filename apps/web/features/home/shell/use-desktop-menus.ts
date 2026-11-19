@@ -32,6 +32,7 @@ import { launchApp } from "../launch-app";
 import {
   buildAppMenuEntries,
   buildDesktopCommandEntries,
+  buildSectionSwitchMenu,
   buildFolderMenuEntries,
   buildSectionMenuEntries,
 } from "../desktop-command-menu";
@@ -154,6 +155,16 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
     const currentPageId = pageIdRef.current;
     const historyUsable =
       currentPageId !== null && !draggingRef.current && pendingHandoffRef.current === null;
+    // task 029 follow-up: the section-switch submenu rides EVERY desktop
+    // command menu (Use and Engineering alike) — when the block visibility
+    // preference hides the pill, the dock and ⌘K, this right-click is the
+    // remaining visible section switch.
+    const sectionMenu = buildSectionSwitchMenu({
+      t,
+      pages: snapshot.pages,
+      activePageId: effectiveActivePageId,
+      onSelect: (pageId) => switchSection(pageId),
+    });
     setContextMenu({
       x,
       y,
@@ -168,7 +179,7 @@ export function useDesktopMenus(input: UseDesktopMenusInput) {
         canRedo:
           historyUsable && currentPageId !== null && canRedo(arrangeHistoriesRef.current, currentPageId),
         syncState: workspace.syncState,
-        ...(workspaceManager === null ? {} : { workspaceMenu: workspaceManager.menu }),
+        ...(sectionMenu === undefined ? {} : { sectionMenu }),
         callbacks: {
           onAddApp: () => openDialog({ kind: "add-app", pageId: pageDestination() }),
           onNewSection: () => openDialog({ kind: "new-section" }),
