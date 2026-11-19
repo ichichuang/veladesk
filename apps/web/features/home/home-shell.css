@@ -2745,6 +2745,9 @@ button.vela-sync-status:focus-visible {
 
 .vela-item__icon--folder {
   color: var(--vd-text);
+  /* F-B (folder hover parity): the dawn-amber identity flip below eases on
+     the same token as every other hover color — app tiles never hard-cut. */
+  transition: color var(--vd-motion-fast) var(--vd-motion-ease);
 }
 
 /* Hover returns the folder its dawn-amber identity (the keyframe's lit
@@ -3125,8 +3128,13 @@ button.vela-sync-status:focus-visible {
 }
 
 @media (hover: hover) {
+  /* F-C (folder hover parity): the pointer reflection lights on folder
+     tiles too — the ::after transition above already owns the fade. */
   .vela-desktop:not([data-arrange="true"])
     .vela-item[data-kind="app"]:hover
+    .vela-item__body::after,
+  .vela-desktop:not([data-arrange="true"])
+    .vela-item[data-kind="folder"]:hover
     .vela-item__body::after {
     opacity: 1;
   }

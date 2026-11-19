@@ -54,9 +54,6 @@ export function AppearanceSection({
   updateAppearance,
   workspace,
   activeSectionId,
-  helmClockScope,
-  onHelmClockScopeChange,
-  updateHelmClockPage,
   backgroundScope,
   backgroundLayer,
   onBackgroundScopeChange,
@@ -74,9 +71,6 @@ export function AppearanceSection({
   readonly updateAppearance: (patch: Partial<WorkspaceAppearancePreferences>) => void;
   readonly workspace: WorkspaceSnapshot;
   readonly activeSectionId: DesktopPageId | null;
-  readonly helmClockScope: "workspace" | DesktopPageId;
-  readonly onHelmClockScopeChange: (scope: "workspace" | DesktopPageId) => void;
-  readonly updateHelmClockPage: (pageId: DesktopPageId, override: PageHelmClockOverride | null) => void;
   readonly backgroundScope: "workspace" | DesktopPageId;
   readonly backgroundLayer: BackgroundLayer;
   readonly onBackgroundScopeChange: (scope: "workspace" | DesktopPageId) => void;
@@ -261,6 +255,35 @@ export function AppearanceSection({
         onErrorChange={onBackgroundErrorChange}
       />
 
+    </div>
+  );
+}
+
+/**
+ * The 分区 (sections) tab (task 029 follow-up IA split): the per-section
+ * desktop structure settings — the helm clock/date presentation (global or
+ * per-section) and the block visibility switches. These left the appearance
+ * tab so 外观 stays color/material/background while everything that shapes
+ * the SECTION desktop lives together. Both ride the same draft → live
+ * preview → Save chain as before; only the tab placement changed.
+ */
+export function SectionsSection({
+  workspace,
+  draft,
+  updateAppearance,
+  helmClockScope,
+  onHelmClockScopeChange,
+  updateHelmClockPage,
+}: {
+  readonly workspace: WorkspaceSnapshot;
+  readonly draft: WorkspaceSettingsDraft;
+  readonly updateAppearance: (patch: Partial<WorkspaceAppearancePreferences>) => void;
+  readonly helmClockScope: "workspace" | DesktopPageId;
+  readonly onHelmClockScopeChange: (scope: "workspace" | DesktopPageId) => void;
+  readonly updateHelmClockPage: (pageId: DesktopPageId, override: PageHelmClockOverride | null) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-7" data-settings-sections-tab="">
       <HelmClockSection
         workspace={workspace}
         draft={draft}

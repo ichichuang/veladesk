@@ -458,8 +458,23 @@ function DesktopEntity({
         onContextMenu={handleContextMenu}
         onKeyDown={handleKeyDown}
         onClick={handleClick}
+        // F-A (folder hover parity, task 029 follow-up): the folder branch
+        // never wired the shared View-mode hover set, so folder tiles had NO
+        // lift, NO gloss and a hard color flip while app tiles had all three.
+        // Same guards as the app button: never while arranging, never while
+        // the tile is mid-drag; the reflection vars ride the same rAF path.
+        onPointerDown={event => { if (!arrange) liftDown(event); }}
+        onPointerUp={event => { if (!arrange) liftUp(event); }}
+        onPointerEnter={handleLiftEnter}
+        onPointerLeave={(event) => {
+          liftLeave(event);
+          event.currentTarget.style.removeProperty("--vd-tile-px");
+          event.currentTarget.style.removeProperty("--vd-tile-py");
+        }}
+        onPointerCancel={liftCancel}
+        onPointerMove={handlePointerMoveForGlow}
       >
-        <span className="vela-item__body">
+        <span className="vela-item__body" ref={liftInnerRef}>
           <span className="vela-item__icon vela-item__icon--folder" aria-hidden="true">
             <FolderGlyph />
           </span>

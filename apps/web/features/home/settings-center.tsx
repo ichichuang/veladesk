@@ -23,7 +23,7 @@ import {
   prepareWallpaperImage,
   type PreparedWallpaperImage,
 } from "./wallpaper-prep";
-import { AppearanceSection, GeneralSection, LayoutSection } from "./settings-sections";
+import { AppearanceSection, GeneralSection, LayoutSection, SectionsSection } from "./settings-sections";
 import type { BackgroundLayer } from "./settings-background";
 import { BrandLogo } from "@components/vd/brand-logo";
 import { VdScrollArea } from "@components/vd/scroll-area";
@@ -56,7 +56,7 @@ type AppearancePreferencesPatch = Partial<
  * context-menu entry still forces the Appearance tab (see the entry
  * effect), which is exactly the directed-entry behavior.
  */
-const SETTINGS_SECTIONS_ALL: readonly string[] = ["appearance", "layout", "general"];
+const SETTINGS_SECTIONS_ALL: readonly string[] = ["appearance", "sections", "layout", "general"];
 const SETTINGS_SECTION_MEMORY = createLocalMemory<SettingsSection>(
   "veladesk:settings-section:v1",
   1,
@@ -115,12 +115,13 @@ interface SettingsCenterProps {
   readonly activeSectionId?: DesktopPageId | null | undefined;
 }
 
-type SettingsSection = "appearance" | "layout" | "general";
+type SettingsSection = "appearance" | "sections" | "layout" | "general";
 
-const SETTINGS_SECTIONS: readonly SettingsSection[] = ["appearance", "layout", "general"];
+const SETTINGS_SECTIONS: readonly SettingsSection[] = ["appearance", "sections", "layout", "general"];
 
 const SECTION_LABEL_KEY: Readonly<Record<SettingsSection, TranslationKey>> = {
   appearance: "settings.section.appearance",
+  sections: "settings.section.sections",
   layout: "settings.section.layout",
   general: "settings.section.general",
 };
@@ -618,9 +619,6 @@ export function SettingsCenter({
                   updateAppearance={updateAppearance}
                   workspace={workspace}
                   activeSectionId={activeSectionId}
-                  helmClockScope={helmClockScope}
-                  onHelmClockScopeChange={setHelmClockScope}
-                  updateHelmClockPage={updateHelmClockPage}
                   backgroundScope={backgroundScope}
                   backgroundLayer={backgroundLayer}
                   onBackgroundScopeChange={setBackgroundScope}
@@ -638,6 +636,15 @@ export function SettingsCenter({
                       setBackgroundImage(null);
                     }
                   }}
+                />
+              ) : activeSection === "sections" ? (
+                <SectionsSection
+                  workspace={workspace}
+                  draft={draft}
+                  updateAppearance={updateAppearance}
+                  helmClockScope={helmClockScope}
+                  onHelmClockScopeChange={setHelmClockScope}
+                  updateHelmClockPage={updateHelmClockPage}
                 />
               ) : activeSection === "layout" ? (
                 <LayoutSection
