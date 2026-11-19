@@ -310,7 +310,11 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
   const dockEntities = useMemo(() => resolveDockEntities(workspace), [workspace]);
   const rows = useRetainedRows(dockEntities, (entity) => entity.id);
 
-  if (dockEntities.length === 0) {
+  // Walkthrough fix (A10 edge): gate on the RETAINED rows, not the live
+  // list — unpinning the LAST item must still play that item's exit fade
+  // before the dock unmounts, instead of the empty-check tearing down the
+  // tree with it.
+  if (rows.length === 0) {
     return null;
   }
 
