@@ -768,19 +768,19 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         />
       ) : null}
 
-      {/* task 029: the dock is block-toggleable — a hidden dock also clears
-          its layout reserve via data-has-dock above, exactly like an empty
-          one (section switching still works through the ⌘K palette). */}
-      {blockVisibility.dock ? (
-        <Dock
-          workspace={renderedSnapshot}
-          onOpenFolder={(folderId) => openFolderOverlay(folderId)}
-          onEntityContextMenu={(entityId, x, y) =>
-            menus.openContextMenu({ kind: "entity", entityId, source: "dock", x, y })
-          }
-          onDesktopContextMenu={(x, y) => menus.openContextMenu({ kind: "desktop", x, y })}
-        />
-      ) : null}
+      {/* task 029 + entrance/exit rework: the dock and pill stay MOUNTED
+          and ease out via data-vd-block-hidden (CSS-owned slide/fade) while
+          data-has-dock / data-pill-hidden hand their layout reserve to the
+          easing scroller padding — no hard unmount anywhere. */}
+      <Dock
+        workspace={renderedSnapshot}
+        onOpenFolder={(folderId) => openFolderOverlay(folderId)}
+        onEntityContextMenu={(entityId, x, y) =>
+          menus.openContextMenu({ kind: "entity", entityId, source: "dock", x, y })
+        }
+        onDesktopContextMenu={(x, y) => menus.openContextMenu({ kind: "desktop", x, y })}
+        hidden={!blockVisibility.dock}
+      />
 
       {/*
         The section pill (t61): one compact glass capsule centered above
@@ -789,15 +789,14 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         block-toggleable (keyboard arrows and ⌘K keep section switching
         alive with the pill hidden).
       */}
-      {blockVisibility.sectionPill ? (
-        <SectionPill
-          pages={pages}
-          activePageId={effectiveActivePageId}
-          onSelectSection={(pageId) => scene.switchSection(pageId)}
-          onSectionContextMenu={(pageId, x, y) => menus.openContextMenu({ kind: "section", pageId, x, y })}
-          navigationLocked={railNavigationLocked}
-        />
-      ) : null}
+      <SectionPill
+        pages={pages}
+        activePageId={effectiveActivePageId}
+        onSelectSection={(pageId) => scene.switchSection(pageId)}
+        onSectionContextMenu={(pageId, x, y) => menus.openContextMenu({ kind: "section", pageId, x, y })}
+        navigationLocked={railNavigationLocked}
+        hidden={!blockVisibility.sectionPill}
+      />
 
       {/*
         t181: the Engineering-mode surfaces (「工程模式」 indicator while

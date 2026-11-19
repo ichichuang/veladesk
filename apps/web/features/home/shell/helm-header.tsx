@@ -35,27 +35,29 @@ export function HelmHeader({
   readonly showCommandBar?: boolean;
 }) {
   const { t, locale } = useI18n();
-  if (!showClock && !showCommandBar && !showDate) {
-    return null;
-  }
+  // Entrance/exit (task 029 rework): the header stays MOUNTED and its
+  // blocks toggle data-vd-block-hidden — home-shell.css eases each one
+  // while the F1 token zeroing collapses the reserved band. The container
+  // renders even when every block is hidden (its height is then the
+  // breathing margins alone, per F1).
   return (
     <header className="vela-helm-header">
-      {showClock || showDate ? (
-        <HelmClock locale={locale} showTime={showClock} showDate={showDate} />
-      ) : null}
-      {showCommandBar ? (
-        <button
-          type="button"
-          className="vela-helm-commandbar"
-          onClick={onOpenCommands}
-        >
-          <Search className="vela-helm-commandbar__icon" strokeWidth={1.5} aria-hidden="true" />
-          <span className="vela-helm-commandbar__placeholder">
-            {t("helm.commandbar")}
-          </span>
-          <kbd className="vela-helm-commandbar__kbd">{t("helm.commandbarKey")}</kbd>
-        </button>
-      ) : null}
+      <HelmClock locale={locale} showTime={showClock} showDate={showDate} />
+      <button
+        type="button"
+        className="vela-helm-commandbar"
+        data-vd-block=""
+        data-vd-block-hidden={showCommandBar ? undefined : "true"}
+        tabIndex={showCommandBar ? 0 : -1}
+        aria-hidden={!showCommandBar}
+        onClick={onOpenCommands}
+      >
+        <Search className="vela-helm-commandbar__icon" strokeWidth={1.5} aria-hidden="true" />
+        <span className="vela-helm-commandbar__placeholder">
+          {t("helm.commandbar")}
+        </span>
+        <kbd className="vela-helm-commandbar__kbd">{t("helm.commandbarKey")}</kbd>
+      </button>
     </header>
   );
 }

@@ -40,7 +40,12 @@ describe("HelmHeader block visibility (task 029)", () => {
 
   it("hides the time but keeps the date and the command bar", () => {
     renderHeader({ showClock: false });
-    expect(document.querySelector(".vela-helm-clock__time")).toBeNull();
+    // Entrance/exit rework: blocks stay MOUNTED and toggle data-hidden —
+    // the ease plays on the CSS side instead of a hard unmount.
+    expect(document.querySelector(".vela-helm-clock__time")).not.toBeNull();
+    expect(
+      document.querySelector(".vela-helm-clock__time")?.getAttribute("data-vd-block-hidden"),
+    ).toBe("true");
     expect(document.querySelector(".vela-helm-clock__date")).not.toBeNull();
     expect(document.querySelector(".vela-helm-commandbar")).not.toBeNull();
   });
@@ -48,27 +53,39 @@ describe("HelmHeader block visibility (task 029)", () => {
   it("hides the date but keeps the time", () => {
     renderHeader({ showDate: false });
     expect(document.querySelector(".vela-helm-clock__time")).not.toBeNull();
-    expect(document.querySelector(".vela-helm-clock__date")).toBeNull();
+    expect(document.querySelector(".vela-helm-clock__date")?.getAttribute("data-vd-block-hidden")).toBe(
+      "true",
+    );
   });
 
-  it("renders nothing when every helm block is off", () => {
+  it("keeps every helm block mounted (hidden, not unmounted) when all are off", () => {
     renderHeader({ showClock: false, showDate: false, showCommandBar: false });
-    expect(document.querySelector(".vela-helm-header")).toBeNull();
+    expect(document.querySelector(".vela-helm-clock__time")).not.toBeNull();
+    expect(document.querySelector(".vela-helm-clock__date")).not.toBeNull();
+    expect(document.querySelector(".vela-helm-commandbar")).not.toBeNull();
+    expect(
+      document.querySelectorAll('[data-vd-block-hidden="true"]').length,
+    ).toBe(3);
   });
 });
 
 describe("HelmClock block visibility (task 029)", () => {
   afterEach(cleanup);
 
-  it("renders date-only when the time is off", () => {
+  it("renders date-only when the time is off (time span stays mounted, data-hidden)", () => {
     render(<HelmClock locale="zh-CN" showTime={false} />);
-    expect(document.querySelector(".vela-helm-clock__time")).toBeNull();
+    expect(document.querySelector(".vela-helm-clock__time")?.getAttribute("data-vd-block-hidden")).toBe(
+      "true",
+    );
     expect(document.querySelector(".vela-helm-clock__date")).not.toBeNull();
   });
 
-  it("renders nothing when both the time and the date are off", () => {
+  it("keeps both spans mounted (hidden) when the time and the date are off", () => {
     render(<HelmClock locale="zh-CN" showTime={false} showDate={false} />);
-    expect(document.querySelector(".vela-helm-clock")).toBeNull();
+    expect(document.querySelector(".vela-helm-clock")).not.toBeNull();
+    expect(
+      document.querySelectorAll('.vela-helm-clock [data-vd-block-hidden="true"]').length,
+    ).toBe(2);
   });
 });
 
@@ -80,8 +97,9 @@ describe("desktop shell block gating (source contract)", () => {
 
   it("gates every block through resolveBlockVisibility on the resolved appearance", () => {
     expect(shell).toMatch(/resolveBlockVisibility\(resolvedAppearance\)/);
-    expect(shell).toMatch(/blockVisibility\.dock \? \(/);
-    expect(shell).toMatch(/blockVisibility\.sectionPill \? \(/);
+    // Entrance/exit rework: dock/pill stay mounted behind hidden props.
+    expect(shell).toMatch(/hidden=\{!blockVisibility\.dock\}/);
+    expect(shell).toMatch(/hidden=\{!blockVisibility\.sectionPill\}/);
     expect(shell).toMatch(/showClock=\{blockVisibility\.helmClock\}/);
     expect(shell).toMatch(/showDate=\{blockVisibility\.helmDate\}/);
     expect(shell).toMatch(/showCommandBar=\{blockVisibility\.commandBar\}/);

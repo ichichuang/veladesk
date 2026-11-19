@@ -53,6 +53,11 @@ interface SectionPillProps {
    * cleared, so nothing replays when the lock lifts.
    */
   readonly navigationLocked: boolean;
+  /**
+   * task 029 block visibility: false eases the pill out (drop fade,
+   * CSS-owned via data-vd-block-hidden) instead of unmounting it.
+   */
+  readonly hidden?: boolean;
 }
 
 /**
@@ -84,6 +89,7 @@ export function SectionPill({
   onSelectSection,
   onSectionContextMenu,
   navigationLocked,
+  hidden = false,
 }: SectionPillProps) {
   const { t } = useI18n();
   const wheelStateRef = useRef<WheelNavState>(resetWheelNav());
@@ -357,7 +363,14 @@ export function SectionPill({
   if (compact) {
     // The compact form (short viewports): current name + steppers.
     return (
-      <nav className="vela-pill" data-compact="true" aria-label={t("nav.label")}>
+      <nav
+        className="vela-pill"
+        data-compact="true"
+        aria-label={t("nav.label")}
+        data-vd-block=""
+        data-vd-block-hidden={hidden ? "true" : undefined}
+        {...(hidden ? { inert: true } : {})}
+      >
         <button
           type="button"
           className="vela-pill__stepper"
@@ -384,7 +397,14 @@ export function SectionPill({
   }
 
   return (
-    <nav className="vela-pill" aria-label={t("nav.label")} ref={navRef}>
+    <nav
+      className="vela-pill"
+      aria-label={t("nav.label")}
+      ref={navRef}
+      data-vd-block=""
+      data-vd-block-hidden={hidden ? "true" : undefined}
+      {...(hidden ? { inert: true } : {})}
+    >
       <div
         className="vela-pill__scroller"
         data-vd-scroll="x"

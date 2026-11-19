@@ -123,6 +123,12 @@ interface DockProps {
   readonly onEntityContextMenu: (entityId: EntityId, x: number, y: number) => void;
   /** Empty-area command menu (native right-click is suppressed here). */
   readonly onDesktopContextMenu: (x: number, y: number) => void;
+  /**
+   * task 029 block visibility: false eases the dock out (slide-down fade,
+   * CSS-owned via data-vd-block-hidden) instead of unmounting it. The
+   * data-conditional null (no pinned entities) is separate and stays.
+   */
+  readonly hidden?: boolean;
 }
 
 /**
@@ -236,7 +242,7 @@ function DockEntityButton({
   );
 }
 
-export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopContextMenu }: DockProps) {
+export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopContextMenu, hidden = false }: DockProps) {
   const { t } = useI18n();
   const dockRef = useRef<HTMLElement | null>(null);
   useVdScrollbar(dockRef, "x");
@@ -272,6 +278,9 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
         data-vd-scroll="x"
         aria-label={t("dock.label")}
         ref={dockRef}
+        data-vd-block=""
+        data-vd-block-hidden={hidden ? "true" : undefined}
+        {...(hidden ? { inert: true } : {})}
         onContextMenu={(event) => {
           // Dock surface: never the browser menu; empty dock chrome falls
           // through to the desktop command menu.

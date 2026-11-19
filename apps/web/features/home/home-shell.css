@@ -1558,6 +1558,59 @@
   display: flex;
   flex-direction: column;
   gap: var(--vd-helm-clock-gap);
+  /* Block entrance/exit (task 029): the F1 token zeroing (--vd-helm-clock-size/gap)
+     eases through these transitions while the spans fade — the band COLLAPSES
+     instead of snapping. */
+  transition: gap var(--vd-motion-control) var(--vd-motion-ease);
+}
+
+.vela-helm-clock__time,
+.vela-helm-clock__date {
+  /* Same entrance/exit: opacity/scale fade via data-vd-block-hidden; the
+     clock's font-size rides --vd-helm-clock-size (zeroed when hidden) and
+     the date's line-height collapses through --vd-helm-date-size. */
+  transition:
+    opacity var(--vd-motion-control) var(--vd-motion-ease),
+    transform var(--vd-motion-control) var(--vd-motion-ease),
+    font-size var(--vd-motion-control) var(--vd-motion-ease),
+    visibility var(--vd-motion-control) var(--vd-motion-ease);
+}
+
+.vela-helm-clock__time[data-vd-block-hidden="true"],
+.vela-helm-clock__date[data-vd-block-hidden="true"] {
+  opacity: 0;
+  transform: scale(0.92);
+  visibility: hidden;
+}
+
+/* The commandbar's entrance/exit transitions live on the ONE authoritative
+   rule at .vela-helm-commandbar (below, merged with its hover tiers). */
+
+.vela-helm-commandbar[data-vd-block-hidden="true"] {
+  opacity: 0;
+  transform: translateY(-8px);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Dock + section pill entrance/exit (task 029): both stay mounted and ease
+   out via data-vd-block-hidden while the scroller padding (F1) hands their
+   layout reserve back on the same token. visibility transitions so the
+   surface stays paintable through the fade and inert only after it. */
+.vela-dock,
+.vela-pill {
+  transition:
+    opacity var(--vd-motion-control) var(--vd-motion-ease),
+    transform var(--vd-motion-control) var(--vd-motion-ease),
+    visibility var(--vd-motion-control) var(--vd-motion-ease);
+}
+
+.vela-dock[data-vd-block-hidden="true"],
+.vela-pill[data-vd-block-hidden="true"] {
+  opacity: 0;
+  transform: translateY(16px);
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* The ONLY consumer of the clock type token, at its fluid size: thin mono
@@ -1707,12 +1760,19 @@
   font-family: var(--vd-font);
   cursor: pointer;
   /* t137: the whole hover response eases — rim, shadow AND the text/icon
-     highlight (the instant color flip was the "生硬" Chris felt). */
+     highlight (the instant color flip was the "生硬" Chris felt).
+     task 029 entrance/exit: height/opacity/visibility ride the control
+     token so the F1 bar-height zeroing eases instead of snapping (the
+     fast hover tier keeps transform/border/shadow/color). */
   transition:
     border-color var(--vd-motion-fast) var(--vd-motion-ease),
     box-shadow var(--vd-motion-fast) var(--vd-motion-ease),
     color var(--vd-motion-fast) var(--vd-motion-ease),
-    transform var(--vd-motion-fast) var(--vd-motion-ease);
+    transform var(--vd-motion-fast) var(--vd-motion-ease),
+    height var(--vd-motion-control) var(--vd-motion-ease),
+    width var(--vd-motion-control) var(--vd-motion-ease),
+    opacity var(--vd-motion-control) var(--vd-motion-ease),
+    visibility var(--vd-motion-control) var(--vd-motion-ease);
 }
 
 .vela-helm-commandbar:hover {

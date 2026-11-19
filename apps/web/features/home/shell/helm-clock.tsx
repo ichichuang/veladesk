@@ -121,7 +121,7 @@ export function HelmClock({
   readonly locale: string;
   /** `band` = the desktop's 72px landmark; `compact` = the mobile shrunken twin. */
   readonly variant?: HelmClockVariant;
-  /** task 029 block visibility: absent = shown. Both off renders nothing. */
+  /** task 029 block visibility: absent = shown. */
   readonly showTime?: boolean;
   /** task 029 block visibility: the date is independent of the time. */
   readonly showDate?: boolean;
@@ -132,10 +132,12 @@ export function HelmClock({
   // each tick a hair past the next whole second, land it in a rAF, and
   // re-align from the wall clock every time. A hidden tab simply misses
   // ticks; the visible one rolls straight to the current time.
-  // task 029: a date-only clock skips the per-second machinery entirely
-  // (the date line only changes at midnight; a remount refreshes it).
+  // task 029 entrance/exit rework: the spans stay MOUNTED (data-hidden)
+  // while their ease plays, so ticking runs while EITHER half is visible;
+  // with both hidden the timer stops — the frozen time is invisible and
+  // catches up on the first tick after re-enable.
   useEffect(() => {
-    if (!showTime) {
+    if (!showTime && !showDate) {
       return;
     }
     let timer = 0;
@@ -172,39 +174,47 @@ export function HelmClock({
       cancelAnimationFrame(frame);
       document.removeEventListener("visibilitychange", rescheduleOnVisibility);
     };
-  }, [showTime]);
+  }, [showTime, showDate]);
 
   const digits = timeDigits(now);
   const label = `${String(now.getHours()).padStart(2, "0")}:${String(
     now.getMinutes(),
   ).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
 
-  if (!showTime && !showDate) {
-    return null;
-  }
-
+  // Entrance/exit (task 029 rework): the time/date spans stay MOUNTED and
+  // toggle data-vd-block-hidden — home-shell.css eases opacity/transform
+  // while the F1 token zeroing (clock-size/gap on the desktop root) eases
+  // the font-size/gap collapse. No hard unmount, no jump.
   return (
     <div className="vela-helm-clock" data-variant={variant} aria-hidden="true">
-      {showTime ? (
-        <span className="vela-helm-clock__time" role="img" aria-label={label}>
-          {digits.slice(0, 2).map((digit, index) => (
-            <RollerDigit key={`h${index}`} digit={digit} />
-          ))}
+      <span
+        className="vela-helm-clock__time"
+        role="img"
+        aria-label={label}
+        data-vd-block=""
+        data-vd-block-hidden={showTime ? undefined : "true"}
+      >
+        {digits.slice(0, 2).map((digit, index) => (
+          <RollerDigit key={`h${index}`} digit={digit} />
+        ))}
+        <ClockColon />
+        {digits.slice(2, 4).map((digit, index) => (
+          <RollerDigit key={`m${index}`} digit={digit} />
+        ))}
+        <span className="vela-helm-clock__seconds">
           <ClockColon />
-          {digits.slice(2, 4).map((digit, index) => (
-            <RollerDigit key={`m${index}`} digit={digit} />
+          {digits.slice(4, 6).map((digit, index) => (
+            <RollerDigit key={`s${index}`} digit={digit} />
           ))}
-          <span className="vela-helm-clock__seconds">
-            <ClockColon />
-            {digits.slice(4, 6).map((digit, index) => (
-              <RollerDigit key={`s${index}`} digit={digit} />
-            ))}
-          </span>
         </span>
-      ) : null}
-      {showDate ? (
-        <span className="vela-helm-clock__date">{dateText(now, locale)}</span>
-      ) : null}
+      </span>
+      <span
+        className="vela-helm-clock__date"
+        data-vd-block=""
+        data-vd-block-hidden={showDate ? undefined : "true"}
+      >
+        {dateText(now, locale)}
+      </span>
     </div>
   );
 }
