@@ -1,6 +1,6 @@
 {
   "name": "@veladesk/desktop-interaction",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Pure pixel-to-grid interaction mapping for VelaDesk. No React, no DOM, no dnd-kit.",
   "main": "./src/index.ts",
