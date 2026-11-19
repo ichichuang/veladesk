@@ -327,6 +327,24 @@ describe("decodeWorkspaceSnapshot — appearance preferences", () => {
     }
   });
 
+  it("decodes optional block-visibility booleans; the fields ride along verbatim (task 029)", () => {
+    const decoded = decodeWorkspaceSnapshot(
+      withAppearance({ ...validAppearance, showHelmClock: false, showDock: false })
+    );
+
+    expect(decoded).toBeDefined();
+    expect(decoded?.preferences.appearance?.showHelmClock).toBe(false);
+    expect(decoded?.preferences.appearance?.showDock).toBe(false);
+    // Fields the snapshot omits stay undefined — absent = shown.
+    expect(decoded?.preferences.appearance?.showCommandBar).toBeUndefined();
+  });
+
+  it("rejects a non-boolean block-visibility field instead of half-decoding", () => {
+    expect(
+      decodeWorkspaceSnapshot(withAppearance({ ...validAppearance, showCommandBar: "yes" }))
+    ).toBeUndefined();
+  });
+
   it("decodes every wallpaper preset", () => {
     for (const wallpaperPreset of ["aurora", "midnight", "dawn", "mist"]) {
       expect(

@@ -286,6 +286,12 @@ function isAppearancePreferences(value: unknown): boolean {
     (value.helmClockColor === undefined || typeof value.helmClockColor === "string") &&
     (value.helmDateSizePx === undefined || typeof value.helmDateSizePx === "number") &&
     (value.helmDateColor === undefined || typeof value.helmDateColor === "string") &&
+    // Optional block visibility (task 029); absent = the block shows.
+    (value.showHelmClock === undefined || typeof value.showHelmClock === "boolean") &&
+    (value.showHelmDate === undefined || typeof value.showHelmDate === "boolean") &&
+    (value.showCommandBar === undefined || typeof value.showCommandBar === "boolean") &&
+    (value.showDock === undefined || typeof value.showDock === "boolean") &&
+    (value.showSectionPill === undefined || typeof value.showSectionPill === "boolean") &&
     WALLPAPER_PRESETS.includes(value.wallpaperPreset as string) &&
     typeof value.surfaceOpacity === "number" &&
     typeof value.blurPx === "number" &&

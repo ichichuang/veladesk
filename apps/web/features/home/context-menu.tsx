@@ -32,7 +32,12 @@ export function isContextMenuKeyEvent(event: { key: string; shiftKey: boolean })
 }
 export function contextMenuAnchorFromElement(element: Element): { x: number; y: number } {
   const rect = element.getBoundingClientRect();
-  return { x: Math.round(rect.left), y: Math.round(rect.bottom + 4) };
+  // friendly-ui: anchor at the element's RIGHT edge, top-aligned — the old
+  // left+bottom+4 anchor dropped the menu ON the target (its label), which
+  // reads as a defect on tiles and pill items. Right-of-element keeps the
+  // menu adjacent without covering the thing being acted on; the viewport
+  // clamp still bounds it.
+  return { x: Math.round(rect.right + 8), y: Math.round(rect.top) };
 }
 
 export function ContextMenu({ state, onClose }: { readonly state: ContextMenuState; readonly onClose: () => void }) {

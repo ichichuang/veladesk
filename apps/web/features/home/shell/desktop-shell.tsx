@@ -9,7 +9,7 @@ import {
   VdHeroOverlayScope,
   VdPortalContainerProvider,
 } from "@components/ui/overlay-scope";
-import { resolveGridGapPx, findDesktopPage, restoreDeletedApp } from "@veladesk/domain";
+import { resolveBlockVisibility, resolveGridGapPx, findDesktopPage, restoreDeletedApp } from "@veladesk/domain";
 import type {
   DeletedAppRestoreEntry,
   DesktopPageId,
@@ -331,12 +331,20 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
     appearancePreview: previewAppearanceOverride,
     preferences: previewThemePreferences,
   });
+  // task 029 block visibility: which always-present blocks render. Derived
+  // from the SAME resolved appearance the theme uses, so the Settings live
+  // preview hides/shows blocks immediately — absent fields = all shown.
+  const blockVisibility = resolveBlockVisibility(resolvedAppearance);
   // task 028: the clock/date presentation binds to the VISIBLE section —
   // the same rendered snapshot the scene sees (Settings page patches
   // included), resolved field-by-field against the workspace appearance
   // and emitted as extra CSS variables on the desktop root. No section
   // override and no workspace fields ⇒ an empty bag; the CSS fluid
   // defaults keep ruling untouched.
+  // F1 (walkthrough fix): a HIDDEN block's presentation vars are dropped —
+  // an inline `--vd-helm-clock-size` would out-specify the granular
+  // data-helm-*-off zeroing rules in home-shell.css and keep reserving
+  // band height for a block that never renders.
   const desktopThemeStyle = useMemo(() => {
     const page =
       effectiveActivePageId === null
@@ -345,10 +353,16 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
             (candidate) => candidate.id === effectiveActivePageId
           );
     const clockVars = helmClockThemeVars(resolvedAppearance, page?.helmClock);
-    return Object.keys(clockVars).length === 0
+    const visibleVars = Object.fromEntries(
+      Object.entries(clockVars).filter(([key]) =>
+        (blockVisibility.helmClock || !key.startsWith("--vd-helm-clock")) &&
+        (blockVisibility.helmDate || !key.startsWith("--vd-helm-date"))
+      ),
+    );
+    return Object.keys(visibleVars).length === 0
       ? theme.style
-      : { ...theme.style, ...clockVars };
-  }, [theme.style, resolvedAppearance, settingsProjectedSnapshot.pages, effectiveActivePageId]);
+      : { ...theme.style, ...visibleVars };
+  }, [theme.style, resolvedAppearance, settingsProjectedSnapshot.pages, effectiveActivePageId, blockVisibility]);
   // The overlay portal root's theme: the Settings draft while a preview is
   // live, otherwise the same persisted theme — so the Settings window (and
   // only portalled surfaces) previews the draft in place.
@@ -679,7 +693,14 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
       data-vd-color-mode={effectiveColorMode}
       data-vd-material={theme.materialTier}
       data-vd-wallpaper={theme.wallpaperPreset}
-      data-has-dock={hasDock ? "true" : "false"}
+      data-has-dock={hasDock && blockVisibility.dock ? "true" : "false"}
+      // F1: granular helm-block markers — home-shell.css zeroes the matching
+      // band tokens per hidden block, so the reserved section padding shrinks
+      // with ANY combination (clock-only-off included), not just all-off.
+      data-helm-clock-off={blockVisibility.helmClock ? undefined : "true"}
+      data-helm-date-off={blockVisibility.helmDate ? undefined : "true"}
+      data-helm-bar-off={blockVisibility.commandBar ? undefined : "true"}
+      data-pill-hidden={blockVisibility.sectionPill ? undefined : "true"}
       style={desktopThemeStyle as CSSProperties}
     >
       <SceneBackdrop
@@ -687,8 +708,15 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         assetUrl={scene.wallpaperAssetUrl}
       />
       {/* The Helm top landmark: clock + ⌘K command bar, over the scene and
-          under nothing — pointer-transparent except the bar itself. */}
-      <HelmHeader onOpenCommands={() => setLauncherOpen(true)} />
+          under nothing — pointer-transparent except the bar itself.
+          task 029: every block inside toggles independently through the
+          resolved block visibility (Settings → 外观 → 区块显示). */}
+      <HelmHeader
+        onOpenCommands={() => setLauncherOpen(true)}
+        showClock={blockVisibility.helmClock}
+        showDate={blockVisibility.helmDate}
+        showCommandBar={blockVisibility.commandBar}
+      />
       {/* The Wake trail: only while a tile drag is live (the drag state the
           tile session already tracks). */}
       <WakeTrail active={tiles.dragging} />
@@ -740,27 +768,36 @@ export function DesktopShell({ workspace, lastRemoteResult, activeSection: exter
         />
       ) : null}
 
-      <Dock
-        workspace={renderedSnapshot}
-        onOpenFolder={(folderId) => openFolderOverlay(folderId)}
-        onEntityContextMenu={(entityId, x, y) =>
-          menus.openContextMenu({ kind: "entity", entityId, source: "dock", x, y })
-        }
-        onDesktopContextMenu={(x, y) => menus.openContextMenu({ kind: "desktop", x, y })}
-      />
+      {/* task 029: the dock is block-toggleable — a hidden dock also clears
+          its layout reserve via data-has-dock above, exactly like an empty
+          one (section switching still works through the ⌘K palette). */}
+      {blockVisibility.dock ? (
+        <Dock
+          workspace={renderedSnapshot}
+          onOpenFolder={(folderId) => openFolderOverlay(folderId)}
+          onEntityContextMenu={(entityId, x, y) =>
+            menus.openContextMenu({ kind: "entity", entityId, source: "dock", x, y })
+          }
+          onDesktopContextMenu={(x, y) => menus.openContextMenu({ kind: "desktop", x, y })}
+        />
+      ) : null}
 
       {/*
         The section pill (t61): one compact glass capsule centered above
         the dock — the full section switcher (click, wheel, long-press
-        management menu) without a permanent side column.
+        management menu) without a permanent side column. task 029: also
+        block-toggleable (keyboard arrows and ⌘K keep section switching
+        alive with the pill hidden).
       */}
-      <SectionPill
-        pages={pages}
-        activePageId={effectiveActivePageId}
-        onSelectSection={(pageId) => scene.switchSection(pageId)}
-        onSectionContextMenu={(pageId, x, y) => menus.openContextMenu({ kind: "section", pageId, x, y })}
-        navigationLocked={railNavigationLocked}
-      />
+      {blockVisibility.sectionPill ? (
+        <SectionPill
+          pages={pages}
+          activePageId={effectiveActivePageId}
+          onSelectSection={(pageId) => scene.switchSection(pageId)}
+          onSectionContextMenu={(pageId, x, y) => menus.openContextMenu({ kind: "section", pageId, x, y })}
+          navigationLocked={railNavigationLocked}
+        />
+      ) : null}
 
       {/*
         t181: the Engineering-mode surfaces (「工程模式」 indicator while

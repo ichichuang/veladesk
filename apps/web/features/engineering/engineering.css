@@ -37,7 +37,20 @@
   backdrop-filter: blur(var(--vd-blur));
   transition:
     color var(--vd-motion-fast) var(--vd-motion-ease),
-    border-color var(--vd-motion-fast) var(--vd-motion-ease);
+    border-color var(--vd-motion-fast) var(--vd-motion-ease),
+    opacity var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+/*
+ * F3 (walkthrough fix): the right-anchored appearance inspector panel
+ * crosses the badge's fixed top-right position; the half-covered badge
+ * text reads as a rendering defect. The desktop root already carries
+ * data-inspector-open — while the editor owns that corner the mode
+ * indicator yields (fades out, takes no pointers) and returns on close.
+ */
+.vela-desktop[data-inspector-open="true"] .vela-engineering-badge {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .vela-engineering-badge:hover {

@@ -672,6 +672,9 @@ function AppearanceIconPickerDialog({
   // the window (the 021-A scroll-state contract).
   const dialogHeaderRef = useRef<HTMLElement | null>(null);
   const contentRegionRef = useRef<HTMLDivElement | null>(null);
+  /** F6: the source segmented control's wrapper — focus there survives a
+   *  tab switch; focus in the content region below is released. */
+  const sourceBarRef = useRef<HTMLDivElement | null>(null);
   const syncHeaderShadow = useCallback(() => {
     const region = contentRegionRef.current;
     const header = dialogHeaderRef.current;
@@ -801,13 +804,29 @@ function AppearanceIconPickerDialog({
         <div ref={contentRegionRef} className="flex min-h-0 flex-1 flex-col">
           {/* Source mode — a designed segmented control, never a native
               select. */}
-          <div className="shrink-0 px-5 pt-4">
+          <div className="shrink-0 px-5 pt-4" ref={sourceBarRef}>
             <ToggleButtonGroup
               selectionMode="single"
               selectedKeys={new Set([draft.source])}
               onSelectionChange={(keys) => {
                 const value = [...keys][0];
                 if (value === "library" || value === "text" || value === "upload") {
+                  // F6: keep-alive branches go `hidden` on switch — focus
+                  // inside the outgoing branch (the library search input,
+                  // the upload dropzone) must be released, or the browser
+                  // blocks/warns on a focused descendant of a hidden
+                  // subtree. The segmented control itself keeps focus.
+                  const region = contentRegionRef.current;
+                  const bar = sourceBarRef.current;
+                  const active = document.activeElement;
+                  if (
+                    region !== null &&
+                    active !== null &&
+                    region.contains(active) &&
+                    !(bar !== null && bar.contains(active))
+                  ) {
+                    (active as HTMLElement).blur();
+                  }
                   patch({ source: value });
                 }
               }}

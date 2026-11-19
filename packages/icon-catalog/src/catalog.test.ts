@@ -314,6 +314,34 @@ describe("search: scopes", () => {
     expect(outcome.icons.some((icon) => icon.palette === "multicolor")).toBe(true);
   });
 
+  it("keeps wordmarks out of the curated page (F4a: square twins only)", async () => {
+    const outcome = await searchIconCatalog({ scope: "recommended" });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const ids = idsOf(outcome.icons);
+    // Pruned: wide/tall wordmarks whose square simple-icons twin stays.
+    for (const pruned of [
+      "logos:google-gemini",
+      "logos:deepseek",
+      "logos:kimi",
+      "logos:qwen",
+      "logos:claude",
+      "logos:perplexity",
+      "logos:moonshot-ai",
+      "logos:github-copilot",
+      "logos:whatsapp",
+    ]) {
+      expect(ids, pruned).not.toContain(pruned);
+    }
+    // Kept: the only-source glyphs (grok/openai/midjourney) and the one
+    // square logos entry (telegram).
+    for (const kept of ["logos:grok", "logos:openai", "logos:midjourney", "logos:telegram"]) {
+      expect(ids, kept).toContain(kept);
+    }
+  });
+
   it("falls through to a full catalog search for a non-empty recommended query", async () => {
     const recommended = await searchIconCatalog({ q: "docker", scope: "recommended" });
     const all = await searchIconCatalog({ q: "docker", scope: "all" });

@@ -1903,6 +1903,50 @@
 }
 
 /*
+ * Block visibility (task 029 区块显隐, F1 granular rework): a hidden block
+ * gives its RESERVED band height back by zeroing the very tokens the band
+ * formula composes from. Specificity (0,2,0) beats every media-query
+ * redefinition of the same tokens (0,1,0), so compact (<700px) and
+ * collapse (<560px) viewports shrink identically. The shell marks the
+ * desktop root per hidden block (data-helm-clock-off / -date-off /
+ * -bar-off); all three zeroed collapse the band to the breathing margins,
+ * so no separate all-off special case remains.
+ */
+.vela-desktop[data-helm-clock-off="true"] {
+  --vd-helm-clock-size: 0px;
+  /* The time↔date gap exists only between rendered rows. */
+  --vd-helm-clock-gap: 0px;
+}
+
+.vela-desktop[data-helm-date-off="true"] {
+  --vd-helm-date-size: 0px;
+}
+
+.vela-desktop[data-helm-bar-off="true"] {
+  --vd-helm-bar-height: 0px;
+  /* Nothing left under the clock rows to space from. */
+  --vd-helm-gap: 0px;
+}
+
+/* Clock AND date off: the clock block is gone entirely — its gap to the
+   command bar goes with it even when the bar remains. */
+.vela-desktop[data-helm-clock-off="true"][data-helm-date-off="true"] {
+  --vd-helm-gap: 0px;
+}
+
+/*
+ * The pill share of the bottom reserve drops only when the PILL is hidden
+ * (a hidden dock keeps its own data-has-dock="false" default above).
+ */
+.vela-desktop[data-has-dock="true"][data-pill-hidden="true"] .vela-section-viewport {
+  --vd-section-padding-bottom: calc(18px + 70px + 10px);
+}
+
+.vela-desktop[data-has-dock="false"][data-pill-hidden="true"] .vela-section-viewport {
+  --vd-section-padding-bottom: 18px;
+}
+
+/*
  * One mounted section LAYER (020-A2): the whole-page vertical transition
  * is pose-driven by the shell's navigation machine (section-view.tsx) and
  * rides on this wrapper ONLY — never on .vela-item (the dnd-kit
@@ -2027,6 +2071,14 @@
   scrollbar-width: thin;
   padding: var(--vd-section-padding-top) var(--vd-section-padding-right)
     var(--vd-section-padding-bottom) clamp(20px, 2.6vw, 42px);
+  /* 区块显隐 (task 029): toggling a block re-composes the reserved band —
+     let the content area GLIDE to its new reserve instead of jumping.
+     Padding only (never transform on scroll families); the token chain
+     (--vd-helm-* → --vd-helm-band → --vd-section-padding-top) resolves to
+     plain lengths, so this transitions as a normal length change. */
+  transition:
+    padding-top var(--vd-motion-control) var(--vd-motion-ease),
+    padding-bottom var(--vd-motion-control) var(--vd-motion-ease);
 }
 
 .vela-section-scroller::-webkit-scrollbar {
@@ -3327,7 +3379,10 @@ button.vela-sync-status:focus-visible {
   height: 48px;
   padding: 0;
   border: 1px solid color-mix(in oklab, var(--vd-color-fg-primary) 15%, transparent);
-  border-radius: 12px;
+  /* task 029: a per-app --vd-app-icon-radius wins on DOCK items too (the
+     dock previously hardcoded 12px and ignored the setting outright);
+     utility buttons and undecorated apps keep the 12px baseline. */
+  border-radius: var(--vd-app-icon-radius, 12px);
   background: color-mix(in oklab, var(--vd-color-bg-well) 62%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in oklab, var(--vd-color-fg-primary) 16%, transparent);
   font-family: var(--vd-font);
@@ -3565,8 +3620,12 @@ button.vela-sync-status:focus-visible {
 }
 
 .vela-context-menu__item:focus-visible {
-  outline: 2px solid var(--vd-accent);
+  /* friendly-ui: keyboard focus reads as the SAME wash family as hover,
+     one step brighter plus a quiet 1px inner line — the 2px solid accent
+     ring fought the glass menu language and read as a hard selection. */
+  outline: 1px solid color-mix(in oklab, var(--vd-accent) 45%, transparent);
   outline-offset: -1px;
+  background: color-mix(in oklab, var(--vd-accent) 12%, transparent);
 }
 
 .vela-context-menu__item:disabled {
@@ -4329,6 +4388,9 @@ header.vela-inspector__subject {
   padding: 4px;
 }
 
+/* task 029: auto-load can grow the grid into thousands of cells — each
+   cell skips its own paint/layout work while off-screen (the SVG itself
+   arrives through the browser's immutable HTTP cache either way). */
 .vela-icon-picker__cell {
   display: grid;
   place-items: center;
@@ -4340,10 +4402,96 @@ header.vela-inspector__subject {
   background: transparent;
   color: var(--vd-text);
   cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: 70px;
   /* task 028: hover/selected easing (the entry stagger stays GSAP). */
   transition:
     background-color var(--vd-motion-fast) var(--vd-motion-ease),
     border-color var(--vd-motion-fast) var(--vd-motion-ease);
+}
+
+/* The auto-load sentinel (task 029): a zero-height marker past the grid
+   edge, observed ~240px ahead — invisible, inert, never a scroll stop. */
+.vela-icon-picker__sentinel {
+  display: block;
+  width: 100%;
+  height: 1px;
+}
+
+/* friendly-ui 空态: centered inside the owning grid area — a quiet icon,
+   one line of copy, and the obvious next action. Replaces the bare
+   footer caption. */
+.vela-icon-picker__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 180px;
+  padding: 24px;
+  text-align: center;
+}
+
+.vela-icon-picker__empty-icon {
+  width: 34px;
+  height: 34px;
+  color: color-mix(in oklab, var(--vd-color-fg-muted) 65%, transparent);
+}
+
+.vela-icon-picker__empty-text {
+  margin: 0;
+  font-size: var(--vd-type-sm, 13px);
+  color: var(--vd-text-muted, var(--vd-text));
+}
+
+.vela-icon-picker__empty-clear {
+  min-height: 30px;
+  padding: 0 14px;
+  font-size: var(--vd-type-xs, 12px);
+}
+
+/* 首屏骨架 (friendly-ui): grid-shaped placeholder cells with a quiet
+   opacity pulse while the first page decodes — the picker opens as a
+   shape, not a blank well. Pulse stops under reduced motion. */
+.vela-icon-picker__skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 6px;
+  align-content: start;
+  padding: 4px;
+}
+
+.vela-icon-picker__skeleton-cell {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--vd-color-fg-muted) 10%, transparent);
+  animation: vela-picker-skeleton 1.4s ease-in-out infinite;
+}
+
+.vela-icon-picker__skeleton-cell:nth-child(3n + 1) {
+  animation-delay: 120ms;
+}
+
+.vela-icon-picker__skeleton-cell:nth-child(4n + 2) {
+  animation-delay: 260ms;
+}
+
+@keyframes vela-picker-skeleton {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vela-icon-picker__skeleton-cell {
+    animation: none;
+    opacity: 0.45;
+  }
 }
 
 .vela-icon-picker__cell:hover {
@@ -4368,12 +4516,42 @@ header.vela-inspector__subject {
   object-fit: contain;
 }
 
+/* F4b: the hover tooltip's LARGE preview — the captioned media block above
+   the tooltip text. A wordmark illegible at cell size reads clearly here. */
+[data-vd-tooltip-media] {
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+}
+
+[data-vd-tooltip-media] .vela-icon-picker__preview {
+  width: 56px;
+  height: 56px;
+}
+
 /* Uploaded asset glyph (016-B): the image fills the tile and keeps its own
    colors — foregroundColor never tints it, decorations still paint the tile. */
 .vela-app-icon__image {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/*
+ * task 029 (圆角修复): the per-app corner radius must reach the glyph
+ * PIXELS, not only the plate/surface behind them. Square-baked imagery —
+ * uploaded PNGs, multicolor library logos — clips at its own glyph box
+ * (object-fit letterboxing stays untouched: a non-square logo is never
+ * cut, only imagery that actually fills the box rounds). Absent var keeps
+ * the pre-029 square look, so default rendering never changes; the
+ * monochrome mask glyph is deliberately NOT rounded (its mask paints the
+ * brand's own shape — nothing to clip). Applies everywhere the glyph
+ * renders: adaptive desktop plates, fixed-slot tiles, dock, launcher.
+ */
+.vela-app-icon__image,
+.vela-app-icon__glyph--image {
+  border-radius: var(--vd-app-icon-radius, 0px);
+  overflow: hidden;
 }
 
 /* Upload affordance (016-B, in the 019-C picker) -------------------------- */

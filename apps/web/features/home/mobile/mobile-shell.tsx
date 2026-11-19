@@ -18,6 +18,7 @@ import {
   movePage,
   pageItemIds,
   resolveModeAwareWallpaper,
+  resolveBlockVisibility,
   resolveWorkspaceAppearance,
   restoreDeletedApp,
 } from "@veladesk/domain";
@@ -138,6 +139,12 @@ export function MobileShell({
   const resolvedAppearance = useMemo(
     () => resolveWorkspaceAppearance(snapshot.preferences),
     [snapshot.preferences],
+  );
+  // task 029: the clock band follows the SAME block-visibility preference
+  // as the desktop's Helm band (time and date each toggle independently).
+  const clockBlockVisibility = useMemo(
+    () => resolveBlockVisibility(resolvedAppearance),
+    [resolvedAppearance],
   );
   const theme = useMemo(() => buildAppearanceTheme(resolvedAppearance), [resolvedAppearance]);
   const systemPrefersLight = useSystemPrefersLight();
@@ -347,10 +354,18 @@ export function MobileShell({
       />
       {/* The Helm clock's compact twin (Helm r2): the same landmark the
           desktop carries, shrunken — consumption stays glanceable without
-          adding a control. */}
-      <div className="vela-mobile-clockband" aria-hidden="true">
-        <HelmClock locale={locale} variant="compact" />
-      </div>
+          adding a control. task 029: hidden entirely when both the time
+          and the date are off (the band reserves no space). */}
+      {clockBlockVisibility.helmClock || clockBlockVisibility.helmDate ? (
+        <div className="vela-mobile-clockband" aria-hidden="true">
+          <HelmClock
+            locale={locale}
+            variant="compact"
+            showTime={clockBlockVisibility.helmClock}
+            showDate={clockBlockVisibility.helmDate}
+          />
+        </div>
+      ) : null}
       <MobileCategoryTabs
         pages={snapshot.pages}
         activePageId={activePageId}

@@ -247,6 +247,7 @@ export function AddAppIconPickerDialog({
                       {t("visualEditor.customTextLabel")}
                     </Label>
                     <Input
+                      name="iconCustomText"
                       className="mt-1.5 h-10 max-w-[280px]"
                       type="text"
                       spellCheck={false}

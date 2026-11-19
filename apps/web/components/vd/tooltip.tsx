@@ -36,12 +36,19 @@ export const VdTooltipProvider = TooltipPrimitive.Provider;
 export interface VdTooltipProps {
   /** Supplemental text. Never a substitute for the trigger's own label. */
   readonly content: string;
+  /**
+   * F4b (walkthrough fix): optional rich media rendered ABOVE the caption
+   * inside the same themed surface — the icon picker's large hover preview,
+   * which keeps wide wordmark glyphs identifiable. Absent keeps the
+   * plain-text tooltip exactly as before.
+   */
+  readonly media?: React.ReactNode;
   /** The single trigger element (a button, typically). */
   readonly children: React.ReactNode;
   readonly side?: "top" | "right" | "bottom" | "left";
 }
 
-export function VdTooltip({ content, children, side = "top" }: VdTooltipProps) {
+export function VdTooltip({ content, media, children, side = "top" }: VdTooltipProps) {
   const portalContainer = useVdPortalContainer();
   return (
     <TooltipPrimitive.Root delayDuration={VD_TOOLTIP_OPEN_DELAY_MS}>
@@ -62,6 +69,7 @@ export function VdTooltip({ content, children, side = "top" }: VdTooltipProps) {
               "text-xs leading-relaxed text-vdu-fg shadow-[var(--vdu-shadow-pop)]",
             )}
           >
+            {media !== undefined ? <div data-vd-tooltip-media="">{media}</div> : null}
             {content}
           </VdPopupSurface>
         </TooltipPrimitive.Content>

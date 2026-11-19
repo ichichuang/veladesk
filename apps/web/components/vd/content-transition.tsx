@@ -111,6 +111,14 @@ export function VdTabCrossfade({
     if (element === null) {
       return;
     }
+    // F6 (walkthrough fix): reconciliation MOVES the outgoing panel's DOM
+    // nodes into this aria-hidden snapshot layer — any focus inside them
+    // comes along, and the browser blocks/warns on a focused descendant of
+    // an aria-hidden ancestor. Hand focus back to the document before the
+    // frame paints.
+    if (element.contains(document.activeElement)) {
+      (document.activeElement as HTMLElement).blur();
+    }
     const duration = reducedMotion ? REDUCED_FADE : vdMotionDuration("editorTab");
     gsap.fromTo(
       element,
@@ -136,6 +144,12 @@ export function VdTabCrossfade({
         <div
           ref={leavingRef}
           aria-hidden="true"
+          // F6: the snapshot is a CLONED tree — a cloned IconPicker's
+          // mount autofocus would .focus() INSIDE this aria-hidden layer
+          // (passive effects run after any blur). `inert` makes the whole
+          // layer unfocusable, so the clone's autofocus call is a no-op by
+          // construction — exactly what the browser warning recommends.
+          inert={true}
           className="pointer-events-none absolute inset-0 flex flex-col"
         >
           {leaving.children}

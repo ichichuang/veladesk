@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { findIconCollection } from "@veladesk/icon-catalog/meta";
 import type { IconCollectionId, IconSearchScope } from "@veladesk/icon-catalog/meta";
@@ -17,6 +17,8 @@ import {
 
 import { useI18n } from "../i18n/use-i18n";
 import { VdScrollArea } from "@components/vd/scroll-area";
+import { VdTooltip, VdTooltipProvider } from "@components/vd/tooltip";
+import { Search } from "lucide-react";
 import {
   ICON_PICKER_DEBOUNCE_MS,
   ICON_PICKER_SCOPES,
@@ -24,9 +26,10 @@ import {
   buildIconSearchUrl,
   collectionsForScope,
   decodeIconSearchPage,
+  rehydrateIconPickerPages,
   scopeMessageKey,
 } from "./icon-picker-model";
-import type { IconPickerEntry } from "./icon-picker-model";
+import type { IconPickerEntry, IconPickerPage } from "./icon-picker-model";
 import {
   readCachedIconPage,
   readIconPickerSession,
@@ -46,18 +49,26 @@ import "./home-shell.css";
  * surface (`data-vd-wheel-scope="local"`) so wheeling through icons never
  * pages the section stack or moves the editor's pinned preview/footer.
  *
- * Paging: filters always reset to offset 0 and replace the results, while
- * "load more" APPENDS the next page (deduped by id) until `nextOffset` is
- * null. Every request carries a generation token, so a slow response from an
- * abandoned query can never overwrite the current grid; a failed page keeps
- * the results already on screen and offers a retry.
+ * Paging (task 029): filters always reset to offset 0 and replace the
+ * results, while loading more APPENDS the next page (deduped by id) until
+ * `nextOffset` is null. A sentinel past the grid edge auto-fires ~240px
+ * BEFORE the true bottom (IntersectionObserver, never a scroll-event
+ * React prop — the scroll-surface contract), and the next page is
+ * prefetched in idle time, so the append is usually the synchronous cache
+ * path with no visible loading state. The manual button stays as the
+ * always-available fallback (and the retry). Every request carries a
+ * generation token, so a slow response from an abandoned query can never
+ * overwrite the current grid; a failed page keeps the results already on
+ * screen and offers a retry.
  *
- * Persistence (task 028): the bundled catalog is pinned data, so every
- * decoded page is cached under its URL (`icon-picker-session`) — revisiting
- * a scope/collection/query renders INSTANTLY with no request and no loading
- * flash. The browse context (scope / source / query) persists in
- * localStorage and is restored on mount, so reopening the picker continues
- * where the last session left off.
+ * Persistence (task 028, disk-backed in task 029): the bundled catalog is
+ * pinned data, so EVERY decoded page — first AND appended offset pages —
+ * is cached under its URL in a localStorage-backed LRU
+ * (`icon-picker-session`). Revisiting a scope/collection/query renders
+ * INSTANTLY with no request, and the rehydrate walk re-merges the whole
+ * cached offset chain, so a picker reopened after a reload continues with
+ * everything the user had already loaded. The browse context (scope /
+ * source / query) persists in localStorage and is restored on mount.
  */
 
 interface IconPickerProps {
@@ -102,6 +113,54 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   /** Bumped whenever the filters change; stale responses are dropped. */
   const generationRef = useRef(0);
+  // F5 scroll persistence: the grid's scroll host, its live offset (a ref —
+  // scroll NEVER becomes React state; the scroll-surface contract), and a
+  // render-time mirror of the browse context for the unmount flush.
+  const scrollHostRef = useRef<HTMLDivElement | null>(null);
+  const scrollTopRef = useRef(0);
+  const restoredScrollDoneRef = useRef(false);
+  /** The offset URL of the append in flight — one at a time (a ref, not
+   *  state: setState is async, so the IO sentinel, the button and a retry
+   *  could otherwise double-fire inside one tick). */
+  const appendUrlRef = useRef<string | null>(null);
+  /** In-flight page fetches by URL — the idle prefetch and a user-triggered
+   *  load-more never double-fetch the same page. */
+  const pageFetchesRef = useRef(new Map<string, Promise<IconPickerPage | null>>());
+
+  /**
+   * The ONE fetch path (task 029): same-URL requests are deduped through
+   * the in-flight map, and every DECODED page lands in the persistent
+   * cache — the catalog is pinned data, so a fetched URL is finished
+   * forever. Generation checks stay at the CALLERS: caching a stale-URL
+   * page is always correct, applying it to the grid is not.
+   */
+  const fetchIconPage = useCallback((url: string): Promise<IconPickerPage | null> => {
+    const inFlight = pageFetchesRef.current.get(url);
+    if (inFlight !== undefined) {
+      return inFlight;
+    }
+    const promise = window
+      .fetch(url)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`icon search failed (${response.status})`);
+        }
+        return response.json() as unknown;
+      })
+      .then((body) => {
+        const decoded = decodeIconSearchPage(body);
+        if (decoded !== undefined) {
+          writeCachedIconPage(url, decoded);
+        }
+        return decoded ?? null;
+      })
+      .catch(() => null)
+      .finally(() => {
+        pageFetchesRef.current.delete(url);
+      });
+    pageFetchesRef.current.set(url, promise);
+    return promise;
+  }, []);
 
   // Debounced query (spec: ~150ms). "Load more" never goes through this.
   useEffect(() => {
@@ -120,10 +179,80 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
   );
 
   // The browse context writes through on every settled change — a reload
-  // (or the other picker's next mount) restores exactly this state.
+  // (or the other picker's next mount) restores exactly this state. F5: a
+  // filter change starts a NEW grid at the top, so the outgoing grid's
+  // scroll offset never rides the new context's snapshot. Change detection
+  // is VALUE-based (not first-run-skipped): a StrictMode dev double-mount
+  // re-runs effects, and a run-count skip would let the second run zero
+  // the scrollTop the restore just applied.
+  const prevContextRef = useRef<{ scope: IconSearchScope; collection: IconCollectionId | null; rawQuery: string } | null>(null);
   useEffect(() => {
-    writeIconPickerSession({ scope, collection, query: rawQuery });
-  }, [scope, collection, rawQuery]);
+    const previous = prevContextRef.current;
+    prevContextRef.current = { scope, collection, rawQuery };
+    if (
+      previous !== null &&
+      (previous.scope !== scope ||
+        previous.collection !== collection ||
+        previous.rawQuery !== rawQuery)
+    ) {
+      scrollTopRef.current = 0;
+      writeIconPickerSession({ scope, collection, query: rawQuery, scrollTop: 0 });
+    }
+  });
+
+  // F5 restore: one shot after mount. The rehydrated entries render
+  // synchronously from the persistent page cache, so the stored offset
+  // lands on the full grid; anything shorter simply clamps.
+  useLayoutEffect(() => {
+    if (restoredScrollDoneRef.current) {
+      return;
+    }
+    restoredScrollDoneRef.current = true;
+    const top = restored?.scrollTop;
+    if (top !== undefined && top > 0 && scrollHostRef.current !== null) {
+      scrollHostRef.current.scrollTop = top;
+    }
+  }, [restored]);
+
+  // F5 observe: a passive imperative listener keeps the live offset in a
+  // ref only — no scroll-driven renders, no React scroll props. A5 fix
+  // (walkthrough acceptance): Lenis smooth-scroll lands fractional
+  // mid-animation offsets, and the session decode requires a safe integer
+  // (a fractional value would degrade the WHOLE stored session — context
+  // included), so the ref stores the rounded pixel.
+  useEffect(() => {
+    const host = scrollHostRef.current;
+    if (host === null) {
+      return;
+    }
+    const persistScroll = () => {
+      scrollTopRef.current = Math.round(host.scrollTop);
+    };
+    host.addEventListener("scroll", persistScroll, { passive: true });
+    return () => {
+      host.removeEventListener("scroll", persistScroll);
+    };
+  }, []);
+
+  // F5 flush: the LAST session write happens at unmount with the final
+  // browse context AND the final scroll offset. The mirror effect (runs
+  // after every render, no dep array) keeps the ref current without ever
+  // touching refs during render.
+  const sessionValuesRef = useRef({ scope, collection, rawQuery });
+  useEffect(() => {
+    sessionValuesRef.current = { scope, collection, rawQuery };
+  });
+  useEffect(() => {
+    return () => {
+      const snapshot = sessionValuesRef.current;
+      writeIconPickerSession({
+        scope: snapshot.scope,
+        collection: snapshot.collection,
+        query: snapshot.rawQuery,
+        scrollTop: scrollTopRef.current,
+      });
+    };
+  }, []);
 
   useEffect(() => {
     // Pinned catalog content: a URL seen before decodes to the same page.
@@ -135,52 +264,41 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     let cancelled = false;
-    window
-      .fetch(baseUrl)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`icon search failed (${response.status})`);
-        }
-        return response.json() as unknown;
-      })
-      .then((body) => {
-        if (cancelled || generationRef.current !== generation) {
-          return;
-        }
-        const decoded = decodeIconSearchPage(body);
-        if (decoded !== undefined) {
-          writeCachedIconPage(baseUrl, decoded);
-        }
-        setResults(
-          decoded === undefined
-            ? { key: baseUrl, entries: [], total: 0, nextOffset: null, failed: true }
-            : { key: baseUrl, ...decoded, failed: false }
-        );
-      })
-      .catch(() => {
-        if (cancelled || generationRef.current !== generation) {
-          return;
-        }
-        setResults({ key: baseUrl, entries: [], total: 0, nextOffset: null, failed: true });
-      });
+    void fetchIconPage(baseUrl).then((page) => {
+      if (cancelled || generationRef.current !== generation) {
+        return;
+      }
+      setResults(
+        page === null
+          ? { key: baseUrl, entries: [], total: 0, nextOffset: null, failed: true }
+          : { key: baseUrl, ...page, failed: false }
+      );
+    });
     return () => {
       cancelled = true;
     };
-  }, [baseUrl]);
+  }, [baseUrl, fetchIconPage]);
 
   // Results and append progress only apply to the URL currently requested —
   // a leftover from an abandoned query is invisible by derivation. A cached
-  // page (pinned catalog ⇒ immutable per URL) renders immediately here.
-  // Memoized so the object identity is stable for the loadMore callback.
+  // page (pinned catalog ⇒ immutable per URL) renders immediately here, and
+  // task 029 rehydrates the WHOLE cached offset chain behind it, so a
+  // revisit (this tab or after a reload) restores everything the user had
+  // loaded with zero requests. Memoized so the object identity is stable
+  // for the loadMore callback.
   const cachedPage = readCachedIconPage(baseUrl);
   const current = useMemo(() => {
     if (results !== null && results.key === baseUrl) {
       return results;
     }
-    return cachedPage !== undefined
-      ? { key: baseUrl, ...cachedPage, failed: false }
-      : null;
-  }, [results, baseUrl, cachedPage]);
+    if (cachedPage !== undefined) {
+      const restored = rehydrateIconPickerPages(cachedPage, (offset) =>
+        readCachedIconPage(buildIconSearchUrl({ query, scope, collection, offset }))
+      );
+      return { key: baseUrl, ...restored, failed: false };
+    }
+    return null;
+  }, [results, baseUrl, cachedPage, query, scope, collection]);
   const entries = current?.entries ?? [];
   const failed = current?.failed === true;
   const nextOffset = current?.nextOffset ?? null;
@@ -191,53 +309,125 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
   const appendFailed = appendState?.failed === true;
 
   const loadMore = useCallback(() => {
-    if (current === null || current.key !== baseUrl || appending) {
+    if (current === null || current.key !== baseUrl) {
       return;
     }
     const offset = current.nextOffset;
     if (offset === null) {
       return;
     }
+    const offsetUrl = buildIconSearchUrl({ query, scope, collection, offset });
+    if (appendUrlRef.current === offsetUrl) {
+      return;
+    }
+    // A prefetched page (idle warm-up or an earlier visit) appends
+    // SYNCHRONOUSLY — no busy state, no loading flash.
+    const cached = readCachedIconPage(offsetUrl);
+    if (cached !== undefined) {
+      appendUrlRef.current = offsetUrl;
+      setResults({
+        key: baseUrl,
+        entries: appendIconPickerPage(current.entries, cached.entries),
+        total: cached.total,
+        nextOffset: cached.nextOffset,
+        failed: false,
+      });
+      setAppend(null);
+      appendUrlRef.current = null;
+      return;
+    }
     // The entries the NEXT page appends onto — the derived view (cache
     // hits never enter state) is the single source of truth here.
     const baseEntries = current.entries;
     const generation = generationRef.current;
+    appendUrlRef.current = offsetUrl;
     setAppend({ key: baseUrl, busy: true, failed: false });
-    window
-      .fetch(buildIconSearchUrl({ query, scope, collection, offset }))
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`icon search failed (${response.status})`);
-        }
-        return response.json() as unknown;
-      })
-      .then((body) => {
-        if (generationRef.current !== generation) {
-          return;
-        }
-        const decoded = decodeIconSearchPage(body);
-        if (decoded === undefined) {
-          setAppend({ key: baseUrl, busy: false, failed: true });
-          return;
-        }
-        // NOT cached: offset pages are only ever read through the merged
-        // results state — caching them would just evict useful first pages
-        // from the LRU (review P2-3).
-        setResults({
-          key: baseUrl,
-          entries: appendIconPickerPage(baseEntries, decoded.entries),
-          total: decoded.total,
-          nextOffset: decoded.nextOffset,
-          failed: false,
-        });
-        setAppend({ key: baseUrl, busy: false, failed: false });
-      })
-      .catch(() => {
-        if (generationRef.current === generation) {
-          setAppend({ key: baseUrl, busy: false, failed: true });
-        }
+    void fetchIconPage(offsetUrl).then((page) => {
+      if (appendUrlRef.current === offsetUrl) {
+        appendUrlRef.current = null;
+      }
+      if (generationRef.current !== generation) {
+        return;
+      }
+      if (page === null) {
+        setAppend({ key: baseUrl, busy: false, failed: true });
+        return;
+      }
+      setResults({
+        key: baseUrl,
+        entries: appendIconPickerPage(baseEntries, page.entries),
+        total: page.total,
+        nextOffset: page.nextOffset,
+        failed: false,
       });
-  }, [appending, baseUrl, collection, current, query, scope]);
+      setAppend({ key: baseUrl, busy: false, failed: false });
+    });
+  }, [baseUrl, collection, current, fetchIconPage, query, scope]);
+
+  // task 029 auto-load: a sentinel past the grid edge trips ~240px BEFORE
+  // the true bottom, so the next page is usually prefetched and appended
+  // with no visible loading state. IntersectionObserver with the implicit
+  // root (intersection is still clipped by the picker's own scroll
+  // container) — never a scroll-event React prop (the scroll-surface
+  // contract). The observer re-arms on every append (loadMore identity
+  // changes), so a grid still shorter than the scroll area keeps chaining
+  // until it scrolls, and stops the moment the sentinel sits out of view.
+  const autoLoadEnabled = visible && nextOffset !== null && !appendFailed;
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!autoLoadEnabled) {
+      return;
+    }
+    const node = sentinelRef.current;
+    if (node === null || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (observed) => {
+        if (observed.some((entry) => entry.isIntersecting)) {
+          loadMore();
+        }
+      },
+      { rootMargin: "240px 0px" }
+    );
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+  }, [autoLoadEnabled, loadMore]);
+
+  // task 029 preload: while the user is still browsing the loaded pages,
+  // the NEXT page warms into the persistent cache in idle time — by the
+  // time the sentinel trips, the append is the synchronous cache path.
+  // Cache-only (no state): a warmed page for an abandoned query is still a
+  // correct cache entry, so there is no generation check to make.
+  useEffect(() => {
+    if (!visible || nextOffset === null) {
+      return;
+    }
+    const nextUrl = buildIconSearchUrl({ query, scope, collection, offset: nextOffset });
+    if (readCachedIconPage(nextUrl) !== undefined || pageFetchesRef.current.has(nextUrl)) {
+      return;
+    }
+    let cancelled = false;
+    const warm = () => {
+      if (!cancelled) {
+        void fetchIconPage(nextUrl);
+      }
+    };
+    const idle =
+      typeof window.requestIdleCallback === "function"
+        ? window.requestIdleCallback(warm)
+        : window.setTimeout(warm, 400);
+    return () => {
+      cancelled = true;
+      if (typeof window.requestIdleCallback === "function") {
+        window.cancelIdleCallback(idle);
+      } else {
+        window.clearTimeout(idle);
+      }
+    };
+  }, [visible, nextOffset, query, scope, collection, fetchIconPage]);
 
   function chooseScope(next: IconSearchScope) {
     setScope(next);
@@ -248,11 +438,13 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
   const sourceOptions = collectionsForScope(scope);
 
   return (
+    <VdTooltipProvider skipDelayDuration={120}>
     <div className="vela-icon-picker" data-testid="icon-picker">
       <TextField value={rawQuery} onChange={setRawQuery} aria-label={t("iconPicker.searchLabel")}>
         <Label className="sr-only">{t("iconPicker.searchLabel")}</Label>
         <Input
           ref={inputRef}
+          name="iconSearch"
           className="h-10"
           type="text"
           maxLength={100}
@@ -334,27 +526,59 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
         smooth
         className="vela-icon-picker__scroll"
         data-vd-wheel-scope="local"
+        ref={scrollHostRef}
       >
+        {visible && entries.length === 0 ? (
+          // friendly-ui 空态: a centered friendly empty state INSIDE the
+          // owning grid area — icon, copy and the obvious next action
+          // (clear the search), replacing the bare footer caption.
+          <div className="vela-icon-picker__empty">
+            <Search className="vela-icon-picker__empty-icon" strokeWidth={1.5} aria-hidden="true" />
+            <p className="vela-icon-picker__empty-text">{t("iconPicker.noResults")}</p>
+            {rawQuery.trim().length > 0 ? (
+              <button
+                type="button"
+                className="vela-button vela-icon-picker__empty-clear"
+                onClick={() => setRawQuery("")}
+              >
+                {t("iconPicker.clearSearch")}
+              </button>
+            ) : null}
+          </div>
+        ) : (
         <div className="vela-icon-picker__grid">
-          {entries.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className="vela-icon-picker__cell"
-              data-selected={entry.id === selectedId ? "true" : undefined}
-              aria-label={`${entry.label} · ${findIconCollection(entry.collection)?.label ?? entry.collection}`}
-              title={entry.label}
-              onClick={() => onSelect(entry.id)}
-            >
-              <IconPreview iconId={entry.id} />
-            </button>
-          ))}
+          {entries.map((entry) => {
+            // F4b: hover shows a LARGE preview — a wide wordmark that
+            // shrinks to a speck at cell size is identifiable at tooltip
+            // size. The cell keeps its own aria-label; the tooltip is
+            // supplemental (never the accessible name).
+            const collectionLabel =
+              findIconCollection(entry.collection)?.label ?? entry.collection;
+            return (
+              <VdTooltip
+                key={entry.id}
+                content={`${entry.label} · ${collectionLabel}`}
+                media={<IconPreview iconId={entry.id} />}
+              >
+                <button
+                  type="button"
+                  className="vela-icon-picker__cell"
+                  data-selected={entry.id === selectedId ? "true" : undefined}
+                  aria-label={`${entry.label} · ${collectionLabel}`}
+                  onClick={() => onSelect(entry.id)}
+                >
+                  <IconPreview iconId={entry.id} />
+                </button>
+              </VdTooltip>
+            );
+          })}
         </div>
+        )}
+        {/* The auto-load sentinel: observed ~240px before the true bottom
+            (see the effect above); invisible, inert, zero-height. */}
+        <div ref={sentinelRef} className="vela-icon-picker__sentinel" aria-hidden="true" />
       </VdScrollArea>
       <div className="vela-icon-picker__footer">
-        {visible && entries.length === 0 ? (
-          <span className="vela-icon-picker__note">{t("iconPicker.noResults")}</span>
-        ) : null}
         {appendFailed ? (
           <>
             <span className="vela-icon-picker__note" role="alert">
@@ -382,8 +606,20 @@ export function IconPicker({ selectedId, onSelect }: IconPickerProps) {
         {loadingFirstPage ? (
           <span className="vela-icon-picker__note">{t("common.working")}</span>
         ) : null}
+        {/* 首屏骨架 (friendly-ui): a quiet shimmer grid stands in for the
+            first page — the picker opens as a SHAPE, not a blank well with
+            a caption. Purely presentational (aria-hidden); the real grid
+            replaces it the moment the page decodes. */}
+        {loadingFirstPage ? (
+          <div className="vela-icon-picker__skeleton" aria-hidden="true">
+            {Array.from({ length: 24 }, (_, index) => (
+              <span key={index} className="vela-icon-picker__skeleton-cell" />
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
+    </VdTooltipProvider>
   );
 }
 
@@ -407,6 +643,8 @@ export function IconPreview({ iconId }: { iconId: string }) {
         alt=""
         aria-hidden="true"
         draggable={false}
+        loading="lazy"
+        decoding="async"
       />
     );
   }

@@ -246,6 +246,45 @@ describe("buildAppIconStyleVars", () => {
     expect(vars["--vd-app-icon-bg"]).toBeUndefined();
     expect(vars["--vd-app-icon-fg"]).toBeUndefined();
   });
+
+  it("emits the icon corner radius var for integers 0–50 (task 029)", () => {
+    expect(
+      buildAppIconStyleVars({ decorationStyle: "glass", iconCornerRadius: 0 })[
+        "--vd-app-icon-radius"
+      ]
+    ).toBe("0%");
+    expect(
+      buildAppIconStyleVars({ decorationStyle: "glass", iconCornerRadius: 26 })[
+        "--vd-app-icon-radius"
+      ]
+    ).toBe("26%");
+    expect(
+      buildAppIconStyleVars({ decorationStyle: "glass", iconCornerRadius: 50 })[
+        "--vd-app-icon-radius"
+      ]
+    ).toBe("50%");
+  });
+
+  it("never emits the radius var for out-of-range or non-integer values", () => {
+    expect(
+      buildAppIconStyleVars({ decorationStyle: "glass", iconCornerRadius: 51 })[
+        "--vd-app-icon-radius"
+      ]
+    ).toBeUndefined();
+    expect(
+      buildAppIconStyleVars({ decorationStyle: "glass", iconCornerRadius: -1 })[
+        "--vd-app-icon-radius"
+      ]
+    ).toBeUndefined();
+    expect(
+      buildAppIconStyleVars({ decorationStyle: "glass", iconCornerRadius: 12.5 })[
+        "--vd-app-icon-radius"
+      ]
+    ).toBeUndefined();
+    expect(
+      buildAppIconStyleVars(DEFAULT_APP_VISUAL_STYLE)["--vd-app-icon-radius"]
+    ).toBeUndefined();
+  });
 });
 
 describe("appIconDisplayText", () => {

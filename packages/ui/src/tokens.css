@@ -470,6 +470,19 @@
 }
 
 /*
+ * F2 (walkthrough fix): scroll hosts (VdScrollArea and every data-vd-scroll
+ * surface) are keyboard-focusable ON PURPOSE — they own scrolling — but the
+ * shared control treatment paints a bright full-surface ring around the
+ * whole pane when Tab passes through, which reads as a defect. A thin quiet
+ * inset ring keeps the focus discoverable while staying calm. Specificity
+ * (0,3,0) beats the shared rule above (0,2,0).
+ */
+[data-vd-ui] [data-vd-scroll]:focus-visible {
+  outline: 1px solid color-mix(in oklab, var(--vdu-focus) 45%, transparent);
+  outline-offset: -1px;
+}
+
+/*
  * HeroUI overlay surfaces (Select listbox, popovers) ride the popup
  * surface token (--overlay → the 0.96-floored overlay color) and the same
  * interface-style backdrop blur while a style is active, solid otherwise.

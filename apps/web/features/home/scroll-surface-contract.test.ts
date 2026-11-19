@@ -127,6 +127,18 @@ describe("scrollbar styling stays in the token layer", () => {
     expect(thumb![1]!).toMatch(/color-mix\(in oklab, var\(--vdu-fg-muted\)/);
     expect(thumb![1]!).not.toMatch(/#fff|white/);
   });
+
+  it("quiets the scroll host's own focus ring (F2: thin inset, never a full bright pane)", () => {
+    const rule = vdUi.match(
+      /\[data-vd-ui\] \[data-vd-scroll\]:focus-visible\s*\{([\s\S]*?)\}/,
+    );
+    expect(rule).not.toBeNull();
+    expect(rule![1]!).toMatch(/outline:\s*1px solid/);
+    expect(rule![1]!).toMatch(/outline-offset:\s*-1px/);
+    // The shared control treatment stays for real controls — the quiet rule
+    // must coexist, not replace it.
+    expect(vdUi).toMatch(/\[data-vd-ui\] :focus-visible\s*\{[\s\S]*?outline:\s*2px solid var\(--vdu-focus\)/);
+  });
 });
 
 describe("scope discipline", () => {

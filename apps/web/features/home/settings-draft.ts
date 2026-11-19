@@ -257,6 +257,14 @@ export function areWorkspaceSettingsDraftsEqual(
     a.appearance.helmClockColor === b.appearance.helmClockColor &&
     a.appearance.helmDateSizePx === b.appearance.helmDateSizePx &&
     a.appearance.helmDateColor === b.appearance.helmDateColor &&
+    // Block visibility (task 029): five optional booleans — a flipped
+    // switch must mark the draft dirty even though `false` and `undefined`
+    // render identically.
+    a.appearance.showHelmClock === b.appearance.showHelmClock &&
+    a.appearance.showHelmDate === b.appearance.showHelmDate &&
+    a.appearance.showCommandBar === b.appearance.showCommandBar &&
+    a.appearance.showDock === b.appearance.showDock &&
+    a.appearance.showSectionPill === b.appearance.showSectionPill &&
     motionPreferencesEqual(a.motion, b.motion) &&
     backgroundPatchesEqual(a.background, b.background) &&
     helmClockPatchesEqual(a.helmClock, b.helmClock)

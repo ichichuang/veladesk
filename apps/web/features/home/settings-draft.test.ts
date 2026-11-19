@@ -221,6 +221,22 @@ describe("areWorkspaceSettingsDraftsEqual", () => {
     expect(areWorkspaceSettingsDraftsEqual(base, next)).toBe(false);
   });
 
+  it("detects a block-visibility flip (task 029: false and absent render the same, but only one persists)", () => {
+    const next = { ...base, appearance: { ...base.appearance, showDock: false } };
+    expect(areWorkspaceSettingsDraftsEqual(base, next)).toBe(false);
+  });
+
+  it("preferencesFromSettingsDraft carries block-visibility fields verbatim (task 029)", () => {
+    const draft: WorkspaceSettingsDraft = {
+      ...base,
+      appearance: { ...base.appearance, showDock: false, showHelmDate: true },
+    };
+    const preferences = preferencesFromSettingsDraft(draft);
+    expect(preferences.appearance?.showDock).toBe(false);
+    expect(preferences.appearance?.showHelmDate).toBe(true);
+    expect(preferences.appearance?.showSectionPill).toBeUndefined();
+  });
+
   it("detects a default page change", () => {
     expect(
       areWorkspaceSettingsDraftsEqual(base, { ...base, defaultPageId: "page-2" })

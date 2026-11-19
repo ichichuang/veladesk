@@ -120,7 +120,7 @@ export function WorkspaceMenuRow({ entry, exiting, release, onSelect, onTool, mo
         anyone who never hovers: show the reason (e.g. the 10-workspace limit) inline. */}
     {showHint ? <span id={hintId} className="vela-workspace-menu-hint">{entry.reason}</span> : null}
     {editing ? <form className="vela-workspace-rename" onSubmit={event => { event.preventDefault(); void save(); }}>
-      <input ref={input} aria-label={entry.tools?.find(tool => tool.icon === "rename")?.label} value={draft} maxLength={40} readOnly={saving} aria-busy={saving}
+      <input ref={input} name="workspaceRename" aria-label={entry.tools?.find(tool => tool.icon === "rename")?.label} value={draft} maxLength={40} readOnly={saving} aria-busy={saving}
         onChange={event => setDraft(event.target.value)} onKeyDown={event => { event.stopPropagation(); if (event.key === "Escape") { event.preventDefault(); endEdit(); } }} />
       <button type="submit" disabled={saving} aria-label={t("common.save")}>✓</button>
       {error !== null ? <span role="alert">{error}</span> : null}

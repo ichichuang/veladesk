@@ -274,6 +274,7 @@ export function Launcher({ open, entries, appsById, onActivate, onClose }: Launc
         {/* Fixed search header — never scrolls away with long result sets. */}
         <input
           ref={inputRef}
+          name="launcherSearch"
           className="vela-launcher__input"
           role="combobox"
           aria-expanded="true"

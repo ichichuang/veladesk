@@ -115,10 +115,16 @@ function ClockColon() {
 export function HelmClock({
   locale,
   variant = "band",
+  showTime = true,
+  showDate = true,
 }: {
   readonly locale: string;
   /** `band` = the desktop's 72px landmark; `compact` = the mobile shrunken twin. */
   readonly variant?: HelmClockVariant;
+  /** task 029 block visibility: absent = shown. Both off renders nothing. */
+  readonly showTime?: boolean;
+  /** task 029 block visibility: the date is independent of the time. */
+  readonly showDate?: boolean;
 }) {
   const [now, setNow] = useState(() => new Date());
 
@@ -126,7 +132,12 @@ export function HelmClock({
   // each tick a hair past the next whole second, land it in a rAF, and
   // re-align from the wall clock every time. A hidden tab simply misses
   // ticks; the visible one rolls straight to the current time.
+  // task 029: a date-only clock skips the per-second machinery entirely
+  // (the date line only changes at midnight; a remount refreshes it).
   useEffect(() => {
+    if (!showTime) {
+      return;
+    }
     let timer = 0;
     let frame = 0;
     let stopped = false;
@@ -161,31 +172,39 @@ export function HelmClock({
       cancelAnimationFrame(frame);
       document.removeEventListener("visibilitychange", rescheduleOnVisibility);
     };
-  }, []);
+  }, [showTime]);
 
   const digits = timeDigits(now);
   const label = `${String(now.getHours()).padStart(2, "0")}:${String(
     now.getMinutes(),
   ).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
 
+  if (!showTime && !showDate) {
+    return null;
+  }
+
   return (
     <div className="vela-helm-clock" data-variant={variant} aria-hidden="true">
-      <span className="vela-helm-clock__time" role="img" aria-label={label}>
-        {digits.slice(0, 2).map((digit, index) => (
-          <RollerDigit key={`h${index}`} digit={digit} />
-        ))}
-        <ClockColon />
-        {digits.slice(2, 4).map((digit, index) => (
-          <RollerDigit key={`m${index}`} digit={digit} />
-        ))}
-        <span className="vela-helm-clock__seconds">
-          <ClockColon />
-          {digits.slice(4, 6).map((digit, index) => (
-            <RollerDigit key={`s${index}`} digit={digit} />
+      {showTime ? (
+        <span className="vela-helm-clock__time" role="img" aria-label={label}>
+          {digits.slice(0, 2).map((digit, index) => (
+            <RollerDigit key={`h${index}`} digit={digit} />
           ))}
+          <ClockColon />
+          {digits.slice(2, 4).map((digit, index) => (
+            <RollerDigit key={`m${index}`} digit={digit} />
+          ))}
+          <span className="vela-helm-clock__seconds">
+            <ClockColon />
+            {digits.slice(4, 6).map((digit, index) => (
+              <RollerDigit key={`s${index}`} digit={digit} />
+            ))}
+          </span>
         </span>
-      </span>
-      <span className="vela-helm-clock__date">{dateText(now, locale)}</span>
+      ) : null}
+      {showDate ? (
+        <span className="vela-helm-clock__date">{dateText(now, locale)}</span>
+      ) : null}
     </div>
   );
 }

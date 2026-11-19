@@ -33,6 +33,9 @@ describe("VdTabCrossfade", () => {
     expect(view.getByText("text panel")).toBeTruthy();
     const leaving = view.getByText("library panel").parentElement!;
     expect(leaving.getAttribute("aria-hidden")).toBe("true");
+    // F6: inert blocks a cloned panel's mount autofocus from landing inside
+    // the hidden layer (passive effects run after any commit-time blur).
+    expect(leaving.hasAttribute("inert")).toBe(true);
     expect(leaving.className).toContain("pointer-events-none");
     // After the 200ms crossfade (+ slack) the snapshot is gone.
     await waitFor(() => expect(view.queryByText("library panel")).toBeNull(), {
@@ -56,5 +59,31 @@ describe("VdTabCrossfade", () => {
     await new Promise((resolve) => setTimeout(resolve, 320));
     expect(view.getByText("query: ab")).toBeTruthy();
     expect(view.queryByText("query: a")).toBeNull();
+  });
+
+  it("releases focus carried into the aria-hidden leaving layer (F6)", async () => {
+    const view = render(
+      <VdTabCrossfade tabKey="library" direction={1}>
+        <div>
+          <input aria-label="library search" />
+        </div>
+      </VdTabCrossfade>
+    );
+    const field = view.getByLabelText("library search") as HTMLInputElement;
+    field.focus();
+    expect(document.activeElement).toBe(field);
+
+    // The switch MOVES the outgoing DOM (focus and all) under the
+    // aria-hidden snapshot — the layout effect must hand focus back.
+    view.rerender(
+      <VdTabCrossfade tabKey="text" direction={1}>
+        <div>text panel</div>
+      </VdTabCrossfade>
+    );
+    expect(document.activeElement).not.toBe(field);
+    expect(document.activeElement).toBe(document.body);
+    await waitFor(() => expect(view.queryByLabelText("library search")).toBeNull(), {
+      timeout: 2000,
+    });
   });
 });

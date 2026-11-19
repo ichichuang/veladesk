@@ -368,12 +368,26 @@ export interface WorkspaceAppearancePreferences {
    * optional: absent resolves to the CSS fluid defaults. Per-section
    * overrides live on `DesktopPage.helmClock` and win field by field.
    * Ranges: clock 24–160px, date 10–36px (integers); colors exact
-   * `#RRGGBB`. Optional as a whole for backward compatibility.
+   * #RRGGBB. Optional as a whole for backward compatibility.
    */
   readonly helmClockSizePx?: number;
   readonly helmClockColor?: string;
   readonly helmDateSizePx?: number;
   readonly helmDateColor?: string;
+
+  /**
+   * Block visibility (task 029): free per-block show/hide for the desktop's
+   * always-present chrome. Every field is optional and absent = the block
+   * SHOWS, so pre-029 snapshots (and "switched back on") never lose a
+   * block and never migrate. `false` hides that block; resolution goes
+   * through `resolveBlockVisibility` (appearance.ts). The date is
+   * independent of the clock — hiding the time can keep the date.
+   */
+  readonly showHelmClock?: boolean;
+  readonly showHelmDate?: boolean;
+  readonly showCommandBar?: boolean;
+  readonly showDock?: boolean;
+  readonly showSectionPill?: boolean;
 }
 
 /** How strictly the workspace honors `prefers-reduced-motion`. */

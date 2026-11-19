@@ -16,6 +16,7 @@ export {
   MIN_HELM_CLOCK_SIZE_PX,
   MIN_HELM_DATE_SIZE_PX,
   inferInterfaceStyle,
+  resolveBlockVisibility,
   resolveHelmClockPresentation,
   resolveInterfaceStyle,
   resolveWorkspaceAppearance,
@@ -27,6 +28,7 @@ export type {
   InterfaceStyleParameters,
   PageHelmClockOverride,
   WorkspaceAppearanceValidationIssue,
+  WorkspaceBlockVisibility,
 } from "./appearance";
 
 export {

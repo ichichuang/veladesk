@@ -54,43 +54,44 @@ const ICON_SEARCH_SCOPES: readonly IconSearchScope[] = [
 const RECOMMENDED_ICONS: readonly { collection: IconCollectionId; name: string }[] = [
   // Modern AI assistants first (2026-11 request): every entry is a REAL
   // bundled name — entries that stop resolving are skipped, never blank.
+  // F4a (walkthrough fix): horizontal/vertical WORDMARKS are pruned from
+  // the curated page wherever the same brand has a square glyph twin in
+  // this list (measured aspect ratios 2.7–6.0 wide, 0.07 tall — unusable
+  // at 26px). The remaining logos entries are the brand's ONLY bundled
+  // source (grok, openai — hidden upstream in simple-icons, midjourney)
+  // or genuinely square (telegram); the picker's hover preview (F4b)
+  // keeps those identifiable.
   { collection: "logos", name: "grok" },
   { collection: "simple-icons", name: "googlegemini" },
-  { collection: "logos", name: "google-gemini" },
   { collection: "simple-icons", name: "deepseek" },
-  { collection: "logos", name: "deepseek" },
   { collection: "simple-icons", name: "kimi" },
-  { collection: "logos", name: "kimi" },
   { collection: "simple-icons", name: "qwen" },
-  { collection: "logos", name: "qwen" },
   { collection: "simple-icons", name: "claude" },
-  { collection: "logos", name: "claude" },
   // NOTE: simple-icons marks `openai` hidden upstream (search/browse skip
   // hidden names; the SVG route still serves it), so the curated page
   // offers the logos set's OpenAI glyph instead.
   { collection: "logos", name: "openai" },
   { collection: "logos", name: "midjourney" },
   { collection: "simple-icons", name: "perplexity" },
-  { collection: "logos", name: "perplexity" },
   { collection: "simple-icons", name: "cursor" },
   { collection: "simple-icons", name: "anthropic" },
   { collection: "simple-icons", name: "mistralai" },
   { collection: "simple-icons", name: "moonshotai" },
-  { collection: "logos", name: "moonshot-ai" },
   { collection: "simple-icons", name: "huggingface" },
   { collection: "simple-icons", name: "ollama" },
   { collection: "simple-icons", name: "githubcopilot" },
-  { collection: "logos", name: "github-copilot" },
   { collection: "simple-icons", name: "notion" },
   { collection: "simple-icons", name: "figma" },
-  // Everyday brand staples.
+  // Everyday brand staples. (logos:telegram is the SQUARE paper plane —
+  // aspect 1.0 — the one logos wordmark that earns its curated slot;
+  // logos:whatsapp was pruned: 4.3:1 wordmark behind the square
+  // simple-icons twin.)
   { collection: "simple-icons", name: "github" },
   { collection: "simple-icons", name: "youtube" },
   { collection: "simple-icons", name: "spotify" },
   { collection: "simple-icons", name: "googlechrome" },
   { collection: "simple-icons", name: "discord" },
   { collection: "logos", name: "telegram" },
-  { collection: "logos", name: "whatsapp" },
   // General-purpose outline tools.
   { collection: "lucide", name: "house" },
   { collection: "lucide", name: "search" },

@@ -269,6 +269,63 @@ export function AppearanceSection({
         onScopeChange={onHelmClockScopeChange}
         updatePage={updateHelmClockPage}
       />
+
+      <BlockVisibilitySection draft={draft} updateAppearance={updateAppearance} />
+    </div>
+  );
+}
+
+/** The appearance fields one block-visibility switch writes (task 029). */
+type AppearanceBlockVisibilityField =
+  | "showHelmClock"
+  | "showHelmDate"
+  | "showCommandBar"
+  | "showDock"
+  | "showSectionPill";
+
+/**
+ * Block visibility (task 029 区块显示): free per-block show/hide for the
+ * desktop's always-present chrome — clock, date, ⌘K search bar, dock and
+ * the section pill. Switches write plain booleans into the appearance
+ * draft (absent = shown), so the t148 live preview hides/shows each block
+ * on the real desktop immediately and Save persists with the rest.
+ */
+function BlockVisibilitySection({
+  draft,
+  updateAppearance,
+}: {
+  readonly draft: WorkspaceSettingsDraft;
+  readonly updateAppearance: (patch: Partial<WorkspaceAppearancePreferences>) => void;
+}) {
+  const { t } = useI18n();
+  const rows: readonly { readonly field: AppearanceBlockVisibilityField; readonly key: TranslationKey }[] =
+    [
+      { field: "showHelmClock", key: "settings.blocks.helmClock" },
+      { field: "showHelmDate", key: "settings.blocks.helmDate" },
+      { field: "showCommandBar", key: "settings.blocks.commandBar" },
+      { field: "showDock", key: "settings.blocks.dock" },
+      { field: "showSectionPill", key: "settings.blocks.sectionPill" },
+    ];
+  return (
+    <div className="flex flex-col gap-4" data-settings-block-visibility="">
+      {/* Section heading (a SettingsRow always carries its control on the
+          right; this group heading has none, so it uses the row's left
+          column markup directly). */}
+      <div className="min-w-0">
+        <p className="block text-sm font-medium text-vdu-fg">{t("settings.blocks.title")}</p>
+        <p className="mt-1 text-xs leading-relaxed text-vdu-fg-muted">
+          {t("settings.blocks.title.hint")}
+        </p>
+      </div>
+      {rows.map((row) => (
+        <SettingsRow key={row.field} title={t(row.key)}>
+          <VdSwitch
+            isSelected={draft.appearance[row.field] !== false}
+            onChange={(visible) => updateAppearance({ [row.field]: visible })}
+            aria-label={t(row.key)}
+          />
+        </SettingsRow>
+      ))}
     </div>
   );
 }

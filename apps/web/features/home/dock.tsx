@@ -281,7 +281,11 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
       >
         {dockEntities.map((entity) =>
           entity.kind === "app" ? (
-            <VdTooltip key={entity.id} content={entity.name}>
+            // friendly-ui: side="right" — directly above the dock sits the
+            // section pill; a top tooltip landed ON the capsule text. The
+            // dock's sides are open space, so the tooltip reads beside the
+            // icon instead of covering the pill.
+            <VdTooltip key={entity.id} content={entity.name} side="right">
               <DockEntityButton
                 className="vela-dock__item"
                 ariaLabel={t("dock.openApp", { name: entity.name })}
@@ -296,7 +300,7 @@ export function Dock({ workspace, onOpenFolder, onEntityContextMenu, onDesktopCo
               </DockEntityButton>
             </VdTooltip>
           ) : (
-            <VdTooltip key={entity.id} content={entity.name}>
+            <VdTooltip key={entity.id} content={entity.name} side="right">
               <DockEntityButton
                 className="vela-dock__item vela-dock__item--folder"
                 ariaLabel={t("dock.openFolder", { name: entity.name })}

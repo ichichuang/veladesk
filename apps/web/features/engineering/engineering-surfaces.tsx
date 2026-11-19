@@ -64,19 +64,26 @@ function EngineeringBadge({
   const ref = useRef<HTMLButtonElement | null>(null);
 
   // The entrance fade (opacity only — never transform, never layout).
+  // A3 fix (walkthrough acceptance): the tween's final inline `opacity: 1`
+  // used to STAY on the element and outrank every stylesheet rule — the
+  // inspector-open badge-yield rule (engineering.css) could never dim it.
+  // `clearProps` hands opacity back to the stylesheet when the fade ends;
+  // reduced motion never needs an inline value at all (the stylesheet
+  // default is 1).
   useLayoutEffect(() => {
     const element = ref.current;
-    if (element === null) {
-      return;
-    }
-    if (reducedMotion) {
-      gsap.set(element, { opacity: 1 });
+    if (element === null || reducedMotion) {
       return;
     }
     gsap.fromTo(
       element,
       { opacity: 0 },
-      { opacity: 1, duration: vdMotionDuration("hoverPress"), ease: VD_MOTION_EASE },
+      {
+        opacity: 1,
+        duration: vdMotionDuration("hoverPress"),
+        ease: VD_MOTION_EASE,
+        clearProps: "opacity",
+      },
     );
   }, [reducedMotion]);
 

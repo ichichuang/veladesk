@@ -19,25 +19,43 @@ import "../home-shell.css";
 
 export function HelmHeader({
   onOpenCommands,
+  showClock = true,
+  showDate = true,
+  showCommandBar = true,
 }: {
   /** Opens the ⌘K launcher palette. */
   readonly onOpenCommands: () => void;
+  /** task 029 block visibility: absent = shown. The reserved band height
+   *  follows per hidden block through the shell's data-helm-*-off markers
+   *  (F1) — any combination shrinks its own share. */
+  readonly showClock?: boolean;
+  /** task 029: the date rides the clock block but toggles independently. */
+  readonly showDate?: boolean;
+  /** task 029: the ⌘K command bar (search entry). */
+  readonly showCommandBar?: boolean;
 }) {
   const { t, locale } = useI18n();
+  if (!showClock && !showCommandBar && !showDate) {
+    return null;
+  }
   return (
     <header className="vela-helm-header">
-      <HelmClock locale={locale} />
-      <button
-        type="button"
-        className="vela-helm-commandbar"
-        onClick={onOpenCommands}
-      >
-        <Search className="vela-helm-commandbar__icon" strokeWidth={1.5} aria-hidden="true" />
-        <span className="vela-helm-commandbar__placeholder">
-          {t("helm.commandbar")}
-        </span>
-        <kbd className="vela-helm-commandbar__kbd">{t("helm.commandbarKey")}</kbd>
-      </button>
+      {showClock || showDate ? (
+        <HelmClock locale={locale} showTime={showClock} showDate={showDate} />
+      ) : null}
+      {showCommandBar ? (
+        <button
+          type="button"
+          className="vela-helm-commandbar"
+          onClick={onOpenCommands}
+        >
+          <Search className="vela-helm-commandbar__icon" strokeWidth={1.5} aria-hidden="true" />
+          <span className="vela-helm-commandbar__placeholder">
+            {t("helm.commandbar")}
+          </span>
+          <kbd className="vela-helm-commandbar__kbd">{t("helm.commandbarKey")}</kbd>
+        </button>
+      ) : null}
     </header>
   );
 }

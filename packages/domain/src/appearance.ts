@@ -127,6 +127,37 @@ export function resolveWorkspaceAppearance(
   return preferences.appearance ?? DEFAULT_WORKSPACE_APPEARANCE;
 }
 
+/** The resolved on/off state of every toggleable shell block (task 029). */
+export interface WorkspaceBlockVisibility {
+  /** The clock's TIME digits (the date is its own block). */
+  readonly helmClock: boolean;
+  /** The date line under/beside the clock. */
+  readonly helmDate: boolean;
+  /** The ⌘K command bar (the launcher's always-visible door). */
+  readonly commandBar: boolean;
+  /** The dock (data-conditional presence still applies on top). */
+  readonly dock: boolean;
+  /** The section pill above the dock. */
+  readonly sectionPill: boolean;
+}
+
+/**
+ * The ONE block-visibility resolver (task 029): absent fields are "shown"
+ * (`!== false`), so legacy snapshots and default workspaces keep every
+ * block — only an explicit `false` hides one. Pure — no mutation.
+ */
+export function resolveBlockVisibility(
+  appearance: WorkspaceAppearancePreferences
+): WorkspaceBlockVisibility {
+  return {
+    helmClock: appearance.showHelmClock !== false,
+    helmDate: appearance.showHelmDate !== false,
+    commandBar: appearance.showCommandBar !== false,
+    dock: appearance.showDock !== false,
+    sectionPill: appearance.showSectionPill !== false,
+  };
+}
+
 /** The resolved clock/date presentation for one context (task 028). */
 export interface HelmClockPresentation {
   readonly clockSizePx: number | undefined;

@@ -203,3 +203,33 @@ export function appendIconPickerPage(
   }
   return appended;
 }
+
+/** Rehydrate walk bound — far beyond any real query, but a corrupt
+ * offset-cycle in stored data must never loop forever. */
+const MAX_REHYDRATE_PAGES = 512;
+
+/**
+ * Rebuilds the FULL loaded set for a revisited base query from the page
+ * cache (task 029): starting at the first page, follows `nextOffset`
+ * through cached pages (deduped by id) until a page is missing or the
+ * chain ends — a reload restores exactly what the user had loaded, with
+ * zero requests. Pure: the caller owns the cache reads.
+ */
+export function rehydrateIconPickerPages(
+  first: IconPickerPage,
+  readPage: (offset: number) => IconPickerPage | undefined
+): IconPickerPage {
+  let merged: readonly IconPickerEntry[] = first.entries;
+  let cursor = first;
+  let walked = 0;
+  while (cursor.nextOffset !== null && walked < MAX_REHYDRATE_PAGES) {
+    const next = readPage(cursor.nextOffset);
+    if (next === undefined) {
+      break;
+    }
+    merged = appendIconPickerPage(merged, next.entries);
+    cursor = next;
+    walked += 1;
+  }
+  return { entries: merged, total: cursor.total, nextOffset: cursor.nextOffset };
+}
